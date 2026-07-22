@@ -1,0 +1,90 @@
+name: CD Railway Health Verification
+
+on:
+  push:
+    branches: [main, develop]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        default: "staging"
+        type: choice
+        options:
+          - staging
+          - production
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cd-health-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Verify Railway Deployment Health
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PRODUCTION_BASE_URL: ${{ vars.PRODUCTION_BASE_URL }}
+      STAGING_BASE_URL: ${{ vars.STAGING_BASE_URL }}
+
+    steps:
+      - name: Resolve environment and base URL
+        id: resolve
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            TARGET_ENV="${{ github.event.inputs.environment }}"
+          elif [[ "${{ github.ref_name }}" == "main" ]]; then
+            TARGET_ENV="production"
+          else
+            TARGET_ENV="staging"
+          fi
+
+          if [[ "$TARGET_ENV" == "production" ]]; then
+            BASE_URL="$PRODUCTION_BASE_URL"
+          else
+            BASE_URL="$STAGING_BASE_URL"
+          fi
+
+          BASE_URL="${BASE_URL%/}"
+
+          if [[ -z "$BASE_URL" ]]; then
+            echo "Missing base URL for $TARGET_ENV."
+            echo "Set repository variables: PRODUCTION_BASE_URL and STAGING_BASE_URL"
+            exit 1
+          fi
+
+          echo "target_env=$TARGET_ENV" >> "$GITHUB_OUTPUT"
+          echo "base_url=$BASE_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for healthy deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE_URL="${{ steps.resolve.outputs.base_url }}"
+          HEALTH_URL="$BASE_URL/api/health"
+
+          echo "Checking health endpoint: $HEALTH_URL"
+
+          for attempt in {1..40}; do
+            status_code=$(curl -sS -o health.json -w "%{http_code}" "$HEALTH_URL" || true)
+
+            if [[ "$status_code" == "200" ]]; then
+              echo "Healthy deployment detected on attempt $attempt"
+              cat health.json
+              exit 0
+            fi
+
+            echo "Attempt $attempt: status=$status_code. Retrying in 15s..."
+            sleep 15
+          done
+
+          echo "Deployment health check failed after retries."
+          if [[ -f health.json ]]; then
+            echo "Last response body:"
+            cat health.json
+          fi
+          exit 1

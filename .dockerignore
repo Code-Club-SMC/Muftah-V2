@@ -1,0 +1,43 @@
+# Dependencies (rebuilt in Docker)
+node_modules
+
+# Build output (rebuilt in Docker)
+.output
+dist
+
+# Environment files (injected by Railway at runtime)
+.env
+.env.*
+!.env.example
+
+# Version control
+.git
+.gitignore
+.gitattributes
+
+# Development and local tooling
+.vscode
+.idea
+.railway
+.codex
+.qwen
+.kiro
+
+# Test files
+*.test.ts
+*.test.tsx
+*.spec.ts
+__tests__/
+
+# Local docs and prompts
+*.md
+prompt.txt
+
+# Dev-only scripts and temporary outputs
+scripts/
+count.txt
+todos.json
+
+# OS files
+.DS_Store
+Thumbs.db
