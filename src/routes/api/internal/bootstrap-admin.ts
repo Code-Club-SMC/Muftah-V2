@@ -19,7 +19,7 @@ const updateBootstrapAdminSchema = z.object({
   userId: z.string().optional(),
   currentEmail: z.string().email().optional(),
   name: z.string().min(2).optional(),
-  email: z.email().optional(),
+  email: z.string().email().optional(),
   password: z.string().min(8).optional(),
 });
 
@@ -97,6 +97,7 @@ export const Route = createFileRoute("/api/internal/bootstrap-admin")({
         return Response.json({
           bootstrapped: superAdmins.length > 0,
           superAdminCount: superAdmins.length,
+          superAdmins,
         });
       },
 
@@ -203,6 +204,10 @@ export const Route = createFileRoute("/api/internal/bootstrap-admin")({
             { error: "No super admin exists yet. Use POST first." },
             { status: 404 },
           );
+        }
+
+        if (!data.name && !data.email && !data.password) {
+          return invalidPayloadResponse("Provide at least one field to update.");
         }
 
         const target =
