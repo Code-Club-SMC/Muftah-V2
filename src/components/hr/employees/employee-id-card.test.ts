@@ -3,6 +3,10 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const SOURCE = readFileSync(
+  resolve(process.cwd(), "src/components/hr/employees/employee-card.tsx"),
+  "utf8",
+);
+const DIALOG_SOURCE = readFileSync(
   resolve(process.cwd(), "src/components/hr/employees/employee-id-card.tsx"),
   "utf8",
 );
@@ -19,6 +23,6 @@ describe("EmployeeIDCard source safeguards", () => {
   it("prints at CR80 portrait dimensions", () => {
     expect(SOURCE).toContain("widthMm: 54");
     expect(SOURCE).toContain("heightMm: 85.6");
-    expect(SOURCE).toContain("CR80 employee card");
+    expect(DIALOG_SOURCE).toContain("CR80 employee card");
   });
 });

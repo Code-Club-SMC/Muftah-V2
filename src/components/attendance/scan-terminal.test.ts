@@ -28,7 +28,7 @@ describe("scan terminal UI source", () => {
     expect(source).toContain("focusInput");
     expect(source).toContain("scanAttendanceFn");
     expect(source).toContain("rawPayload: payload");
-    expect(source).toContain("fixed barcode scanner");
+    expect(source).toContain("2D Barcode Scanner");
   });
 
   it("handles kiosk concerns without making them hard requirements", () => {
