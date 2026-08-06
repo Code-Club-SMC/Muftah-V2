@@ -18,6 +18,17 @@ import {
   useEmployeePunches,
 } from "@/hooks/hr/use-attendance-punches";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -38,7 +49,7 @@ type PunchRow = {
   timestamp: string | Date;
   attendanceDate: string;
   direction: PunchDirection;
-  source: "qr_terminal" | "manual";
+  source: "qr_terminal" | "manual" | "offline_excel";
   note?: string | null;
   terminalUser?: {
     id: string;
@@ -80,6 +91,7 @@ function defaultPunchDateTime(date: string) {
 
 function sourceLabel(punch: PunchRow) {
   if (punch.source === "qr_terminal") return "QR terminal";
+  if (punch.source === "offline_excel") return "Offline Excel";
   return punch.terminalUser?.name
     ? `Manual by ${punch.terminalUser.name}`
     : "Manual";
@@ -130,6 +142,9 @@ export function ManualPunchTimeline({
   const [newNote, setNewNote] = useState("");
   const [editingPunchId, setEditingPunchId] = useState<string | null>(null);
   const [editingTimestamp, setEditingTimestamp] = useState("");
+  const [editingReason, setEditingReason] = useState("");
+  const [deletePunchId, setDeletePunchId] = useState<string | null>(null);
+  const [deleteReason, setDeleteReason] = useState("");
   const [isAddingLocked, setIsAddingLocked] = useState(false);
   const addPunchLockRef = useRef(false);
 
@@ -199,18 +214,33 @@ export function ManualPunchTimeline({
   const handleStartCorrect = (punch: PunchRow) => {
     setEditingPunchId(punch.id);
     setEditingTimestamp(toDateTimeInputValue(punch.timestamp));
+    setEditingReason("");
   };
 
-  const handleCorrectPunch = async (punchId: string) => {
+  const handleCorrectPunch = async (punch: PunchRow) => {
     await correctPunch.mutateAsync({
       data: {
-        punchId,
+        punchId: punch.id,
         newTimestamp: toPKTOffsetTimestamp(editingTimestamp),
         attendanceDate: date,
+        reason:
+          punch.source === "offline_excel" ? editingReason.trim() : undefined,
       },
     });
     setEditingPunchId(null);
     setEditingTimestamp("");
+    setEditingReason("");
+  };
+
+  const handleDeletePunch = async (punch: PunchRow) => {
+    await deletePunch.mutateAsync({
+      data: {
+        punchId: punch.id,
+        reason: punch.source === "offline_excel" ? deleteReason.trim() : undefined,
+      },
+    });
+    setDeletePunchId(null);
+    setDeleteReason("");
   };
 
   const isAdding = isAddingLocked || addPunch.isPending;
@@ -324,6 +354,11 @@ export function ManualPunchTimeline({
             const isEditing = editingPunchId === punch.id;
             const isIn = punch.direction === "in";
             const deleteBlocked = protectedDeletePunchIds.has(punch.id);
+            const isOfflinePunch = punch.source === "offline_excel";
+            const editReasonInvalid =
+              isOfflinePunch && editingReason.trim().length < 5;
+            const deleteReasonInvalid =
+              isOfflinePunch && deleteReason.trim().length < 5;
 
             return (
               <div
@@ -372,19 +407,41 @@ export function ManualPunchTimeline({
                     </p>
                   )}
                   {isEditing && (
-                    <div className="mt-3 flex flex-col gap-2 md:flex-row md:items-center">
+                    <div className="mt-3 flex flex-col gap-2">
                       <Input
                         type="datetime-local"
                         value={editingTimestamp}
                         onChange={(event) => setEditingTimestamp(event.target.value)}
                         className="md:max-w-64"
                       />
+                      {isOfflinePunch && (
+                        <Field data-invalid={editReasonInvalid}>
+                          <FieldLabel>Offline correction reason</FieldLabel>
+                          <Textarea
+                            value={editingReason}
+                            onChange={(event) =>
+                              setEditingReason(event.target.value)
+                            }
+                            placeholder="Required, e.g. supervisor verified wrong time."
+                            aria-invalid={editReasonInvalid}
+                            className="min-h-16 resize-none"
+                          />
+                          <FieldDescription>
+                            Required for Offline Excel punches. Minimum 5
+                            characters.
+                          </FieldDescription>
+                        </Field>
+                      )}
                       <div className="flex gap-2">
                         <Button
                           type="button"
                           size="sm"
-                          disabled={correctPunch.isPending || !editingTimestamp}
-                          onClick={() => handleCorrectPunch(punch.id)}
+                          disabled={
+                            correctPunch.isPending ||
+                            !editingTimestamp ||
+                            editReasonInvalid
+                          }
+                          onClick={() => handleCorrectPunch(punch)}
                         >
                           <Check data-icon="inline-start" />
                           Save
@@ -412,24 +469,92 @@ export function ManualPunchTimeline({
                   >
                     <Pencil />
                   </Button>
-                  <Button
-                    type="button"
-                    variant="destructive"
-                    size="icon-sm"
-                    disabled={deletePunch.isPending || deleteBlocked}
-                    onClick={() =>
-                      deletePunch.mutate({
-                        data: { punchId: punch.id },
-                      })
-                    }
-                    title={
-                      deleteBlocked
-                        ? "Delete the latest related punch first"
-                        : "Delete punch"
-                    }
-                  >
-                    <Trash2 />
-                  </Button>
+                  {isOfflinePunch ? (
+                    <AlertDialog
+                      open={deletePunchId === punch.id}
+                      onOpenChange={(open) => {
+                        setDeletePunchId(open ? punch.id : null);
+                        if (!open) setDeleteReason("");
+                      }}
+                    >
+                      <AlertDialogTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="destructive"
+                          size="icon-sm"
+                          disabled={deletePunch.isPending || deleteBlocked}
+                          title={
+                            deleteBlocked
+                              ? "Delete the latest related punch first"
+                              : "Delete Offline Excel punch"
+                          }
+                        >
+                          <Trash2 />
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>
+                            Delete Offline Excel punch?
+                          </AlertDialogTitle>
+                          <AlertDialogDescription>
+                            This keeps the imported row claimed and records an
+                            audit entry. Enter the correction reason before
+                            deleting.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <Field data-invalid={deleteReasonInvalid}>
+                          <FieldLabel>Delete reason</FieldLabel>
+                          <Textarea
+                            value={deleteReason}
+                            onChange={(event) =>
+                              setDeleteReason(event.target.value)
+                            }
+                            placeholder="Required, e.g. duplicate verified by supervisor."
+                            aria-invalid={deleteReasonInvalid}
+                            className="min-h-20 resize-none"
+                          />
+                          <FieldDescription>
+                            Required for Offline Excel punches. Minimum 5
+                            characters.
+                          </FieldDescription>
+                        </Field>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction
+                            variant="destructive"
+                            disabled={
+                              deletePunch.isPending || deleteReasonInvalid
+                            }
+                            onClick={(event) => {
+                              if (deleteReasonInvalid) {
+                                event.preventDefault();
+                                return;
+                              }
+                              void handleDeletePunch(punch);
+                            }}
+                          >
+                            Delete punch
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      size="icon-sm"
+                      disabled={deletePunch.isPending || deleteBlocked}
+                      onClick={() => void handleDeletePunch(punch)}
+                      title={
+                        deleteBlocked
+                          ? "Delete the latest related punch first"
+                          : "Delete punch"
+                      }
+                    >
+                      <Trash2 />
+                    </Button>
+                  )}
                 </div>
               </div>
             );

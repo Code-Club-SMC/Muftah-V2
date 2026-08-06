@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
+import { attendancePunchCorrectionAudit } from "@/db/schemas/offline-attendance-schema";
 import { attendancePunches, employees } from "@/db/schemas/hr-schema";
 import {
   canDeletePunch,
@@ -38,6 +39,7 @@ const punchResultSchema = z.object({
   direction: z.enum(["in", "out"]).optional(),
   note: z.string().max(500).nullable().optional(),
 });
+const correctionReasonSchema = z.string().trim().min(5).max(500);
 
 function parseTimestamp(value: string) {
   const timestamp = new Date(value);
@@ -45,6 +47,30 @@ function parseTimestamp(value: string) {
     throw new Error("Invalid timestamp");
   }
   return timestamp;
+}
+
+function punchAuditSnapshot(punch: typeof attendancePunches.$inferSelect) {
+  return {
+    timestamp: punch.timestamp.toISOString(),
+    attendanceDate: punch.attendanceDate,
+    direction: punch.direction,
+    source: punch.source,
+    note: punch.note,
+    terminalUserId: punch.terminalUserId,
+    offlineImportRowId: punch.offlineImportRowId,
+    offlineImportIdentity: punch.offlineImportIdentity,
+  };
+}
+
+function requireOfflineCorrectionReason(
+  punch: typeof attendancePunches.$inferSelect,
+  reason: string | undefined,
+) {
+  if (punch.source !== "offline_excel") {
+    return reason?.trim() || null;
+  }
+
+  return correctionReasonSchema.parse(reason);
 }
 
 async function requireEmployee(employeeId: string) {
@@ -148,8 +174,13 @@ export const addManualPunchFn = createServerFn()
 
 export const deletePunchFn = createServerFn()
   .middleware([requireHrManageMiddleware])
-  .inputValidator(z.object({ punchId: z.string().min(1) }))
-  .handler(async ({ data }): Promise<{
+  .inputValidator(
+    z.object({
+      punchId: z.string().min(1),
+      reason: z.string().optional(),
+    }),
+  )
+  .handler(async ({ data, context }): Promise<{
     deletedPunchId: string;
     attendance: RecomputedAttendanceRow;
   }> => {
@@ -177,6 +208,19 @@ export const deletePunchFn = createServerFn()
         );
       }
 
+      const correctionReason = requireOfflineCorrectionReason(punch, data.reason);
+      if (correctionReason) {
+        await tx.insert(attendancePunchCorrectionAudit).values({
+          originalPunchId: punch.id,
+          originalImportRowId: punch.offlineImportRowId,
+          action: "delete",
+          oldValues: punchAuditSnapshot(punch),
+          newValues: null,
+          reason: correctionReason,
+          changedByUserId: context.session.user.id,
+        });
+      }
+
       await tx
         .delete(attendancePunches)
         .where(eq(attendancePunches.id, data.punchId));
@@ -202,6 +246,7 @@ export const correctPunchFn = createServerFn()
       newTimestamp: timestampSchema,
       attendanceDate: dateSchema.optional(),
       note: z.string().max(500).nullable().optional(),
+      reason: z.string().optional(),
     }),
   )
   .handler(async ({ data, context }): Promise<{
@@ -263,6 +308,11 @@ export const correctPunchFn = createServerFn()
         );
       }
 
+      const correctionReason = requireOfflineCorrectionReason(
+        existingPunch,
+        data.reason,
+      );
+
       await tx
         .delete(attendancePunches)
         .where(eq(attendancePunches.id, existingPunch.id));
@@ -282,6 +332,18 @@ export const correctPunchFn = createServerFn()
 
       if (!newPunch) {
         throw new Error("Failed to correct punch");
+      }
+
+      if (correctionReason) {
+        await tx.insert(attendancePunchCorrectionAudit).values({
+          originalPunchId: existingPunch.id,
+          originalImportRowId: existingPunch.offlineImportRowId,
+          action: "correct",
+          oldValues: punchAuditSnapshot(existingPunch),
+          newValues: punchAuditSnapshot(newPunch),
+          reason: correctionReason,
+          changedByUserId: context.session.user.id,
+        });
       }
 
       const previousAttendance =

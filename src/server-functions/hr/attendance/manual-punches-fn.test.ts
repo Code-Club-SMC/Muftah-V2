@@ -36,4 +36,16 @@ describe("manual punch server source", () => {
     expect(manualPunchSource).not.toContain("revalidateOvertimeRequest");
     expect(scanSource).not.toContain("revalidateOvertimeRequest");
   });
+
+  it("requires reasoned audit for offline Excel corrections and deletes", () => {
+    expect(manualPunchSource).toContain("attendancePunchCorrectionAudit");
+    expect(manualPunchSource).toContain("correctionReasonSchema");
+    expect(manualPunchSource).toContain('punch.source !== "offline_excel"');
+    expect(manualPunchSource).toContain("originalImportRowId");
+    expect(manualPunchSource).toContain("offlineImportIdentity");
+    expect(manualPunchSource).toContain('action: "delete"');
+    expect(manualPunchSource).toContain('action: "correct"');
+    expect(manualPunchSource).toContain("oldValues: punchAuditSnapshot");
+    expect(manualPunchSource).toContain("newValues: punchAuditSnapshot");
+  });
 });
