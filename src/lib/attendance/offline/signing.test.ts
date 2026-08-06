@@ -48,9 +48,11 @@ describe("offline workbook signing", () => {
 
   it("creates deterministic workbook signatures", () => {
     const manifest = {
+      format: "titan-offline-attendance" as const,
       workbookId: "wb-1",
       operatorUserId: "operator-1",
       templateVersion: 1,
+      rowCapacity: 20_000,
       signingVersion: 1,
       issuedAt: "2026-08-03T10:00:00.000Z",
     };

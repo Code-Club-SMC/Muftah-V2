@@ -1,17 +1,10 @@
 import { Buffer } from "node:buffer";
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
+import type { WorkbookManifest } from "./contracts";
 import { isOfflineAttendanceEnabled } from "./feature-flag.server";
 
 const signingKeyringSchema = z.record(z.string(), z.string());
-
-export type WorkbookManifest = {
-  workbookId: string;
-  operatorUserId: string;
-  templateVersion: number;
-  signingVersion: number;
-  issuedAt: string;
-};
 
 export type RecordTokenInput = {
   workbookId: string;
@@ -96,9 +89,11 @@ export function getActiveSigningVersion(): number | null {
 
 export function signWorkbookManifest(input: WorkbookManifest) {
   return hmac(input.signingVersion, "offline-workbook-manifest-v1", [
+    input.format,
     input.workbookId,
     input.operatorUserId,
     input.templateVersion,
+    input.rowCapacity,
     input.signingVersion,
     input.issuedAt,
   ]);
