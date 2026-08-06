@@ -65,6 +65,7 @@ import { Route as ProtectedSuppliersSupplierIdDetailsRouteImport } from './route
 import { Route as ProtectedManufacturingRecipesRecipeIdRouteImport } from './routes/_protected/manufacturing/recipes/$recipeId'
 import { Route as ProtectedHrOrderBookerDetailsEmployeeIdRouteImport } from './routes/_protected/hr/order-booker-details/$employeeId'
 import { Route as ProtectedHrEmployeesEmployeeIdRouteImport } from './routes/_protected/hr/employees/$employeeId'
+import { Route as ProtectedHrAttendanceOfflineRouteImport } from './routes/_protected/hr/attendance/offline'
 import { Route as ProtectedHrAttendanceEmployeeIdRouteImport } from './routes/_protected/hr/attendance/$employeeId'
 import { Route as ProtectedManufacturingProductionsRunIdRouteRouteImport } from './routes/_protected/manufacturing/productions/$runId/route'
 import { Route as ProtectedSalesInvoicesInvoiceIdIndexRouteImport } from './routes/_protected/sales/invoices/$invoiceId/index'
@@ -405,6 +406,12 @@ const ProtectedHrEmployeesEmployeeIdRoute =
     path: '/hr/employees/$employeeId',
     getParentRoute: () => ProtectedRouteRoute,
   } as any)
+const ProtectedHrAttendanceOfflineRoute =
+  ProtectedHrAttendanceOfflineRouteImport.update({
+    id: '/hr/attendance/offline',
+    path: '/hr/attendance/offline',
+    getParentRoute: () => ProtectedRouteRoute,
+  } as any)
 const ProtectedHrAttendanceEmployeeIdRoute =
   ProtectedHrAttendanceEmployeeIdRouteImport.update({
     id: '/hr/attendance/$employeeId',
@@ -561,6 +568,7 @@ export interface FileRoutesByFullPath {
   '/user-management/': typeof ProtectedUserManagementIndexRoute
   '/manufacturing/productions/$runId': typeof ProtectedManufacturingProductionsRunIdRouteRouteWithChildren
   '/hr/attendance/$employeeId': typeof ProtectedHrAttendanceEmployeeIdRoute
+  '/hr/attendance/offline': typeof ProtectedHrAttendanceOfflineRoute
   '/hr/employees/$employeeId': typeof ProtectedHrEmployeesEmployeeIdRoute
   '/hr/order-booker-details/$employeeId': typeof ProtectedHrOrderBookerDetailsEmployeeIdRoute
   '/manufacturing/recipes/$recipeId': typeof ProtectedManufacturingRecipesRecipeIdRoute
@@ -637,6 +645,7 @@ export interface FileRoutesByTo {
   '/suppliers': typeof ProtectedSuppliersIndexRoute
   '/user-management': typeof ProtectedUserManagementIndexRoute
   '/hr/attendance/$employeeId': typeof ProtectedHrAttendanceEmployeeIdRoute
+  '/hr/attendance/offline': typeof ProtectedHrAttendanceOfflineRoute
   '/hr/employees/$employeeId': typeof ProtectedHrEmployeesEmployeeIdRoute
   '/hr/order-booker-details/$employeeId': typeof ProtectedHrOrderBookerDetailsEmployeeIdRoute
   '/manufacturing/recipes/$recipeId': typeof ProtectedManufacturingRecipesRecipeIdRoute
@@ -718,6 +727,7 @@ export interface FileRoutesById {
   '/_protected/user-management/': typeof ProtectedUserManagementIndexRoute
   '/_protected/manufacturing/productions/$runId': typeof ProtectedManufacturingProductionsRunIdRouteRouteWithChildren
   '/_protected/hr/attendance/$employeeId': typeof ProtectedHrAttendanceEmployeeIdRoute
+  '/_protected/hr/attendance/offline': typeof ProtectedHrAttendanceOfflineRoute
   '/_protected/hr/employees/$employeeId': typeof ProtectedHrEmployeesEmployeeIdRoute
   '/_protected/hr/order-booker-details/$employeeId': typeof ProtectedHrOrderBookerDetailsEmployeeIdRoute
   '/_protected/manufacturing/recipes/$recipeId': typeof ProtectedManufacturingRecipesRecipeIdRoute
@@ -798,6 +808,7 @@ export interface FileRouteTypes {
     | '/user-management/'
     | '/manufacturing/productions/$runId'
     | '/hr/attendance/$employeeId'
+    | '/hr/attendance/offline'
     | '/hr/employees/$employeeId'
     | '/hr/order-booker-details/$employeeId'
     | '/manufacturing/recipes/$recipeId'
@@ -874,6 +885,7 @@ export interface FileRouteTypes {
     | '/suppliers'
     | '/user-management'
     | '/hr/attendance/$employeeId'
+    | '/hr/attendance/offline'
     | '/hr/employees/$employeeId'
     | '/hr/order-booker-details/$employeeId'
     | '/manufacturing/recipes/$recipeId'
@@ -954,6 +966,7 @@ export interface FileRouteTypes {
     | '/_protected/user-management/'
     | '/_protected/manufacturing/productions/$runId'
     | '/_protected/hr/attendance/$employeeId'
+    | '/_protected/hr/attendance/offline'
     | '/_protected/hr/employees/$employeeId'
     | '/_protected/hr/order-booker-details/$employeeId'
     | '/_protected/manufacturing/recipes/$recipeId'
@@ -1414,6 +1427,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProtectedHrEmployeesEmployeeIdRouteImport
       parentRoute: typeof ProtectedRouteRoute
     }
+    '/_protected/hr/attendance/offline': {
+      id: '/_protected/hr/attendance/offline'
+      path: '/hr/attendance/offline'
+      fullPath: '/hr/attendance/offline'
+      preLoaderRoute: typeof ProtectedHrAttendanceOfflineRouteImport
+      parentRoute: typeof ProtectedRouteRoute
+    }
     '/_protected/hr/attendance/$employeeId': {
       id: '/_protected/hr/attendance/$employeeId'
       path: '/hr/attendance/$employeeId'
@@ -1652,6 +1672,7 @@ interface ProtectedRouteRouteChildren {
   ProtectedUserManagementIndexRoute: typeof ProtectedUserManagementIndexRoute
   ProtectedManufacturingProductionsRunIdRouteRoute: typeof ProtectedManufacturingProductionsRunIdRouteRouteWithChildren
   ProtectedHrAttendanceEmployeeIdRoute: typeof ProtectedHrAttendanceEmployeeIdRoute
+  ProtectedHrAttendanceOfflineRoute: typeof ProtectedHrAttendanceOfflineRoute
   ProtectedHrEmployeesEmployeeIdRoute: typeof ProtectedHrEmployeesEmployeeIdRoute
   ProtectedHrOrderBookerDetailsEmployeeIdRoute: typeof ProtectedHrOrderBookerDetailsEmployeeIdRoute
   ProtectedManufacturingRecipesRecipeIdRoute: typeof ProtectedManufacturingRecipesRecipeIdRoute
@@ -1711,6 +1732,7 @@ const ProtectedRouteRouteChildren: ProtectedRouteRouteChildren = {
   ProtectedManufacturingProductionsRunIdRouteRoute:
     ProtectedManufacturingProductionsRunIdRouteRouteWithChildren,
   ProtectedHrAttendanceEmployeeIdRoute: ProtectedHrAttendanceEmployeeIdRoute,
+  ProtectedHrAttendanceOfflineRoute: ProtectedHrAttendanceOfflineRoute,
   ProtectedHrEmployeesEmployeeIdRoute: ProtectedHrEmployeesEmployeeIdRoute,
   ProtectedHrOrderBookerDetailsEmployeeIdRoute:
     ProtectedHrOrderBookerDetailsEmployeeIdRoute,

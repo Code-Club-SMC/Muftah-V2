@@ -1,8 +1,11 @@
 import { createId } from "@paralleldrive/cuid2";
 import { createServerFn } from "@tanstack/react-start";
-import { and, desc, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, ne, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
+  appPermissions,
+  appRolePermissions,
+  userRoleAssignments,
   attendanceImportBatches,
   attendanceImportRows,
   attendanceOfflineWorkbooks,
@@ -26,6 +29,12 @@ type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 type DbLike = typeof db | Tx;
 type WorkbookRecord = typeof attendanceOfflineWorkbooks.$inferSelect;
 type ImportBatchStatus = typeof attendanceImportBatches.$inferSelect["status"];
+
+export type OfflineAttendanceOperatorOption = {
+  id: string;
+  name: string;
+  email: string;
+};
 
 const UNRESOLVED_IMPORT_BATCH_STATUSES: ReadonlyArray<ImportBatchStatus> = [
   "uploaded",
@@ -203,6 +212,49 @@ export const listOfflineAttendanceWorkbooksFn = createServerFn()
         toWorkbookSummary(row.workbook, row.operatorName ?? "Unknown Operator"),
       ),
     );
+  });
+
+export const listOfflineAttendanceOperatorsFn = createServerFn()
+  .middleware([requireOfflineWorkbookManageMiddleware])
+  .handler(async (): Promise<OfflineAttendanceOperatorOption[]> => {
+    requireOfflineAttendanceEnabled();
+
+    const scanPermission = await db.query.appPermissions.findFirst({
+      where: eq(appPermissions.key, "attendance_terminal.scan"),
+      columns: { id: true },
+    });
+    const rolePermissions = scanPermission
+      ? await db.query.appRolePermissions.findMany({
+          where: eq(appRolePermissions.permissionId, scanPermission.id),
+          columns: { roleId: true },
+        })
+      : [];
+    const roleIds = [...new Set(rolePermissions.map((row) => row.roleId))];
+    const assignments = roleIds.length
+      ? await db.query.userRoleAssignments.findMany({
+          where: inArray(userRoleAssignments.roleId, roleIds),
+          columns: { userId: true },
+        })
+      : [];
+    const assignedUserIds = [
+      ...new Set(assignments.map((assignment) => assignment.userId)),
+    ];
+    const filters = [eq(user.role, "attendance-terminal")];
+    if (assignedUserIds.length > 0) {
+      filters.push(inArray(user.id, assignedUserIds));
+    }
+
+    const rows = await db.query.user.findMany({
+      where: or(...filters),
+      columns: {
+        id: true,
+        name: true,
+        email: true,
+      },
+      orderBy: [asc(user.name), asc(user.email)],
+    });
+
+    return rows;
   });
 
 export const issueOfflineAttendanceWorkbookFn = createServerFn({ method: "POST" })

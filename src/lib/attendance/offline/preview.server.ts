@@ -78,6 +78,7 @@ export type OfflineImportQueueItem = {
   outageStatus: string | null;
   startsAt: string | null;
   endsAt: string | null;
+  reason: string | null;
   counts: OfflineImportCounts;
 };
 
@@ -811,6 +812,7 @@ export async function getOfflineImportQueues(): Promise<OfflineImportQueues> {
     outageStatus: row.outage?.status ?? null,
     startsAt: dateToIso(row.outage?.startsAt ?? null),
     endsAt: dateToIso(row.outage?.endsAt ?? null),
+    reason: row.outage?.reason ?? null,
     counts: batchCounts(row.batch),
   }));
 

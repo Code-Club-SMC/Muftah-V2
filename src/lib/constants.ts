@@ -177,6 +177,19 @@ export const navigations: NavigationItem[] = [
         title: "Attendance",
         url: "/hr/attendance",
         icon: AttendanceIcon,
+        items: [
+          {
+            title: "Daily Attendance",
+            url: "/hr/attendance",
+            icon: AttendanceIcon,
+            exact: true,
+          },
+          {
+            title: "Offline Excel",
+            url: "/hr/attendance/offline",
+            icon: AttendanceIcon,
+          },
+        ],
       },
       {
         title: "Approval Center",

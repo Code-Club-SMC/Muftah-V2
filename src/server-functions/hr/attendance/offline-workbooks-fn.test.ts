@@ -18,6 +18,7 @@ describe("offline attendance workbook management functions", () => {
   it("exports guarded workbook management server functions", () => {
     for (const exportName of [
       "listOfflineAttendanceWorkbooksFn",
+      "listOfflineAttendanceOperatorsFn",
       "issueOfflineAttendanceWorkbookFn",
       "downloadOfflineAttendanceWorkbookFn",
       "replaceOfflineAttendanceWorkbookFn",
@@ -26,8 +27,16 @@ describe("offline attendance workbook management functions", () => {
       expect(source).toContain(`export const ${exportName}`);
     }
 
-    expect(source.match(/requireOfflineAttendanceEnabled\(\)/g)).toHaveLength(5);
+    expect(source.match(/requireOfflineAttendanceEnabled\(\)/g)).toHaveLength(6);
     expect(source).toContain("requireOfflineWorkbookManageMiddleware");
+  });
+
+  it("lists only attendance terminal-capable users for assignment", () => {
+    expect(source).toContain("attendance_terminal.scan");
+    expect(source).toContain("appRolePermissions");
+    expect(source).toContain("userRoleAssignments");
+    expect(source).toContain('eq(user.role, "attendance-terminal")');
+    expect(source).toContain("OfflineAttendanceOperatorOption");
   });
 
   it("keeps workbook rows out of storage and records authenticated issuer metadata", () => {
