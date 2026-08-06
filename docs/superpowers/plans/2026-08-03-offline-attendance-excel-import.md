@@ -357,6 +357,7 @@ git commit -m "build: add secure xlsx processing foundation"
 - Create: `src/db/schemas/offline-attendance-schema.ts`
 - Modify: `src/db/schemas/hr-schema.ts`
 - Modify: `src/db/index.ts`
+- Modify: `drizzle.config.ts`
 - Create: `src/db/migrations/0008_offline_attendance_import.sql`
 - Create: `src/db/migrations/meta/0008_snapshot.json`
 - Modify: `src/db/migrations/meta/_journal.json`

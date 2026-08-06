@@ -10,6 +10,7 @@ import * as coreSuppliers from "./schemas/core-suppliers";
 import * as supplierSchema from "./schemas/supplier-schema";
 import * as hrSchema from "./schemas/hr-schema";
 import * as rbacSchema from "./schemas/rbac-schema";
+import * as offlineAttendanceSchema from "./schemas/offline-attendance-schema";
 
 const schema = {
   ...authSchema,
@@ -22,6 +23,7 @@ const schema = {
   ...coreSuppliers,
   ...hrSchema,
   ...rbacSchema,
+  ...offlineAttendanceSchema,
 };
 
 if (!process.env.DATABASE_URL) {
@@ -108,3 +110,12 @@ export const { suppliers } = coreSuppliers;
 export const { employees, attendance, attendancePunches, attendanceScanAttempts, payrolls, payslips, salaryRevisions, salaryAdvances, nightShiftRates, tadaRates, travelLogs, advanceInstallments, bradfordAuditLog, bradfordSnapshots, hrPayrollSettings } = hrSchema;
 export const { appPermissions, appRolePermissions, appRoles, userRoleAssignments } =
   rbacSchema;
+export const {
+  attendanceOfflineWorkbooks,
+  attendanceOutageWindows,
+  attendanceImportBatches,
+  attendanceImportRows,
+  attendanceTerminalHeartbeats,
+  attendancePunchCorrectionAudit,
+  payrollAttendanceInvalidations,
+} = offlineAttendanceSchema;

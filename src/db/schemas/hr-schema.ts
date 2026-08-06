@@ -12,7 +12,7 @@ import {
   jsonb,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
 import {
   type AllowanceConfig,
@@ -270,13 +270,17 @@ export const attendancePunches = pgTable(
     timestamp: timestamp("timestamp", { withTimezone: true }).notNull(),
     attendanceDate: date("attendance_date").notNull(),
     direction: text("direction", { enum: ["in", "out"] }).notNull(),
-    source: text("source", { enum: ["qr_terminal", "manual"] })
+    source: text("source", {
+      enum: ["qr_terminal", "manual", "offline_excel"],
+    })
       .default("qr_terminal")
       .notNull(),
     terminalUserId: text("terminal_user_id").references(() => user.id, {
       onDelete: "set null",
     }),
     note: text("note"),
+    offlineImportRowId: text("offline_import_row_id"),
+    offlineImportIdentity: text("offline_import_identity"),
     ...timestamps,
   },
   (table) => ({
@@ -286,6 +290,9 @@ export const attendancePunches = pgTable(
     ),
     dateIdx: index("idx_attendance_punches_date").on(table.attendanceDate),
     timestampIdx: index("idx_attendance_punches_timestamp").on(table.timestamp),
+    offlineIdentityIdx: uniqueIndex("attendance_punches_offline_identity_idx")
+      .on(table.offlineImportIdentity)
+      .where(sql`${table.offlineImportIdentity} IS NOT NULL`),
   }),
 );
 

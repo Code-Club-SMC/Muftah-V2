@@ -57,6 +57,13 @@
       "when": 1783944040757,
       "tag": "0007_loving_famine",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1786004779803,
+      "tag": "0008_offline_attendance_import",
+      "breakpoints": true
     }
   ]
 }
