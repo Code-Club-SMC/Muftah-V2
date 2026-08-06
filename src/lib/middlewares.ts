@@ -205,6 +205,24 @@ export const requireHrManageMiddleware = createPermissionMiddleware("hr.manage")
 export const requireAttendanceTerminalMiddleware = createPermissionMiddleware(
   "attendance_terminal.scan",
 );
+export const requireOfflineAttendanceViewMiddleware = createPermissionMiddleware(
+  "attendance.offline.view",
+);
+export const requireOfflineWorkbookManageMiddleware = createPermissionMiddleware(
+  "attendance.offline.workbooks.manage",
+);
+export const requireOfflineAttendanceUploadMiddleware = createPermissionMiddleware(
+  "attendance.offline.upload",
+);
+export const requireOfflineOutageConfirmMiddleware = createPermissionMiddleware(
+  "attendance.offline.outage.confirm",
+);
+export const requireOfflineImportReviewMiddleware = createPermissionMiddleware(
+  "attendance.offline.import.review",
+);
+export const requireOfflineAttendanceAuditMiddleware = createPermissionMiddleware(
+  "attendance.offline.audit.view",
+);
 export const requireOperatorViewMiddleware = createPermissionMiddleware(
   "operator.view",
 );

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  PERMISSION_KEYS,
+  SYSTEM_ROLE_SEEDS,
   LANDING_PATH_OPTIONS,
   canAccessPath,
   getFirstAccessiblePath,
@@ -30,5 +32,36 @@ describe("rbac route rules", () => {
     expect(getFirstAccessiblePath(["attendance_terminal.scan"])).toBe(
       "/attendance/scan",
     );
+  });
+
+  it("locks offline attendance tools to offline attendance permission", () => {
+    expect(PERMISSION_KEYS).toEqual(
+      expect.arrayContaining([
+        "attendance.offline.view",
+        "attendance.offline.workbooks.manage",
+        "attendance.offline.upload",
+        "attendance.offline.outage.confirm",
+        "attendance.offline.import.review",
+        "attendance.offline.audit.view",
+      ]),
+    );
+
+    const adminSeed = SYSTEM_ROLE_SEEDS.find((role) => role.slug === "admin");
+    expect(adminSeed?.permissionKeys).toEqual(
+      expect.arrayContaining([
+        "attendance.offline.view",
+        "attendance.offline.workbooks.manage",
+        "attendance.offline.upload",
+        "attendance.offline.outage.confirm",
+        "attendance.offline.import.review",
+        "attendance.offline.audit.view",
+      ]),
+    );
+
+    expect(
+      canAccessPath("/hr/attendance/offline", ["attendance.offline.view"]),
+    ).toBe(true);
+    expect(canAccessPath("/hr/attendance/offline", ["hr.view"])).toBe(false);
+    expect(canAccessPath("/hr/attendance", ["hr.view"])).toBe(true);
   });
 });

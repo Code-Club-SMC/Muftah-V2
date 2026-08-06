@@ -116,32 +116,37 @@ export async function ensureRbacSeeded() {
 
         for (const roleSeed of SYSTEM_ROLE_SEEDS) {
           const roleRecord = await upsertRoleSeed(tx, roleSeed);
-          const existingPermissionCount = await tx.query.appRolePermissions.findMany({
-            where: eq(appRolePermissions.roleId, roleRecord.id),
-            columns: {
-              roleId: true,
-            },
-          });
 
           if (roleSeed.permissionKeys[0] === "*") {
-            continue;
-          }
-
-          if (existingPermissionCount.length > 0) {
             continue;
           }
 
           const permissionIds = roleSeed.permissionKeys
             .map((permissionKey) => permissionIdByKey.get(permissionKey))
             .filter(Boolean) as string[];
+          const existingPermissionRecords = await tx.query.appRolePermissions.findMany({
+            where: eq(appRolePermissions.roleId, roleRecord.id),
+            columns: {
+              permissionId: true,
+            },
+          });
+          const existingPermissionIds = new Set(
+            existingPermissionRecords.map((permission) => permission.permissionId),
+          );
+          const missingPermissionIds = permissionIds.filter(
+            (permissionId) => !existingPermissionIds.has(permissionId),
+          );
 
-          if (permissionIds.length > 0) {
-            await tx.insert(appRolePermissions).values(
-              permissionIds.map((permissionId) => ({
-                roleId: roleRecord.id,
-                permissionId,
-              })),
-            );
+          if (missingPermissionIds.length > 0) {
+            await tx
+              .insert(appRolePermissions)
+              .values(
+                missingPermissionIds.map((permissionId) => ({
+                  roleId: roleRecord.id,
+                  permissionId,
+                })),
+              )
+              .onConflictDoNothing();
           }
         }
       });
