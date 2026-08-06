@@ -52,6 +52,47 @@ export type OfflineWorkbookSummary = {
   retiredReason: string | null;
 };
 
+export type OfflineParseIssue = {
+  code: string;
+  message: string;
+};
+
+export type ParsedOfflineRow = {
+  worksheetRowNumber: number;
+  recordToken: string;
+  rawEmployeeCode: string;
+  rawDate: string;
+  rawTime: string;
+  rawDirection: string;
+  rawNote: string | null;
+  normalizedTimestamp: string | null;
+  contentHash: string;
+  parseIssues: OfflineParseIssue[];
+};
+
+export type ParsedOfflineWorkbook = {
+  manifest: WorkbookManifest;
+  fileSha256: string;
+  rows: ParsedOfflineRow[];
+};
+
+export type OfflineImportCounts = {
+  totalRows: number;
+  readyRows: number;
+  duplicateRows: number;
+  reviewRows: number;
+  invalidRows: number;
+  blockedRows: number;
+  importedRows: number;
+  excludedRows: number;
+};
+
+export type UploadBatchResult = {
+  batchId: string;
+  status: "awaiting_supervisor" | "rejected";
+  counts: OfflineImportCounts;
+};
+
 export type OfflineWorkbookDownloadHeadersInput = {
   operatorName: string;
   workbookId: string;
