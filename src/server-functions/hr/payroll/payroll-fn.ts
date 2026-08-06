@@ -19,6 +19,10 @@ import { snapshotBradfordForPayroll } from "./bradford-snapshot-fn";
 import { rebuildSalesPerformanceLog } from "./sales-performance-fn";
 import { createId } from "@paralleldrive/cuid2";
 import { getPayrollPeriodFromMonthInput } from "@/lib/payroll-cycle";
+import {
+  assertPayrollAttendanceCurrent,
+  resolvePayrollAttendanceInvalidations,
+} from "@/lib/attendance/offline/payroll-invalidation.server";
 
 // ── Status Workflow Validation ────────────────────────────────────────────────
 type PayrollStatus = "draft" | "approved" | "paid";
@@ -311,6 +315,13 @@ export const generatePayslipsFn = createServerFn()
 
     // Update Payroll Total
     const totalAmount = await syncPayrollTotal(db, payroll.id);
+    await db.transaction(async (tx) => {
+      await resolvePayrollAttendanceInvalidations(
+        tx,
+        payroll.id,
+        context.session.user.id,
+      );
+    });
 
     // Rebuild sales performance logs for order bookers / salesmen (non-blocking)
     const yearMonth = format(monthDate, "yyyy-MM");
@@ -405,6 +416,7 @@ export const approvePayrollFn = createServerFn()
       if (!current) throw new Error("Payroll not found");
 
       validateStatusTransition(current.status as PayrollStatus, "approve");
+      await assertPayrollAttendanceCurrent(tx, data.payrollId);
 
       const payrollPayslips = await tx.query.payslips.findMany({
         where: eq(payslips.payrollId, data.payrollId),
