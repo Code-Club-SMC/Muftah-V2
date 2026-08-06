@@ -38,4 +38,15 @@ describe("scan terminal UI source", () => {
     expect(source).toContain("setTimeout");
     expect(source).toContain("10_000");
   });
+
+  it("shows honest online/offline state and Excel fallback guidance", () => {
+    expect(source).toContain("useTerminalHeartbeat(isOnline)");
+    expect(source).toContain("const isOnline = statusQuery.isSuccess");
+    expect(source).toContain("System Offline");
+    expect(source).toContain("Record attendance in assigned Excel workbook");
+    expect(source).toContain(
+      "Internet unavailable. Record this IN/OUT event in the assigned attendance workbook.",
+    );
+    expect(source).not.toContain("const isOnline = !statusQuery.isError");
+  });
 });

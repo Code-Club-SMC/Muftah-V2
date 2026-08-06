@@ -21,6 +21,7 @@ import {
   terminalStatusQueryKey,
   useTerminalStatus,
 } from "@/hooks/attendance/use-terminal-status";
+import { useTerminalHeartbeat } from "@/hooks/attendance/use-terminal-heartbeat";
 import { cn } from "@/lib/utils";
 
 type ScanResult =
@@ -186,8 +187,14 @@ const TerminalFooter = memo(({
     <div className="flex items-center gap-5">
       <Globe className="w-10 h-10 text-white/80" strokeWidth={1.5} />
       <div className="flex flex-col">
-        <span className="font-semibold text-white text-base">System Online</span>
-        <span className="text-slate-400 text-sm mt-0.5">All systems operational</span>
+        <span className="font-semibold text-white text-base">
+          {isOnline ? "System Online" : "System Offline"}
+        </span>
+        <span className="text-slate-400 text-sm mt-0.5">
+          {isOnline
+            ? "All systems operational"
+            : "Record attendance in assigned Excel workbook"}
+        </span>
       </div>
       <div className={`w-3.5 h-3.5 rounded-full ml-5 shadow-[0_0_12px_rgba(34,197,94,0.6)] ${isOnline ? 'bg-green-500' : 'bg-red-500 shadow-red-500'}`} />
     </div>
@@ -478,6 +485,8 @@ export function ScanTerminal() {
   const [rawPayload, setRawPayload] = useState("");
   const [result, setResult] = useState<ScanResult>({ status: "idle" });
   const [scannerActive, setScannerActive] = useState(false);
+  const isOnline = statusQuery.isSuccess;
+  useTerminalHeartbeat(isOnline);
 
   const scanMutation = useMutation({
     mutationFn: scanAttendanceFn,
@@ -605,11 +614,9 @@ export function ScanTerminal() {
       });
       startTransition(() => setResult(nextResult));
       playBeep(nextResult);
-    } catch (error) {
+    } catch {
       const message =
-        error instanceof Error
-          ? error.message
-          : "Could not reach attendance server";
+        "Internet unavailable. Record this IN/OUT event in the assigned attendance workbook.";
       const nextResult: ScanResult = { status: "error", message };
       startTransition(() => setResult(nextResult));
       playBeep(nextResult);
@@ -618,7 +625,6 @@ export function ScanTerminal() {
     }
   };
 
-  const isOnline = !statusQuery.isError;
   const isIdle = result.status === "idle" || result.status === "processing";
 
   return (
