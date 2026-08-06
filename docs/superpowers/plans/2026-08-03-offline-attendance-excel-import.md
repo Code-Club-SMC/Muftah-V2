@@ -6,7 +6,7 @@
 
 **Architecture:** One permanent signed workbook belongs to one operator. Upload parses the workbook in memory, stores immutable row attempts, merges them with live punches, and confirms safe employee/day groups through short transactions guarded by batch leases, employee advisory locks, and durable record claims. PostgreSQL stores attendance and audit data; uploaded workbook bytes are never stored.
 
-**Tech Stack:** TanStack Start server functions and file routes, React 19, TanStack Query, Zod 4, Drizzle ORM, PostgreSQL, ExcelJS 4.4.0, zip.js 2.8.34, Vitest, Testing Library, fast-check.
+**Tech Stack:** TanStack Start server functions and file routes, React 19, TanStack Query, Zod 4, Drizzle ORM, PostgreSQL, zip.js 2.8.34, saxes 6.0.0, Vitest, Testing Library, fast-check.
 
 ## Global Constraints
 
@@ -173,7 +173,7 @@ git commit -m "test: refresh attendance source safeguards"
 Run:
 
 ```bash
-bun add --exact exceljs@4.4.0 @zip.js/zip.js@2.8.34
+bun add --exact @zip.js/zip.js@2.8.34 saxes@6.0.0
 ```
 
 Replace Docker builder install with:
@@ -340,7 +340,7 @@ bun run build
 docker build -t titan-offline-attendance-plan-check .
 ```
 
-Expected: build commands pass. If audit reports a high or critical issue attributable to either new package, stop and replace that dependency before continuing.
+Expected: build commands pass. Record pre-existing audit findings, but require no high or critical issue attributable to either new package. ExcelJS 4.4.0 was evaluated and rejected because its stale transitive dependencies failed this gate.
 
 - [ ] **Step 9: Commit**
 
@@ -671,7 +671,7 @@ Add all batch, row, preview, actor, and count types used by later tasks here; ke
 
 Assert:
 
-- workbook opens using ExcelJS;
+- generated OOXML package opens in Microsoft Excel and passes the zip.js/saxes package reader;
 - sheets are exactly `Instructions`, `Attendance`, and very-hidden `System`;
 - headers are exact;
 - 20,000 rows have valid tokens;
@@ -839,16 +839,15 @@ Expected: FAIL because parser does not exist.
 
 ```ts
 await inspectXlsxPackage(bytes);
-const workbook = new ExcelJS.Workbook();
-await workbook.xlsx.load(Buffer.from(bytes));
-verifyExactSheets(workbook);
-const manifest = readAndVerifyManifest(workbook);
-verifyAttendanceHeaders(workbook);
-const rows = readLiteralRows(workbook, manifest);
+const parts = await readXlsxParts(bytes);
+verifyExactSheets(parts);
+const manifest = readAndVerifyManifest(parts);
+verifyAttendanceHeaders(parts);
+const rows = readLiteralRows(parts, manifest);
 return { manifest, fileSha256: sha256(bytes), rows };
 ```
 
-Never call `writeFile`, `readFile`, `fs`, or a temporary-file helper. Reject any input cell whose ExcelJS value exposes `formula`, `sharedFormula`, `hyperlink`, or rich/external value objects.
+Never call `writeFile`, `readFile`, `fs`, or a temporary-file helper. Parse only bounded XML parts with saxes. Reject formula elements, hyperlink elements/relationships, shared formulas, rich/external values, unexpected namespaces, and unknown input cell types.
 
 - [ ] **Step 4: Run parser tests**
 
@@ -1799,7 +1798,7 @@ Run:
 rg -n "writeFile|writeFileSync|createWriteStream|tmpdir|object.storage|bytea" src/lib/attendance/offline src/server-functions/hr/attendance/offline-*
 ```
 
-Expected: no disk/object/blob persistence calls. ExcelJS `workbook.xlsx.writeBuffer()` is allowed only in template generation.
+Expected: no disk/object/blob persistence calls. zip.js `ZipWriter.close()` is allowed only for in-memory template generation.
 
 - [ ] **Step 7: Update graph and verify clean diff**
 

@@ -1,20 +1,16 @@
 # --- Stage 1: Install dependencies + build ---
-FROM node:20-alpine AS builder
+FROM oven/bun:1.3.12-alpine AS builder
 
 WORKDIR /app
 
 # Copy package metadata first for better cache reuse.
-COPY package*.json ./
+COPY package.json bun.lock ./
 
-RUN if [ -f package-lock.json ]; then \
-      npm ci --frozen-lockfile; \
-    else \
-      npm install --no-audit --no-fund; \
-    fi
+RUN bun install --frozen-lockfile
 
 COPY . .
 
-RUN npm run build
+RUN bun run build
 
 # --- Stage 2: Production runtime image ---
 FROM node:20-alpine
