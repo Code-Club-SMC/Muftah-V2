@@ -30,12 +30,12 @@ export const useGetInvoices = (params: {
   month?: number;
   year?: number;
   search?: string;
-  status?: "paid" | "credit" | "partial";
+  status?: "paid" | "outstanding" | "partial";
   customerType?: "distributor" | "retailer";
   warehouseId?: string;
   amountMin?: number;
   amountMax?: number;
-  sortBy?: "date" | "totalPrice" | "credit" | "createdAt";
+  sortBy?: "date" | "totalPrice" | "outstandingAmount" | "createdAt";
   sortOrder?: "asc" | "desc";
 }) => {
   return useSuspenseQuery({
@@ -57,7 +57,7 @@ export const useGetInvoiceDetail = (id: string) => {
 export const useGetInvoiceStats = (params?: {
   dateFrom?: string;
   dateTo?: string;
-  status?: "paid" | "credit" | "partial";
+  status?: "paid" | "outstanding" | "partial";
   customerType?: "distributor" | "retailer";
   warehouseId?: string;
   amountMin?: number;

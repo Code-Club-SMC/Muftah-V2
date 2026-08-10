@@ -43,7 +43,6 @@ import {
   CheckCircle2,
   Clock,
   RotateCcw,
-  TrendingUp,
   ShieldAlert,
   MessageSquare,
   Truck,
@@ -52,102 +51,7 @@ import {
 const PKR = (v: number) =>
   `PKR ${v.toLocaleString("en-PK", { minimumFractionDigits: 2 })}`;
 
-interface InvoiceDetailData {
-  invoice: {
-    id: string;
-    slipNumber: string | null;
-    date: string;
-    amount: string;
-    totalPrice: string;
-    cash: string;
-    credit: string;
-    creditReturnDate: string | null;
-    status: string;
-    createdAt: string;
-    remarks: string | null;
-    expenses: string | null;
-    expensesDescription: string | null;
-    invoiceDiscount: string | null;
-    invoiceDiscountDescription: string | null;
-    customer: {
-      id: string;
-      name: string;
-      customerType: string;
-      mobileNumber: string | null;
-      city: string | null;
-      creditLimit: string | null;
-      creditHold: boolean | null;
-    } | null;
-    salesman: { id: string; name: string } | null;
-    warehouse: { id: string; name: string } | null;
-    performer: { id: string; name: string } | null;
-    items: Array<{
-      id: string;
-      pack: string;
-      numberOfCartons: number;
-      quantity: number;
-      perCartonPrice: string;
-      retailPrice: string;
-      actualPackSize: number;
-      amount: string;
-      recipe: { id: string; name: string } | null;
-    }>;
-  };
-  payments: Array<{
-    id: string;
-    amount: string;
-    method: string;
-    reference: string | null;
-    paymentDate: string;
-    recordedBy: { id: string; name: string } | null;
-  }>;
-  slip: {
-    id: string;
-    status: string;
-    recoveryStatus: string | null;
-    escalationLevel: number | null;
-    amountDue: string;
-    amountRecovered: string;
-    recoveryAssignedTo: { id: string; name: string } | null;
-  } | null;
-  returns: Array<{
-    id: string;
-    returnNumber: number;
-    returnDate: string;
-    reason: string;
-    condition: string;
-    totalAmount: string;
-    status: string;
-    approvedBy: { id: string; name: string } | null;
-    stockTraces: Array<{
-      id: string;
-      destination: string;
-      condition: string;
-      cartonsMoved: number;
-      quantityMoved: number;
-      totalUnitsMoved: number;
-      warehouse: { id: string; name: string } | null;
-      recipe: { id: string; name: string } | null;
-    }>;
-    items: Array<{
-      id: string;
-      cartonsReturned: number;
-      quantityReturned: number;
-      totalRefund: string;
-      invoiceItem: { id: string; pack: string } | null;
-      recipe: { id: string; name: string } | null;
-    }>;
-  }>;
-  timeline: Array<{
-    id: string;
-    eventType: string;
-    title: string;
-    description: string | null;
-    eventDate: string;
-    actor: { id: string; name: string } | null;
-    actorName: string | null;
-  }>;
-}
+type InvoiceDetailData = Awaited<ReturnType<typeof getInvoiceDetailFn>>;
 
 export const Route = createFileRoute("/_protected/sales/invoices/$invoiceId/")({
   loader: async ({ context, params }) => {
@@ -180,9 +84,11 @@ function InvoiceDetailContent({ invoiceId }: { invoiceId: string }) {
   if (!data) return null;
   const { invoice, payments, slip, returns, timeline } = data;
 
-  const amountDue = Number(slip?.amountDue ?? invoice.credit);
-  const amountRecovered = Number(slip?.amountRecovered ?? invoice.cash);
-  const isPaid = amountDue === 0;
+  const paidAmount = Number(invoice.paidAmount);
+  const outstandingAmount = Number(invoice.outstandingAmount);
+  const pendingAmount = payments
+    .filter((payment: any) => payment.status === "pending")
+    .reduce((sum: number, payment: any) => sum + Number(payment.amount), 0);
   const invoiceDiscount = Number(invoice.invoiceDiscount ?? 0);
   const isRetailerInvoice = invoice.customer?.customerType === "retailer";
 
@@ -198,8 +104,8 @@ function InvoiceDetailContent({ invoiceId }: { invoiceId: string }) {
                 Back
               </Link>
             </Button>
-            <h1 className="text-2xl font-bold tracking-tight font-mono">{invoice.slipNumber}</h1>
-            <InvoiceStatusBadge status={invoice.status} />
+            <h1 className="text-2xl font-bold tracking-tight font-mono">{invoice.invoiceNumber}</h1>
+            <InvoiceStatusBadge status={invoice.paymentStatus} />
           </div>
           <p className="text-sm text-muted-foreground">
             Created {format(new Date(invoice.createdAt), "dd MMM yyyy HH:mm")} by{" "}
@@ -208,7 +114,7 @@ function InvoiceDetailContent({ invoiceId }: { invoiceId: string }) {
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" asChild>
-            <Link to="/sales/reconciliation" search={{ slip: invoice.slipNumber ?? undefined }}>
+            <Link to="/sales/reconciliation" search={{ slip: invoice.invoiceNumber ?? undefined }}>
               <Banknote className="size-4 mr-1.5" />
               Reconcile
             </Link>
@@ -223,14 +129,9 @@ function InvoiceDetailContent({ invoiceId }: { invoiceId: string }) {
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <KpiCard label="Total Amount" value={PKR(Number(invoice.totalPrice))} icon={Receipt} theme="emerald" />
-        <KpiCard label="Cash Received" value={PKR(Number(invoice.cash))} icon={Banknote} theme="blue" />
-        <KpiCard
-          label={isPaid ? "Credit Closed" : "Credit Outstanding"}
-          value={PKR(amountDue)}
-          icon={isPaid ? CheckCircle2 : AlertTriangle}
-          theme={isPaid ? "emerald" : "rose"}
-        />
-        <KpiCard label="Recovered" value={PKR(amountRecovered)} icon={TrendingUp} theme="violet" />
+        <KpiCard label="Paid Amount" value={PKR(paidAmount)} icon={Banknote} theme="blue" />
+        <KpiCard label="Pending Verification" value={PKR(pendingAmount)} icon={Clock} theme="violet" />
+        <KpiCard label="Outstanding Amount" value={PKR(outstandingAmount)} icon={AlertTriangle} theme={outstandingAmount === 0 ? "emerald" : "rose"} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -257,7 +158,7 @@ function InvoiceDetailContent({ invoiceId }: { invoiceId: string }) {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {invoice.items.map((item) => (
+                {invoice.items.map((item: any) => (
                       <TableRow key={item.id}>
                         <TableCell className="text-sm">
                           <div className="font-medium">{item.pack}</div>
@@ -290,16 +191,42 @@ function InvoiceDetailContent({ invoiceId }: { invoiceId: string }) {
                 <p className="text-sm text-muted-foreground">No payments recorded.</p>
               ) : (
                 <div className="space-y-3">
-                  {payments.map((p) => (
-                    <div key={p.id} className="flex items-center justify-between rounded-lg border p-3">
-                      <div className="space-y-0.5">
-                        <p className="text-sm font-medium capitalize">{p.method.replace("_", " ")}</p>
+                  {payments.map((p: any) => (
+                    <div key={p.id} className="grid gap-3 rounded-lg border p-3 md:grid-cols-[1fr_1fr_auto]">
+                      <div className="space-y-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="text-sm font-medium">{paymentMethodLabel(p.method)}</p>
+                          <Badge variant={paymentStatusVariant(p.status)}>
+                            {paymentStatusLabel(p.status)}
+                          </Badge>
+                        </div>
                         <p className="text-xs text-muted-foreground">
-                          {format(new Date(p.paymentDate), "dd MMM yyyy HH:mm")} · {p.recordedBy?.name ?? "—"}
+                          Destination: {p.wallet?.name ?? "No account"}
                         </p>
-                        {p.reference && <p className="text-xs text-muted-foreground">Ref: {p.reference}</p>}
+                        {p.reference && <p className="text-xs text-muted-foreground">Reference: {p.reference}</p>}
+                        {p.method === "cheque" && (
+                          <p className="text-xs text-muted-foreground">
+                            {p.chequeBank} · Cheque {p.chequeNumber}
+                          </p>
+                        )}
+                        {p.status === "returned" && (
+                          <p className="text-xs text-destructive">Bank did not clear this cheque.</p>
+                        )}
+                        {p.resolutionReason && (
+                          <p className="text-xs text-muted-foreground">Reason: {p.resolutionReason}</p>
+                        )}
                       </div>
-                      <p className="text-sm font-semibold tabular-nums text-emerald-600">{PKR(Number(p.amount))}</p>
+                      <div className="space-y-1 text-xs text-muted-foreground">
+                        <p>Recorded: {formatPaymentDate(p.paymentDate)} by {p.recordedBy?.name ?? "—"}</p>
+                        {p.effectiveDate && <p>Effective: {formatPaymentDate(p.effectiveDate)}</p>}
+                        {p.confirmedAt && (
+                          <p>Confirmed: {formatPaymentDate(p.confirmedAt)} by {p.confirmedBy?.name ?? "—"}</p>
+                        )}
+                        {p.resolvedAt && (
+                          <p>Resolved: {formatPaymentDate(p.resolvedAt)} by {p.resolvedBy?.name ?? "—"}</p>
+                        )}
+                      </div>
+                      <p className="text-sm font-semibold tabular-nums md:text-right">{PKR(Number(p.amount))}</p>
                     </div>
                   ))}
                 </div>
@@ -351,7 +278,7 @@ function InvoiceDetailContent({ invoiceId }: { invoiceId: string }) {
                 <p className="text-sm text-muted-foreground">No returns recorded.</p>
               ) : (
                 <div className="space-y-3">
-                  {returns.map((ret) => (
+                  {returns.map((ret: any) => (
                     <div key={ret.id} className="rounded-lg border p-3 space-y-2">
                       <div className="flex items-center justify-between">
                         <p className="text-sm font-medium">Return #{ret.returnNumber}</p>
@@ -371,7 +298,7 @@ function InvoiceDetailContent({ invoiceId }: { invoiceId: string }) {
                           <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                             Stock Trace
                           </p>
-                          {ret.stockTraces.map((trace) => (
+                          {ret.stockTraces.map((trace: any) => (
                             <p key={trace.id} className="text-xs text-muted-foreground">
                               {trace.recipe?.name ?? "Recipe"}: moved {trace.cartonsMoved} cartons and{" "}
                               {trace.quantityMoved} loose units to {trace.destination} stock in{" "}
@@ -407,7 +334,7 @@ function InvoiceDetailContent({ invoiceId }: { invoiceId: string }) {
                 <p className="text-sm text-muted-foreground">No timeline events yet.</p>
               ) : (
                 <Timeline>
-                  {timeline.map((event, idx) => (
+                  {timeline.map((event: any, idx: number) => (
                     <TimelineItem key={event.id}>
                       {idx < timeline.length - 1 && <TimelineConnector />}
                       <TimelineHeader>
@@ -470,11 +397,11 @@ function InvoiceDetailContent({ invoiceId }: { invoiceId: string }) {
               )}
               <Separator />
               <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">Credit Limit</span>
+                <span className="text-muted-foreground">Pay-Later Limit</span>
                 <span className="font-medium">{PKR(Number(invoice.customer?.creditLimit ?? 0))}</span>
               </div>
               {invoice.customer?.creditHold && (
-                <Badge variant="destructive" className="text-[10px]">Credit Hold</Badge>
+                <Badge variant="destructive" className="text-[10px]">Pay-Later Hold</Badge>
               )}
             </CardContent>
           </Card>
@@ -508,10 +435,10 @@ function InvoiceDetailContent({ invoiceId }: { invoiceId: string }) {
                   <Badge variant="outline" className="text-[10px]">L{slip.escalationLevel}</Badge>
                 </div>
               ) : null}
-              {invoice.creditReturnDate && (
+              {invoice.paymentDueDate && (
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">Due Date</span>
-                  <span className="font-medium">{format(new Date(invoice.creditReturnDate), "dd MMM yyyy")}</span>
+                  <span className="text-muted-foreground">Payment Due Date</span>
+                  <span className="font-medium">{format(new Date(invoice.paymentDueDate), "dd MMM yyyy")}</span>
                 </div>
               )}
             </CardContent>
@@ -547,6 +474,31 @@ function InvoiceDetailContent({ invoiceId }: { invoiceId: string }) {
 }
 
 // ── Small Components ───────────────────────────────────────────────────────
+
+function paymentMethodLabel(method: string) {
+  if (method === "bank_transfer") return "Bank Transfer";
+  if (method === "cheque") return "Cheque";
+  if (method === "expense_offset") return "Expense Offset";
+  return "Cash";
+}
+
+function paymentStatusLabel(status: string) {
+  if (status === "pending") return "Pending Verification";
+  if (status === "returned") return "Cheque Returned";
+  return status.charAt(0).toUpperCase() + status.slice(1);
+}
+
+function paymentStatusVariant(status: string) {
+  if (status === "confirmed") return "default" as const;
+  if (status === "pending") return "secondary" as const;
+  if (status === "returned" || status === "reversed") return "destructive" as const;
+  return "outline" as const;
+}
+
+function formatPaymentDate(value: string | Date) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "—" : format(date, "dd MMM yyyy, h:mm a");
+}
 
 function KpiCard({
   label,
@@ -588,6 +540,7 @@ function InvoiceStatusBadge({ status }: { status: string }) {
     saved: { variant: "outline", label: "Saved" },
     paid: { variant: "default", label: "Paid" },
     partially_paid: { variant: "secondary", label: "Partial" },
+    unpaid: { variant: "outline", label: "Unpaid" },
     voided: { variant: "destructive", label: "Voided" },
   };
   const cfg = map[status] ?? { variant: "outline", label: status };

@@ -10,7 +10,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Separator } from "@/components/ui/separator";
 import {
   Timeline,
   TimelineItem,
@@ -243,7 +242,7 @@ const InvoiceDetailContent = ({
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-lg font-bold">Edit Invoice</h1>
-            <p className="text-xs text-muted-foreground">Modify items, prices, or payment details</p>
+            <p className="text-xs text-muted-foreground">Modify items, prices, notes, or Payment Due Date</p>
           </div>
           <Button variant="outline" size="sm" onClick={() => setIsEditing(false)} className="gap-1" aria-label="Cancel editing invoice">
             <X className="size-3.5" aria-hidden="true" />
@@ -251,7 +250,7 @@ const InvoiceDetailContent = ({
           </Button>
         </div>
         <CreateInvoiceForm
-          initialData={invoice}
+          initialData={{ ...invoice, payments: data?.payments ?? [] }}
           onSuccess={() => {
             setIsEditing(false);
             // onSuccess handled by hook invalidation
@@ -262,8 +261,11 @@ const InvoiceDetailContent = ({
     );
   }
 
-  const cash = Number(invoice.cash);
-  const credit = Number(invoice.credit);
+  const paidAmount = Number(invoice.paidAmount);
+  const outstandingAmount = Number(invoice.outstandingAmount);
+  const pendingAmount = (data?.payments ?? [])
+    .filter((payment: any) => payment.status === "pending")
+    .reduce((sum: number, payment: any) => sum + Number(payment.amount), 0);
   const total = Number(invoice.totalPrice);
   const expenses = Number(invoice.expenses) || 0;
   const invoiceDiscount = Number(invoice.invoiceDiscount) || 0;
@@ -303,8 +305,12 @@ const InvoiceDetailContent = ({
   const roundedDisplayProfit = Math.round(totalProfit);
   const invoiceSaleSummary = buildInvoiceSaleSummary(invoice.items ?? []);
 
-  const statusLabel = credit === 0 ? "Paid" : cash === 0 ? "Credit" : "Partial";
-  const statusVariant = credit === 0 ? "default" : cash === 0 ? "destructive" : "outline";
+  const statusLabel = invoice.paymentStatus === "paid"
+    ? "Paid"
+    : invoice.paymentStatus === "partially_paid"
+      ? "Partially Paid"
+      : "Unpaid";
+  const statusVariant = invoice.paymentStatus === "paid" ? "default" : "outline";
 
   return (
     <div className="space-y-5 py-4">
@@ -385,39 +391,79 @@ const InvoiceDetailContent = ({
       </div>
 
       {/* Payment breakdown */}
-      <div className="flex items-center gap-3 p-3 bg-muted/30 rounded-lg">
-        <div className="flex-1 text-center">
-          <p className="text-[10px] text-muted-foreground uppercase">Cash</p>
-          <p className={cn("text-lg font-bold", cash > 0 ? "text-green-600" : "text-muted-foreground")}>
-            {PKR(cash)}
-          </p>
+      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border bg-border lg:grid-cols-4">
+        {[
+          ["Total Amount", total],
+          ["Paid Amount", paidAmount],
+          ["Pending Verification", pendingAmount],
+          ["Outstanding Amount", outstandingAmount],
+        ].map(([label, value]) => (
+          <div key={label} className="bg-card p-3 text-center">
+            <p className="text-[10px] uppercase text-muted-foreground">{label}</p>
+            <p className="text-lg font-bold tabular-nums">{PKR(Number(value))}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="space-y-3">
+        <div className="flex items-center gap-2">
+          <Banknote className="size-4 text-muted-foreground" aria-hidden="true" />
+          <h2 className="text-sm font-semibold">Payments ({data?.payments?.length ?? 0})</h2>
         </div>
-        <Separator orientation="vertical" className="h-10" />
-        <div className="flex-1 text-center">
-          <p className="text-[10px] text-muted-foreground uppercase">Invoice Expense</p>
-          <p className={cn("text-lg font-bold", expenses > 0 ? "text-amber-600" : "text-muted-foreground")}>
-            {expenses > 0 ? PKR(expenses) : ""}
-          </p>
-        </div>
-        <Separator orientation="vertical" className="h-10" />
-        {isRetailerInvoice && (
-          <>
-            <div className="flex-1 text-center">
-              <p className="text-[10px] text-muted-foreground uppercase">Discount</p>
-              <p className={cn("text-lg font-bold", invoiceDiscount > 0 ? "text-rose-600" : "text-muted-foreground")}>
-                {invoiceDiscount > 0 ? `- ${PKR(invoiceDiscount)}` : ""}
-              </p>
-            </div>
-            <Separator orientation="vertical" className="h-10" />
-          </>
+        {!data?.payments?.length ? (
+          <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+            No payment recorded. The full invoice remains outstanding.
+          </div>
+        ) : (
+          <div className="divide-y overflow-hidden rounded-lg border">
+            {data.payments.map((payment: any) => (
+              <div key={payment.id} className="grid gap-3 p-4 md:grid-cols-[1fr_1fr_auto] md:items-start">
+                <div className="space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="font-medium">{paymentMethodLabel(payment.method)}</p>
+                    <Badge variant={paymentStatusVariant(payment.status)}>
+                      {paymentStatusLabel(payment.status)}
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Destination: {payment.wallet?.name ?? "No account"}
+                  </p>
+                  {payment.reference && (
+                    <p className="text-xs text-muted-foreground">Reference: {payment.reference}</p>
+                  )}
+                  {payment.method === "cheque" && (
+                    <p className="text-xs text-muted-foreground">
+                      {payment.chequeBank} · Cheque {payment.chequeNumber}
+                    </p>
+                  )}
+                  {payment.status === "returned" && (
+                    <p className="text-xs text-destructive">Bank did not clear this cheque.</p>
+                  )}
+                  {payment.resolutionReason && (
+                    <p className="text-xs text-muted-foreground">Reason: {payment.resolutionReason}</p>
+                  )}
+                </div>
+                <div className="space-y-1 text-xs text-muted-foreground">
+                  <p>Recorded: {formatPaymentDate(payment.paymentDate)}</p>
+                  {payment.effectiveDate && <p>Effective: {formatPaymentDate(payment.effectiveDate)}</p>}
+                  {payment.confirmedAt && (
+                    <p>
+                      Confirmed: {formatPaymentDate(payment.confirmedAt)} by {payment.confirmedBy?.name ?? "—"}
+                    </p>
+                  )}
+                  {payment.resolvedAt && (
+                    <p>
+                      Resolved: {formatPaymentDate(payment.resolvedAt)} by {payment.resolvedBy?.name ?? "—"}
+                    </p>
+                  )}
+                </div>
+                <p className="text-base font-bold tabular-nums md:text-right">
+                  {PKR(Number(payment.amount))}
+                </p>
+              </div>
+            ))}
+          </div>
         )}
-        <div className="flex-1 text-center">
-          <p className="text-[10px] text-muted-foreground uppercase">Credit</p>
-          <p className={cn("text-lg font-bold", credit > 0 ? "text-red-600" : "text-green-600")}>
-            {PKR(credit)}
-          </p>
-        </div>
-        <Separator orientation="vertical" className="h-10" />
       </div>
 
       {invoice.remarks && (
@@ -635,6 +681,31 @@ const DeleteInvoiceButton = ({ invoiceId, onSuccess }: { invoiceId: string; onSu
     </Button>
   );
 };
+
+function paymentMethodLabel(method: string) {
+  if (method === "bank_transfer") return "Bank Transfer";
+  if (method === "cheque") return "Cheque";
+  if (method === "expense_offset") return "Expense Offset";
+  return "Cash";
+}
+
+function paymentStatusLabel(status: string) {
+  if (status === "pending") return "Pending Verification";
+  if (status === "returned") return "Cheque Returned";
+  return status.charAt(0).toUpperCase() + status.slice(1);
+}
+
+function paymentStatusVariant(status: string) {
+  if (status === "confirmed") return "default" as const;
+  if (status === "pending") return "secondary" as const;
+  if (status === "returned" || status === "reversed") return "destructive" as const;
+  return "outline" as const;
+}
+
+function formatPaymentDate(value: string | Date) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "—" : format(date, "dd MMM yyyy, h:mm a");
+}
 
 function eventColor(eventType: string) {
   switch (eventType) {

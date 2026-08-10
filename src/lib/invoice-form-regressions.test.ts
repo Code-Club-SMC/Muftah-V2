@@ -447,7 +447,13 @@ describe("invoice create/edit regressions", () => {
     expect(source).toContain("invoiceDiscount");
     expect(source).toContain("const appliedDiscount = Math.min(invoiceDiscount, totalAmount)");
     expect(source).toContain("roundMoney((totalAmount - appliedDiscount) + expenses)");
-    expect(source).toContain("roundMoney(Math.max(0, totalPayable - cashPaid))");
+    expect(source).toContain("calculatePaymentBreakdown(totalPayable, value.payments)");
+    expect(source).toContain("payments: normalizedPayments");
+    expect(source).toContain("paymentDueDate:");
+    expect(source).not.toContain("value.cash");
+    expect(source).not.toContain("value.credit");
+    expect(source).not.toContain("value.account");
+    expect(source).not.toContain("value.creditReturnDate");
     expect(source).toContain("const totalPayable = roundMoney(grossPayable);");
     expect(source).not.toContain("computeProfit(items, availableStock) - expenses");
     expect(source).toContain("totalProfit={totalProfit}");
@@ -458,7 +464,11 @@ describe("invoice create/edit regressions", () => {
     const source = readFileSync(SETTLEMENT_SECTION, "utf8");
 
     expect(source).toContain('step="0.01"');
-    expect(source).toContain('form.setFieldValue("cash", Number(totalPayable.toFixed(2)))');
+    expect(source).toContain('form.setFieldValue("payments", [');
+    expect(source).toContain("amount: Number(totalPayable.toFixed(2))");
+    expect(source).toContain("Paid Amount");
+    expect(source).toContain("Pending Verification");
+    expect(source).toContain("Outstanding Amount");
     expect(source).toContain("FieldLabel>Discount<");
     expect(source).toContain("General-invoice discount.");
     expect(source).toContain("const roundedTotalProfit = Math.round(totalProfit);");

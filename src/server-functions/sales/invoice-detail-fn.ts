@@ -50,7 +50,12 @@ export const getInvoiceDetailFn = createServerFn()
       db.query.payments.findMany({
         where: eq(payments.invoiceId, data.invoiceId),
         orderBy: [desc(payments.paymentDate)],
-        with: { recordedBy: { columns: { id: true, name: true } } },
+        with: {
+          recordedBy: { columns: { id: true, name: true } },
+          confirmedBy: { columns: { id: true, name: true } },
+          resolvedBy: { columns: { id: true, name: true } },
+          wallet: { columns: { id: true, name: true, type: true } },
+        },
       }),
       db.query.slipRecords.findFirst({
         where: eq(slipRecords.invoiceId, data.invoiceId),

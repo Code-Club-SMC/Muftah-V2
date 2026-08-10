@@ -21,7 +21,6 @@ import { getApplicableDistributorFreeCartons } from "@/lib/sales/distributor-dis
 import {
     AlertCircle,
     BanknoteIcon,
-    Building2Icon,
     ChevronRight,
     Info,
     Loader2,
@@ -40,6 +39,11 @@ import type { ItemFormValue, StockItem, RecipePriceEntry } from "./create-invoic
 import { PKR, findStock, Section, ModeToggle, DirtyStateNotifier, blankItem, getLinePricingBreakdown, roundMoney, getLineUnitCostPerPack } from "./create-invoice-form/utils";
 import { InvoiceItemsSection } from "./create-invoice-form/invoice-items-section";
 import { SettlementSection } from "./create-invoice-form/settlement-section";
+import {
+    calculatePaymentBreakdown,
+    findDuplicatePaymentRows,
+    type PaymentInput,
+} from "./create-invoice-form/payment-rows-field";
 
 type Props = {
     onSuccess: () => void;
@@ -60,10 +64,8 @@ type InvoiceFormValues = {
     customerBankAccount: string;
     customerType: "distributor" | "retailer" | "wholesaler";
     warehouseId: string;
-    account: string;
-    cash: number;
-    credit: number;
-    creditReturnDate: string;
+    payments: PaymentInput[];
+    paymentDueDate: string;
     expenses: number;
     expensesDescription: string;
     invoiceDiscount: number;
@@ -208,10 +210,21 @@ export const CreateInvoiceForm = ({ onSuccess, onCancel, onDirtyChange, initialD
             customerBankAccount: "",
             customerType: initialCustomerType,
             warehouseId: resolvedInitialWarehouseId,
-            account: initialData.account || (wallets[0]?.id || ""),
-            cash: Number(initialData.cash) || 0,
-            credit: Number(initialData.credit) || 0,
-            creditReturnDate: initialData.creditReturnDate ? new Date(initialData.creditReturnDate).toISOString().split("T")[0] : "",
+            payments: ((initialData.payments ?? []) as Array<Record<string, any>>).map((payment) => ({
+                method: payment.method,
+                amount: Number(payment.amount) || 0,
+                walletId: payment.walletId || "",
+                reference: payment.reference || "",
+                chequeNumber: payment.chequeNumber || "",
+                chequeBank: payment.chequeBank || "",
+                chequeDate: payment.chequeDate ? new Date(payment.chequeDate).toISOString().split("T")[0] : "",
+                paymentDate: payment.paymentDate
+                    ? new Date(payment.paymentDate).toISOString().slice(0, 16)
+                    : new Date().toISOString().slice(0, 16),
+                sourceRecordId: payment.sourceRecordId || undefined,
+                status: payment.status,
+            })),
+            paymentDueDate: initialData.paymentDueDate ? new Date(initialData.paymentDueDate).toISOString().split("T")[0] : "",
             expenses: Number(initialData.expenses) || 0,
             expensesDescription: initialData.expensesDescription || "",
             invoiceDiscount: Number(initialData.invoiceDiscount) || 0,
@@ -245,10 +258,8 @@ export const CreateInvoiceForm = ({ onSuccess, onCancel, onDirtyChange, initialD
             customerBankAccount: "",
             customerType: initialCustomerType,
             warehouseId: resolvedInitialWarehouseId,
-            account: wallets[0]?.id || "",
-            cash: 0,
-            credit: 0,
-            creditReturnDate: "",
+            payments: [],
+            paymentDueDate: "",
             expenses: 0,
             expensesDescription: "",
             invoiceDiscount: 0,
@@ -280,16 +291,22 @@ export const CreateInvoiceForm = ({ onSuccess, onCancel, onDirtyChange, initialD
             }
             const netSaleAmount = roundMoney(Math.max(0, totalAmount - invoiceDiscount));
             const totalPayable = roundMoney(netSaleAmount + expenses);
-            const cashPaid = roundMoney(Number(value.cash) || 0);
+            const paymentBreakdown = calculatePaymentBreakdown(totalPayable, value.payments);
 
-            if (cashPaid > totalPayable && totalPayable > 0) {
-                toast.error(`Cash received (${PKR(cashPaid)}) cannot exceed total payable (${PKR(totalPayable)}).`);
+            if (paymentBreakdown.overAllocatedAmount > 0) {
+                toast.error(`Payments exceed the invoice total by ${PKR(paymentBreakdown.overAllocatedAmount)}.`);
                 return;
             }
-
-            const credit = roundMoney(Math.max(0, totalPayable - cashPaid));
-            if (credit > 0 && !value.creditReturnDate) {
-                toast.error("Please set a credit due date when credit remains.");
+            if (findDuplicatePaymentRows(value.payments).size > 0) {
+                toast.error("Duplicate payment rows are not allowed.");
+                return;
+            }
+            if (value.payments.some((payment) => Number(payment.amount) <= 0)) {
+                toast.error("Every payment amount must be greater than zero.");
+                return;
+            }
+            if (paymentBreakdown.payLaterAmount > 0 && !value.paymentDueDate) {
+                toast.error("Please set a Payment Due Date for the amount being paid later.");
                 return;
             }
 
@@ -308,9 +325,37 @@ export const CreateInvoiceForm = ({ onSuccess, onCancel, onDirtyChange, initialD
                         legacyBaseCartonRate: 0,
                     };
                 });
+                const normalizedPayments = value.payments.map((payment) => ({
+                    method: payment.method,
+                    amount: roundMoney(Number(payment.amount)),
+                    walletId: payment.walletId,
+                    reference: payment.reference.trim() || undefined,
+                    chequeNumber: payment.chequeNumber.trim() || undefined,
+                    chequeBank: payment.chequeBank.trim() || undefined,
+                    chequeDate: payment.chequeDate
+                        ? new Date(`${payment.chequeDate}T12:00:00`)
+                        : undefined,
+                    paymentDate: new Date(payment.paymentDate),
+                    sourceRecordId: payment.sourceRecordId,
+                }));
+                const commonPayload = {
+                    warehouseId: activeWarehouse,
+                    paymentDueDate: value.paymentDueDate
+                        ? new Date(`${value.paymentDueDate}T12:00:00`)
+                        : undefined,
+                    expenses,
+                    expensesDescription: value.expensesDescription || undefined,
+                    invoiceDiscount,
+                    invoiceDiscountDescription: isRetailerInvoice ? (value.invoiceDiscountDescription || undefined) : undefined,
+                    remarks: value.remarks || undefined,
+                    items: normalizedItems,
+                };
 
-                const payload = {
-                    ...value,
+                if (initialData?.id) {
+                    await updateInvoice({ ...commonPayload, id: initialData.id } as never);
+                } else {
+                    const payload = {
+                    ...commonPayload,
                     items: normalizedItems,
                     customerName: customerMode === "existing" ? undefined : (value.customerName || undefined),
                     customerMobile: customerMode === "existing" ? undefined : (value.customerMobile || undefined),
@@ -319,20 +364,10 @@ export const CreateInvoiceForm = ({ onSuccess, onCancel, onDirtyChange, initialD
                     customerState: customerMode === "existing" ? undefined : (value.customerState || undefined),
                     customerBankAccount: customerMode === "existing" ? undefined : (value.customerBankAccount || undefined),
                     customerId: customerMode === "existing" ? value.customerId : undefined,
-                    warehouseId: activeWarehouse,
-                    credit,
-                    expenses,
-                    expensesDescription: value.expensesDescription || undefined,
-                    invoiceDiscount,
-                    invoiceDiscountDescription: isRetailerInvoice ? (value.invoiceDiscountDescription || undefined) : undefined,
-                    remarks: value.remarks || undefined,
-                    creditReturnDate: value.creditReturnDate ? new Date(value.creditReturnDate) : undefined,
+                    customerType: value.customerType,
+                    payments: normalizedPayments,
                     orderId: initialData?.orderId,
                 };
-
-                if (initialData?.id) {
-                    await updateInvoice({ ...payload, id: initialData.id } as never);
-                } else {
                     const validatedData = createInvoiceSchema.parse(payload);
                     await createInvoice(validatedData as any);
                 }
@@ -346,8 +381,8 @@ export const CreateInvoiceForm = ({ onSuccess, onCancel, onDirtyChange, initialD
                             customerId: "Customer",
                             customerName: "Customer name",
                             warehouseId: "Warehouse",
-                            account: "Payment account",
-                            creditReturnDate: "Credit return date",
+                            payments: "Payments",
+                            paymentDueDate: "Payment Due Date",
                         };
                         const itemMatch = path.match(/^items\[(\d+)\]\.(\w+)$/);
                         if (itemMatch) {
@@ -375,12 +410,6 @@ export const CreateInvoiceForm = ({ onSuccess, onCancel, onDirtyChange, initialD
     useEffect(() => {
         form.setFieldValue("warehouseId", activeWarehouse);
     }, [activeWarehouse, form]);
-
-    useEffect(() => {
-        if (wallets.length > 0 && !form.getFieldValue("account")) {
-            form.setFieldValue("account", wallets[0].id);
-        }
-    }, [wallets, form]);
 
     useEffect(() => {
         if (isDistributorContext) return;
@@ -654,8 +683,8 @@ export const CreateInvoiceForm = ({ onSuccess, onCancel, onDirtyChange, initialD
                     )}
                 </Section>
 
-                <Section icon={Warehouse} title="Dispatch Settings" subtitle="Source warehouse and deposit account" step={2}>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                <Section icon={Warehouse} title="Dispatch Settings" subtitle="Choose where stock will be dispatched from" step={2}>
+                    <div className="max-w-xl">
                         <form.Field name="warehouseId">
                             {(field) => (
                                 <Field>
@@ -680,28 +709,6 @@ export const CreateInvoiceForm = ({ onSuccess, onCancel, onDirtyChange, initialD
                             )}
                         </form.Field>
 
-                        <form.Field name="account">
-                            {(field) => (
-                                <Field>
-                                    <FieldLabel>Deposit Account <span className="text-destructive">*</span></FieldLabel>
-                                    <Select value={field.state.value} onValueChange={field.handleChange}>
-                                        <SelectTrigger><SelectValue placeholder="Select account" /></SelectTrigger>
-                                        <SelectContent>
-                                             {wallets.map((wallet: { id: string; name: string; type?: string }) => (
-                                                <SelectItem key={wallet.id} value={wallet.id}>
-                                                    <span className="flex items-center gap-2">
-                                                        {wallet.type === "bank" ? <Building2Icon className="size-3.5 text-blue-500" /> : <BanknoteIcon className="size-3.5 text-emerald-500" />}
-                                                        {wallet.name}
-                                                    </span>
-                                                </SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                    <FieldDescription>Cash payments will be credited here.</FieldDescription>
-                                    <FieldError errors={field.state.meta.errors} />
-                                </Field>
-                            )}
-                        </form.Field>
                     </div>
                 </Section>
 
@@ -713,7 +720,7 @@ export const CreateInvoiceForm = ({ onSuccess, onCancel, onDirtyChange, initialD
                         const isDistributorInvoice = values.customerType === "distributor";
                         const pricingMode = isDistributorInvoice ? "distributor" : "retailer";
                         const invoiceDiscount = isRetailerInvoice ? roundMoney(Number(values.invoiceDiscount) || 0) : 0;
-                        const cashPaid = roundMoney(Number(values.cash) || 0);
+                        const paymentRows = (values.payments || []) as PaymentInput[];
                         const totalAmount = computeTotal(
                             items,
                             availableStock,
@@ -734,9 +741,6 @@ export const CreateInvoiceForm = ({ onSuccess, onCancel, onDirtyChange, initialD
                         );
                         const grossPayable = roundMoney((totalAmount - appliedDiscount) + expenses);
                         const totalPayable = roundMoney(grossPayable);
-                        const totalCredit = roundMoney(Math.max(0, totalPayable - cashPaid));
-                        const cashExceedsTotal = cashPaid > totalPayable && totalPayable > 0;
-                        const isFullyPaid = totalCredit === 0 && cashPaid > 0;
 
                         return (
                             <div className="space-y-5">
@@ -856,10 +860,9 @@ export const CreateInvoiceForm = ({ onSuccess, onCancel, onDirtyChange, initialD
                                     isRetailerInvoice={isRetailerInvoice}
                                     invoiceDiscount={appliedDiscount}
                                     totalPayable={totalPayable}
-                                    cashPaid={cashPaid}
-                                    totalCredit={totalCredit}
-                                    cashExceedsTotal={cashExceedsTotal}
-                                    isFullyPaid={isFullyPaid}
+                                    payments={paymentRows}
+                                    wallets={wallets}
+                                    isEditing={Boolean(initialData?.id)}
                                     handleFocus={handleFocus}
                                 />
                             </div>
@@ -881,11 +884,11 @@ export const CreateInvoiceForm = ({ onSuccess, onCancel, onDirtyChange, initialD
                             <div className="flex items-center justify-between gap-3 max-w-full">
                                 <p className="text-xs text-muted-foreground hidden sm:block">Please verify all entries before generating the invoice.</p>
                                 <div className="flex gap-2.5 ml-auto">
-                                    <Button type="button" variant="outline" size="lg" onClick={onCancel} disabled={isPending} className="min-w-24">
+                                    <Button type="button" variant="outline" size="lg" onClick={onCancel} disabled={isPending || isSubmitting} className="min-w-24">
                                         Cancel
                                     </Button>
-                                    <Button type="submit" size="lg" disabled={isPending} className="min-w-40 gap-2 font-bold">
-                                        {isPending ? <><Loader2 className="size-4 animate-spin" /> Processing…</> : <><ChevronRight className="size-4" /> Generate Invoice</>}
+                                    <Button type="submit" size="lg" disabled={isPending || isSubmitting} className="min-w-40 gap-2 font-bold">
+                                        {isPending || isSubmitting ? <><Loader2 className="size-4 animate-spin" /> Processing…</> : <><ChevronRight className="size-4" /> Generate Invoice</>}
                                     </Button>
                                 </div>
                             </div>
