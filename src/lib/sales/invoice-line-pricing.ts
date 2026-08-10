@@ -1,3 +1,7 @@
+import { roundMoney } from "@/lib/sales/settlement/money";
+
+export { roundMoney };
+
 export type CanonicalInvoicePricingMode = "general" | "distributor";
 
 // `retailer` remains for compatibility with the current invoice flow.
@@ -53,8 +57,6 @@ export type InvoiceLinePricingBreakdown = {
   costOfGoodsSold: number;
   profit: number;
 };
-
-export const roundMoney = (value: number) => Number(value.toFixed(2));
 
 export const safeContainersPerCarton = (value: number) => Math.max(1, value || 1);
 
