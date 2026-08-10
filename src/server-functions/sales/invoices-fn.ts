@@ -1,10 +1,17 @@
 import { createServerFn } from "@tanstack/react-start";
 import { createId } from "@paralleldrive/cuid2";
 import { invoices, invoiceItems, customers } from "@/db/schemas/sales-schema";
-import { payments, slipRecords, discountRules, priceChangeLog, orders, entityRecipeRates, salesReturns } from "@/db/schemas/sales-erp-schema";
+import {
+  payments,
+  slipRecords,
+  discountRules,
+  priceChangeLog,
+  orders,
+  entityRecipeRates,
+  salesReturns,
+} from "@/db/schemas/sales-erp-schema";
 import { finishedGoodsStock, warehouses } from "@/db/schemas/inventory-schema";
 import { cartons } from "@/db/schemas/manufacturing-schema";
-import { transactions, wallets } from "@/db/schemas/finance-schema";
 import { AppError } from "@/lib/errors";
 import { GENERAL_RECIPE_RATE_ENTITY_ID } from "@/lib/sales/entity-recipe-rate-config";
 import { getApplicableDistributorFreeCartons } from "@/lib/sales/distributor-discount-rules";
@@ -13,37 +20,71 @@ import {
   calculateInvoiceLinePricing,
   type InvoicePricingMode,
 } from "@/lib/sales/invoice-line-pricing";
-import {
-  calculateTotalUnits,
-  calculateTotalInventoryValue,
-} from "@/lib/wac";
-import { calculateCommissionForOrder } from "./order-booker-commission-calc";
+import { calculateTotalUnits, calculateTotalInventoryValue } from "@/lib/wac";
+import { postInvoice } from "./invoice-posting-service";
 import { recordInvoiceTimelineEvent } from "./invoice-timeline-log";
+import { recalculateInvoiceSettlement } from "./settlement-service";
+import {
+  assertSettlementDueDate,
+  calculateSettlement,
+} from "@/lib/sales/settlement/math";
 import {
   requireSalesManageMiddleware,
   requireSalesViewMiddleware,
 } from "@/lib/middlewares";
 import { z } from "zod";
-import { count, sql, eq, and, gte, lte, like, SQL, desc as drizzleDesc, asc as drizzleAsc, sum, gt, or, isNull, inArray, notInArray } from "drizzle-orm";
-import { createInvoiceSchema, updateInvoiceSchema, type CreateInvoiceInput } from "@/db/zod_schemas";
 import {
-  startOfMonth, endOfMonth, startOfYear, endOfYear, parseISO, isValid, endOfDay,
+  count,
+  sql,
+  eq,
+  and,
+  gte,
+  lte,
+  like,
+  SQL,
+  desc as drizzleDesc,
+  asc as drizzleAsc,
+  sum,
+  gt,
+  or,
+  isNull,
+  inArray,
+  notInArray,
+} from "drizzle-orm";
+import {
+  createInvoiceSchema,
+  updateInvoiceSchema,
+  type CreateInvoiceInput,
+} from "@/db/zod_schemas";
+import {
+  startOfMonth,
+  endOfMonth,
+  startOfYear,
+  endOfYear,
+  parseISO,
+  isValid,
+  endOfDay,
 } from "date-fns";
 
 // ── Shared sort config ─────────────────────────────────────────────────────
 const sortFields = {
   date: invoices.date,
   totalPrice: invoices.totalPrice,
-  credit: invoices.credit,
+  outstandingAmount: invoices.outstandingAmount,
   createdAt: invoices.createdAt,
 } as const;
 
 // ── Helper: build invoice status conditions ────────────────────────────────
 const buildStatusCondition = (status: string): SQL | undefined => {
   // Use sql`` casts for numeric comparison on decimal columns (avoids "0" vs "0.00" mismatch)
-  if (status === "paid") return and(sql`${invoices.credit} = 0`, sql`${invoices.cash} > 0`);
-  if (status === "credit") return and(sql`${invoices.cash} = 0`, sql`${invoices.credit} > 0`);
-  if (status === "partial") return and(sql`${invoices.cash} > 0`, sql`${invoices.credit} > 0`);
+  if (status === "paid") return eq(invoices.paymentStatus, "paid");
+  if (status === "outstanding") {
+    return and(
+      eq(invoices.paymentStatus, "unpaid"),
+      sql`${invoices.outstandingAmount} > 0`,
+    );
+  }
+  if (status === "partial") return eq(invoices.paymentStatus, "partially_paid");
   return undefined;
 };
 
@@ -51,9 +92,9 @@ const roundMoney = (value: number) => Number(value.toFixed(2));
 
 const formatMoney = (value: number) => `PKR ${roundMoney(value).toFixed(2)}`;
 
-const INITIAL_INVOICE_PAYMENT_NOTE = "Initial payment on invoice creation";
-
-const getInvoicePricingMode = (customerType: string | null | undefined): InvoicePricingMode =>
+const getInvoicePricingMode = (
+  customerType: string | null | undefined,
+): InvoicePricingMode =>
   customerType === "distributor" ? "distributor" : "retailer";
 
 const resolveFactoryFloorWarehouse = async (tx: any) => {
@@ -80,25 +121,48 @@ const assertInvoiceMutationAllowed = async ({
   invoiceId: string;
   action: "update" | "delete";
 }) => {
+  const invoice = await tx.query.invoices.findFirst({
+    where: eq(invoices.id, invoiceId),
+    columns: { source: true },
+  });
+  if (!invoice) throw new Error("Invoice not found");
+  if (invoice.source === "offline_import") {
+    throw new AppError(
+      "Offline invoices cannot be edited or deleted here.",
+      "OFFLINE_INVOICE_IMMUTABLE",
+      400,
+    );
+  }
+
   const relatedPayments = await tx.query.payments.findMany({
     where: eq(payments.invoiceId, invoiceId),
     columns: {
       id: true,
-      method: true,
-      notes: true,
+      status: true,
     },
   });
 
-  const hasDependentPayments = relatedPayments.some(
-    (payment: { method: string; notes: string | null }) =>
-      payment.method !== "invoice_cash" ||
-      payment.notes !== INITIAL_INVOICE_PAYMENT_NOTE,
-  );
-
-  if (hasDependentPayments) {
+  if (
+    action === "delete" &&
+    relatedPayments.some(
+      (payment: { status: string }) => payment.status === "confirmed",
+    )
+  ) {
     throw new AppError(
-      `Cannot ${action} an invoice that already has recovery or adjustment payments recorded. Reverse those entries first.`,
-      "INVOICE_HAS_DEPENDENT_PAYMENTS",
+      "Reverse confirmed payments before deleting this invoice.",
+      "INVOICE_HAS_CONFIRMED_PAYMENTS",
+      400,
+    );
+  }
+  if (
+    action === "delete" &&
+    relatedPayments.some(
+      (payment: { status: string }) => payment.status === "pending",
+    )
+  ) {
+    throw new AppError(
+      "Cancel or return pending payments before deleting this invoice.",
+      "INVOICE_HAS_PENDING_PAYMENTS",
       400,
     );
   }
@@ -158,7 +222,10 @@ const getCartonInventorySnapshot = async ({
       and(
         eq(cartons.warehouseId, warehouseId),
         eq(cartons.recipeId, recipeId),
-        inArray(cartons.status, OPERATIONAL_CARTON_STATUSES as unknown as string[]),
+        inArray(
+          cartons.status,
+          OPERATIONAL_CARTON_STATUSES as unknown as string[],
+        ),
       ),
     );
 
@@ -172,7 +239,10 @@ const getCartonInventorySnapshot = async ({
       and(
         eq(cartons.warehouseId, warehouseId),
         eq(cartons.recipeId, recipeId),
-        notInArray(cartons.status, UNSALEABLE_CARTON_STATUSES as unknown as string[]),
+        notInArray(
+          cartons.status,
+          UNSALEABLE_CARTON_STATUSES as unknown as string[],
+        ),
       ),
     );
 
@@ -237,7 +307,9 @@ const resolveStockUnitCostPerPack = ({
   const estimatedCost = Number(estimatedCostPerContainer ?? 0);
   if (estimatedCost > 0) return estimatedCost;
 
-  return containersPerCarton > 0 ? fallbackPerCartonPrice / containersPerCarton : 0;
+  return containersPerCarton > 0
+    ? fallbackPerCartonPrice / containersPerCarton
+    : 0;
 };
 
 const resolveConfiguredBaseCartonRate = ({
@@ -267,7 +339,8 @@ const resolveConfiguredBaseCartonRate = ({
   return configuredCartonRate;
 };
 
-const normalizeText = (value: string | null | undefined) => (value ?? "").trim();
+const normalizeText = (value: string | null | undefined) =>
+  (value ?? "").trim();
 
 const formatDateValue = (value: Date | string | null | undefined) => {
   if (!value) return "none";
@@ -519,7 +592,9 @@ const resolveCanonicalInvoiceLine = ({
     unitCostPerPack,
   });
 
-  const wacPerPack = parseFloat(stock.weightedAverageCostPerPack?.toString() || "0");
+  const wacPerPack = parseFloat(
+    stock.weightedAverageCostPerPack?.toString() || "0",
+  );
   const cogsPerUnit = wacPerPack > 0 ? wacPerPack : unitCostPerPack;
   const cogsTotal = roundMoney(pricingBreakdown.dispatchedUnits * cogsPerUnit);
   const revenuePerUnit =
@@ -543,7 +618,8 @@ const resolveCanonicalInvoiceLine = ({
     containersPerCarton,
     chargedUnits: pricingBreakdown.chargedUnits,
     requestedUnits: pricingBreakdown.dispatchedUnits,
-    discountUnits: (manualDiscountCartons + autoFreeCartons) * containersPerCarton,
+    discountUnits:
+      (manualDiscountCartons + autoFreeCartons) * containersPerCarton,
     manualDiscountCartons,
     discountFreeCartons: autoFreeCartons,
     totalDispatchedUnits: pricingBreakdown.dispatchedUnits,
@@ -571,22 +647,26 @@ const resolveCanonicalInvoiceLine = ({
 export const getInvoicesFn = createServerFn()
   .middleware([requireSalesViewMiddleware])
   .inputValidator((input: any) =>
-    z.object({
-      page: z.number().int().positive().default(1),
-      limit: z.number().int().positive().default(10),
-      dateFrom: z.string().optional(),
-      dateTo: z.string().optional(),
-      month: z.number().min(0).max(11).nullable().optional(),
-      year: z.number().optional(),
-      status: z.enum(["paid", "credit", "partial"]).optional(),
-      customerType: z.enum(["distributor", "retailer"]).optional(),
-      warehouseId: z.string().optional(),
-      amountMin: z.number().min(0).optional(),
-      amountMax: z.number().min(0).optional(),
-      search: z.string().optional(),
-      sortBy: z.enum(["date", "totalPrice", "credit", "createdAt"]).default("createdAt"),
-      sortOrder: z.enum(["asc", "desc"]).default("desc"),
-    }).parse(input),
+    z
+      .object({
+        page: z.number().int().positive().default(1),
+        limit: z.number().int().positive().default(10),
+        dateFrom: z.string().optional(),
+        dateTo: z.string().optional(),
+        month: z.number().min(0).max(11).nullable().optional(),
+        year: z.number().optional(),
+        status: z.enum(["paid", "outstanding", "partial"]).optional(),
+        customerType: z.enum(["distributor", "retailer"]).optional(),
+        warehouseId: z.string().optional(),
+        amountMin: z.number().min(0).optional(),
+        amountMax: z.number().min(0).optional(),
+        search: z.string().optional(),
+        sortBy: z
+          .enum(["date", "totalPrice", "outstandingAmount", "createdAt"])
+          .default("createdAt"),
+        sortOrder: z.enum(["asc", "desc"]).default("desc"),
+      })
+      .parse(input),
   )
   .handler(async ({ data }) => {
     const { db } = await import("@/db");
@@ -640,7 +720,7 @@ export const getInvoicesFn = createServerFn()
     if (data.search) {
       const safeSearch = data.search.replace(/[%_]/g, "");
       if (safeSearch) {
-        conditions.push(like(invoices.slipNumber, `%${safeSearch}%`));
+        conditions.push(like(invoices.invoiceNumber, `%${safeSearch}%`));
       }
     }
 
@@ -659,9 +739,10 @@ export const getInvoicesFn = createServerFn()
       with: { customer: true, warehouse: true },
       limit: data.limit,
       offset,
-      orderBy: data.sortOrder === "asc"
-        ? [drizzleAsc(sortColumn)]
-        : [drizzleDesc(sortColumn)],
+      orderBy:
+        data.sortOrder === "asc"
+          ? [drizzleAsc(sortColumn)]
+          : [drizzleDesc(sortColumn)],
     });
 
     return {
@@ -673,604 +754,19 @@ export const getInvoicesFn = createServerFn()
 
 export const createInvoiceFn = createServerFn()
   .middleware([requireSalesManageMiddleware])
-  .inputValidator((input: any) => createInvoiceSchema.parse(input))
+  .inputValidator((input: unknown) => createInvoiceSchema.parse(input))
   .handler(async ({ data, context }) => {
     const { db } = await import("@/db");
-    const userId = context.session.user.id;
 
-    return await db.transaction(async (tx) => {
-      // ── Inline customer creation ─────────────────────────────────────────
-      let customerId = data.customerId;
-      if (!customerId && data.customerName) {
-        const [newCustomer] = await tx
-          .insert(customers)
-          .values({
-            name: data.customerName,
-            mobileNumber: data.customerMobile,
-            cnic: data.customerCnic,
-            city: data.customerCity,
-            state: data.customerState,
-            bankAccount: data.customerBankAccount,
-            customerType: data.customerType || "retailer",
-            salesmanId: data.salesmanId || null,
-          })
-          .returning();
-        customerId = newCustomer.id;
-      }
-
-      if (!customerId) {
-        throw new Error("Customer is required to create an invoice.");
-      }
-
-      // Fetch customer for default margin
-      const customerRecord = await tx.query.customers.findFirst({
-        where: eq(customers.id, customerId),
-        columns: { defaultMargin: true, customerType: true },
-      });
-      const customerDefaultMargin = customerRecord?.defaultMargin
-        ? Number(customerRecord.defaultMargin)
-        : null;
-      const isRetailerInvoice = customerRecord?.customerType === "retailer";
-      const pricingMode = getInvoicePricingMode(customerRecord?.customerType);
-      const factoryFloorWarehouse = await resolveFactoryFloorWarehouse(tx);
-      const stockWarehouseId = factoryFloorWarehouse.id;
-
-      let orderBookerId: string | null = null;
-      let linkedOrderStatus: string | null = null;
-      let linkedOrderFulfilledAmount = 0;
-      if (data.orderId) {
-        const linkedOrder = await tx.query.orders.findFirst({
-          where: eq(orders.id, data.orderId),
-          columns: { id: true, orderBookerId: true, status: true, fulfilledAmount: true },
-        });
-        if (!linkedOrder) {
-          throw new Error("Linked order not found.");
-        }
-
-        if (linkedOrder.status === "returned") {
-          throw new Error("Returned orders cannot be converted into invoices.");
-        }
-
-        const existingLinkedInvoice = await tx.query.invoices.findFirst({
-          where: eq(invoices.orderId, data.orderId),
-          columns: { id: true, slipNumber: true },
-        });
-
-        if (existingLinkedInvoice) {
-          throw new Error(
-            `Order already converted to invoice ${existingLinkedInvoice.slipNumber ?? existingLinkedInvoice.id}.`,
-          );
-        }
-
-        orderBookerId = linkedOrder.orderBookerId;
-        linkedOrderStatus = linkedOrder.status;
-        linkedOrderFulfilledAmount = Number(linkedOrder.fulfilledAmount ?? 0);
-      }
-
-      // Fetch distributor-only active free-unit rules + server-authoritative recipe rates
-      const [distributorDiscountRules, recipePriceMap] = await Promise.all([
-        tx.query.discountRules.findMany({
-          where: and(
-            eq(discountRules.customerId, customerId),
-            eq(discountRules.ruleType, "free_units"),
-            eq(discountRules.isActive, true),
-            lte(discountRules.effectiveFrom, new Date()),
-            or(
-              isNull(discountRules.effectiveTo),
-              gte(discountRules.effectiveTo, new Date())
-            )
-          ),
-        }),
-        buildConfiguredRecipePriceMap({
-          tx,
-          customerType: customerRecord?.customerType,
-          customerId,
-          orderBookerId,
-        }),
-      ]);
-
-      // Cache discount rules by recipeId for fast lookup
-      const discountRulesByRecipe = new Map<string, typeof distributorDiscountRules>();
-      for (const rule of distributorDiscountRules) {
-        if (!rule.recipeId) continue;
-        if (!discountRulesByRecipe.has(rule.recipeId)) {
-          discountRulesByRecipe.set(rule.recipeId, []);
-        }
-        discountRulesByRecipe.get(rule.recipeId)!.push(rule);
-      }
-
-      // ── Single-pass: validate stock + resolve prices + compute totals ─────
-      const lineResolutions: InvoiceLineResolution[] = [];
-      let totalAmount = 0;
-      let totalWeightKg = 0;
-
-      const reservedUnitsByRecipe = new Map<string, number>();
-      const reservedCartonsByRecipe = new Map<string, number>();
-      const physicalAvailableUnitsByRecipe = new Map<string, number>();
-      const cartonSnapshotByRecipe = new Map<string, CartonInventorySnapshot>();
-
-      for (const item of data.items) {
-        const stock = await tx.query.finishedGoodsStock.findFirst({
-          where: and(
-            eq(finishedGoodsStock.warehouseId, stockWarehouseId),
-            item.recipeId
-              ? eq(finishedGoodsStock.recipeId, item.recipeId)
-              : undefined,
-          ),
-          with: { recipe: true },
-        });
-
-        if (!stock) {
-          throw new Error(`Stock record not found for "${item.pack}"`);
-        }
-
-        const containersPerCarton = effectiveCPP(stock.recipe.containersPerCarton ?? 0);
-        const recipeId = item.recipeId;
-        const cartonSnapshot =
-          recipeId && stock.recipe?.cartonPackagingId != null && containersPerCarton > 0
-            ? (cartonSnapshotByRecipe.get(recipeId) ??
-                await getCartonInventorySnapshot({
-                  tx,
-                  warehouseId: stockWarehouseId,
-                  recipeId,
-                }))
-            : null;
-
-        if (recipeId && cartonSnapshot && !cartonSnapshotByRecipe.has(recipeId)) {
-          cartonSnapshotByRecipe.set(recipeId, cartonSnapshot);
-        }
-
-        // Block custom pack sizes to prevent inventory corruption
-        if (item.packsPerCarton && item.packsPerCarton !== containersPerCarton) {
-          throw new Error(
-            `Custom pack sizes are not allowed. Recipe "${item.pack}" uses ${containersPerCarton} per carton, but invoice specifies ${item.packsPerCarton}.`
-          );
-        }
-
-        const availability = buildFinishedGoodsAvailability({
-          stock,
-          containersPerCarton,
-          cartonSnapshot,
-        });
-        const totalAvailableUnits = availability.sellableTotalUnits;
-
-        const manualDiscountCartons =
-          item.unitType === "carton"
-            ? Math.max(0, item.discountCartons ?? 0)
-            : 0;
-
-        if (item.unitType === "carton" && manualDiscountCartons > item.numberOfCartons) {
-          throw new Error(`Manual free cartons cannot exceed entered cartons for "${item.pack}".`);
-        }
-
-        // ── Discount rule evaluation (distributor-specific, buy-N-get-M-free) ──
-        let discountFreeCartons = 0;
-        let matchedDiscountRuleId: string | null = null;
-
-        if (item.unitType === "carton") {
-          const recipeRules = discountRulesByRecipe.get(item.recipeId) || [];
-          const ruleResolution = getApplicableDistributorFreeCartons({
-            rules: recipeRules,
-            recipeId: item.recipeId,
-            numberOfCartons: item.numberOfCartons,
-            manualFreeCartons: manualDiscountCartons,
-          });
-          matchedDiscountRuleId = ruleResolution.ruleId;
-          discountFreeCartons = Math.max(0, ruleResolution.freeCartons);
-        }
-
-        const lineResolution = resolveCanonicalInvoiceLine({
-          item,
-          stock,
-          containersPerCarton,
-          pricingMode,
-          configuredPricePerPack: recipePriceMap.get(item.recipeId),
-          customerDefaultMargin,
-          manualDiscountCartons,
-          autoFreeCartons: discountFreeCartons,
-          discountRuleId: matchedDiscountRuleId,
-          preferConfiguredRate: !item.isPriceOverride && !item.preserveStoredDistributorRate,
-        });
-
-        const alreadyReservedUnits = item.recipeId
-          ? reservedUnitsByRecipe.get(item.recipeId) ?? 0
-          : 0;
-        const alreadyReservedCartons = item.recipeId
-          ? reservedCartonsByRecipe.get(item.recipeId) ?? 0
-          : 0;
-        const remainingAvailableUnits = Math.max(
-          0,
-          totalAvailableUnits - alreadyReservedUnits,
-        );
-        const requestedCartons =
-          item.unitType === "carton"
-            ? item.numberOfCartons +
-              manualDiscountCartons +
-              discountFreeCartons
-            : 0;
-        const remainingAvailableCartons = Math.max(
-          0,
-          availability.sellableCompleteCartons - alreadyReservedCartons,
-        );
-
-        if (item.unitType === "carton" && requestedCartons > remainingAvailableCartons) {
-          throw new Error(
-            `Not enough complete cartons for "${item.pack}". ` +
-              `Available: ${remainingAvailableCartons} cartons.`,
-          );
-        }
-
-        if (lineResolution.totalDispatchedUnits > remainingAvailableUnits) {
-          throw new Error(
-            `Not enough stock for "${item.pack}". ` +
-              `Available: ${Math.floor(remainingAvailableUnits / containersPerCarton)} cartons & ` +
-              `${remainingAvailableUnits % containersPerCarton} units.`,
-          );
-        }
-
-        if (item.recipeId) {
-          physicalAvailableUnitsByRecipe.set(
-            item.recipeId,
-            availability.physicalTotalUnits,
-          );
-          reservedUnitsByRecipe.set(
-            item.recipeId,
-            alreadyReservedUnits + lineResolution.totalDispatchedUnits,
-          );
-          if (item.unitType === "carton") {
-            reservedCartonsByRecipe.set(
-              item.recipeId,
-              alreadyReservedCartons + requestedCartons,
-            );
-          }
-        }
-
-        totalAmount += lineResolution.lineAmount;
-        totalWeightKg += lineResolution.lineWeightKg;
-        lineResolutions.push(lineResolution);
-      }
-
-      const invoiceDiscount = isRetailerInvoice ? roundMoney(Number(data.invoiceDiscount ?? 0)) : 0;
-      if (invoiceDiscount > totalAmount) {
-        throw new Error(
-          `Discount (${invoiceDiscount.toFixed(2)}) cannot exceed items total (${totalAmount.toFixed(2)}).`,
-        );
-      }
-      const netInvoiceAmount = roundMoney(Math.max(0, totalAmount - invoiceDiscount));
-      const totalPayable = roundMoney(netInvoiceAmount + Number(data.expenses ?? 0));
-
-      // cash must not exceed total payable
-      if (data.cash > totalPayable) {
-        throw new Error(
-          `Cash received (${data.cash}) cannot exceed total payable (${totalPayable.toFixed(2)})`,
-        );
-      }
-
-      const computedCredit = roundMoney(Math.max(0, totalPayable - data.cash));
-      if (computedCredit > 0 && !data.creditReturnDate) {
-        throw new Error(
-          "A credit return date is required when credit balance remains.",
-        );
-      }
-
-      // ── Credit limit & credit-hold enforcement ────────────────────────────
-      if (computedCredit > 0) {
-        const customerRecord = await tx.query.customers.findFirst({
-          where: eq(customers.id, customerId),
-          columns: { credit: true, creditLimit: true, creditHold: true, name: true },
-        });
-        if (customerRecord) {
-          if (customerRecord.creditHold) {
-            throw new Error(
-              `Customer "${customerRecord.name}" is on credit hold. New credit invoices are blocked.`,
-            );
-          }
-          const currentCredit = Number(customerRecord.credit) || 0;
-          const creditLimit = Number(customerRecord.creditLimit) || 0;
-          if (creditLimit > 0 && currentCredit + computedCredit > creditLimit) {
-            throw new Error(
-              `Credit limit exceeded for "${customerRecord.name}". ` +
-                `Limit: PKR ${creditLimit.toFixed(2)}, Current outstanding: PKR ${currentCredit.toFixed(2)}, ` +
-                `This invoice credit: PKR ${computedCredit.toFixed(2)}.`,
-            );
-          }
-        }
-      }
-
-      // Derive invoice status from payment amounts
-      const invoiceStatus =
-        computedCredit === 0
-          ? "paid"
-          : data.cash > 0
-            ? "partially_paid"
-            : "saved";
-
-      // ── Create invoice ────────────────────────────────────────────────────
-      const [invoice] = await tx
-        .insert(invoices)
-        .values({
-          customerId,
-          account: data.account,
-          cash: data.cash.toString(),
-          credit: computedCredit.toString(),
-          creditReturnDate: data.creditReturnDate || null,
-          expenses: (data.expenses ?? 0).toString(),
-          expensesDescription: data.expensesDescription,
-          invoiceDiscount: invoiceDiscount.toString(),
-          invoiceDiscountDescription: isRetailerInvoice ? data.invoiceDiscountDescription : null,
-          amount: netInvoiceAmount.toString(),
-          totalPrice: totalPayable.toString(),
-          remarks: data.remarks,
-          warehouseId: data.warehouseId,
-          stockWarehouseId,
-          performedById: userId,
-          salesmanId: data.salesmanId || null,
-          status: invoiceStatus,
-          date: new Date(),
-          orderId: data.orderId || null,
-          orderBookerId,
-        })
-        .returning();
-
-      // ── Mark linked order as delivered ───────────────────────────────────
-      if (data.orderId && orderBookerId) {
-        const commissionBaseAmount =
-          linkedOrderStatus === "delivered" && linkedOrderFulfilledAmount > 0
-            ? linkedOrderFulfilledAmount
-            : totalPayable;
-
-        if (linkedOrderStatus !== "delivered") {
-          await tx
-            .update(orders)
-            .set({
-              status: "delivered",
-              fulfilledAt: new Date(),
-              fulfilledAmount: commissionBaseAmount.toString(),
-              updatedAt: new Date(),
-            })
-            .where(eq(orders.id, data.orderId));
-        }
-
-        await calculateCommissionForOrder(
-          tx,
-          orderBookerId,
-          data.orderId,
-          commissionBaseAmount,
-        );
-      }
-
-      const slipNumber = `INV-${invoice.sNo}`;
-
-      // Set slip number
-      await tx
-        .update(invoices)
-        .set({ slipNumber })
-        .where(eq(invoices.id, invoice.id));
-
-      // ── Create slip record ────────────────────────────────────────────────
-      await tx.insert(slipRecords).values({
-        id: createId(),
-        slipNumber,
-        invoiceId: invoice.id,
-        customerId,
-        salesmanId: data.salesmanId || null,
-        amountDue: computedCredit.toString(),
-        amountRecovered: data.cash.toString(),
-        status: computedCredit === 0 ? "closed" : "open",
-        issuedAt: new Date(),
-      });
-
-      // ── Timeline event ────────────────────────────────────────────────────
-      await recordInvoiceTimelineEvent(
-        {
-          invoiceId: invoice.id,
-          eventType: "created",
-          title: `Invoice ${slipNumber} created`,
-          description:
-            `Total: PKR ${totalPayable.toFixed(2)}. ` +
-            `Cash: PKR ${data.cash.toFixed(2)}, Credit: PKR ${computedCredit.toFixed(2)}. ` +
-            (invoiceDiscount > 0 ? `Discount: PKR ${invoiceDiscount.toFixed(2)}. ` : "") +
-            (data.creditReturnDate ? `Due date: ${data.creditReturnDate}.` : ""),
-          metadata: {
-            slipNumber,
-            totalPrice: totalPayable,
-            invoiceDiscount,
-            cash: data.cash,
-            credit: computedCredit,
-            creditReturnDate: data.creditReturnDate ?? null,
-            warehouseId: data.warehouseId,
-            stockWarehouseId,
-            customerId,
-          },
-          actorId: userId,
-        },
-        tx,
-      );
-
-      // ── Wallet credit ─────────────────────────────────────────────────────
-      if (data.cash > 0 && data.account) {
-        const wallet = await tx.query.wallets.findFirst({
-          where: eq(wallets.id, data.account),
-        });
-        if (!wallet) throw new Error("Wallet not found");
-
-        await tx
-          .update(wallets)
-          .set({ balance: sql`${wallets.balance} + ${data.cash}` })
-          .where(eq(wallets.id, data.account));
-
-        await tx.insert(transactions).values({
-          id: createId(),
-          walletId: data.account,
-          type: "credit",
-          amount: data.cash.toString(),
-          referenceId: invoice.id,
-          source: "Sale",
-          performedById: userId,
-        });
-
-        await tx.insert(payments).values({
-          id: createId(),
-          customerId,
-          invoiceId: invoice.id,
-          amount: data.cash.toString(),
-          method: "invoice_cash",
-          reference: slipNumber,
-          recordedById: userId,
-          paymentDate: new Date(),
-          notes: "Initial payment on invoice creation",
-        });
-
-        await recordInvoiceTimelineEvent(
-          {
-            invoiceId: invoice.id,
-            eventType: "payment",
-            title: `Payment received: PKR ${data.cash.toFixed(2)}`,
-            description: `Cash payment recorded into wallet ${wallet.name}.`,
-            metadata: {
-              paymentMethod: "cash",
-              amount: data.cash,
-              walletId: wallet.id,
-              walletName: wallet.name,
-            },
-            actorId: userId,
-          },
-          tx,
-        );
-      }
-
-      // ── Insert line items + deduct stock (single loop, uses cached resolutions) ──
-      const remainingUnitsByRecipe = new Map<string, number>();
-      for (const r of lineResolutions) {
-        if (!r.item.recipeId) continue;
-
-        const stockKey = r.item.recipeId;
-        const totalAvailableUnits =
-          physicalAvailableUnitsByRecipe.get(stockKey) ??
-          (r.stock.quantityCartons * r.containersPerCarton +
-            r.stock.quantityContainers);
-        const currentRemainingUnits =
-          stockKey && remainingUnitsByRecipe.has(stockKey)
-            ? remainingUnitsByRecipe.get(stockKey)!
-            : totalAvailableUnits;
-        const remainingUnits = currentRemainingUnits - r.totalDispatchedUnits;
-
-        if (stockKey) {
-          remainingUnitsByRecipe.set(stockKey, remainingUnits);
-        }
-
-        const hasCartons =
-          (r.stock as any).recipe?.cartonPackagingId != null &&
-          (r.stock as any).recipe?.containersPerCarton != null &&
-          (r.stock as any).recipe?.containersPerCarton > 0;
-
-        const finalQuantityCartons = hasCartons
-          ? Math.floor(remainingUnits / r.containersPerCarton)
-          : 0;
-        const finalQuantityContainers = hasCartons
-          ? remainingUnits % r.containersPerCarton
-          : remainingUnits;
-
-        // Recalculate total inventory value after stock deduction.
-        // WAC per unit stays the same on dispatch; only total value changes.
-        const remainingTotalUnits = calculateTotalUnits(
-          finalQuantityCartons,
-          finalQuantityContainers,
-          r.containersPerCarton,
-        );
-        const newTotalValue = calculateTotalInventoryValue(
-          remainingTotalUnits,
-          r.cogsPerUnit,
-        );
-
-        await tx
-          .update(finishedGoodsStock)
-          .set({
-            quantityCartons: finalQuantityCartons,
-            quantityContainers: finalQuantityContainers,
-            totalInventoryValue: newTotalValue.toFixed(2),
-            updatedAt: new Date(),
-          })
-          .where(
-            and(
-              eq(finishedGoodsStock.warehouseId, stockWarehouseId),
-              eq(finishedGoodsStock.recipeId, r.item.recipeId),
-            ),
-          );
-
-        await tx.insert(invoiceItems).values({
-          id: createId(),
-          invoiceId: invoice.id,
-          recipeId: r.item.recipeId,
-          pack: r.item.pack,
-          numberOfCartons:
-            r.item.unitType === "carton" ? r.item.numberOfCartons : 0,
-          discountCartons: r.manualDiscountCartons,
-          freeCartons: r.discountFreeCartons,
-          quantity: r.item.unitType === "units" ? r.item.numberOfUnits : 0,
-          packsPerCarton: r.containersPerCarton,
-          actualPackSize: r.containersPerCarton,
-          chargedUnits: r.chargedUnits,
-          dispatchedUnits: r.totalDispatchedUnits,
-          fillAmountSnapshot: r.fillAmountSnapshot.toFixed(3),
-          fillUnitSnapshot: r.fillUnitSnapshot,
-          perCartonPrice: r.pricingBreakdown.baseCartonRate.toString(),
-          amount: r.pricingBreakdown.netAmount.toString(),
-          hsnCode: r.item.hsnCode,
-          retailPrice: r.item.retailPrice.toString(),
-          margin: r.unitMargin.toString(),
-          totalWeight: r.lineWeightKg.toFixed(3),
-          tpPrice: r.tpPrice !== null ? r.tpPrice.toString() : null,
-          marginPercent:
-            r.marginPercent !== null ? r.marginPercent.toString() : null,
-          isPriceOverride: r.item.isPriceOverride,
-          discountRuleId: r.discountRuleId,
-          costOfGoodsSold: r.cogsTotal.toFixed(2),
-          costOfGoodsSoldPerUnit: r.cogsPerUnit.toFixed(4),
-        });
-
-        // ── Log pricing decision to audit trail ────────────────────────────
-        if (r.productId) {
-          await tx.insert(priceChangeLog).values({
-            id: createId(),
-            productId: r.productId,
-            customerId: customerId,
-            oldPrice: r.sourceBaseCartonRate.toString(),
-            newPrice: r.pricingBreakdown.baseCartonRate.toString(),
-            changedById: userId,
-            source: "invoice_calculation",
-            invoiceId: invoice.id,
-            metadata: {
-              discountRuleId: r.discountRuleId,
-              freeCartons: r.discountFreeCartons,
-              manualFreeCartons: r.manualDiscountCartons,
-              appliedMarginPercent: r.marginPercent,
-              grossAmount: r.pricingBreakdown.grossAmount,
-              marginDeduction: r.pricingBreakdown.marginDeduction,
-              schemeDeduction: r.pricingBreakdown.schemeDeduction,
-              netAmount: r.pricingBreakdown.netAmount,
-              effectiveCartonRate: r.pricingBreakdown.effectiveCartonRate,
-              preserveStoredDistributorRate: Boolean(r.item.preserveStoredDistributorRate),
-              isPriceOverride: r.item.isPriceOverride,
-            },
-          });
-        }
-      }
-
-      // ── Update customer ledger ────────────────────────────────────────────
-      await tx
-        .update(customers)
-        .set({
-          totalSale: sql`${customers.totalSale} + ${netInvoiceAmount}`,
-          payment: sql`${customers.payment} + ${data.cash}`,
-          credit: sql`${customers.credit} + ${computedCredit}`,
-          weightSaleKg: sql`${customers.weightSaleKg} + ${totalWeightKg}`,
-          expenses: sql`${customers.expenses} + ${data.expenses ?? 0}`,
-        })
-        .where(eq(customers.id, customerId));
-
-      return { ...invoice, slipNumber };
-    });
+    return db.transaction((tx) =>
+      postInvoice(tx, {
+        ...data,
+        performedById: context.session.user.id,
+        source: "online",
+        businessDate: new Date(),
+        stockPolicy: "strict",
+      }),
+    );
   });
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1278,9 +774,7 @@ export const createInvoiceFn = createServerFn()
 // ═══════════════════════════════════════════════════════════════════════════
 export const getInvoiceDetailFn = createServerFn()
   .middleware([requireSalesViewMiddleware])
-  .inputValidator((input: any) =>
-    z.object({ id: z.string() }).parse(input),
-  )
+  .inputValidator((input: any) => z.object({ id: z.string() }).parse(input))
   .handler(async ({ data }) => {
     const { db } = await import("@/db");
     const invoice = await db.query.invoices.findFirst({
@@ -1306,15 +800,18 @@ export const getInvoiceDetailFn = createServerFn()
 export const getInvoiceStatsFn = createServerFn()
   .middleware([requireSalesViewMiddleware])
   .inputValidator((input: any) =>
-    z.object({
-      dateFrom: z.string().optional(),
-      dateTo: z.string().optional(),
-      status: z.enum(["paid", "credit", "partial"]).optional(),
-      customerType: z.enum(["distributor", "retailer"]).optional(),
-      warehouseId: z.string().optional(),
-      amountMin: z.number().min(0).optional(),
-      amountMax: z.number().min(0).optional(),
-    }).passthrough().parse(input),
+    z
+      .object({
+        dateFrom: z.string().optional(),
+        dateTo: z.string().optional(),
+        status: z.enum(["paid", "outstanding", "partial"]).optional(),
+        customerType: z.enum(["distributor", "retailer"]).optional(),
+        warehouseId: z.string().optional(),
+        amountMin: z.number().min(0).optional(),
+        amountMax: z.number().min(0).optional(),
+      })
+      .passthrough()
+      .parse(input),
   )
   .handler(async ({ data }) => {
     const { db } = await import("@/db");
@@ -1364,19 +861,26 @@ export const getInvoiceStatsFn = createServerFn()
       .where(whereClause);
 
     // Total outstanding credit
-    const outstandingConditions = [...conditions, gt(invoices.credit, "0")];
-    const outstandingWhere = outstandingConditions.length > 0 ? and(...outstandingConditions) : undefined;
+    const outstandingConditions = [
+      ...conditions,
+      gt(invoices.outstandingAmount, "0"),
+    ];
+    const outstandingWhere =
+      outstandingConditions.length > 0
+        ? and(...outstandingConditions)
+        : undefined;
 
     const [outstandingResult] = await db
-      .select({ value: sum(invoices.credit) })
+      .select({ value: sum(invoices.outstandingAmount) })
       .from(invoices)
       .leftJoin(customers, eq(invoices.customerId, customers.id))
       .where(outstandingWhere);
 
     // Average invoice value
-    const avgValue = countResult.value > 0
-      ? Number(revenueResult.value ?? 0) / Number(countResult.value)
-      : 0;
+    const avgValue =
+      countResult.value > 0
+        ? Number(revenueResult.value ?? 0) / Number(countResult.value)
+        : 0;
 
     return {
       totalInvoices: Number(countResult.value) || 0,
@@ -1392,12 +896,9 @@ export const getInvoiceStatsFn = createServerFn()
 // ═══════════════════════════════════════════════════════════════════════════
 export const deleteInvoiceFn = createServerFn()
   .middleware([requireSalesManageMiddleware])
-  .inputValidator((input: any) =>
-    z.object({ id: z.string() }).parse(input),
-  )
-  .handler(async ({ data, context }) => {
+  .inputValidator((input: any) => z.object({ id: z.string() }).parse(input))
+  .handler(async ({ data }) => {
     const { db } = await import("@/db");
-    const userId = context.session.user.id;
 
     return await db.transaction(async (tx) => {
       const invoice = await tx.query.invoices.findFirst({
@@ -1420,42 +921,17 @@ export const deleteInvoiceFn = createServerFn()
         .update(customers)
         .set({
           totalSale: sql`${customers.totalSale} - ${invoice.amount}`,
-          payment: sql`${customers.payment} - ${invoice.cash}`,
-          credit: sql`${customers.credit} - ${invoice.credit}`,
+          outstandingAmount: sql`${customers.outstandingAmount} - ${invoice.outstandingAmount}`,
           weightSaleKg: sql`${customers.weightSaleKg} - ${invoice.items.reduce((acc, item) => acc + Number(item.totalWeight), 0)}`,
           expenses: sql`${customers.expenses} - ${invoice.expenses}`,
         })
         .where(eq(customers.id, invoice.customerId));
 
-      // Reverse wallet transaction (if cash was received)
-      const cashAmount = Number(invoice.cash);
-      if (cashAmount > 0 && invoice.account) {
-        const wallet = await tx.query.wallets.findFirst({
-          where: eq(wallets.id, invoice.account),
-        });
-        if (wallet) {
-          await tx
-            .update(wallets)
-            .set({ balance: sql`${wallets.balance} - ${cashAmount}` })
-            .where(eq(wallets.id, invoice.account));
-
-          // Record reversal transaction
-          await tx.insert(transactions).values({
-            id: createId(),
-            walletId: invoice.account,
-            type: "debit",
-            amount: cashAmount.toString(),
-            referenceId: data.id,
-            source: "Sale Reversal",
-            performedById: userId,
-          });
-        }
-      }
-
       // Restore stock
       for (const item of invoice.items) {
         if (!item.recipeId) continue;
-        const stockWarehouseId = invoice.stockWarehouseId ?? invoice.warehouseId;
+        const stockWarehouseId =
+          invoice.stockWarehouseId ?? invoice.warehouseId;
 
         const stock = await tx.query.finishedGoodsStock.findFirst({
           where: and(
@@ -1467,7 +943,9 @@ export const deleteInvoiceFn = createServerFn()
 
         if (!stock) continue;
 
-        const containersPerCarton = effectiveCPP(stock.recipe.containersPerCarton ?? 0);
+        const containersPerCarton = effectiveCPP(
+          stock.recipe.containersPerCarton ?? 0,
+        );
         const totalUnitsToRestore = getSavedInvoiceItemDispatchedUnits(
           item,
           containersPerCarton,
@@ -1487,9 +965,16 @@ export const deleteInvoiceFn = createServerFn()
         }).physicalTotalUnits;
         const newUnits = currentUnits + totalUnitsToRestore;
 
-        const hasCartons = stock.recipe.cartonPackagingId != null && stock.recipe.containersPerCarton != null && stock.recipe.containersPerCarton > 0;
-        const finalQuantityCartons = hasCartons ? Math.floor(newUnits / containersPerCarton) : 0;
-        const finalQuantityContainers = hasCartons ? (newUnits % containersPerCarton) : newUnits;
+        const hasCartons =
+          stock.recipe.cartonPackagingId != null &&
+          stock.recipe.containersPerCarton != null &&
+          stock.recipe.containersPerCarton > 0;
+        const finalQuantityCartons = hasCartons
+          ? Math.floor(newUnits / containersPerCarton)
+          : 0;
+        const finalQuantityContainers = hasCartons
+          ? newUnits % containersPerCarton
+          : newUnits;
 
         const wacPerPack = parseFloat(
           stock.weightedAverageCostPerPack?.toString() || "0",
@@ -1499,7 +984,10 @@ export const deleteInvoiceFn = createServerFn()
           finalQuantityContainers,
           containersPerCarton,
         );
-        const newTotalValue = calculateTotalInventoryValue(totalUnits, wacPerPack);
+        const newTotalValue = calculateTotalInventoryValue(
+          totalUnits,
+          wacPerPack,
+        );
 
         await tx
           .update(finishedGoodsStock)
@@ -1518,7 +1006,9 @@ export const deleteInvoiceFn = createServerFn()
       }
 
       // Delete related records, then invoice (no cascades on payments/slips)
-      await tx.delete(priceChangeLog).where(eq(priceChangeLog.invoiceId, data.id));
+      await tx
+        .delete(priceChangeLog)
+        .where(eq(priceChangeLog.invoiceId, data.id));
       await tx.delete(payments).where(eq(payments.invoiceId, data.id));
       await tx.delete(slipRecords).where(eq(slipRecords.invoiceId, data.id));
       await tx.delete(invoices).where(eq(invoices.id, data.id));
@@ -1554,11 +1044,12 @@ export const updateInvoiceFn = createServerFn()
       const customerId = existing.customerId;
 
       // 2. Reverse OLD changes
-      
+
       // Reverse Stock
       for (const oldItem of existing.items) {
         if (!oldItem.recipeId) continue;
-        const oldStockWarehouseId = existing.stockWarehouseId ?? existing.warehouseId;
+        const oldStockWarehouseId =
+          existing.stockWarehouseId ?? existing.warehouseId;
 
         const stock = await tx.query.finishedGoodsStock.findFirst({
           where: and(
@@ -1588,9 +1079,16 @@ export const updateInvoiceFn = createServerFn()
         }).physicalTotalUnits;
         const restoredUnits = currentUnits + oldUnits;
 
-        const hasCartons = stock.recipe.cartonPackagingId != null && stock.recipe.containersPerCarton != null && stock.recipe.containersPerCarton > 0;
-        const finalQuantityCartons = hasCartons ? Math.floor(restoredUnits / cpp) : 0;
-        const finalQuantityContainers = hasCartons ? (restoredUnits % cpp) : restoredUnits;
+        const hasCartons =
+          stock.recipe.cartonPackagingId != null &&
+          stock.recipe.containersPerCarton != null &&
+          stock.recipe.containersPerCarton > 0;
+        const finalQuantityCartons = hasCartons
+          ? Math.floor(restoredUnits / cpp)
+          : 0;
+        const finalQuantityContainers = hasCartons
+          ? restoredUnits % cpp
+          : restoredUnits;
 
         const wacPerPack = parseFloat(
           stock.weightedAverageCostPerPack?.toString() || "0",
@@ -1600,7 +1098,10 @@ export const updateInvoiceFn = createServerFn()
           finalQuantityContainers,
           cpp,
         );
-        const newTotalValue = calculateTotalInventoryValue(totalUnits, wacPerPack);
+        const newTotalValue = calculateTotalInventoryValue(
+          totalUnits,
+          wacPerPack,
+        );
 
         await tx
           .update(finishedGoodsStock)
@@ -1619,41 +1120,23 @@ export const updateInvoiceFn = createServerFn()
       }
 
       // Reverse Ledger/Customer Stats
-      const oldTotalWeight = existing.items.reduce((acc, it) => acc + Number(it.totalWeight), 0);
+      const oldTotalWeight = existing.items.reduce(
+        (acc, it) => acc + Number(it.totalWeight),
+        0,
+      );
       await tx
         .update(customers)
         .set({
           totalSale: sql`${customers.totalSale} - ${Number(existing.amount)}`,
-          payment: sql`${customers.payment} - ${Number(existing.cash)}`,
-          credit: sql`${customers.credit} - ${Number(existing.credit)}`,
           weightSaleKg: sql`${customers.weightSaleKg} - ${oldTotalWeight}`,
           expenses: sql`${customers.expenses} - ${Number(existing.expenses)}`,
         })
         .where(eq(customers.id, customerId));
 
-      // Reverse Wallet/Transaction if cash was paid
-      if (Number(existing.cash) > 0 && existing.account) {
-          await tx
-            .update(wallets)
-            .set({ balance: sql`${wallets.balance} - ${existing.cash}` })
-            .where(eq(wallets.id, existing.account));
-            
-          await tx.delete(transactions).where(
-            and(
-              eq(transactions.referenceId, existing.id),
-              eq(transactions.source, "Sale"),
-            ),
-          );
-          await tx.delete(payments).where(
-            and(
-              eq(payments.invoiceId, existing.id),
-              eq(payments.notes, INITIAL_INVOICE_PAYMENT_NOTE),
-            ),
-          );
-      }
-
       // Delete OLD items
-      await tx.delete(invoiceItems).where(eq(invoiceItems.invoiceId, existing.id));
+      await tx
+        .delete(invoiceItems)
+        .where(eq(invoiceItems.invoiceId, existing.id));
 
       // 3. Apply NEW changes (Re-use logic from createInvoiceFn)
 
@@ -1665,8 +1148,11 @@ export const updateInvoiceFn = createServerFn()
       const customerDefaultMarginUpdate = customerRecordUpdate?.defaultMargin
         ? Number(customerRecordUpdate.defaultMargin)
         : null;
-      const isRetailerInvoice = customerRecordUpdate?.customerType === "retailer";
-      const pricingMode = getInvoicePricingMode(customerRecordUpdate?.customerType);
+      const isRetailerInvoice =
+        customerRecordUpdate?.customerType === "retailer";
+      const pricingMode = getInvoicePricingMode(
+        customerRecordUpdate?.customerType,
+      );
       const factoryFloorWarehouse = await resolveFactoryFloorWarehouse(tx);
       const stockWarehouseId = factoryFloorWarehouse.id;
 
@@ -1680,8 +1166,8 @@ export const updateInvoiceFn = createServerFn()
             lte(discountRules.effectiveFrom, new Date()),
             or(
               isNull(discountRules.effectiveTo),
-              gte(discountRules.effectiveTo, new Date())
-            )
+              gte(discountRules.effectiveTo, new Date()),
+            ),
           ),
         }),
         buildConfiguredRecipePriceMap({
@@ -1693,7 +1179,10 @@ export const updateInvoiceFn = createServerFn()
       ]);
 
       // Cache discount rules by recipeId for fast lookup
-      const discountRulesByRecipe = new Map<string, typeof distributorDiscountRules>();
+      const discountRulesByRecipe = new Map<
+        string,
+        typeof distributorDiscountRules
+      >();
       for (const rule of distributorDiscountRules) {
         if (!rule.recipeId) continue;
         if (!discountRulesByRecipe.has(rule.recipeId)) {
@@ -1719,28 +1208,40 @@ export const updateInvoiceFn = createServerFn()
           with: { recipe: true },
         });
 
-        if (!stock) throw new Error(`Stock record not found for "${item.pack}"`);
+        if (!stock)
+          throw new Error(`Stock record not found for "${item.pack}"`);
 
-        const containersPerCarton = effectiveCPP(stock.recipe.containersPerCarton ?? 0);
+        const containersPerCarton = effectiveCPP(
+          stock.recipe.containersPerCarton ?? 0,
+        );
         const recipeId = item.recipeId;
         const cartonSnapshot =
-          recipeId && stock.recipe?.cartonPackagingId != null && containersPerCarton > 0
+          recipeId &&
+          stock.recipe?.cartonPackagingId != null &&
+          containersPerCarton > 0
             ? (cartonSnapshotByRecipe.get(recipeId) ??
-                await getCartonInventorySnapshot({
-                  tx,
-                  warehouseId: stockWarehouseId,
-                  recipeId,
-                }))
+              (await getCartonInventorySnapshot({
+                tx,
+                warehouseId: stockWarehouseId,
+                recipeId,
+              })))
             : null;
 
-        if (recipeId && cartonSnapshot && !cartonSnapshotByRecipe.has(recipeId)) {
+        if (
+          recipeId &&
+          cartonSnapshot &&
+          !cartonSnapshotByRecipe.has(recipeId)
+        ) {
           cartonSnapshotByRecipe.set(recipeId, cartonSnapshot);
         }
 
         // Block custom pack sizes to prevent inventory corruption
-        if (item.packsPerCarton && item.packsPerCarton !== containersPerCarton) {
+        if (
+          item.packsPerCarton &&
+          item.packsPerCarton !== containersPerCarton
+        ) {
           throw new Error(
-            `Custom pack sizes are not allowed. Recipe "${item.pack}" uses ${containersPerCarton} per carton, but invoice specifies ${item.packsPerCarton}.`
+            `Custom pack sizes are not allowed. Recipe "${item.pack}" uses ${containersPerCarton} per carton, but invoice specifies ${item.packsPerCarton}.`,
           );
         }
 
@@ -1756,8 +1257,13 @@ export const updateInvoiceFn = createServerFn()
             ? Math.max(0, item.discountCartons ?? 0)
             : 0;
 
-        if (item.unitType === "carton" && manualDiscountCartons > item.numberOfCartons) {
-          throw new Error(`Manual free cartons cannot exceed entered cartons for "${item.pack}".`);
+        if (
+          item.unitType === "carton" &&
+          manualDiscountCartons > item.numberOfCartons
+        ) {
+          throw new Error(
+            `Manual free cartons cannot exceed entered cartons for "${item.pack}".`,
+          );
         }
 
         // ── Discount rule evaluation (distributor-specific, buy-N-get-M-free) ──
@@ -1786,14 +1292,15 @@ export const updateInvoiceFn = createServerFn()
           manualDiscountCartons,
           autoFreeCartons: discountFreeCartons,
           discountRuleId: matchedDiscountRuleId,
-          preferConfiguredRate: !item.isPriceOverride && !item.preserveStoredDistributorRate,
+          preferConfiguredRate:
+            !item.isPriceOverride && !item.preserveStoredDistributorRate,
         });
 
         const alreadyReservedUnits = item.recipeId
-          ? reservedUnitsByRecipe.get(item.recipeId) ?? 0
+          ? (reservedUnitsByRecipe.get(item.recipeId) ?? 0)
           : 0;
         const alreadyReservedCartons = item.recipeId
-          ? reservedCartonsByRecipe.get(item.recipeId) ?? 0
+          ? (reservedCartonsByRecipe.get(item.recipeId) ?? 0)
           : 0;
         const remainingAvailableUnits = Math.max(
           0,
@@ -1801,16 +1308,17 @@ export const updateInvoiceFn = createServerFn()
         );
         const requestedCartons =
           item.unitType === "carton"
-            ? item.numberOfCartons +
-              manualDiscountCartons +
-              discountFreeCartons
+            ? item.numberOfCartons + manualDiscountCartons + discountFreeCartons
             : 0;
         const remainingAvailableCartons = Math.max(
           0,
           availability.sellableCompleteCartons - alreadyReservedCartons,
         );
 
-        if (item.unitType === "carton" && requestedCartons > remainingAvailableCartons) {
+        if (
+          item.unitType === "carton" &&
+          requestedCartons > remainingAvailableCartons
+        ) {
           throw new Error(
             `Not enough complete cartons for "${item.pack}". ` +
               `Available: ${remainingAvailableCartons} cartons.`,
@@ -1845,83 +1353,85 @@ export const updateInvoiceFn = createServerFn()
         lineResolutions.push(lineResolution);
       }
 
-      const invoiceDiscount = isRetailerInvoice ? roundMoney(Number(data.invoiceDiscount ?? 0)) : 0;
+      const invoiceDiscount = isRetailerInvoice
+        ? roundMoney(Number(data.invoiceDiscount ?? 0))
+        : 0;
       if (invoiceDiscount > totalAmount) {
         throw new Error(
           `Discount (${invoiceDiscount.toFixed(2)}) cannot exceed items total (${totalAmount.toFixed(2)}).`,
         );
       }
-      const netInvoiceAmount = roundMoney(Math.max(0, totalAmount - invoiceDiscount));
-      const totalPayable = roundMoney(netInvoiceAmount + Number(data.expenses ?? 0));
+      const netInvoiceAmount = roundMoney(
+        Math.max(0, totalAmount - invoiceDiscount),
+      );
+      const totalPayable = roundMoney(
+        netInvoiceAmount + Number(data.expenses ?? 0),
+      );
 
-      if (data.cash > totalPayable) {
-        throw new Error(
-          `Cash received (${data.cash}) cannot exceed total payable (${totalPayable.toFixed(2)})`,
+      const settlementPayments = await tx.query.payments.findMany({
+        where: eq(payments.invoiceId, existing.id),
+        columns: { amount: true, method: true, status: true },
+      });
+      const settlementPreview = calculateSettlement(
+        totalPayable,
+        settlementPayments.map((payment) => ({
+          amount: Number(payment.amount),
+          method: payment.method,
+          status: payment.status,
+        })),
+      );
+      assertSettlementDueDate(settlementPreview, data.paymentDueDate);
+
+      const customerSettlement = await tx.query.customers.findFirst({
+        where: eq(customers.id, customerId),
+        columns: {
+          outstandingAmount: true,
+          creditLimit: true,
+          creditHold: true,
+          name: true,
+        },
+      });
+      if (customerSettlement) {
+        const oldOutstanding = Number(existing.outstandingAmount);
+        const newOutstanding = settlementPreview.outstandingAmount;
+        const increasesOutstanding = newOutstanding > oldOutstanding;
+        if (customerSettlement.creditHold && increasesOutstanding) {
+          throw new Error(
+            `Customer "${customerSettlement.name}" is on payment hold. Outstanding Amount cannot be increased.`,
+          );
+        }
+        const limit = Number(customerSettlement.creditLimit) || 0;
+        const projectedOutstanding = roundMoney(
+          Number(customerSettlement.outstandingAmount) -
+            oldOutstanding +
+            newOutstanding,
         );
-      }
-
-      const computedCredit = roundMoney(Math.max(0, totalPayable - data.cash));
-
-      if (computedCredit > 0 && !data.creditReturnDate) {
-        throw new Error("A credit return date is required when credit balance remains.");
-      }
-
-      // ── Credit limit & credit-hold enforcement ────────────────────────────
-      if (computedCredit > 0) {
-        const customerRecord = await tx.query.customers.findFirst({
-          where: eq(customers.id, customerId),
-          columns: { credit: true, creditLimit: true, creditHold: true, name: true },
-        });
-        if (customerRecord) {
-          if (customerRecord.creditHold) {
-            throw new Error(
-              `Customer "${customerRecord.name}" is on credit hold. Credit invoices are blocked.`,
-            );
-          }
-          const currentCredit =
-            (Number(customerRecord.credit) || 0) - (Number(existing.credit) || 0);
-          const creditLimit = Number(customerRecord.creditLimit) || 0;
-          if (creditLimit > 0 && currentCredit + computedCredit > creditLimit) {
-            throw new Error(
-              `Credit limit exceeded for "${customerRecord.name}". ` +
-                `Limit: PKR ${creditLimit.toFixed(2)}, Current outstanding: PKR ${currentCredit.toFixed(2)}, ` +
-                `This invoice credit: PKR ${computedCredit.toFixed(2)}.`,
-            );
-          }
+        if (limit > 0 && projectedOutstanding > limit && increasesOutstanding) {
+          throw new Error(
+            `Outstanding limit exceeded for "${customerSettlement.name}". ` +
+              `Limit: PKR ${limit.toFixed(2)}, Projected outstanding: PKR ${projectedOutstanding.toFixed(2)}.`,
+          );
         }
       }
 
-      const invoiceStatus =
-        computedCredit === 0
-          ? "paid"
-          : data.cash > 0
-            ? "partially_paid"
-            : "saved";
-
       const updateChanges: string[] = [];
-      const updateChangeMetadata: Record<string, { old: unknown; new: unknown }> = {};
-
-      if (existing.account !== data.account) {
-        updateChanges.push(`Account: ${existing.account ?? "none"} -> ${data.account}`);
-        updateChangeMetadata.account = { old: existing.account ?? null, new: data.account };
-      }
+      const updateChangeMetadata: Record<
+        string,
+        { old: unknown; new: unknown }
+      > = {};
 
       if (existing.warehouseId !== data.warehouseId) {
-        updateChanges.push(`Warehouse changed.`);
-        updateChangeMetadata.warehouseId = { old: existing.warehouseId, new: data.warehouseId };
+        updateChanges.push("Warehouse changed");
+        updateChangeMetadata.warehouseId = {
+          old: existing.warehouseId,
+          new: data.warehouseId,
+        };
       }
 
-      if (roundMoney(Number(existing.cash)) !== roundMoney(Number(data.cash))) {
-        updateChanges.push(`Cash: ${formatMoney(Number(existing.cash))} -> ${formatMoney(Number(data.cash))}`);
-        updateChangeMetadata.cash = { old: Number(existing.cash), new: Number(data.cash) };
-      }
-
-      if (roundMoney(Number(existing.credit)) !== roundMoney(computedCredit)) {
-        updateChanges.push(`Credit: ${formatMoney(Number(existing.credit))} -> ${formatMoney(computedCredit)}`);
-        updateChangeMetadata.credit = { old: Number(existing.credit), new: computedCredit };
-      }
-
-      if (roundMoney(Number(existing.expenses)) !== roundMoney(Number(data.expenses ?? 0))) {
+      if (
+        roundMoney(Number(existing.expenses)) !==
+        roundMoney(Number(data.expenses ?? 0))
+      ) {
         updateChanges.push(
           `Invoice Expense: ${formatMoney(Number(existing.expenses))} -> ${formatMoney(Number(data.expenses ?? 0))}`,
         );
@@ -1931,15 +1441,21 @@ export const updateInvoiceFn = createServerFn()
         };
       }
 
-      if (normalizeText(existing.expensesDescription) !== normalizeText(data.expensesDescription)) {
-        updateChanges.push(`Invoice Expense Note updated.`);
+      if (
+        normalizeText(existing.expensesDescription) !==
+        normalizeText(data.expensesDescription)
+      ) {
+        updateChanges.push("Invoice Expense Note updated");
         updateChangeMetadata.expensesDescription = {
           old: existing.expensesDescription ?? null,
           new: data.expensesDescription ?? null,
         };
       }
 
-      if (roundMoney(Number(existing.invoiceDiscount ?? 0)) !== roundMoney(invoiceDiscount)) {
+      if (
+        roundMoney(Number(existing.invoiceDiscount ?? 0)) !==
+        roundMoney(invoiceDiscount)
+      ) {
         updateChanges.push(
           `Discount: ${formatMoney(Number(existing.invoiceDiscount ?? 0))} -> ${formatMoney(invoiceDiscount)}`,
         );
@@ -1951,46 +1467,62 @@ export const updateInvoiceFn = createServerFn()
 
       if (
         normalizeText(existing.invoiceDiscountDescription) !==
-        normalizeText(isRetailerInvoice ? data.invoiceDiscountDescription : undefined)
+        normalizeText(
+          isRetailerInvoice ? data.invoiceDiscountDescription : undefined,
+        )
       ) {
-        updateChanges.push(`Discount Note updated.`);
+        updateChanges.push("Discount Note updated");
         updateChangeMetadata.invoiceDiscountDescription = {
           old: existing.invoiceDiscountDescription ?? null,
-          new: isRetailerInvoice ? (data.invoiceDiscountDescription ?? null) : null,
+          new: isRetailerInvoice
+            ? (data.invoiceDiscountDescription ?? null)
+            : null,
         };
       }
 
-      if (roundMoney(Number(existing.amount)) !== roundMoney(netInvoiceAmount)) {
-        updateChanges.push(`Net Sale Amount: ${formatMoney(Number(existing.amount))} -> ${formatMoney(netInvoiceAmount)}`);
-        updateChangeMetadata.amount = { old: Number(existing.amount), new: netInvoiceAmount };
-      }
-
-      if (roundMoney(Number(existing.totalPrice)) !== roundMoney(totalPayable)) {
-        updateChanges.push(`Total Payable: ${formatMoney(Number(existing.totalPrice))} -> ${formatMoney(totalPayable)}`);
-        updateChangeMetadata.totalPrice = { old: Number(existing.totalPrice), new: totalPayable };
-      }
-
-      if (formatDateValue(existing.creditReturnDate) !== formatDateValue(data.creditReturnDate)) {
+      if (
+        roundMoney(Number(existing.amount)) !== roundMoney(netInvoiceAmount)
+      ) {
         updateChanges.push(
-          `Credit Due Date: ${formatDateValue(existing.creditReturnDate)} -> ${formatDateValue(data.creditReturnDate)}`,
+          `Net Sale Amount: ${formatMoney(Number(existing.amount))} -> ${formatMoney(netInvoiceAmount)}`,
         );
-        updateChangeMetadata.creditReturnDate = {
-          old: existing.creditReturnDate ?? null,
-          new: data.creditReturnDate ?? null,
+        updateChangeMetadata.amount = {
+          old: Number(existing.amount),
+          new: netInvoiceAmount,
+        };
+      }
+
+      if (
+        roundMoney(Number(existing.totalPrice)) !== roundMoney(totalPayable)
+      ) {
+        updateChanges.push(
+          `Total Payable: ${formatMoney(Number(existing.totalPrice))} -> ${formatMoney(totalPayable)}`,
+        );
+        updateChangeMetadata.totalPrice = {
+          old: Number(existing.totalPrice),
+          new: totalPayable,
+        };
+      }
+
+      if (
+        formatDateValue(existing.paymentDueDate) !==
+        formatDateValue(data.paymentDueDate)
+      ) {
+        updateChanges.push(
+          `Payment Due Date: ${formatDateValue(existing.paymentDueDate)} -> ${formatDateValue(data.paymentDueDate)}`,
+        );
+        updateChangeMetadata.paymentDueDate = {
+          old: existing.paymentDueDate ?? null,
+          new: data.paymentDueDate ?? null,
         };
       }
 
       if (normalizeText(existing.remarks) !== normalizeText(data.remarks)) {
-        updateChanges.push(`Remarks updated.`);
+        updateChanges.push("Remarks updated");
         updateChangeMetadata.remarks = {
           old: existing.remarks ?? null,
           new: data.remarks ?? null,
         };
-      }
-
-      if (existing.status !== invoiceStatus) {
-        updateChanges.push(`Status: ${existing.status} -> ${invoiceStatus}`);
-        updateChangeMetadata.status = { old: existing.status, new: invoiceStatus };
       }
 
       const existingItemsSignature = buildInvoiceItemSignature(existing.items);
@@ -2007,73 +1539,33 @@ export const updateInvoiceFn = createServerFn()
       );
 
       if (existingItemsSignature !== updatedItemsSignature) {
-        updateChanges.push(`Line items updated.`);
+        updateChanges.push("Line items updated");
         updateChangeMetadata.items = {
           old: existingItemsSignature,
           new: updatedItemsSignature,
         };
       }
 
-      // ── Update invoice ────────────────────────────────────────────────────
       await tx
         .update(invoices)
         .set({
-          account: data.account,
-          cash: data.cash.toString(),
-          credit: computedCredit.toString(),
-          creditReturnDate: data.creditReturnDate || null,
           expenses: (data.expenses ?? 0).toString(),
           expensesDescription: data.expensesDescription,
           invoiceDiscount: invoiceDiscount.toString(),
-          invoiceDiscountDescription: isRetailerInvoice ? data.invoiceDiscountDescription : null,
+          invoiceDiscountDescription: isRetailerInvoice
+            ? data.invoiceDiscountDescription
+            : null,
           amount: netInvoiceAmount.toString(),
-          totalPrice: totalPayable.toString(),
           remarks: data.remarks,
+          warehouseId: data.warehouseId,
           stockWarehouseId,
-          status: invoiceStatus,
-          // performedById intentionally NOT updated — preserves original creator for audit
         })
         .where(eq(invoices.id, data.id));
 
-      // ── Update slip record to reflect new amounts ──────────────────────────
-      await tx
-        .update(slipRecords)
-        .set({
-          amountDue: computedCredit.toString(),
-          amountRecovered: data.cash.toString(),
-          status: computedCredit === 0 ? "closed" : "open",
-        })
-        .where(eq(slipRecords.invoiceId, data.id));
-
-      // ── Update wallet credit if cash is paid ──────────────────────────────
-      if (data.cash > 0 && data.account) {
-        await tx
-          .update(wallets)
-          .set({ balance: sql`${wallets.balance} + ${data.cash}` })
-          .where(eq(wallets.id, data.account));
-
-        await tx.insert(transactions).values({
-          id: createId(),
-          walletId: data.account,
-          type: "credit",
-          amount: data.cash.toString(),
-          referenceId: data.id,
-          source: "Sale",
-          performedById: userId,
-        });
-
-        await tx.insert(payments).values({
-          id: createId(),
-          customerId,
-          invoiceId: data.id,
-          amount: data.cash.toString(),
-          method: "invoice_cash",
-          reference: existing.slipNumber,
-          recordedById: userId,
-          paymentDate: new Date(),
-          notes: "Initial payment on invoice creation",
-        });
-      }
+      await recalculateInvoiceSettlement(tx, existing.id, {
+        totalPrice: totalPayable,
+        paymentDueDate: data.paymentDueDate ?? null,
+      });
 
       // ── Insert NEW line items + deduct stock ──────────────────────────────
       const remainingUnitsByRecipe = new Map<string, number>();
@@ -2082,8 +1574,8 @@ export const updateInvoiceFn = createServerFn()
         const stockKey = r.item.recipeId;
         const totalAvailableUnits =
           physicalAvailableUnitsByRecipe.get(r.item.recipeId) ??
-          (r.stock.quantityCartons * r.containersPerCarton +
-            r.stock.quantityContainers);
+          r.stock.quantityCartons * r.containersPerCarton +
+            r.stock.quantityContainers;
         const currentRemainingUnits =
           stockKey && remainingUnitsByRecipe.has(stockKey)
             ? remainingUnitsByRecipe.get(stockKey)!
@@ -2186,7 +1678,9 @@ export const updateInvoiceFn = createServerFn()
               schemeDeduction: r.pricingBreakdown.schemeDeduction,
               netAmount: r.pricingBreakdown.netAmount,
               effectiveCartonRate: r.pricingBreakdown.effectiveCartonRate,
-              preserveStoredDistributorRate: Boolean(r.item.preserveStoredDistributorRate),
+              preserveStoredDistributorRate: Boolean(
+                r.item.preserveStoredDistributorRate,
+              ),
               isPriceOverride: r.item.isPriceOverride,
             },
           });
@@ -2198,8 +1692,6 @@ export const updateInvoiceFn = createServerFn()
         .update(customers)
         .set({
           totalSale: sql`${customers.totalSale} + ${netInvoiceAmount}`,
-          payment: sql`${customers.payment} + ${data.cash}`,
-          credit: sql`${customers.credit} + ${computedCredit}`,
           weightSaleKg: sql`${customers.weightSaleKg} + ${totalWeightKg}`,
           expenses: sql`${customers.expenses} + ${data.expenses ?? 0}`,
         })
@@ -2210,7 +1702,7 @@ export const updateInvoiceFn = createServerFn()
           {
             invoiceId: data.id,
             eventType: "updated",
-            title: `Invoice ${existing.slipNumber ?? data.id} updated`,
+            title: `Invoice ${existing.invoiceNumber} updated`,
             description: updateChanges.join(". "),
             metadata: updateChangeMetadata,
             actorId: userId,

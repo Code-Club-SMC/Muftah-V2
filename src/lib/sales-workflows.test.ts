@@ -59,10 +59,9 @@ describe("sales workflow regressions", () => {
   });
 
   it("tracks duplicate invoice recipe lines cumulatively and keeps returns on per-unit sale pricing", () => {
-    const invoiceSource = readFileSync(
-      resolve(SALES_FN_DIR, "invoices-fn.ts"),
-      "utf8",
-    );
+    const invoiceSource = ["invoices-fn.ts", "invoice-posting-service.ts"]
+      .map((fileName) => readFileSync(resolve(SALES_FN_DIR, fileName), "utf8"))
+      .join("\n");
     const returnsSource = readFileSync(
       resolve(SALES_FN_DIR, "sales-returns-fn.ts"),
       "utf8",
@@ -73,8 +72,8 @@ describe("sales workflow regressions", () => {
     expect(invoiceSource).toContain("if (lineResolution.totalDispatchedUnits > remainingAvailableUnits)");
     expect(invoiceSource).toContain("alreadyReservedUnits + lineResolution.totalDispatchedUnits");
     expect(invoiceSource).toContain("getSavedInvoiceItemDispatchedUnits");
-    expect(invoiceSource).toContain("const oldStockWarehouseId = existing.stockWarehouseId ?? existing.warehouseId;");
-    expect(invoiceSource).toContain("const stockWarehouseId = invoice.stockWarehouseId ?? invoice.warehouseId;");
+    expect(invoiceSource).toContain("existing.stockWarehouseId ?? existing.warehouseId");
+    expect(invoiceSource).toContain("invoice.stockWarehouseId ?? invoice.warehouseId");
     expect(returnsSource).toContain("const requestUnitsByItem = new Map<string, number>()");
     expect(returnsSource).toContain("Number(invoiceItem.retailPrice || 0)");
     expect(returnsSource).toContain("Number(invoiceItem.perCartonPrice) / cpp");
@@ -83,10 +82,9 @@ describe("sales workflow regressions", () => {
   });
 
   it("validates invoice carton availability from carton ledger sellable counts while preserving physical stock totals", () => {
-    const invoiceSource = readFileSync(
-      resolve(SALES_FN_DIR, "invoices-fn.ts"),
-      "utf8",
-    );
+    const invoiceSource = ["invoices-fn.ts", "invoice-posting-service.ts"]
+      .map((fileName) => readFileSync(resolve(SALES_FN_DIR, fileName), "utf8"))
+      .join("\n");
     const invoiceItemsSource = readFileSync(
       resolve(
         SALES_COMPONENTS_DIR,
@@ -105,17 +103,19 @@ describe("sales workflow regressions", () => {
 
   it("caps retailer discount at the server boundary and rounds payable totals to currency precision", () => {
     const invoiceSource = readFileSync(
-      resolve(SALES_FN_DIR, "invoices-fn.ts"),
+      resolve(SALES_FN_DIR, "invoice-posting-service.ts"),
       "utf8",
     );
 
     expect(invoiceSource).toContain('customerType: true');
     expect(invoiceSource).toContain('const isRetailerInvoice = customerRecord?.customerType === "retailer"');
     expect(invoiceSource).toContain("if (invoiceDiscount > totalAmount)");
-    expect(invoiceSource).toContain("const totalPayable = roundMoney(netInvoiceAmount + Number(data.expenses ?? 0))");
-    expect(invoiceSource).toContain("const computedCredit = roundMoney(Math.max(0, totalPayable - data.cash))");
+    expect(invoiceSource).toContain("const totalPayable = roundMoney(");
+    expect(invoiceSource).toContain("netInvoiceAmount + Number(data.expenses ?? 0)");
+    expect(invoiceSource).toContain("const settlementPreview = calculateSettlement(");
+    expect(invoiceSource).toContain("assertSettlementDueDate(settlementPreview, data.paymentDueDate)");
     expect(invoiceSource).toContain("invoiceDiscount: invoiceDiscount.toString()");
-    expect(invoiceSource).toContain("invoiceDiscountDescription: isRetailerInvoice ? data.invoiceDiscountDescription : null");
+    expect(invoiceSource).toContain("invoiceDiscountDescription: isRetailerInvoice");
     expect(invoiceSource).toContain("amount: netInvoiceAmount.toString()");
   });
 
@@ -170,10 +170,9 @@ describe("sales workflow regressions", () => {
   });
 
   it("persists invoice items from one canonical pricing helper and audits base-vs-net semantics", () => {
-    const invoiceSource = readFileSync(
-      resolve(SALES_FN_DIR, "invoices-fn.ts"),
-      "utf8",
-    );
+    const invoiceSource = ["invoices-fn.ts", "invoice-posting-service.ts"]
+      .map((fileName) => readFileSync(resolve(SALES_FN_DIR, fileName), "utf8"))
+      .join("\n");
 
     expect(invoiceSource).toContain("const factoryFloorWarehouse = await resolveFactoryFloorWarehouse(tx);");
     expect(invoiceSource).toContain("stockWarehouseId");
@@ -202,7 +201,7 @@ describe("sales workflow regressions", () => {
     );
 
     expect(invoiceSource).toContain('eventType: "updated"');
-    expect(invoiceSource).toContain('title: `Invoice ${existing.slipNumber ?? data.id} updated`');
+    expect(invoiceSource).toContain('title: `Invoice ${existing.invoiceNumber} updated`');
     expect(invoiceSource).toContain("Invoice Expense:");
     expect(invoiceSource).toContain("updateChangeMetadata.expenses");
     expect(invoiceSource).toContain("description: updateChanges.join");
@@ -244,18 +243,20 @@ describe("sales workflow regressions", () => {
     expect(printSource).not.toContain('entry.method === "cash" || entry.method === "invoice_cash"');
   });
 
-  it("blocks invoice edits and deletes after downstream ledger activity exists", () => {
+  it("protects invoice changes after returns and requires payment resolution before deletion", () => {
     const invoiceSource = readFileSync(
       resolve(SALES_FN_DIR, "invoices-fn.ts"),
       "utf8",
     );
 
     expect(invoiceSource).toContain("assertInvoiceMutationAllowed");
-    expect(invoiceSource).toContain("INVOICE_HAS_DEPENDENT_PAYMENTS");
+    expect(invoiceSource).toContain("INVOICE_HAS_CONFIRMED_PAYMENTS");
+    expect(invoiceSource).toContain("INVOICE_HAS_PENDING_PAYMENTS");
     expect(invoiceSource).toContain("INVOICE_HAS_SALES_RETURNS");
+    expect(invoiceSource).toContain("OFFLINE_INVOICE_IMMUTABLE");
     expect(invoiceSource).toContain('action: "delete"');
     expect(invoiceSource).toContain('action: "update"');
-    expect(invoiceSource).toContain("INITIAL_INVOICE_PAYMENT_NOTE");
+    expect(invoiceSource).toContain("recalculateInvoiceSettlement(tx, existing.id");
   });
 
   it("routes approved returns into sellable or segregated inventory based on condition", () => {
@@ -308,7 +309,7 @@ describe("sales workflow regressions", () => {
       "utf8",
     );
     const invoiceSource = readFileSync(
-      resolve(SALES_FN_DIR, "invoices-fn.ts"),
+      resolve(SALES_FN_DIR, "invoice-posting-service.ts"),
       "utf8",
     );
     const invoiceHookSource = readFileSync(
@@ -366,16 +367,16 @@ describe("sales workflow regressions", () => {
   });
 
   it("resolves distributor and entity recipe rates server-side before trusting submitted carton rates", () => {
-    const invoiceSource = readFileSync(
-      resolve(SALES_FN_DIR, "invoices-fn.ts"),
-      "utf8",
-    );
+    const invoiceSource = ["invoices-fn.ts", "invoice-posting-service.ts"]
+      .map((fileName) => readFileSync(resolve(SALES_FN_DIR, fileName), "utf8"))
+      .join("\n");
 
     expect(invoiceSource).toContain("const buildConfiguredRecipePriceMap = async");
     expect(invoiceSource).toContain('eq(entityRecipeRates.entityType, "distributor")');
     expect(invoiceSource).toContain('eq(entityRecipeRates.entityType, "general")');
     expect(invoiceSource).toContain('eq(entityRecipeRates.entityType, "order_booker")');
-    expect(invoiceSource).toContain("preferConfiguredRate: !item.isPriceOverride && !item.preserveStoredDistributorRate");
+    expect(invoiceSource).toContain("preferConfiguredRate:");
+    expect(invoiceSource).toContain("!item.isPriceOverride && !item.preserveStoredDistributorRate");
     expect(invoiceSource).toContain("buildConfiguredRecipePriceMap({");
   });
 

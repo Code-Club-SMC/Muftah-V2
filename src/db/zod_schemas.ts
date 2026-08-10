@@ -10,6 +10,51 @@ export const stockTransferInputSchema = z.object({
   quantity: z.number().positive(),
 });
 
+export const invoicePaymentInputSchema = z
+  .object({
+    method: z.enum(["cash", "bank_transfer", "cheque"]),
+    amount: z.number().positive(),
+    walletId: z.string().min(1, "Select a destination account"),
+    reference: z.string().trim().min(1).optional(),
+    chequeNumber: z.string().trim().min(1).optional(),
+    chequeBank: z.string().trim().min(1).optional(),
+    chequeDate: z.coerce.date().optional(),
+    paymentDate: z.coerce.date(),
+    sourceRecordId: z.string().trim().min(1).optional(),
+  })
+  .superRefine((row, ctx) => {
+    if (row.method === "bank_transfer" && !row.reference) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["reference"],
+        message: "Bank reference is required",
+      });
+    }
+    if (row.method === "cheque") {
+      if (!row.chequeNumber) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["chequeNumber"],
+          message: "Cheque number is required",
+        });
+      }
+      if (!row.chequeBank) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["chequeBank"],
+          message: "Cheque bank is required",
+        });
+      }
+      if (!row.chequeDate) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["chequeDate"],
+          message: "Cheque date is required",
+        });
+      }
+    }
+  });
+
 export const createInvoiceSchema = z.object({
   customerId: z.string().optional(),
   customerName: z.string().min(1, "Customer name is required if new").optional(),
@@ -21,10 +66,8 @@ export const createInvoiceSchema = z.object({
   customerType: z.enum(["distributor", "retailer", "wholesaler"]).default("retailer"),
   salesmanId: z.string().optional(),
   warehouseId: z.string(),
-  account: z.string().min(1, "Select Payment Account"),
-  cash: z.number().nonnegative().default(0),
-  credit: z.number().nonnegative().default(0),
-  creditReturnDate: z.date().optional(),
+  payments: z.array(invoicePaymentInputSchema).default([]),
+  paymentDueDate: z.coerce.date().optional(),
   expenses: z.number().nonnegative().default(0),
   expensesDescription: z.string().optional(),
   invoiceDiscount: z.number().nonnegative().default(0),
@@ -54,9 +97,7 @@ export const createInvoiceSchema = z.object({
 export const updateInvoiceSchema = z.object({
   id: z.string().min(1),
   warehouseId: z.string(),
-  account: z.string().min(1, "Select Payment Account"),
-  cash: z.number().nonnegative().default(0),
-  creditReturnDate: z.date().optional(),
+  paymentDueDate: z.coerce.date().optional(),
   expenses: z.number().nonnegative().default(0),
   expensesDescription: z.string().optional(),
   invoiceDiscount: z.number().nonnegative().default(0),

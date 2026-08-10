@@ -361,13 +361,22 @@ async function assertProposedSettlement(
 export async function recalculateInvoiceSettlement(
 	tx: SalesTransaction,
 	invoiceId: string,
+	options?: {
+		totalPrice?: number;
+		paymentDueDate?: Date | null;
+	},
 ): Promise<SettlementTotals> {
 	const invoice = await lockInvoice(tx, invoiceId);
+	const totalPrice = options?.totalPrice ?? Number(invoice.totalPrice);
+	const paymentDueDate =
+		options && "paymentDueDate" in options
+			? options.paymentDueDate
+			: invoice.paymentDueDate;
 	const totals = calculateSettlement(
-		Number(invoice.totalPrice),
+		totalPrice,
 		await listSettlementPayments(tx, invoice.id),
 	);
-	assertSettlementDueDate(totals, invoice.paymentDueDate);
+	assertSettlementDueDate(totals, paymentDueDate);
 
 	const paidDelta = roundMoney(totals.paidAmount - Number(invoice.paidAmount));
 	const outstandingDelta = roundMoney(
@@ -377,6 +386,10 @@ export async function recalculateInvoiceSettlement(
 	await tx
 		.update(invoices)
 		.set({
+			...(options?.totalPrice !== undefined
+				? { totalPrice: moneyString(totals.totalPrice) }
+				: {}),
+			...(options && "paymentDueDate" in options ? { paymentDueDate } : {}),
 			paidAmount: moneyString(totals.paidAmount),
 			outstandingAmount: moneyString(totals.outstandingAmount),
 			paymentStatus: totals.paymentStatus,

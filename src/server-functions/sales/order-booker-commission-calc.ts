@@ -1,18 +1,20 @@
-import { db } from "@/db";
-import { commissionTiers, commissionRecords, orderBookers } from "@/db/schemas/sales-erp-schema";
+import {
+  commissionTiers,
+  commissionRecords,
+  orderBookers,
+} from "@/db/schemas/sales-erp-schema";
 import { eq, and, isNull } from "drizzle-orm";
 import { calculateOrderBookerCommission } from "@/lib/order-booker/commission";
+import type { SalesTransaction } from "./settlement-service";
 
 export async function calculateCommissionForOrder(
-  tx: any,
+  tx: SalesTransaction,
   orderBookerId: string,
   orderId: string,
   fulfilledAmount: number,
 ) {
-  const dbOrTx = tx || db;
-
   // 1. Try order-booker-specific tiers first
-  let tiers = await dbOrTx.query.commissionTiers.findMany({
+  let tiers = await tx.query.commissionTiers.findMany({
     where: and(
       eq(commissionTiers.orderBookerId, orderBookerId),
       eq(commissionTiers.isActive, true),
@@ -22,7 +24,7 @@ export async function calculateCommissionForOrder(
 
   // 2. Fall back to global tiers if no booker-specific tiers
   if (tiers.length === 0) {
-    tiers = await dbOrTx.query.commissionTiers.findMany({
+    tiers = await tx.query.commissionTiers.findMany({
       where: and(
         isNull(commissionTiers.orderBookerId),
         eq(commissionTiers.isActive, true),
@@ -33,7 +35,7 @@ export async function calculateCommissionForOrder(
 
   let flatRate = 0;
   if (tiers.length === 0) {
-    const ob = await dbOrTx.query.orderBookers.findFirst({
+    const ob = await tx.query.orderBookers.findFirst({
       where: eq(orderBookers.id, orderBookerId),
     });
     flatRate = parseFloat(ob?.commissionRate ?? "0");
@@ -45,7 +47,7 @@ export async function calculateCommissionForOrder(
     flatRate,
   });
 
-  await dbOrTx
+  await tx
     .insert(commissionRecords)
     .values({
       orderBookerId,
@@ -59,7 +61,7 @@ export async function calculateCommissionForOrder(
       target: [commissionRecords.orderBookerId, commissionRecords.orderId],
     });
 
-  const record = await dbOrTx.query.commissionRecords.findFirst({
+  const record = await tx.query.commissionRecords.findFirst({
     where: and(
       eq(commissionRecords.orderBookerId, orderBookerId),
       eq(commissionRecords.orderId, orderId),
