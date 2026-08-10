@@ -156,6 +156,11 @@ export const navigations: NavigationItem[] = [
         url: "/finance/ledger",
         icon: LedgerIcon,
       },
+      {
+        title: "Payment Verification",
+        url: "/finance/payment-verification",
+        icon: LedgerIcon,
+      },
     ],
   },
   {

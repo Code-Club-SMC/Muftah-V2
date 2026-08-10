@@ -31,6 +31,7 @@ import { Route as ApiInternalBootstrapAdminRouteImport } from './routes/api/inte
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ProtectedSuppliersSupplierIdRouteImport } from './routes/_protected/suppliers/$supplierId'
 import { Route as ProtectedOperatorRunIdRouteImport } from './routes/_protected/operator/$runId'
+import { Route as ProtectedFinancePaymentVerificationRouteImport } from './routes/_protected/finance/payment-verification'
 import { Route as ProtectedSalesRecoveryIndexRouteImport } from './routes/_protected/sales/recovery/index'
 import { Route as ProtectedSalesReconciliationIndexRouteImport } from './routes/_protected/sales/reconciliation/index'
 import { Route as ProtectedSalesPeopleIndexRouteImport } from './routes/_protected/sales/people/index'
@@ -203,6 +204,12 @@ const ProtectedOperatorRunIdRoute = ProtectedOperatorRunIdRouteImport.update({
   path: '/operator/$runId',
   getParentRoute: () => ProtectedRouteRoute,
 } as any)
+const ProtectedFinancePaymentVerificationRoute =
+  ProtectedFinancePaymentVerificationRouteImport.update({
+    id: '/finance/payment-verification',
+    path: '/finance/payment-verification',
+    getParentRoute: () => ProtectedRouteRoute,
+  } as any)
 const ProtectedSalesRecoveryIndexRoute =
   ProtectedSalesRecoveryIndexRouteImport.update({
     id: '/sales/recovery/',
@@ -550,6 +557,7 @@ export interface FileRoutesByFullPath {
   '/reports': typeof ProtectedReportsRouteRouteWithChildren
   '/api/health': typeof ApiHealthRoute
   '/attendance/scan': typeof AttendanceScanRoute
+  '/finance/payment-verification': typeof ProtectedFinancePaymentVerificationRoute
   '/operator/$runId': typeof ProtectedOperatorRunIdRoute
   '/suppliers/$supplierId': typeof ProtectedSuppliersSupplierIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -628,6 +636,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/api/health': typeof ApiHealthRoute
   '/attendance/scan': typeof AttendanceScanRoute
+  '/finance/payment-verification': typeof ProtectedFinancePaymentVerificationRoute
   '/operator/$runId': typeof ProtectedOperatorRunIdRoute
   '/suppliers/$supplierId': typeof ProtectedSuppliersSupplierIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -709,6 +718,7 @@ export interface FileRoutesById {
   '/_protected/reports': typeof ProtectedReportsRouteRouteWithChildren
   '/api/health': typeof ApiHealthRoute
   '/attendance/scan': typeof AttendanceScanRoute
+  '/_protected/finance/payment-verification': typeof ProtectedFinancePaymentVerificationRoute
   '/_protected/operator/$runId': typeof ProtectedOperatorRunIdRoute
   '/_protected/suppliers/$supplierId': typeof ProtectedSuppliersSupplierIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -790,6 +800,7 @@ export interface FileRouteTypes {
     | '/reports'
     | '/api/health'
     | '/attendance/scan'
+    | '/finance/payment-verification'
     | '/operator/$runId'
     | '/suppliers/$supplierId'
     | '/api/auth/$'
@@ -868,6 +879,7 @@ export interface FileRouteTypes {
     | '/'
     | '/api/health'
     | '/attendance/scan'
+    | '/finance/payment-verification'
     | '/operator/$runId'
     | '/suppliers/$supplierId'
     | '/api/auth/$'
@@ -948,6 +960,7 @@ export interface FileRouteTypes {
     | '/_protected/reports'
     | '/api/health'
     | '/attendance/scan'
+    | '/_protected/finance/payment-verification'
     | '/_protected/operator/$runId'
     | '/_protected/suppliers/$supplierId'
     | '/api/auth/$'
@@ -1187,6 +1200,13 @@ declare module '@tanstack/react-router' {
       path: '/operator/$runId'
       fullPath: '/operator/$runId'
       preLoaderRoute: typeof ProtectedOperatorRunIdRouteImport
+      parentRoute: typeof ProtectedRouteRoute
+    }
+    '/_protected/finance/payment-verification': {
+      id: '/_protected/finance/payment-verification'
+      path: '/finance/payment-verification'
+      fullPath: '/finance/payment-verification'
+      preLoaderRoute: typeof ProtectedFinancePaymentVerificationRouteImport
       parentRoute: typeof ProtectedRouteRoute
     }
     '/_protected/sales/recovery/': {
@@ -1662,6 +1682,7 @@ const ProtectedManufacturingProductionsRunIdRouteRouteWithChildren =
 
 interface ProtectedRouteRouteChildren {
   ProtectedReportsRouteRoute: typeof ProtectedReportsRouteRouteWithChildren
+  ProtectedFinancePaymentVerificationRoute: typeof ProtectedFinancePaymentVerificationRoute
   ProtectedOperatorRunIdRoute: typeof ProtectedOperatorRunIdRoute
   ProtectedSuppliersSupplierIdRoute: typeof ProtectedSuppliersSupplierIdRoute
   ProtectedDashboardIndexRoute: typeof ProtectedDashboardIndexRoute
@@ -1721,6 +1742,8 @@ interface ProtectedRouteRouteChildren {
 
 const ProtectedRouteRouteChildren: ProtectedRouteRouteChildren = {
   ProtectedReportsRouteRoute: ProtectedReportsRouteRouteWithChildren,
+  ProtectedFinancePaymentVerificationRoute:
+    ProtectedFinancePaymentVerificationRoute,
   ProtectedOperatorRunIdRoute: ProtectedOperatorRunIdRoute,
   ProtectedSuppliersSupplierIdRoute: ProtectedSuppliersSupplierIdRoute,
   ProtectedDashboardIndexRoute: ProtectedDashboardIndexRoute,

@@ -1,5 +1,5 @@
 /**
- * Enhanced Credit Recovery Server Functions
+ * Enhanced Outstanding Amount Recovery Server Functions
  * Removed auto-assignment, manual status control, professional escalation
  */
 
@@ -27,7 +27,7 @@ import {
 
 // ═══════════════════════════════════════════════════════════════════════════
 // GET DUE TODAY SLIPS
-// All non-closed slips where invoice creditReturnDate <= today.
+// All non-closed slips where Payment Due Date is today or earlier.
 // ═══════════════════════════════════════════════════════════════════════════
 export const getDueTodaySlipsFn = createServerFn()
   .middleware([requireSalesRecoveryViewMiddleware])
@@ -45,8 +45,8 @@ export const getDueTodaySlipsFn = createServerFn()
       .select({ id: invoices.id })
       .from(invoices)
       .where(and(
-        isNotNull(invoices.creditReturnDate),
-        lte(invoices.creditReturnDate, todayEnd),
+        isNotNull(invoices.paymentDueDate),
+        lte(invoices.paymentDueDate, todayEnd),
       ));
 
     const dueInvoiceIds = dueInvoices.map((i) => i.id);
@@ -68,8 +68,8 @@ export const getDueTodaySlipsFn = createServerFn()
             id: true,
             date: true,
             totalPrice: true,
-            credit: true,
-            creditReturnDate: true,
+            outstandingAmount: true,
+            paymentDueDate: true,
           },
         },
         customer: {
@@ -138,8 +138,8 @@ export const getRecoveryQueueFn = createServerFn()
             id: true,
             date: true,
             totalPrice: true,
-            credit: true,
-            creditReturnDate: true,
+            outstandingAmount: true,
+            paymentDueDate: true,
           },
         },
         customer: {
@@ -182,13 +182,13 @@ export const getRecoverySummaryFn = createServerFn()
     const todayEnd = new Date();
     todayEnd.setHours(23, 59, 59, 999);
 
-    // Due today: non-closed slips with creditReturnDate <= today
+    // Due today: non-closed slips with Payment Due Date today or earlier.
     const dueTodayInvoices = await db
       .select({ id: invoices.id })
       .from(invoices)
       .where(and(
-        isNotNull(invoices.creditReturnDate),
-        lte(invoices.creditReturnDate, todayEnd),
+        isNotNull(invoices.paymentDueDate),
+        lte(invoices.paymentDueDate, todayEnd),
       ));
     const dueTodayIds = dueTodayInvoices.map((i) => i.id);
 
@@ -212,7 +212,7 @@ export const getRecoverySummaryFn = createServerFn()
 
     // Total outstanding in recovery
     const [outstandingRes] = await db
-      .select({ total: sql<number>`sum(${slipRecords.amountDue})` })
+      .select({ total: sql<number>`sum(${slipRecords.outstandingAmount})` })
       .from(slipRecords)
       .where(isNotNull(slipRecords.recoveryStatus));
 
@@ -411,7 +411,7 @@ export const createRecoveryAttemptFn = createServerFn()
   .handler(async ({ data, context }) => {
     const slip = await db.query.slipRecords.findFirst({
       where: eq(slipRecords.id, data.slipId),
-      with: { invoice: { columns: { id: true, slipNumber: true } } },
+      with: { invoice: { columns: { id: true } } },
     });
     if (!slip) throw new Error("Slip not found");
 
@@ -517,10 +517,10 @@ export const getSlipDetailFn = createServerFn()
             id: true,
             date: true,
             totalPrice: true,
-            cash: true,
-            credit: true,
-            creditReturnDate: true,
-            slipNumber: true,
+            paidAmount: true,
+            outstandingAmount: true,
+            paymentDueDate: true,
+            invoiceNumber: true,
           },
         },
         customer: {

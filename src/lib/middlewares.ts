@@ -200,6 +200,12 @@ export const requireFinanceViewMiddleware = createPermissionMiddleware(
 export const requireFinanceManageMiddleware = createPermissionMiddleware(
   "finance.manage",
 );
+export const requirePaymentVerificationMiddleware = createPermissionMiddleware(
+  "finance.payments.verify",
+);
+export const requirePaymentReversalMiddleware = createPermissionMiddleware(
+  "finance.payments.reverse",
+);
 export const requireHrViewMiddleware = createPermissionMiddleware("hr.view");
 export const requireHrManageMiddleware = createPermissionMiddleware("hr.manage");
 export const requireAttendanceTerminalMiddleware = createPermissionMiddleware(

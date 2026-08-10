@@ -408,6 +408,13 @@ export async function recalculateInvoiceSettlement(
 					: totals.paidAmount > 0
 						? "partially_recovered"
 						: "open",
+			reconciledAt: totals.outstandingAmount === 0 ? new Date() : null,
+			recoveryStatus: totals.outstandingAmount === 0 ? null : undefined,
+			recoveryAssignedToId:
+				totals.outstandingAmount === 0 ? null : undefined,
+			nextFollowUpDate: totals.outstandingAmount === 0 ? null : undefined,
+			lastFollowUpDate: totals.outstandingAmount === 0 ? null : undefined,
+			escalationLevel: totals.outstandingAmount === 0 ? 0 : undefined,
 		})
 		.where(eq(slipRecords.invoiceId, invoice.id));
 
@@ -655,6 +662,11 @@ export async function reverseConfirmedPayment(
 	}
 
 	const current = await findPaymentOrThrow(tx, input.paymentId);
+	if (current.method === "expense_offset") {
+		throw new Error(
+			"Expense offsets must be reversed from the linked expense workflow",
+		);
+	}
 	await lockInvoice(tx, current.invoiceId);
 	const now = new Date();
 	const [changed] = await tx

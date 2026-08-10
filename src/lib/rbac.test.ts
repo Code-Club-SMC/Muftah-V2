@@ -64,4 +64,32 @@ describe("rbac route rules", () => {
     expect(canAccessPath("/hr/attendance/offline", ["hr.view"])).toBe(false);
     expect(canAccessPath("/hr/attendance", ["hr.view"])).toBe(true);
   });
+
+  it("gives payment verification and reversal only to approved finance roles", () => {
+    expect(PERMISSION_KEYS).toEqual(
+      expect.arrayContaining([
+        "finance.payments.verify",
+        "finance.payments.reverse",
+      ]),
+    );
+
+    for (const roleSlug of ["admin", "finance-manager"] as const) {
+      const role = SYSTEM_ROLE_SEEDS.find((seed) => seed.slug === roleSlug);
+      expect(role?.permissionKeys).toEqual(
+        expect.arrayContaining([
+          "finance.payments.verify",
+          "finance.payments.reverse",
+        ]),
+      );
+    }
+
+    expect(
+      canAccessPath("/finance/payment-verification", [
+        "finance.payments.verify",
+      ]),
+    ).toBe(true);
+    expect(canAccessPath("/finance/payment-verification", ["finance.view"])).toBe(
+      false,
+    );
+  });
 });

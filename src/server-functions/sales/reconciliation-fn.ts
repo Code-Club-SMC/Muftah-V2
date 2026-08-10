@@ -3,8 +3,7 @@ import { db } from "@/db";
 import { createId } from "@paralleldrive/cuid2";
 import { invoices, customers } from "@/db/schemas/sales-schema";
 import { payments, slipRecords, invoiceTimelineEvents } from "@/db/schemas/sales-erp-schema";
-import { transactions, wallets } from "@/db/schemas/finance-schema";
-import { recordInvoiceTimelineEvent } from "./invoice-timeline-log";
+import { recordRecoveryPayment } from "./settlement-service";
 import {
   requireSalesManageMiddleware,
   requireSalesViewMiddleware,
@@ -43,7 +42,7 @@ export const lookupSlipFn = createServerFn()
             city: true,
             mobileNumber: true,
             customerType: true,
-            credit: true,
+            outstandingAmount: true,
           },
         },
         salesman: { columns: { id: true, name: true } },
@@ -52,11 +51,11 @@ export const lookupSlipFn = createServerFn()
             id: true,
             date: true,
             totalPrice: true,
-            cash: true,
-            credit: true,
-            status: true,
-            slipNumber: true,
-            creditReturnDate: true,
+            paidAmount: true,
+            outstandingAmount: true,
+            paymentStatus: true,
+            invoiceNumber: true,
+            paymentDueDate: true,
           },
           with: {
             items: {
@@ -131,184 +130,105 @@ export const getSlipReconciliationHistoryFn = createServerFn()
 // ═══════════════════════════════════════════════════════════════════════════
 // RECONCILE SLIP
 // Records partial or full payment against an open slip.
-// Auto-closes slip when amountDue is fully recovered.
+// Auto-closes the slip when Outstanding Amount reaches zero.
 // Updates invoice status to 'paid' or 'partially_paid'.
 // ═══════════════════════════════════════════════════════════════════════════
 export const reconcileSlipFn = createServerFn()
   .middleware([requireSalesManageMiddleware])
-  .inputValidator((input: any) =>
+  .inputValidator((input: unknown) =>
     z
       .object({
         slipId: z.string().min(1),
         amount: z.number().positive("Amount must be positive"),
-        method: z.enum(["cash", "bank_transfer", "expense_offset"]).default("cash"),
-        walletId: z.string().optional(),
-        reference: z.string().optional(),
+        method: z.enum(["cash", "bank_transfer", "cheque"]).default("cash"),
+        walletId: z.string().min(1, "Destination account is required"),
+        reference: z.string().trim().min(1).optional(),
+        chequeNumber: z.string().trim().min(1).optional(),
+        chequeBank: z.string().trim().min(1).optional(),
+        chequeDate: z.coerce.date().optional(),
+        paymentDate: z.coerce.date().default(() => new Date()),
+        sourceRecordId: z.string().trim().min(1).optional(),
         notes: z.string().optional(),
+      })
+      .superRefine((row, ctx) => {
+        if (row.method === "bank_transfer" && !row.reference) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["reference"],
+            message: "Bank reference is required",
+          });
+        }
+        if (row.method === "cheque") {
+          if (!row.chequeNumber) {
+            ctx.addIssue({
+              code: "custom",
+              path: ["chequeNumber"],
+              message: "Cheque number is required",
+            });
+          }
+          if (!row.chequeBank) {
+            ctx.addIssue({
+              code: "custom",
+              path: ["chequeBank"],
+              message: "Cheque bank is required",
+            });
+          }
+          if (!row.chequeDate) {
+            ctx.addIssue({
+              code: "custom",
+              path: ["chequeDate"],
+              message: "Cheque date is required",
+            });
+          }
+        }
       })
       .parse(input),
   )
   .handler(async ({ data, context }) => {
     const userId = context.session.user.id;
 
-    return await db.transaction(async (tx) => {
+    return db.transaction(async (tx) => {
       const slip = await tx.query.slipRecords.findFirst({
         where: eq(slipRecords.id, data.slipId),
-        with: { invoice: true },
+        columns: { invoiceId: true, slipNumber: true },
+      });
+      if (!slip) throw new Error("Slip not found");
+
+      const payment = await recordRecoveryPayment(tx, {
+        invoiceId: slip.invoiceId,
+        actorId: userId,
+        payment: {
+          method: data.method,
+          amount: data.amount,
+          walletId: data.walletId,
+          reference: data.reference,
+          chequeNumber: data.chequeNumber,
+          chequeBank: data.chequeBank,
+          chequeDate: data.chequeDate,
+          paymentDate: data.paymentDate,
+          sourceRecordId: data.sourceRecordId ?? `recovery-${createId()}`,
+          notes: data.notes,
+        },
       });
 
-      if (!slip) throw new Error("Slip not found");
-      if (slip.status === "closed") throw new Error("Slip is already closed");
-
-      const currentDue = Number(slip.amountDue);
-      const currentRecovered = Number(slip.amountRecovered);
-
-      if (data.amount > currentDue) {
-        throw new Error(
-          `Amount (${data.amount}) exceeds outstanding balance (${currentDue.toFixed(2)})`,
-        );
-      }
-
-      const newDue = Math.max(0, currentDue - data.amount);
-      const newRecovered = currentRecovered + data.amount;
-      const isClosed = newDue === 0;
-
-      // 1. Update slip record
-      await tx
-        .update(slipRecords)
-        .set({
-          amountDue: newDue.toString(),
-          amountRecovered: newRecovered.toString(),
-          status: isClosed ? "closed" : "partially_recovered",
-          reconciledAt: isClosed ? new Date() : null,
-          recoveryStatus: isClosed ? null : (slip.recoveryStatus ?? "partially_paid"),
-          recoveryAssignedToId: isClosed ? null : undefined,
-          nextFollowUpDate: isClosed ? null : undefined,
-          lastFollowUpDate: isClosed ? null : undefined,
-          escalationLevel: isClosed ? 0 : undefined,
-          updatedAt: new Date(),
-        })
-        .where(eq(slipRecords.id, data.slipId));
-
-      // 2. Update invoice status
-      if (slip.invoice) {
-        const newInvoiceStatus = isClosed ? "paid" : "partially_paid";
-        await tx
-          .update(invoices)
-          .set({
-            credit: newDue.toString(),
-            cash: sql`${invoices.cash} + ${data.amount}`,
-            status: newInvoiceStatus,
-          })
-          .where(eq(invoices.id, slip.invoice.id));
-      }
-
-      // 3. Payment record
-      const [payment] = await tx
-        .insert(payments)
-        .values({
-          id: createId(),
-          customerId: slip.customerId,
-          invoiceId: slip.invoiceId,
-          amount: data.amount.toString(),
-          method: data.method,
-          reference: data.reference ?? slip.slipNumber,
-          notes: data.notes,
-          recordedById: userId,
-          paymentDate: new Date(),
-        })
-        .returning();
-
-      // 3b. Timeline event
-      await recordInvoiceTimelineEvent(
-        {
-          invoiceId: slip.invoiceId,
-          eventType: "payment",
-          title: `Payment received: PKR ${data.amount.toFixed(2)}`,
-          description:
-            (data.method === "cash"
-              ? "Cash payment"
-              : data.method === "bank_transfer"
-                ? "Bank transfer"
-                : "Expense offset") +
-            (data.reference ? ` (Ref: ${data.reference})` : ".") +
-            (isClosed ? " Slip fully closed." : ` Remaining: PKR ${newDue.toFixed(2)}`),
-          metadata: {
-            paymentId: payment.id,
-            amount: data.amount,
-            method: data.method,
-            reference: data.reference,
-            slipClosed: isClosed,
-            remainingDue: newDue,
-          },
-          actorId: userId,
-        },
-        tx,
-      );
-
-      if (isClosed) {
-        await recordInvoiceTimelineEvent(
-          {
-            invoiceId: slip.invoiceId,
-            eventType: "closed",
-            title: "Invoice closed",
-            description: `Slip ${slip.slipNumber} fully reconciled. Total recovered: PKR ${newRecovered.toFixed(2)}.`,
-            metadata: {
-              slipNumber: slip.slipNumber,
-              totalRecovered: newRecovered,
-            },
-            actorId: userId,
-          },
-          tx,
-        );
-      }
-
-      // 4. Update customer ledger
-      await tx
-        .update(customers)
-        .set({
-          payment: sql`${customers.payment} + ${data.amount}`,
-          credit: sql`${customers.credit} - ${data.amount}`,
-        })
-        .where(eq(customers.id, slip.customerId));
-
-      // 5. Wallet credit (if applicable)
-      if (
-        data.walletId &&
-        (data.method === "cash" || data.method === "bank_transfer")
-      ) {
-        const wallet = await tx.query.wallets.findFirst({
-          where: eq(wallets.id, data.walletId),
-        });
-        if (!wallet) throw new Error("Wallet not found");
-
-        await tx
-          .update(wallets)
-          .set({ balance: sql`${wallets.balance} + ${data.amount}` })
-          .where(eq(wallets.id, data.walletId));
-
-        await tx.insert(transactions).values({
-          id: createId(),
-          walletId: data.walletId,
-          type: "credit",
-          amount: data.amount.toString(),
-          referenceId: payment.id,
-          source: "Slip Recovery",
-          performedById: userId,
-        });
-      }
+      const updatedSlip = await tx.query.slipRecords.findFirst({
+        where: eq(slipRecords.id, data.slipId),
+        columns: { status: true, outstandingAmount: true },
+      });
+      if (!updatedSlip) throw new Error("Updated slip could not be loaded");
 
       return {
         payment,
-        slipClosed: isClosed,
-        remainingDue: newDue,
+        slipClosed: updatedSlip.status === "closed",
+        remainingDue: Number(updatedSlip.outstandingAmount),
       };
     });
   });
 
+
 // ═══════════════════════════════════════════════════════════════════════════
 // GET OVERDUE SLIPS
-// Shows slips whose creditReturnDate has passed AND still have outstanding balance.
+// Shows slips whose Payment Due Date has passed and still have an outstanding balance.
 // ═══════════════════════════════════════════════════════════════════════════
 export const getOverdueSlipsFn = createServerFn()
   .middleware([requireSalesViewMiddleware])
@@ -323,8 +243,8 @@ export const getOverdueSlipsFn = createServerFn()
       .parse(input),
   )
   .handler(async ({ data }) => {
-    // A slip is overdue when its invoice's creditReturnDate has passed
-    // and it still has outstanding balance (amountDue > 0).
+    // A slip is overdue when its Payment Due Date has passed and it still
+    // has an Outstanding Amount.
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
 
@@ -336,8 +256,8 @@ export const getOverdueSlipsFn = createServerFn()
 
     const conditions = [
       ne(slipRecords.status, "closed"),
-      gt(slipRecords.amountDue, "0"),
-      lte(invoices.creditReturnDate, data.daysOverdue > 0 ? cutoffDate : todayStart),
+      gt(slipRecords.outstandingAmount, "0"),
+      lte(invoices.paymentDueDate, data.daysOverdue > 0 ? cutoffDate : todayStart),
     ];
 
     if (data.salesmanId) {
@@ -346,15 +266,15 @@ export const getOverdueSlipsFn = createServerFn()
 
     const offset = (data.page - 1) * data.limit;
 
-    // Use explicit join since we filter on invoices.creditReturnDate
+    // Use an explicit join because Payment Due Date belongs to the invoice.
     const results = await db
       .select({
         id: slipRecords.id,
         slipNumber: slipRecords.slipNumber,
         customerId: slipRecords.customerId,
         salesmanId: slipRecords.salesmanId,
-        amountDue: slipRecords.amountDue,
-        amountRecovered: slipRecords.amountRecovered,
+        outstandingAmount: slipRecords.outstandingAmount,
+        paidAmount: slipRecords.paidAmount,
         status: slipRecords.status,
         recoveryStatus: slipRecords.recoveryStatus,
         issuedAt: slipRecords.issuedAt,
@@ -371,7 +291,7 @@ export const getOverdueSlipsFn = createServerFn()
       .innerJoin(invoices, eq(slipRecords.invoiceId, invoices.id))
       .leftJoin(customers, eq(slipRecords.customerId, customers.id))
       .where(and(...conditions))
-      .orderBy(asc(invoices.creditReturnDate))
+      .orderBy(asc(invoices.paymentDueDate))
       .limit(data.limit)
       .offset(offset);
 
@@ -395,7 +315,7 @@ export const getOverdueSlipsFn = createServerFn()
           columns: {
             date: true,
             totalPrice: true,
-            creditReturnDate: true,
+            paymentDueDate: true,
           },
         },
       },
@@ -417,7 +337,7 @@ export const getOverdueSlipsFn = createServerFn()
       const name = s.salesman?.name ?? "Unassigned";
       const entry = bySalesman.get(key) ?? { salesmanName: name, count: 0, totalDue: 0 };
       entry.count += 1;
-      entry.totalDue += Number(s.amountDue);
+      entry.totalDue += Number(s.outstandingAmount);
       bySalesman.set(key, entry);
     });
 
@@ -450,7 +370,7 @@ export const getOpenSlipsForRecoveryFn = createServerFn()
 
     const conditions = [
       ne(slipRecords.status, "closed"),
-      gt(slipRecords.amountDue, "0"),
+      gt(slipRecords.outstandingAmount, "0"),
     ];
 
     if (data.orderBookerId) {
@@ -474,8 +394,8 @@ export const getOpenSlipsForRecoveryFn = createServerFn()
             id: true,
             date: true,
             totalPrice: true,
-            creditReturnDate: true,
-            slipNumber: true,
+            paymentDueDate: true,
+            invoiceNumber: true,
             orderBookerId: true,
           },
           with: {
@@ -503,10 +423,10 @@ export const getOpenSlipsForRecoveryFn = createServerFn()
         customerCity: s.customer?.city ?? null,
         salesmanName: s.salesman?.name ?? "—",
         invoiceDate: s.invoice?.date,
-        creditReturnDate: s.invoice?.creditReturnDate,
+        paymentDueDate: s.invoice?.paymentDueDate,
         invoiceTotal: Number(s.invoice?.totalPrice ?? 0),
-        amountDue: Number(s.amountDue),
-        amountRecovered: Number(s.amountRecovered),
+        outstandingAmount: Number(s.outstandingAmount),
+        paidAmount: Number(s.paidAmount),
         status: s.status,
         orderBookerId: s.invoice?.orderBookerId ?? null,
         orderBookerName: s.invoice?.orderBooker?.name ?? null,
@@ -522,123 +442,118 @@ export const getOpenSlipsForRecoveryFn = createServerFn()
 // ═══════════════════════════════════════════════════════════════════════════
 export const batchReconcileSlipsFn = createServerFn()
   .middleware([requireSalesManageMiddleware])
-  .inputValidator((input: any) =>
+  .inputValidator((input: unknown) =>
     z
       .object({
-        items: z.array(
-          z.object({
-            slipId: z.string().min(1),
-            amount: z.number().positive("Amount must be positive"),
-          }),
-        ).min(1, "At least one item required"),
-        method: z.enum(["cash", "bank_transfer"]).default("cash"),
-        walletId: z.string().optional(),
-        reference: z.string().optional(),
+        items: z
+          .array(
+            z.object({
+              slipId: z.string().min(1),
+              amount: z.number().positive("Amount must be positive"),
+            }),
+          )
+          .min(1, "At least one item required"),
+        method: z.enum(["cash", "bank_transfer", "cheque"]).default("cash"),
+        walletId: z.string().min(1, "Destination account is required"),
+        reference: z.string().trim().min(1).optional(),
+        chequeNumber: z.string().trim().min(1).optional(),
+        chequeBank: z.string().trim().min(1).optional(),
+        chequeDate: z.coerce.date().optional(),
+        paymentDate: z.coerce.date().default(() => new Date()),
+        sourceRecordId: z.string().trim().min(1).optional(),
         notes: z.string().optional(),
+      })
+      .superRefine((row, ctx) => {
+        if (row.method === "bank_transfer" && !row.reference) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["reference"],
+            message: "Bank reference is required",
+          });
+        }
+        if (row.method === "cheque") {
+          if (!row.chequeNumber) {
+            ctx.addIssue({
+              code: "custom",
+              path: ["chequeNumber"],
+              message: "Cheque number is required",
+            });
+          }
+          if (!row.chequeBank) {
+            ctx.addIssue({
+              code: "custom",
+              path: ["chequeBank"],
+              message: "Cheque bank is required",
+            });
+          }
+          if (!row.chequeDate) {
+            ctx.addIssue({
+              code: "custom",
+              path: ["chequeDate"],
+              message: "Cheque date is required",
+            });
+          }
+        }
       })
       .parse(input),
   )
   .handler(async ({ data, context }) => {
     const userId = context.session.user.id;
-    const results: Array<{ slipId: string; slipNumber: string; success: boolean; error?: string; slipClosed?: boolean }> = [];
+    const allocationGroupId = `recovery-batch-${createId()}`;
 
-    await db.transaction(async (tx) => {
-      for (const item of data.items) {
-        try {
-          const slip = await tx.query.slipRecords.findFirst({
-            where: eq(slipRecords.id, item.slipId),
-            with: { invoice: true },
-          });
+    return db.transaction(async (tx) => {
+      const results: Array<{
+        slipId: string;
+        slipNumber: string;
+        success: true;
+        slipClosed: boolean;
+      }> = [];
 
-          if (!slip) {
-            results.push({ slipId: item.slipId, slipNumber: "—", success: false, error: "Slip not found" });
-            continue;
-          }
+      for (const [index, item] of data.items.entries()) {
+        const slip = await tx.query.slipRecords.findFirst({
+          where: eq(slipRecords.id, item.slipId),
+          columns: { invoiceId: true, slipNumber: true },
+        });
+        if (!slip) throw new Error(`Slip ${index + 1} was not found`);
 
-          if (slip.status === "closed") {
-            results.push({ slipId: item.slipId, slipNumber: slip.slipNumber, success: false, error: "Already closed" });
-            continue;
-          }
-
-          const currentDue = Number(slip.amountDue);
-          if (item.amount > currentDue) {
-            results.push({ slipId: item.slipId, slipNumber: slip.slipNumber, success: false, error: `Amount exceeds due (${currentDue.toFixed(2)})` });
-            continue;
-          }
-
-          const newDue = Math.max(0, currentDue - item.amount);
-          const newRecovered = Number(slip.amountRecovered) + item.amount;
-          const isClosed = newDue === 0;
-
-          // Update slip
-          await tx
-            .update(slipRecords)
-            .set({
-              amountDue: newDue.toString(),
-              amountRecovered: newRecovered.toString(),
-              status: isClosed ? "closed" : "partially_recovered",
-              reconciledAt: isClosed ? new Date() : null,
-              recoveryStatus: isClosed ? null : (slip.recoveryStatus ?? "partially_paid"),
-              updatedAt: new Date(),
-            })
-            .where(eq(slipRecords.id, item.slipId));
-
-          // Update invoice
-          if (slip.invoice) {
-            await tx
-              .update(invoices)
-              .set({
-                credit: newDue.toString(),
-                cash: sql`${invoices.cash} + ${item.amount}`,
-                status: isClosed ? "paid" : "partially_paid",
-              })
-              .where(eq(invoices.id, slip.invoice.id));
-          }
-
-          // Payment record
-          await tx.insert(payments).values({
-            id: createId(),
-            customerId: slip.customerId,
-            invoiceId: slip.invoiceId,
-            amount: item.amount.toString(),
+        await recordRecoveryPayment(tx, {
+          invoiceId: slip.invoiceId,
+          actorId: userId,
+          payment: {
             method: data.method,
-            reference: data.reference ?? slip.slipNumber,
+            amount: item.amount,
+            walletId: data.walletId,
+            reference: data.reference,
+            chequeNumber: data.chequeNumber,
+            chequeBank: data.chequeBank,
+            chequeDate: data.chequeDate,
+            paymentDate: data.paymentDate,
+            sourceRecordId:
+              data.sourceRecordId != null
+                ? `${data.sourceRecordId}:${slip.invoiceId}`
+                : `${allocationGroupId}:${slip.invoiceId}`,
+            allocationGroupId,
             notes: data.notes,
-            recordedById: userId,
-            paymentDate: new Date(),
-          });
+          },
+        });
 
-          // Update customer ledger
-          await tx
-            .update(customers)
-            .set({
-              payment: sql`${customers.payment} + ${item.amount}`,
-              credit: sql`GREATEST(${customers.credit} - ${item.amount}, 0)`,
-            })
-            .where(eq(customers.id, slip.customerId));
-
-          // Timeline event
-          await recordInvoiceTimelineEvent(
-            {
-              invoiceId: slip.invoiceId,
-              eventType: "payment",
-              title: `Batch payment: PKR ${item.amount.toFixed(2)}`,
-              description: `${data.method === "cash" ? "Cash" : "Bank transfer"}${data.reference ? ` (Ref: ${data.reference})` : ""}. ${isClosed ? "Slip closed." : `Remaining: PKR ${newDue.toFixed(2)}`}`,
-              metadata: { amount: item.amount, method: data.method, slipClosed: isClosed },
-              actorId: userId,
-            },
-            tx,
-          );
-
-          results.push({ slipId: item.slipId, slipNumber: slip.slipNumber, success: true, slipClosed: isClosed });
-        } catch (err) {
-          results.push({ slipId: item.slipId, slipNumber: "—", success: false, error: err instanceof Error ? err.message : "Unknown error" });
-        }
+        const updatedSlip = await tx.query.slipRecords.findFirst({
+          where: eq(slipRecords.id, item.slipId),
+          columns: { status: true },
+        });
+        if (!updatedSlip) throw new Error("Updated slip could not be loaded");
+        results.push({
+          slipId: item.slipId,
+          slipNumber: slip.slipNumber,
+          success: true,
+          slipClosed: updatedSlip.status === "closed",
+        });
       }
-    });
 
-    return { results };
+      return { allocationGroupId, results };
+    });
   });
+
 
 // ═══════════════════════════════════════════════════════════════════════════
 // DAILY CLOSING SUMMARY
@@ -659,8 +574,9 @@ export const getDailyClosingSummaryFn = createServerFn()
     // Payments collected today
     const todayPayments = await db.query.payments.findMany({
       where: and(
-        gte(payments.paymentDate, dayStart),
-        lte(payments.paymentDate, dayEnd),
+        eq(payments.status, "confirmed"),
+        gte(payments.effectiveDate, dayStart),
+        lte(payments.effectiveDate, dayEnd),
       ),
       with: {
         customer: { columns: { name: true, customerType: true } },
@@ -675,6 +591,10 @@ export const getDailyClosingSummaryFn = createServerFn()
       .filter((p) => p.method === "bank_transfer")
       .reduce((sum, p) => sum + Number(p.amount), 0);
 
+    const totalCheque = todayPayments
+      .filter((p) => p.method === "cheque")
+      .reduce((sum, p) => sum + Number(p.amount), 0);
+
     const totalExpenseOffset = todayPayments
       .filter((p) => p.method === "expense_offset")
       .reduce((sum, p) => sum + Number(p.amount), 0);
@@ -685,7 +605,7 @@ export const getDailyClosingSummaryFn = createServerFn()
         gte(slipRecords.issuedAt, dayStart),
         lte(slipRecords.issuedAt, dayEnd),
       ),
-      columns: { status: true, amountDue: true, amountRecovered: true },
+      columns: { status: true, outstandingAmount: true, paidAmount: true },
     });
 
     // Slips closed today
@@ -695,15 +615,17 @@ export const getDailyClosingSummaryFn = createServerFn()
         lte(slipRecords.reconciledAt, dayEnd),
         eq(slipRecords.status, "closed"),
       ),
-      columns: { slipNumber: true, amountRecovered: true, customerId: true },
+      columns: { slipNumber: true, paidAmount: true, customerId: true },
     });
 
     return {
       date: targetDate.toISOString().split("T")[0],
       payments: todayPayments,
-      totalCollected: totalCash + totalBankTransfer + totalExpenseOffset,
+      totalCollected:
+        totalCash + totalBankTransfer + totalCheque + totalExpenseOffset,
       totalCash,
       totalBankTransfer,
+      totalCheque,
       totalExpenseOffset,
       slipsIssuedToday: todaySlips.length,
       slipsClosedToday: closedToday.length,

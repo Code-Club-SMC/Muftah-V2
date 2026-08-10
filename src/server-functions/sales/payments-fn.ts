@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { db } from "@/db";
 import { createId } from "@paralleldrive/cuid2";
-import { customers } from "@/db/schemas/sales-schema";
+import { invoices } from "@/db/schemas/sales-schema";
 import { payments } from "@/db/schemas/sales-erp-schema";
 import { transactions, wallets } from "@/db/schemas/finance-schema";
 import {
@@ -11,6 +11,7 @@ import {
 import { eq, sql, desc, and, gte, lte } from "drizzle-orm";
 import { z } from "zod";
 import { expenses } from "@/db/schemas/finance-schema";
+import { recordRecoveryPayment } from "./settlement-service";
 
 export const getPaymentsFn = createServerFn()
   .middleware([requireSalesViewMiddleware])
@@ -33,13 +34,13 @@ export const getPaymentsFn = createServerFn()
     }
 
     if (data.dateFrom) {
-      filters.push(gte(payments.paymentDate, new Date(data.dateFrom)));
+      filters.push(gte(payments.effectiveDate, new Date(data.dateFrom)));
     }
 
     if (data.dateTo) {
       const endOfDay = new Date(data.dateTo);
       endOfDay.setHours(23, 59, 59, 999);
-      filters.push(lte(payments.paymentDate, endOfDay));
+      filters.push(lte(payments.effectiveDate, endOfDay));
     }
 
     const whereClause = filters.length > 0 ? and(...filters) : undefined;
@@ -54,7 +55,7 @@ export const getPaymentsFn = createServerFn()
       },
       limit: data.limit,
       offset,
-      orderBy: [desc(payments.paymentDate)],
+      orderBy: [desc(payments.effectiveDate), desc(payments.paymentDate)],
     });
 
     const totalResult = await db
@@ -71,22 +72,22 @@ export const getPaymentsFn = createServerFn()
 
 // ═══════════════════════════════════════════════════════════════════════════
 // RECORD EXPENSE OFFSET
-// Simultaneously creates a payment record AND a company expense entry.
-// Use when a customer credit balance is offset against a legitimate
-// business expense (e.g. delivery fuel reimbursed from their balance).
+// Creates the company expense and settles the same amount against one invoice.
+// The expense debits its wallet; settlement adds no wallet credit.
 // ═══════════════════════════════════════════════════════════════════════════
 export const recordExpenseOffsetFn = createServerFn()
   .middleware([requireSalesManageMiddleware])
-  .inputValidator((input: any) =>
+  .inputValidator((input: unknown) =>
     z
       .object({
         customerId: z.string().min(1),
-        invoiceId: z.string().min(1, "Invoice is required - every payment must be linked to an invoice"),
+        invoiceId: z.string().min(1, "Invoice is required"),
         amount: z.number().positive(),
-        expenseDescription: z.string().min(1),
+        expenseDescription: z.string().trim().min(1),
         expenseCategoryId: z.string().min(1),
-        expenseCategory: z.string().min(1),
+        expenseCategory: z.string().trim().min(1),
         walletId: z.string().min(1),
+        expenseDate: z.coerce.date().default(() => new Date()),
         notes: z.string().optional(),
         reference: z.string().optional(),
       })
@@ -95,58 +96,37 @@ export const recordExpenseOffsetFn = createServerFn()
   .handler(async ({ data, context }) => {
     const userId = context.session.user.id;
 
-    return await db.transaction(async (tx) => {
-      const customer = await tx.query.customers.findFirst({
-        where: eq(customers.id, data.customerId),
+    return db.transaction(async (tx) => {
+      const invoice = await tx.query.invoices.findFirst({
+        where: eq(invoices.id, data.invoiceId),
+        columns: { customerId: true },
+        with: { customer: { columns: { name: true } } },
       });
-      if (!customer) throw new Error("Customer not found");
+      if (!invoice) throw new Error("Invoice not found");
+      if (invoice.customerId !== data.customerId) {
+        throw new Error("Invoice does not belong to this customer");
+      }
 
       const wallet = await tx.query.wallets.findFirst({
         where: eq(wallets.id, data.walletId),
+        columns: { id: true },
       });
-      if (!wallet) throw new Error("Wallet not found");
+      if (!wallet) throw new Error("Expense account was not found");
 
-      // 1. Payment record (reduces customer credit)
-      const [payment] = await tx
-        .insert(payments)
-        .values({
-          id: createId(),
-          customerId: data.customerId,
-          invoiceId: data.invoiceId,
-          amount: data.amount.toString(),
-          method: "expense_offset",
-          reference: data.reference,
-          expenseType: data.expenseCategory,
-          notes: data.notes,
-          recordedById: userId,
-          paymentDate: new Date(),
-        })
-        .returning();
-
-      // 2. Update customer ledger
-      await tx
-        .update(customers)
-        .set({
-          payment: sql`${customers.payment} + ${data.amount}`,
-          credit: sql`${customers.credit} - ${data.amount}`,
-        })
-        .where(eq(customers.id, data.customerId));
-
-      // 3. Company expense entry
       const expenseId = createId();
       await tx.insert(expenses).values({
         id: expenseId,
         description: data.expenseDescription,
         category: data.expenseCategory,
         categoryId: data.expenseCategoryId,
+        expenseDate: data.expenseDate,
         amount: data.amount.toString(),
         walletId: data.walletId,
         performedById: userId,
         slipNumber: data.reference,
-        remarks: `Expense offset against customer: ${customer.name}`,
+        remarks: `Expense offset against customer: ${invoice.customer.name}`,
       });
 
-      // 4. Wallet debit transaction
       await tx
         .update(wallets)
         .set({ balance: sql`${wallets.balance} - ${data.amount}` })
@@ -159,9 +139,22 @@ export const recordExpenseOffsetFn = createServerFn()
         amount: data.amount.toString(),
         referenceId: expenseId,
         source: "Expense Offset",
+        effectiveDate: data.expenseDate,
         performedById: userId,
       });
 
-      return payment;
+      return recordRecoveryPayment(tx, {
+        invoiceId: data.invoiceId,
+        actorId: userId,
+        payment: {
+          method: "expense_offset",
+          amount: data.amount,
+          paymentDate: data.expenseDate,
+          expenseType: data.expenseCategory,
+          sourceRecordId: expenseId,
+          reference: data.reference,
+          notes: data.notes,
+        },
+      });
     });
   });
