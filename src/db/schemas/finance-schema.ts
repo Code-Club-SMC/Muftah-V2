@@ -1,5 +1,6 @@
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import {
+  type AnyPgColumn,
   boolean,
   decimal,
   index,
@@ -214,23 +215,41 @@ export const expenseFieldValues = pgTable(
 );
 
 // --- TRANSACTIONS (Journal) ---
-export const transactions = pgTable("transactions", {
-  id: text("id").primaryKey(),
-  walletId: text("wallet_id")
-    .notNull()
-    .references(() => wallets.id),
+export const transactions = pgTable(
+  "transactions",
+  {
+    id: text("id").primaryKey(),
+    walletId: text("wallet_id")
+      .notNull()
+      .references(() => wallets.id),
 
-  type: text("type").notNull(), // "credit", "debit"
-  amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
+    type: text("type").notNull(), // "credit", "debit"
+    amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
 
-  source: text("source").notNull(), // "Sale", "Expense", "Payroll", "Manual Adjustment"
-  referenceId: text("reference_id"), // ID of Invoice, Expense, or Payroll record
+    source: text("source").notNull(), // "Sale", "Expense", "Payroll", "Manual Adjustment"
+    referenceId: text("reference_id"), // ID of Invoice, Expense, or Payroll record
+    effectiveDate: timestamp("effective_date", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    reversalOfTransactionId: text("reversal_of_transaction_id").references(
+      (): AnyPgColumn => transactions.id,
+      { onDelete: "restrict" },
+    ),
 
-  performedById: text("performed_by_id")
-    .notNull()
-    .references(() => user.id),
-  ...timestamps,
-});
+    performedById: text("performed_by_id")
+      .notNull()
+      .references(() => user.id),
+    ...timestamps,
+  },
+  (table) => ({
+    effectiveDateIdx: index("transactions_effective_date_idx").on(
+      table.effectiveDate,
+    ),
+    reversalUnique: uniqueIndex("transactions_reversal_unique")
+      .on(table.reversalOfTransactionId)
+      .where(sql`${table.reversalOfTransactionId} is not null`),
+  }),
+);
 
 // --- RELATIONS ---
 
@@ -300,5 +319,10 @@ export const transactionsRelations = relations(transactions, ({ one }) => ({
   performer: one(user, {
     fields: [transactions.performedById],
     references: [user.id],
+  }),
+  reversalOf: one(transactions, {
+    fields: [transactions.reversalOfTransactionId],
+    references: [transactions.id],
+    relationName: "transactionReversal",
   }),
 }));

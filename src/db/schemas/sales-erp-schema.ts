@@ -1,6 +1,7 @@
 import { createId } from "@paralleldrive/cuid2";
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import {
+  check,
   pgTable,
   text,
   timestamp,
@@ -10,6 +11,7 @@ import {
   boolean,
   index,
   unique,
+  uniqueIndex,
   jsonb,
 } from "drizzle-orm/pg-core";
 
@@ -17,6 +19,7 @@ import { customers, invoices, invoiceItems } from "./sales-schema";
 import { products, recipes, warehouses } from "./inventory-schema";
 import { user } from "./auth-schema";
 import { employees } from "./hr-schema";
+import { wallets } from "./finance-schema";
 
 const timestamps = {
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -130,27 +133,104 @@ export const discountRules = pgTable("discount_rules", {
 }));
 
 // --- PAYMENTS ---
-export const payments = pgTable("payments", {
-  id: text("id")
-    .primaryKey()
-    .$defaultFn(() => createId()),
-  customerId: text("customer_id")
-    .notNull()
-    .references(() => customers.id),
-  invoiceId: text("invoice_id")
-    .notNull()
-    .references(() => invoices.id), // Required - every payment must be linked to an invoice
-  amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
-  method: text("method").notNull().default("cash"), // "cash" | "bank_transfer" | "expense_offset" | "invoice_cash"
-  reference: text("reference"),
-  expenseType: text("expense_type"), // Nullable, only for expense_offset
-  recordedById: text("recorded_by_id")
-    .notNull()
-    .references(() => user.id),
-  paymentDate: timestamp("payment_date").defaultNow().notNull(),
-  notes: text("notes"),
-  ...timestamps,
-});
+export const payments = pgTable(
+  "payments",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => createId()),
+    customerId: text("customer_id")
+      .notNull()
+      .references(() => customers.id),
+    invoiceId: text("invoice_id")
+      .notNull()
+      .references(() => invoices.id),
+    amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
+    method: text("method", {
+      enum: ["cash", "bank_transfer", "cheque", "expense_offset"],
+    }).notNull(),
+    status: text("status", {
+      enum: ["pending", "confirmed", "returned", "cancelled", "reversed"],
+    }).notNull(),
+    walletId: text("wallet_id").references(() => wallets.id),
+    reference: text("reference"),
+    chequeNumber: text("cheque_number"),
+    chequeBank: text("cheque_bank"),
+    chequeDate: timestamp("cheque_date", { withTimezone: true }),
+    expenseType: text("expense_type"),
+    recordedById: text("recorded_by_id")
+      .notNull()
+      .references(() => user.id),
+    paymentDate: timestamp("payment_date", { withTimezone: true }).notNull(),
+    effectiveDate: timestamp("effective_date", { withTimezone: true }),
+    source: text("source", {
+      enum: ["invoice_creation", "recovery", "offline_import", "adjustment"],
+    }).notNull(),
+    sourceRecordId: text("source_record_id"),
+    allocationGroupId: text("allocation_group_id"),
+    confirmedById: text("confirmed_by_id").references(() => user.id),
+    confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
+    resolvedById: text("resolved_by_id").references(() => user.id),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+    resolutionReason: text("resolution_reason"),
+    notes: text("notes"),
+    ...timestamps,
+  },
+  (table) => ({
+    amountPositiveCheck: check(
+      "payments_amount_positive_check",
+      sql`${table.amount} > 0`,
+    ),
+    methodStatusCheck: check(
+      "payments_method_status_check",
+      sql`(
+        (${table.method} in ('cash', 'expense_offset') and ${table.status} in ('confirmed', 'reversed')) or
+        (${table.method} = 'bank_transfer' and ${table.status} in ('pending', 'confirmed', 'cancelled', 'reversed')) or
+        (${table.method} = 'cheque' and ${table.status} in ('pending', 'confirmed', 'returned', 'cancelled', 'reversed'))
+      )`,
+    ),
+    methodDetailsCheck: check(
+      "payments_method_details_check",
+      sql`(
+        (${table.method} = 'expense_offset' or ${table.walletId} is not null) and
+        (${table.method} <> 'bank_transfer' or nullif(btrim(${table.reference}), '') is not null) and
+        (${table.method} <> 'cheque' or (
+          nullif(btrim(${table.chequeNumber}), '') is not null and
+          nullif(btrim(${table.chequeBank}), '') is not null and
+          ${table.chequeDate} is not null
+        ))
+      )`,
+    ),
+    confirmationCheck: check(
+      "payments_confirmation_check",
+      sql`(
+        (${table.status} in ('confirmed', 'reversed') and ${table.effectiveDate} is not null and ${table.confirmedById} is not null and ${table.confirmedAt} is not null) or
+        (${table.status} in ('pending', 'returned', 'cancelled') and ${table.effectiveDate} is null and ${table.confirmedById} is null and ${table.confirmedAt} is null)
+      )`,
+    ),
+    resolutionCheck: check(
+      "payments_resolution_check",
+      sql`(
+        (${table.status} in ('returned', 'cancelled', 'reversed') and ${table.resolvedById} is not null and ${table.resolvedAt} is not null and nullif(btrim(${table.resolutionReason}), '') is not null) or
+        (${table.status} in ('pending', 'confirmed') and ${table.resolvedById} is null and ${table.resolvedAt} is null and ${table.resolutionReason} is null)
+      )`,
+    ),
+    sourceCheck: check(
+      "payments_source_check",
+      sql`${table.source} in ('invoice_creation', 'recovery', 'offline_import', 'adjustment')`,
+    ),
+    sourceRecordUnique: uniqueIndex("payments_source_record_unique")
+      .on(table.source, table.sourceRecordId)
+      .where(sql`${table.sourceRecordId} is not null`),
+    invoiceStatusIdx: index("payments_invoice_status_idx").on(
+      table.invoiceId,
+      table.status,
+    ),
+    effectiveDateIdx: index("payments_effective_date_idx").on(
+      table.effectiveDate,
+    ),
+  }),
+);
 
 // --- SLIP RECORDS ---
 export const slipRecords = pgTable("slip_records", {
@@ -166,8 +246,18 @@ export const slipRecords = pgTable("slip_records", {
     .references(() => customers.id),
   salesmanId: text("salesman_id")
     .references(() => salesmen.id), // Optional
-  amountDue: decimal("amount_due", { precision: 12, scale: 2 }).notNull().default("0"),
-  amountRecovered: decimal("amount_recovered", { precision: 12, scale: 2 }).notNull().default("0"),
+  invoiceAmount: decimal("invoice_amount", { precision: 12, scale: 2 })
+    .notNull()
+    .default("0"),
+  paidAmount: decimal("paid_amount", { precision: 12, scale: 2 })
+    .notNull()
+    .default("0"),
+  outstandingAmount: decimal("outstanding_amount", {
+    precision: 12,
+    scale: 2,
+  })
+    .notNull()
+    .default("0"),
   status: text("status").notNull().default("open"), // "open" | "partially_recovered" | "closed"
   recoveryStatus: text("recovery_status"), // "pending" | "in_progress" | "partially_paid" | "overdue" | "defaulted"
   recoveryAssignedToId: text("recovery_assigned_to_id").references(() => salesmen.id),
@@ -182,6 +272,11 @@ export const slipRecords = pgTable("slip_records", {
   recoveryStatusIdx: index("idx_slip_records_recovery_status").on(table.recoveryStatus),
   recoveryAssignedIdx: index("idx_slip_records_recovery_assigned").on(table.recoveryAssignedToId),
   nextFollowUpIdx: index("idx_slip_records_next_follow_up").on(table.nextFollowUpDate),
+  invoiceUnique: uniqueIndex("slip_records_invoice_unique").on(table.invoiceId),
+  settlementAmountsCheck: check(
+    "slip_records_settlement_amounts_check",
+    sql`${table.invoiceAmount} >= 0 and ${table.paidAmount} >= 0 and ${table.outstandingAmount} >= 0 and ${table.paidAmount} + ${table.outstandingAmount} = ${table.invoiceAmount}`,
+  ),
 }));
 
 // --- CREDIT RECOVERY ATTEMPTS ---
@@ -450,6 +545,21 @@ export const paymentsRelations = relations(payments, ({ one }) => ({
   recordedBy: one(user, {
     fields: [payments.recordedById],
     references: [user.id],
+    relationName: "paymentRecordedBy",
+  }),
+  wallet: one(wallets, {
+    fields: [payments.walletId],
+    references: [wallets.id],
+  }),
+  confirmedBy: one(user, {
+    fields: [payments.confirmedById],
+    references: [user.id],
+    relationName: "paymentConfirmedBy",
+  }),
+  resolvedBy: one(user, {
+    fields: [payments.resolvedById],
+    references: [user.id],
+    relationName: "paymentResolvedBy",
   }),
 }));
 

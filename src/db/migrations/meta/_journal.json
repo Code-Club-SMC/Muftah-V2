@@ -64,6 +64,13 @@
       "when": 1786004779803,
       "tag": "0008_offline_attendance_import",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1786355515919,
+      "tag": "0009_invoice_settlement_redesign",
+      "breakpoints": true
     }
   ]
 }

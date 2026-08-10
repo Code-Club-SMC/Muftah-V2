@@ -81,7 +81,7 @@ export const {
   returnLines,
   integrityAlerts,
 } = manufacturingSchema;
-export const { customers, invoices, invoiceItems } = salesSchema;
+export const { customers, invoices, invoiceItems, invoiceNumberCounters } = salesSchema;
 export const {
   salesmen,
   discountRules,

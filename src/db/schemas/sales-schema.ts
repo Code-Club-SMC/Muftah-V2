@@ -1,6 +1,7 @@
 import { createId } from "@paralleldrive/cuid2";
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import {
+  check,
   decimal,
   pgTable,
   text,
@@ -9,6 +10,7 @@ import {
   serial,
   boolean,
   index,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { recipes, warehouses } from "./inventory-schema";
 import { user } from "./auth-schema";
@@ -21,6 +23,29 @@ const timestamps = {
     .$onUpdate(() => new Date())
     .notNull(),
 };
+
+// Public invoice numbers use explicit transactional counters. Internal serial
+// columns remain implementation details and never determine customer numbers.
+export const invoiceNumberCounters = pgTable(
+  "invoice_number_counters",
+  {
+    kind: text("kind", { enum: ["online", "offline"] }).primaryKey(),
+    nextValue: integer("next_value").notNull().default(1),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    check(
+      "invoice_number_counters_next_value_check",
+      sql`${table.nextValue} > 0`,
+    ),
+    check(
+      "invoice_number_counters_kind_check",
+      sql`${table.kind} in ('online', 'offline')`,
+    ),
+  ],
+);
 
 // --- CUSTOMERS ---
 export const customers = pgTable("customers", {
@@ -36,8 +61,15 @@ export const customers = pgTable("customers", {
   bankAccount: text("bank_account"),
   mobileNumber: text("mobile_number"),
   totalSale: decimal("total_sale", { precision: 12, scale: 2 }).default("0"),
-  payment: decimal("payment", { precision: 12, scale: 2 }).default("0"),
-  credit: decimal("credit", { precision: 12, scale: 2 }).default("0"),
+  totalPaidAmount: decimal("total_paid_amount", { precision: 12, scale: 2 })
+    .notNull()
+    .default("0"),
+  outstandingAmount: decimal("outstanding_amount", {
+    precision: 12,
+    scale: 2,
+  })
+    .notNull()
+    .default("0"),
   weightSaleKg: decimal("weight_sale_kg", { precision: 12, scale: 3 }).default(
     "0",
   ),
@@ -73,10 +105,25 @@ export const invoices = pgTable(
     customerId: text("customer_id")
       .notNull()
       .references(() => customers.id),
-    account: text("account"), // e.g., bank or cash account
-    cash: decimal("cash", { precision: 12, scale: 2 }).default("0"),
-    credit: decimal("credit", { precision: 12, scale: 2 }).default("0"),
-    creditReturnDate: timestamp("credit_return_date"),
+    invoiceNumber: text("invoice_number").notNull(),
+    source: text("source", { enum: ["online", "offline_import"] })
+      .notNull()
+      .default("online"),
+    paidAmount: decimal("paid_amount", { precision: 12, scale: 2 })
+      .notNull()
+      .default("0"),
+    outstandingAmount: decimal("outstanding_amount", {
+      precision: 12,
+      scale: 2,
+    })
+      .notNull()
+      .default("0"),
+    paymentDueDate: timestamp("payment_due_date", { withTimezone: true }),
+    paymentStatus: text("payment_status", {
+      enum: ["unpaid", "partially_paid", "paid"],
+    })
+      .notNull()
+      .default("unpaid"),
     expenses: decimal("expenses", { precision: 12, scale: 2 }).default("0"),
     expensesDescription: text("expenses_description"),
     invoiceDiscount: decimal("invoice_discount", { precision: 12, scale: 2 }).default("0"),
@@ -85,7 +132,6 @@ export const invoices = pgTable(
     totalPrice: decimal("total_price", { precision: 12, scale: 2 })
       .notNull()
       .default("0"),
-    slipNumber: text("slip_number"),
     remarks: text("remarks"),
 
     warehouseId: text("warehouse_id")
@@ -95,7 +141,9 @@ export const invoices = pgTable(
     performedById: text("performed_by_id")
       .notNull()
       .references(() => user.id),
-    status: text("status").notNull().default("saved"), // "draft" | "saved" | "paid" | "partially_paid" | "voided"
+    status: text("status", { enum: ["saved", "voided"] })
+      .notNull()
+      .default("saved"),
     salesmanId: text("salesman_id").references(() => salesmen.id),
     // Link to a booked order (set when the invoice is generated from an order).
     // Nullable so non-order invoices are unaffected.
@@ -107,6 +155,28 @@ export const invoices = pgTable(
   (table) => ({
     statusDateIdx: index("idx_invoices_status_date").on(table.status, table.date),
     orderBookerIdx: index("idx_invoices_order_booker").on(table.orderBookerId),
+    invoiceNumberUnique: uniqueIndex("invoices_invoice_number_unique").on(
+      table.invoiceNumber,
+    ),
+    orderIdUnique: uniqueIndex("invoices_order_id_unique")
+      .on(table.orderId)
+      .where(sql`${table.orderId} is not null`),
+    settlementAmountsCheck: check(
+      "invoices_settlement_amounts_check",
+      sql`${table.paidAmount} >= 0 and ${table.outstandingAmount} >= 0 and ${table.paidAmount} + ${table.outstandingAmount} = ${table.totalPrice}`,
+    ),
+    sourceCheck: check(
+      "invoices_source_check",
+      sql`${table.source} in ('online', 'offline_import')`,
+    ),
+    paymentStatusCheck: check(
+      "invoices_payment_status_check",
+      sql`${table.paymentStatus} in ('unpaid', 'partially_paid', 'paid')`,
+    ),
+    lifecycleStatusCheck: check(
+      "invoices_lifecycle_status_check",
+      sql`${table.status} in ('saved', 'voided')`,
+    ),
   }),
 );
 
