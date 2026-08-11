@@ -1,9 +1,10 @@
 import { createServerFn } from "@tanstack/react-start";
-import { and, eq, gte, inArray, lte, sql } from "drizzle-orm";
+import { and, eq, gte, lte, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { products, recipes } from "@/db/schemas/inventory-schema";
 import { requireReportsViewMiddleware } from "@/lib/middlewares";
+import { REPORT_SOURCES } from "@/lib/report-source";
 import { customers, invoiceItems, invoices } from "@/db/schemas/sales-schema";
 import { getCompanyReportData } from "./company-reporting-core";
 import { fetchScopedInvoiceRows } from "./reporting-core";
@@ -11,7 +12,7 @@ import { fetchScopedInvoiceRows } from "./reporting-core";
 function escapeCsv(value: string | number | null | undefined): string {
   const str = String(value ?? "");
   if (/^[+=@-]/.test(str)) return `"'${str}"`;
-  if (/[",\n\r]/.test(str)) return `"${str.replace(/"/g, "\"\"")}"`;
+  if (/[",\n\r]/.test(str)) return `"${str.replace(/"/g, '""')}"`;
   return str;
 }
 
@@ -26,6 +27,7 @@ export const exportPnlCsvFn = createServerFn()
         recipeId: z.string().optional(),
         distributorId: z.string().optional(),
         customerType: z.string().optional(),
+        source: z.enum(REPORT_SOURCES).default("all"),
       })
       .parse(input),
   )
@@ -40,11 +42,13 @@ export const exportPnlCsvFn = createServerFn()
       const report = await getCompanyReportData({
         dateFrom: data.dateFrom,
         dateTo: data.dateTo,
+        source: data.source,
       });
 
       const headerRows = [
         ["Report", "Company Profitability Overview"],
         ["Period", report.reportPeriod.label],
+        ["Invoice Source", report.source],
         ["Status", report.status.label],
         ["Collected Revenue", report.summary.totalRevenue.toFixed(2)],
         ["COGS", report.summary.totalCogs.toFixed(2)],
@@ -54,7 +58,10 @@ export const exportPnlCsvFn = createServerFn()
         ["Commissions", report.summary.commissions.toFixed(2)],
         ["TA/DA", report.summary.tada.toFixed(2)],
         ["General Expenses", report.summary.generalExpenses.toFixed(2)],
-        ["Total Operating Expenses", report.summary.totalOperatingExpenses.toFixed(2)],
+        [
+          "Total Operating Expenses",
+          report.summary.totalOperatingExpenses.toFixed(2),
+        ],
         ["Net Profit", report.summary.netProfit.toFixed(2)],
         ["Wallet Movement", report.reconciliation.periodNetMovement.toFixed(2)],
         [],
@@ -63,7 +70,7 @@ export const exportPnlCsvFn = createServerFn()
       const lineHeaders = [
         "Invoice Date",
         "Invoice ID",
-        "Slip Number",
+        "Invoice Number",
         "Customer",
         "Product",
         "Recipe",
@@ -81,7 +88,7 @@ export const exportPnlCsvFn = createServerFn()
       const lineRows = report.realizedLines.map((row) => [
         escapeCsv(row.invoiceDate.toISOString().split("T")[0]),
         escapeCsv(row.invoiceId),
-        escapeCsv(row.slipNumber),
+        escapeCsv(row.invoiceNumber),
         escapeCsv(row.customerName),
         escapeCsv(row.productName ?? "Unmapped Sales"),
         escapeCsv(row.recipeName ?? ""),
@@ -127,6 +134,7 @@ export const exportPnlCsvFn = createServerFn()
         {
           productId: data.productId,
           recipeId: data.recipeId,
+          source: data.source,
         },
         {
           fromDate,
@@ -169,14 +177,16 @@ export const exportPnlCsvFn = createServerFn()
       ]);
 
       return {
-        csv: [headers.join(","), ...csvRows.map((row) => row.join(","))].join("\n"),
+        csv: [headers.join(","), ...csvRows.map((row) => row.join(","))].join(
+          "\n",
+        ),
         filename: `profit-loss-report-${fromDate.toISOString().split("T")[0]}-${toDate.toISOString().split("T")[0]}.csv`,
         rowCount: rows.length,
       };
     }
 
     const conditions = [
-      inArray(invoices.status, ["paid", "partially_paid"]),
+      ne(invoices.status, "voided"),
       gte(invoices.date, fromDate),
       lte(invoices.date, toDate),
     ];
@@ -193,12 +203,15 @@ export const exportPnlCsvFn = createServerFn()
     if (data.customerType) {
       conditions.push(eq(customers.customerType, data.customerType));
     }
+    if (data.source !== "all") {
+      conditions.push(eq(invoices.source, data.source));
+    }
 
     const rows = await db
       .select({
         date: invoices.date,
         invoiceId: invoices.id,
-        slipNumber: invoices.slipNumber,
+        invoiceNumber: invoices.invoiceNumber,
         customerName: customers.name,
         customerType: customers.customerType,
         productName: products.name,
@@ -224,7 +237,7 @@ export const exportPnlCsvFn = createServerFn()
     const headers = [
       "Date",
       "Invoice ID",
-      "Slip Number",
+      "Invoice Number",
       "Customer",
       "Customer Type",
       "Product",
@@ -243,7 +256,7 @@ export const exportPnlCsvFn = createServerFn()
     const csvRows = rows.map((row) => [
       escapeCsv(row.date.toISOString().split("T")[0]),
       escapeCsv(row.invoiceId),
-      escapeCsv(row.slipNumber),
+      escapeCsv(row.invoiceNumber),
       escapeCsv(row.customerName),
       escapeCsv(row.customerType),
       escapeCsv(row.productName),
@@ -260,7 +273,9 @@ export const exportPnlCsvFn = createServerFn()
     ]);
 
     return {
-      csv: [headers.join(","), ...csvRows.map((row) => row.join(","))].join("\n"),
+      csv: [headers.join(","), ...csvRows.map((row) => row.join(","))].join(
+        "\n",
+      ),
       filename: `profit-loss-report-${fromDate.toISOString().split("T")[0]}-${toDate.toISOString().split("T")[0]}.csv`,
       rowCount: rows.length,
     };

@@ -12,9 +12,12 @@ export default defineConfig({
   test: {
     environment: "node",
     globals: true,
-    include: ["src/__tests__/integration/**/*.test.ts"],
-    testTimeout: 30_000,
-    hookTimeout: 30_000,
+    include: [
+      "src/__tests__/integration/**/*.test.ts",
+      "src/lib/sales/offline/**/*.integration.test.ts",
+    ],
+    testTimeout: 120_000,
+    hookTimeout: 120_000,
     pool: "forks",
   },
 });

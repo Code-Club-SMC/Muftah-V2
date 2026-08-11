@@ -92,4 +92,45 @@ describe("rbac route rules", () => {
       false,
     );
   });
+
+  it("separates offline sales workbook issuance from finance review", () => {
+    expect(PERMISSION_KEYS).toEqual(
+      expect.arrayContaining([
+        "sales.offline.view",
+        "sales.offline.workbooks.manage",
+        "sales.offline.upload",
+        "sales.offline.review",
+        "sales.offline.post",
+        "inventory.stock-reconciliation.manage",
+      ]),
+    );
+
+    const admin = SYSTEM_ROLE_SEEDS.find((role) => role.slug === "admin");
+    expect(admin?.permissionKeys).toEqual(
+      expect.arrayContaining([
+        "sales.offline.view",
+        "sales.offline.workbooks.manage",
+        "sales.offline.upload",
+        "sales.offline.review",
+        "sales.offline.post",
+        "inventory.stock-reconciliation.manage",
+      ]),
+    );
+
+    const finance = SYSTEM_ROLE_SEEDS.find(
+      (role) => role.slug === "finance-manager",
+    );
+    expect(finance?.permissionKeys).toEqual(
+      expect.arrayContaining([
+        "sales.offline.view",
+        "sales.offline.review",
+        "sales.offline.post",
+      ]),
+    );
+    expect(finance?.permissionKeys).not.toContain(
+      "sales.offline.workbooks.manage",
+    );
+    expect(canAccessPath("/sales/offline", ["sales.view"])).toBe(false);
+    expect(canAccessPath("/sales/offline", ["sales.offline.view"])).toBe(true);
+  });
 });

@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireReportsViewMiddleware } from "@/lib/middlewares";
+import { REPORT_SOURCES } from "@/lib/report-source";
 import { getCompanyReportData } from "./company-reporting-core";
 
 export const getCompanyProfitLossFn = createServerFn()
@@ -10,6 +11,7 @@ export const getCompanyProfitLossFn = createServerFn()
       .object({
         dateFrom: z.string().optional(),
         dateTo: z.string().optional(),
+        source: z.enum(REPORT_SOURCES).default("all"),
       })
       .parse(input),
   )

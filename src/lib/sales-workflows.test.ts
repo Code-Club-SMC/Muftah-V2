@@ -77,7 +77,9 @@ describe("sales workflow regressions", () => {
     expect(returnsSource).toContain("const requestUnitsByItem = new Map<string, number>()");
     expect(returnsSource).toContain("Number(invoiceItem.retailPrice || 0)");
     expect(returnsSource).toContain("Number(invoiceItem.perCartonPrice) / cpp");
-    expect(returnsSource).toContain("salesReturn.invoice.stockWarehouseId ?? salesReturn.invoice.warehouseId");
+    expect(returnsSource).toMatch(
+      /salesReturn\.invoice\.stockWarehouseId\s*\?\?\s*salesReturn\.invoice\.warehouseId/,
+    );
     expect(returnsSource).toContain("Return quantity must be greater than zero");
   });
 
@@ -215,8 +217,9 @@ describe("sales workflow regressions", () => {
 
     expect(ledgerSource).toContain("lte(dateField, endOfDay(toDate))");
     expect(ledgerSource).toContain("Ledger must stay chronological");
-    expect(ledgerSource).toContain("return (a.date.getTime() - b.date.getTime()) * order;");
-    expect(ledgerSource).toContain("invoiceLineProfit - (Number(inv.invoiceDiscount) || 0)");
+    expect(ledgerSource).toContain("const dateDifference = a.date.getTime() - b.date.getTime()");
+    expect(ledgerSource).toContain("return a.id.localeCompare(b.id) * order");
+    expect(ledgerSource).toContain("lineProfit - safeNumber(invoice.invoiceDiscount)");
   });
 
   it("threads approved returns through ledgers and audits full export fetches separately from paginated views", () => {
@@ -233,13 +236,18 @@ describe("sales workflow regressions", () => {
     expect(ledgerSource).toContain("buildApprovedReturnBeforeDate");
     expect(ledgerSource).toContain('kind: "invoice" | "return" | "payment"');
     expect(ledgerSource).toContain('type: "return"');
+    expect(ledgerSource).toContain('eq(payments.status, "confirmed")');
+    expect(ledgerSource).toContain("payments.effectiveDate");
+    expect(ledgerSource).toContain("runningBalance += totalPrice");
+    expect(ledgerSource).toContain("runningBalance -= amount");
     expect(ledgerSource).toContain('includeFullEntries: z.boolean().optional()');
     expect(ledgerSource).toContain('exportType: z.enum(["view", "print", "csv", "pdf"]).optional()');
-    expect(ledgerSource).toContain('entries: data.includeFullEntries ? filteredEntries : paginatedEntries');
+    expect(ledgerSource).toContain("entries: query.includeFullEntries");
     expect(ledgerSource).toContain('exportType: data.exportType ?? "view"');
     expect(ledgerSource).toContain("periodReturns:");
     expect(printSource).toContain("loadEntriesForExport");
-    expect(printSource).toContain('entry.type === "payment" && entry.method === "invoice_cash"');
+    expect(printSource).toContain('if (entry.type === "payment")');
+    expect(printSource).toContain("return entry.amount");
     expect(printSource).not.toContain('entry.method === "cash" || entry.method === "invoice_cash"');
   });
 
@@ -397,8 +405,8 @@ describe("sales workflow regressions", () => {
     const source = readFileSync(SALES_CONFIG_FN, "utf8");
 
     expect(source).toContain("COALESCE(SUM(${invoices.amount}), 0)");
-    expect(source).toContain("COALESCE(SUM(${invoices.cash}), 0)");
-    expect(source).toContain("COALESCE(SUM(${invoices.credit}), 0)");
+    expect(source).toContain("COALESCE(SUM(${invoices.paidAmount}), 0)");
+    expect(source).toContain("COALESCE(SUM(${invoices.outstandingAmount}), 0)");
     expect(source).toContain("COALESCE(SUM(${invoices.invoiceDiscount}), 0)");
     expect(source).toContain("COALESCE(SUM(${invoiceItems.totalWeight}), 0)");
     expect(source).toContain("totalSale: String(Number(invoiceTotals?.totalSale) || 0)");

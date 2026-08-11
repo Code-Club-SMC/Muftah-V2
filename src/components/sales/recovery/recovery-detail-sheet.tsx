@@ -53,7 +53,7 @@ import { AttemptTimeline } from "./attempt-timeline";
 type Slip = {
   id: string;
   slipNumber: string;
-  amountDue: string;
+  outstandingAmount: string;
   recoveryStatus: string | null;
   recoveryAssignedToId: string | null;
   recoveryAssignedTo?: { name: string } | null;
@@ -66,7 +66,7 @@ type Slip = {
     mobileNumber?: string;
   } | null;
   salesman?: { name: string } | null;
-  invoice?: { creditReturnDate?: string | null } | null;
+  invoice?: { paymentDueDate?: string | null } | null;
 };
 
 type Props = {
@@ -275,10 +275,10 @@ export function RecoveryDetailSheet({ slip, onClose }: Props) {
           <div className="flex items-center gap-4 flex-wrap sm:flex-nowrap">
             <div className="shrink-0">
               <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
-                Amount Due
+                Outstanding Amount
               </p>
               <p className="text-xl font-bold text-red-600 tabular-nums">
-                {PKR(Number(slip?.amountDue ?? 0))}
+                {PKR(Number(slip?.outstandingAmount ?? 0))}
               </p>
             </div>
             <div className="w-px h-10 bg-border hidden sm:block" />
@@ -288,11 +288,8 @@ export function RecoveryDetailSheet({ slip, onClose }: Props) {
               </p>
               <div className="flex items-center gap-1.5 text-sm font-medium tabular-nums">
                 <CalendarIcon className="size-3.5 text-muted-foreground" />
-                {slip?.invoice?.creditReturnDate
-                  ? format(
-                      new Date(slip.invoice.creditReturnDate),
-                      "dd MMM yyyy",
-                    )
+                {slip?.invoice?.paymentDueDate
+                  ? format(new Date(slip.invoice.paymentDueDate), "dd MMM yyyy")
                   : "—"}
               </div>
             </div>
@@ -338,9 +335,11 @@ export function RecoveryDetailSheet({ slip, onClose }: Props) {
                   <SelectValue placeholder="Select status" />
                 </SelectTrigger>
                 <SelectContent>
-                  {(Object.keys(STATUS_STYLES) as Array<
-                    keyof typeof STATUS_STYLES
-                  >).map((key) => {
+                  {(
+                    Object.keys(STATUS_STYLES) as Array<
+                      keyof typeof STATUS_STYLES
+                    >
+                  ).map((key) => {
                     const s = STATUS_STYLES[key];
                     return (
                       <SelectItem key={key} value={key}>
@@ -552,7 +551,9 @@ export function RecoveryDetailSheet({ slip, onClose }: Props) {
               <div
                 className={cn(
                   "grid gap-3",
-                  needsPromiseDate ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-1",
+                  needsPromiseDate
+                    ? "grid-cols-1 sm:grid-cols-2"
+                    : "grid-cols-1",
                 )}
               >
                 <div className="space-y-2">
@@ -624,7 +625,8 @@ export function RecoveryDetailSheet({ slip, onClose }: Props) {
                 }
               />
               <p className="text-xs text-muted-foreground mt-1.5">
-                Add details to keep your team informed and follow up effectively.
+                Add details to keep your team informed and follow up
+                effectively.
               </p>
             </div>
 
@@ -719,7 +721,7 @@ function EscalationLadderInline({
   labels: Record<number, string>;
 }) {
   const levels = [0, 1, 2, 3] as const;
-  const colorFor = (level: number) => {
+  const colorFor = (level: (typeof levels)[number]) => {
     switch (level) {
       case 0:
         return {

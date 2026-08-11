@@ -1,6 +1,6 @@
 /**
- * Automated overdue detection for credit slips.
- * Scans all non-closed slips whose invoice creditReturnDate has passed
+ * Automated overdue detection for outstanding invoices.
+ * Scans all non-closed slips whose Payment Due Date has passed
  * and marks them as overdue.
  */
 
@@ -31,7 +31,7 @@ export const updateOverdueSlipsFn = createServerFn()
     todayStart.setHours(0, 0, 0, 0);
 
     return await db.transaction(async (tx) => {
-      // Find non-closed slips whose invoice creditReturnDate is before today.
+      // Find non-closed slips whose Payment Due Date is before today.
       // This must join invoices explicitly so the due-date filter is in scope.
       const overdueSlips = await tx
         .select({
@@ -41,7 +41,7 @@ export const updateOverdueSlipsFn = createServerFn()
           recoveryStatus: slipRecords.recoveryStatus,
           customerId: slipRecords.customerId,
           customerName: customers.name,
-          creditReturnDate: invoices.creditReturnDate,
+          paymentDueDate: invoices.paymentDueDate,
         })
         .from(slipRecords)
         .innerJoin(invoices, eq(slipRecords.invoiceId, invoices.id))
@@ -49,7 +49,7 @@ export const updateOverdueSlipsFn = createServerFn()
         .where(
           and(
             ne(slipRecords.status, "closed"),
-            lt(invoices.creditReturnDate, todayStart),
+            lt(invoices.paymentDueDate, todayStart),
           ),
         );
 
@@ -73,7 +73,7 @@ export const updateOverdueSlipsFn = createServerFn()
               invoiceId: slip.invoiceId,
               eventType: "status_change",
               title: "Marked overdue",
-              description: `Credit slip ${slip.slipNumber} for ${slip.customerName ?? "customer"} was automatically marked overdue after the due date (${slip.creditReturnDate?.toISOString().split("T")[0] ?? "unknown"}).`,
+              description: `Outstanding invoice ${slip.slipNumber} for ${slip.customerName ?? "customer"} was automatically marked overdue after the Payment Due Date (${slip.paymentDueDate?.toISOString().split("T")[0] ?? "unknown"}).`,
               metadata: {
                 slipId: slip.id,
                 slipNumber: slip.slipNumber,
@@ -115,7 +115,7 @@ export const previewOverdueSlipsFn = createServerFn()
       .where(
         and(
           ne(slipRecords.status, "closed"),
-          lt(invoices.creditReturnDate, todayStart),
+          lt(invoices.paymentDueDate, todayStart),
           ne(slipRecords.recoveryStatus, "overdue"),
         ),
       );

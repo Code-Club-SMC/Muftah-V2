@@ -15,7 +15,10 @@ import {
 } from "@/db/schemas/sales-erp-schema";
 import { invoices } from "@/db/schemas/sales-schema";
 import { employees } from "@/db/schemas/hr-schema";
-import { requireHrViewMiddleware, requireSalesManageMiddleware } from "@/lib/middlewares";
+import {
+  requireHrViewMiddleware,
+  requireSalesManageMiddleware,
+} from "@/lib/middlewares";
 import { eq, and, gte, lt, desc } from "drizzle-orm";
 import { addMonths, parseISO } from "date-fns";
 
@@ -61,12 +64,15 @@ export async function rebuildSalesPerformanceLog(
     const commissions = await db.query.commissionRecords.findMany({
       where: and(
         eq(commissionRecords.orderBookerId, obId),
-        gte(commissionRecords.calculatedAt, monthStart),
-        lt(commissionRecords.calculatedAt, monthEndExclusive),
+        gte(commissionRecords.earnedAt, monthStart),
+        lt(commissionRecords.earnedAt, monthEndExclusive),
       ),
     });
 
-    totalCommission = commissions.reduce((s, c) => s + parseFloat(c.commissionAmount || "0"), 0);
+    totalCommission = commissions.reduce(
+      (s, c) => s + parseFloat(c.commissionAmount || "0"),
+      0,
+    );
     commissionIds = commissions.map((c) => c.id);
 
     const obOrders = await db.query.orders.findMany({
@@ -79,7 +85,10 @@ export async function rebuildSalesPerformanceLog(
 
     totalOrders = obOrders.length;
     fulfilledOrders = obOrders.filter((o) => o.status === "delivered").length;
-    totalOrderValue = obOrders.reduce((s, o) => s + parseFloat(o.fulfilledAmount || "0"), 0);
+    totalOrderValue = obOrders.reduce(
+      (s, o) => s + parseFloat(o.fulfilledAmount || "0"),
+      0,
+    );
   }
 
   // Salesman metrics
@@ -89,13 +98,16 @@ export async function rebuildSalesPerformanceLog(
     const smInvoices = await db.query.invoices.findMany({
       where: and(
         eq(invoices.salesmanId, smId),
-        gte(invoices.createdAt, monthStart),
-        lt(invoices.createdAt, monthEndExclusive),
+        gte(invoices.date, monthStart),
+        lt(invoices.date, monthEndExclusive),
       ),
     });
 
     totalInvoices = smInvoices.length;
-    totalSalesValue = smInvoices.reduce((s, inv) => s + parseFloat(inv.totalPrice || "0"), 0);
+    totalSalesValue = smInvoices.reduce(
+      (s, inv) => s + parseFloat(inv.totalPrice || "0"),
+      0,
+    );
     invoiceIds = smInvoices.map((inv) => inv.id);
 
     // Cartons sold (sum of quantities if available)
@@ -108,7 +120,8 @@ export async function rebuildSalesPerformanceLog(
   // Target is simplified to a hardcoded or fetched value per employee.
   // In production, you'd have a monthly_target field on employees or a separate targets table.
   const targetValue = 500000; // PKR 5 lac placeholder
-  const achievementRate = targetValue > 0 ? (totalSalesValue / targetValue) * 100 : 0;
+  const achievementRate =
+    targetValue > 0 ? (totalSalesValue / targetValue) * 100 : 0;
 
   // Compute rank (placeholder — in production, compute across all employees in same role)
   const monthlyRank = 0;
@@ -160,11 +173,12 @@ export async function rebuildSalesPerformanceLog(
  */
 export const rebuildSalesPerformanceLogFn = createServerFn()
   .middleware([requireSalesManageMiddleware])
-  .inputValidator((input: any) =>
-    ({ employeeId: input.employeeId, yearMonth: input.yearMonth } as {
-      employeeId: string;
-      yearMonth: string;
-    }),
+  .inputValidator(
+    (input: any) =>
+      ({ employeeId: input.employeeId, yearMonth: input.yearMonth }) as {
+        employeeId: string;
+        yearMonth: string;
+      },
   )
   .handler(async ({ data }) => {
     return rebuildSalesPerformanceLog(data.employeeId, data.yearMonth);
@@ -175,11 +189,12 @@ export const rebuildSalesPerformanceLogFn = createServerFn()
  */
 export const getSalesPerformanceLogsFn = createServerFn()
   .middleware([requireHrViewMiddleware])
-  .inputValidator((input: any) =>
-    ({ employeeId: input.employeeId, limit: input.limit ?? 24 } as {
-      employeeId: string;
-      limit: number;
-    }),
+  .inputValidator(
+    (input: any) =>
+      ({ employeeId: input.employeeId, limit: input.limit ?? 24 }) as {
+        employeeId: string;
+        limit: number;
+      },
   )
   .handler(async ({ data }) => {
     return db.query.salesPerformanceLogs.findMany({
@@ -194,18 +209,26 @@ export const getSalesPerformanceLogsFn = createServerFn()
  */
 export const getTopPerformersFn = createServerFn()
   .middleware([requireHrViewMiddleware])
-  .inputValidator((input: any) =>
-    ({ yearMonth: input.yearMonth, role: input.role } as {
-      yearMonth: string;
-      role: "order_booker" | "salesman" | "all";
-    }),
+  .inputValidator(
+    (input: any) =>
+      ({ yearMonth: input.yearMonth, role: input.role }) as {
+        yearMonth: string;
+        role: "order_booker" | "salesman" | "all";
+      },
   )
   .handler(async ({ data }) => {
     const logs = await db.query.salesPerformanceLogs.findMany({
       where: eq(salesPerformanceLogs.yearMonth, data.yearMonth),
       orderBy: [desc(salesPerformanceLogs.totalSalesValue)],
       with: {
-        employee: { columns: { id: true, firstName: true, lastName: true, designation: true } },
+        employee: {
+          columns: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            designation: true,
+          },
+        },
       },
     });
 

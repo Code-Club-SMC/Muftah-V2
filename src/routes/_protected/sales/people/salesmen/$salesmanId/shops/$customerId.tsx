@@ -93,7 +93,19 @@ function PerShopLedgerPage() {
 
   if (!data) return null;
 
-  const { salesman, customer, entries, closingBalance, periodTotalSales, periodTotalCredit, periodTotalCash, periodPayments, invoiceCount } = data;
+  const {
+    salesman,
+    customer,
+    entries,
+    closingBalance,
+    periodTotalSales,
+    periodPayments,
+    periodReturns,
+    periodTotalProfit,
+    openingBalance,
+    invoiceCount,
+    paymentCount,
+  } = data;
 
   return (
     <div className="space-y-6">
@@ -115,14 +127,14 @@ function PerShopLedgerPage() {
           periodLabel={`${dateFrom || "All"} to ${dateTo || "All"}`}
           entries={entries}
           summary={{
-            openingBalance: data.openingBalance,
+            openingBalance,
             periodTotalSales,
-            periodTotalCash,
-            periodTotalCredit,
             periodPayments,
-            periodReturns: data.periodReturns,
+            periodReturns,
+            periodTotalProfit,
             closingBalance,
             invoiceCount,
+            paymentCount,
           }}
           columns={[
             { key: "date", label: "Date", format: (v: any) => format(new Date(v), "dd MMM yyyy") },
@@ -132,16 +144,16 @@ function PerShopLedgerPage() {
               format: (v: any) => v === "invoice" ? "Invoice" : v === "return" ? "Return" : "Payment",
             },
             {
-              key: "slipNumber",
+              key: "invoiceNumber",
               label: "Reference",
               format: (v: any, e: any) =>
                 e.type === "invoice"
-                  ? `Inv #${v || "—"}`
+                  ? `Inv #${v}`
                   : e.type === "return"
-                    ? `Return #${e.returnNumber ?? "—"}${e.invoiceSlipNumber ? ` — Inv #${e.invoiceSlipNumber}` : ""}`
+                    ? `Return #${e.returnNumber} — Inv #${e.invoiceNumber}`
                     : `${e.method}${e.reference ? ` — ${e.reference}` : ""}`,
             },
-            { key: "totalPrice", label: "Debit", format: (_v: any, e: any) => e.type === "invoice" ? formatPKR(Number(e.credit || 0), false) : "—" },
+            { key: "totalPrice", label: "Debit", format: (_v: any, e: any) => e.type === "invoice" ? formatPKR(Number(e.totalPrice || 0), false) : "—" },
             {
               key: "amount",
               label: "Credit",
@@ -171,12 +183,12 @@ function PerShopLedgerPage() {
           <CardContent><p className="text-xl font-bold tabular-nums text-emerald-700">{formatPKR(periodTotalSales, false)}</p></CardContent>
         </Card>
         <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-[10px] font-semibold uppercase text-muted-foreground">Cash</CardTitle></CardHeader>
-          <CardContent><p className="text-xl font-bold tabular-nums text-blue-700">{formatPKR(periodTotalCash, false)}</p></CardContent>
+          <CardHeader className="pb-2"><CardTitle className="text-[10px] font-semibold uppercase text-muted-foreground">Paid Amount</CardTitle></CardHeader>
+          <CardContent><p className="text-xl font-bold tabular-nums text-blue-700">{formatPKR(periodPayments, false)}</p></CardContent>
         </Card>
         <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-[10px] font-semibold uppercase text-muted-foreground">Credit</CardTitle></CardHeader>
-          <CardContent><p className="text-xl font-bold tabular-nums text-rose-700">{formatPKR(periodTotalCredit, false)}</p></CardContent>
+          <CardHeader className="pb-2"><CardTitle className="text-[10px] font-semibold uppercase text-muted-foreground">Returns</CardTitle></CardHeader>
+          <CardContent><p className="text-xl font-bold tabular-nums text-amber-700">{formatPKR(periodReturns, false)}</p></CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2"><CardTitle className="text-[10px] font-semibold uppercase text-muted-foreground">Closing Balance</CardTitle></CardHeader>
@@ -231,7 +243,7 @@ function PerShopLedgerPage() {
                     {entry.type === "invoice" ? (
                       <span className="flex items-center gap-1">
                         <Package className="size-3 text-muted-foreground" />
-                        {entry.slipNumber || "—"}
+                        {entry.invoiceNumber}
                       </span>
                     ) : entry.type === "return" ? (
                       <span className="flex items-center gap-1 text-amber-700 dark:text-amber-400">
@@ -249,7 +261,7 @@ function PerShopLedgerPage() {
                     {entry.type === "invoice" ? (
                       <span className="text-rose-600 font-medium flex items-center justify-end gap-1">
                         <ArrowUpRight className="size-3" />
-                        {formatPKR(entry.credit, false)}
+                        {formatPKR(entry.totalPrice, false)}
                       </span>
                     ) : (
                       <span className="text-muted-foreground">—</span>

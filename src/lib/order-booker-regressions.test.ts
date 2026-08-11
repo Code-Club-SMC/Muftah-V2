@@ -56,7 +56,10 @@ describe("order booker regressions", () => {
   });
 
   it("accrues commission when invoice conversion delivers a linked order", () => {
-    const source = readFileSync(resolve(SALES_FN_DIR, "invoices-fn.ts"), "utf8");
+    const source = readFileSync(
+      resolve(SALES_FN_DIR, "invoice-posting-service.ts"),
+      "utf8",
+    );
 
     expect(source).toContain("await calculateCommissionForOrder(");
     expect(source).toContain("if (linkedOrderStatus !== \"delivered\")");

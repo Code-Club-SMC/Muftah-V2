@@ -1,5 +1,5 @@
 import { addMonths, endOfMonth, format, startOfMonth } from "date-fns";
-import { and, eq, gt, gte, inArray, isNull, lte, notInArray, or } from "drizzle-orm";
+import { and, eq, gt, gte, inArray, isNull, lte, ne, or } from "drizzle-orm";
 import { db } from "@/db";
 import { expenses, transactions, wallets } from "@/db/schemas/finance-schema";
 import {
@@ -9,13 +9,19 @@ import {
   productionRuns,
   recipes,
 } from "@/db/schemas/inventory-schema";
-import { employees, payrolls, payslips, travelLogs } from "@/db/schemas/hr-schema";
+import {
+  employees,
+  payrolls,
+  payslips,
+  travelLogs,
+} from "@/db/schemas/hr-schema";
 import {
   orderBookerTrips,
   payments,
   salesReturns,
 } from "@/db/schemas/sales-erp-schema";
 import { customers, invoiceItems, invoices } from "@/db/schemas/sales-schema";
+import type { ReportSource } from "@/lib/report-source";
 import {
   calculateCumulativeRealization,
   calculateDelta,
@@ -33,15 +39,23 @@ import {
 const APPROVED_RETURN_STATUSES = ["approved", "completed"] as const;
 const TREND_MONTHS = 6;
 
-const FINANCE_SALE_SOURCES = ["Sale", "Payment Recovery", "Slip Recovery"] as const;
-const FINANCE_EXPENSE_SOURCES = ["Expense", "Expense Offset", "TA/DA Reimbursement"] as const;
+const FINANCE_SALE_SOURCES = [
+  "Sale",
+  "Payment Recovery",
+  "Slip Recovery",
+] as const;
+const FINANCE_EXPENSE_SOURCES = [
+  "Expense",
+  "Expense Offset",
+  "TA/DA Reimbursement",
+] as const;
 
 type ProfitStatusKey = "profit" | "loss" | "break_even" | "no_activity";
 
 interface InvoiceLineRecord {
   invoiceId: string;
   invoiceDate: Date;
-  slipNumber: string | null;
+  invoiceNumber: string;
   customerName: string;
   invoiceStatus: string;
   invoiceExpenses: number;
@@ -63,7 +77,7 @@ interface InvoiceLineRecord {
 interface PaymentRecord {
   invoiceId: string;
   amount: number;
-  paymentDate: Date;
+  effectiveDate: Date;
   method: string;
 }
 
@@ -142,7 +156,7 @@ interface OrderBookerTripRecord {
 export interface RealizedInvoiceLine {
   invoiceId: string;
   invoiceDate: Date;
-  slipNumber: string | null;
+  invoiceNumber: string;
   customerName: string;
   invoiceStatus: string;
   invoiceItemId: string;
@@ -270,6 +284,7 @@ export interface CompanySnapshot {
 
 export interface CompanyReportData {
   generatedAt: string;
+  source: ReportSource;
   comparisonLabel: string;
   reportPeriod: {
     dateFrom: string;
@@ -335,7 +350,9 @@ function roundMetric(value: number): number {
   return Number(value.toFixed(4));
 }
 
-function getLineUnits(line: Pick<InvoiceLineRecord, "cartons" | "quantity" | "actualPackSize">) {
+function getLineUnits(
+  line: Pick<InvoiceLineRecord, "cartons" | "quantity" | "actualPackSize">,
+) {
   const unitsPerCarton = line.actualPackSize > 0 ? line.actualPackSize : 0;
   return line.quantity + line.cartons * unitsPerCarton;
 }
@@ -409,7 +426,8 @@ function buildStatus(summary: CompanySummary): ProfitStatus {
     return {
       key: "no_activity",
       label: "No activity",
-      description: "No realized sales or operating expenses were recorded in this period.",
+      description:
+        "No realized sales or operating expenses were recorded in this period.",
     };
   }
 
@@ -417,7 +435,8 @@ function buildStatus(summary: CompanySummary): ProfitStatus {
     return {
       key: "break_even",
       label: "Break-even",
-      description: "The company covered its costs but did not generate a meaningful profit.",
+      description:
+        "The company covered its costs but did not generate a meaningful profit.",
     };
   }
 
@@ -425,14 +444,16 @@ function buildStatus(summary: CompanySummary): ProfitStatus {
     return {
       key: "profit",
       label: "Profit",
-      description: "The company generated positive net profit after operating expenses.",
+      description:
+        "The company generated positive net profit after operating expenses.",
     };
   }
 
   return {
     key: "loss",
     label: "Loss",
-    description: "Operating expenses exceeded realized gross profit for this period.",
+    description:
+      "Operating expenses exceeded realized gross profit for this period.",
   };
 }
 
@@ -480,7 +501,10 @@ function isWithinRange(date: Date, range: ReportDateRange) {
 export async function loadContext(
   fromDate: Date,
   toDate: Date,
+  source: ReportSource = "all",
 ): Promise<LoadedContext> {
+  const sourceCondition =
+    source === "all" ? undefined : eq(invoices.source, source);
   const [
     invoiceWindowRows,
     paymentWindowRows,
@@ -495,7 +519,8 @@ export async function loadContext(
       .from(invoices)
       .where(
         and(
-          notInArray(invoices.status, ["draft", "voided"]),
+          ne(invoices.status, "voided"),
+          sourceCondition,
           gte(invoices.date, fromDate),
           lte(invoices.date, toDate),
         ),
@@ -506,9 +531,11 @@ export async function loadContext(
       .innerJoin(invoices, eq(payments.invoiceId, invoices.id))
       .where(
         and(
-          notInArray(invoices.status, ["draft", "voided"]),
-          gte(payments.paymentDate, fromDate),
-          lte(payments.paymentDate, toDate),
+          ne(invoices.status, "voided"),
+          sourceCondition,
+          eq(payments.status, "confirmed"),
+          gte(payments.effectiveDate, fromDate),
+          lte(payments.effectiveDate, toDate),
         ),
       ),
     db
@@ -517,11 +544,19 @@ export async function loadContext(
       .innerJoin(invoices, eq(salesReturns.invoiceId, invoices.id))
       .where(
         and(
-          notInArray(invoices.status, ["draft", "voided"]),
+          ne(invoices.status, "voided"),
+          sourceCondition,
           inArray(salesReturns.status, [...APPROVED_RETURN_STATUSES]),
           or(
-            and(isNull(salesReturns.approvedAt), gte(salesReturns.returnDate, fromDate), lte(salesReturns.returnDate, toDate)),
-            and(gte(salesReturns.approvedAt, fromDate), lte(salesReturns.approvedAt, toDate)),
+            and(
+              isNull(salesReturns.approvedAt),
+              gte(salesReturns.returnDate, fromDate),
+              lte(salesReturns.returnDate, toDate),
+            ),
+            and(
+              gte(salesReturns.approvedAt, fromDate),
+              lte(salesReturns.approvedAt, toDate),
+            ),
           ),
         ),
       ),
@@ -562,11 +597,17 @@ export async function loadContext(
       .from(failedProductionChemicalRecoveries)
       .innerJoin(
         productionRuns,
-        eq(failedProductionChemicalRecoveries.productionRunId, productionRuns.id),
+        eq(
+          failedProductionChemicalRecoveries.productionRunId,
+          productionRuns.id,
+        ),
       )
       .innerJoin(recipes, eq(productionRuns.recipeId, recipes.id))
       .innerJoin(products, eq(recipes.productId, products.id))
-      .innerJoin(chemicals, eq(failedProductionChemicalRecoveries.chemicalId, chemicals.id))
+      .innerJoin(
+        chemicals,
+        eq(failedProductionChemicalRecoveries.chemicalId, chemicals.id),
+      )
       .where(
         and(
           gte(failedProductionChemicalRecoveries.createdAt, fromDate),
@@ -652,7 +693,9 @@ export async function loadContext(
     payrollRows.length > 0
       ? new Date(
           Math.min(
-            ...payrollRows.map((row) => new Date(row.payrollStartDate).getTime()),
+            ...payrollRows.map((row) =>
+              new Date(row.payrollStartDate).getTime(),
+            ),
           ),
         )
       : null;
@@ -680,7 +723,7 @@ export async function loadContext(
           .select({
             invoiceId: invoices.id,
             invoiceDate: invoices.date,
-            slipNumber: invoices.slipNumber,
+            invoiceNumber: invoices.invoiceNumber,
             customerName: customers.name,
             invoiceStatus: invoices.status,
             invoiceExpenses: invoices.expenses,
@@ -706,7 +749,8 @@ export async function loadContext(
           .where(
             and(
               inArray(invoices.id, invoiceIds),
-              notInArray(invoices.status, ["draft", "voided"]),
+              ne(invoices.status, "voided"),
+              sourceCondition,
               lte(invoices.date, toDate),
             ),
           ),
@@ -716,21 +760,22 @@ export async function loadContext(
           .select({
             invoiceId: payments.invoiceId,
             amount: payments.amount,
-            paymentDate: payments.paymentDate,
+            effectiveDate: payments.effectiveDate,
             method: payments.method,
           })
           .from(payments)
           .where(
             and(
               inArray(payments.invoiceId, invoiceIds),
-              lte(payments.paymentDate, toDate),
+              eq(payments.status, "confirmed"),
+              lte(payments.effectiveDate, toDate),
             ),
           )
           .then((rows) =>
             rows.map((row) => ({
               invoiceId: row.invoiceId,
               amount: toNumber(row.amount),
-              paymentDate: row.paymentDate,
+              effectiveDate: row.effectiveDate!,
               method: row.method,
             })),
           ),
@@ -742,7 +787,10 @@ export async function loadContext(
               inArray(salesReturns.invoiceId, invoiceIds),
               inArray(salesReturns.status, [...APPROVED_RETURN_STATUSES]),
               or(
-                and(isNull(salesReturns.approvedAt), lte(salesReturns.returnDate, toDate)),
+                and(
+                  isNull(salesReturns.approvedAt),
+                  lte(salesReturns.returnDate, toDate),
+                ),
                 lte(salesReturns.approvedAt, toDate),
               ),
             ),
@@ -849,7 +897,7 @@ export async function loadContext(
     lines: lines.map((row) => ({
       invoiceId: row.invoiceId,
       invoiceDate: row.invoiceDate,
-      slipNumber: row.slipNumber,
+      invoiceNumber: row.invoiceNumber,
       customerName: row.customerName,
       invoiceStatus: row.invoiceStatus,
       invoiceExpenses: toNumber(row.invoiceExpenses),
@@ -869,16 +917,22 @@ export async function loadContext(
     })),
     payments: paymentRows,
     returns: returnRows,
-    expenses: expenseRows,
-    failedProductionLosses: failedProductionLossRows,
-    paidPayslips: payrollRows,
-    travelLogs: travelLogRows,
-    orderBookers: orderBookerRows,
-    orderBookerTrips: orderBookerTripRows,
+    // Shared operating costs cannot be truthfully assigned to online vs offline
+    // invoices. Source-specific views therefore show direct invoice contribution
+    // only; the all-sources report remains the full company P&L.
+    expenses: source === "all" ? expenseRows : [],
+    failedProductionLosses: source === "all" ? failedProductionLossRows : [],
+    paidPayslips: source === "all" ? payrollRows : [],
+    travelLogs: source === "all" ? travelLogRows : [],
+    orderBookers: source === "all" ? orderBookerRows : [],
+    orderBookerTrips: source === "all" ? orderBookerTripRows : [],
   };
 }
 
-export function buildSnapshot(context: LoadedContext, range: ReportDateRange): CompanySnapshot {
+export function buildSnapshot(
+  context: LoadedContext,
+  range: ReportDateRange,
+): CompanySnapshot {
   const paymentsByInvoice = new Map<string, PaymentRecord[]>();
   const returnsByItem = new Map<string, ReturnItemRecord[]>();
 
@@ -924,10 +978,10 @@ export function buildSnapshot(context: LoadedContext, range: ReportDateRange): C
   for (const [invoiceId, invoiceLines] of linesByInvoice.entries()) {
     const invoicePayments = paymentsByInvoice.get(invoiceId) ?? [];
     const paymentBeforeRange = invoicePayments
-      .filter((payment) => payment.paymentDate < range.fromDate)
+      .filter((payment) => payment.effectiveDate < range.fromDate)
       .reduce((sum, payment) => sum + payment.amount, 0);
     const paymentToDate = invoicePayments
-      .filter((payment) => payment.paymentDate <= range.toDate)
+      .filter((payment) => payment.effectiveDate <= range.toDate)
       .reduce((sum, payment) => sum + payment.amount, 0);
     const startAdjustedLines = invoiceLines.map((line) =>
       buildAdjustedLineState(
@@ -953,7 +1007,9 @@ export function buildSnapshot(context: LoadedContext, range: ReportDateRange): C
       (sum, item) => sum + item.adjustedRevenue,
       0,
     );
-    const lineInvoiceExpenses = roundCurrency(invoiceLines[0]?.invoiceExpenses ?? 0);
+    const lineInvoiceExpenses = roundCurrency(
+      invoiceLines[0]?.invoiceExpenses ?? 0,
+    );
     let invoiceHasActivity = false;
 
     for (let lineIndex = 0; lineIndex < invoiceLines.length; lineIndex += 1) {
@@ -988,7 +1044,7 @@ export function buildSnapshot(context: LoadedContext, range: ReportDateRange): C
       const lineRecord: RealizedInvoiceLine = {
         invoiceId: endAdjusted.line.invoiceId,
         invoiceDate: endAdjusted.line.invoiceDate,
-        slipNumber: endAdjusted.line.slipNumber,
+        invoiceNumber: endAdjusted.line.invoiceNumber,
         customerName: endAdjusted.line.customerName,
         invoiceStatus: endAdjusted.line.invoiceStatus,
         invoiceItemId: endAdjusted.line.invoiceItemId,
@@ -1072,7 +1128,9 @@ export function buildSnapshot(context: LoadedContext, range: ReportDateRange): C
   }
 
   const invoiceIdsWithRealization = new Set(
-    realizedLines.filter((line) => hasLineActivity(line)).map((line) => line.invoiceId),
+    realizedLines
+      .filter((line) => hasLineActivity(line))
+      .map((line) => line.invoiceId),
   );
 
   for (const product of productMap.values()) {
@@ -1091,14 +1149,15 @@ export function buildSnapshot(context: LoadedContext, range: ReportDateRange): C
     recipe.invoiceCount = new Set(
       realizedLines
         .filter(
-          (line) =>
-            line.recipeId === recipe.recipeId && hasLineActivity(line),
+          (line) => line.recipeId === recipe.recipeId && hasLineActivity(line),
         )
         .map((line) => line.invoiceId),
     ).size;
   }
 
-  const payrollRows = context.paidPayslips.filter((row) => isWithinRange(row.paidAt, range));
+  const payrollRows = context.paidPayslips.filter((row) =>
+    isWithinRange(row.paidAt, range),
+  );
   const orderBookerByEmployee = new Map(
     context.orderBookers
       .filter((row) => row.employeeId)
@@ -1118,10 +1177,9 @@ export function buildSnapshot(context: LoadedContext, range: ReportDateRange): C
         log.employeeId === slip.employeeId &&
         logDate >= payrollStart &&
         logDate <= payrollEnd &&
-        (
-          log.paidInPayslipId === slip.payslipId ||
-          (!log.reimbursedAt && (log.status === "approved" || log.status === "reimbursed"))
-        )
+        (log.paidInPayslipId === slip.payslipId ||
+          (!log.reimbursedAt &&
+            (log.status === "approved" || log.status === "reimbursed")))
       );
     });
     const payrollTravelAmount = payrollTravelLogs.reduce(
@@ -1141,7 +1199,10 @@ export function buildSnapshot(context: LoadedContext, range: ReportDateRange): C
       : 0;
     const payrollTada = payrollTravelAmount + orderBookerTravelAmount;
 
-    payrollExpense += Math.max(0, slip.grossSalary - slip.commissionAmount - payrollTada);
+    payrollExpense += Math.max(
+      0,
+      slip.grossSalary - slip.commissionAmount - payrollTada,
+    );
     commissionExpense += slip.commissionAmount;
     tadaExpense += payrollTada;
   }
@@ -1169,7 +1230,11 @@ export function buildSnapshot(context: LoadedContext, range: ReportDateRange): C
   const generalExpense = financeGeneralExpense + failedProductionLossExpense;
 
   const totalOperatingExpenses =
-    invoiceExpenses + payrollExpense + commissionExpense + tadaExpense + generalExpense;
+    invoiceExpenses +
+    payrollExpense +
+    commissionExpense +
+    tadaExpense +
+    generalExpense;
   const grossProfit = totalRevenue - totalCogs;
   const netProfit = grossProfit - totalOperatingExpenses;
 
@@ -1195,14 +1260,16 @@ export function buildSnapshot(context: LoadedContext, range: ReportDateRange): C
     {
       type: "invoice_expenses",
       label: "Invoice Expenses",
-      description: "Invoice-linked overhead allocated in line with realized collections.",
+      description:
+        "Invoice-linked overhead allocated in line with realized collections.",
       amount: summary.invoiceExpenses,
       impact: -summary.invoiceExpenses,
     },
     {
       type: "payroll",
       label: "Payroll",
-      description: "Paid payroll cost after pulling commission and TA/DA into separate buckets.",
+      description:
+        "Paid payroll cost after pulling commission and TA/DA into separate buckets.",
       amount: summary.payroll,
       impact: -summary.payroll,
     },
@@ -1216,7 +1283,8 @@ export function buildSnapshot(context: LoadedContext, range: ReportDateRange): C
     {
       type: "tada",
       label: "TA/DA",
-      description: "Travel allowance, daily allowance, and distribution reimbursements.",
+      description:
+        "Travel allowance, daily allowance, and distribution reimbursements.",
       amount: summary.tada,
       impact: -summary.tada,
     },
@@ -1240,7 +1308,10 @@ export function buildSnapshot(context: LoadedContext, range: ReportDateRange): C
   };
 }
 
-async function buildFinanceReconciliation(range: ReportDateRange, summary: CompanySummary) {
+async function buildFinanceReconciliation(
+  range: ReportDateRange,
+  summary: CompanySummary,
+) {
   const [
     walletRows,
     inRangeTransactions,
@@ -1249,42 +1320,51 @@ async function buildFinanceReconciliation(range: ReportDateRange, summary: Compa
     capitalizedExpenses,
     expenseOffsetPayments,
     failedProductionLosses,
-  ] =
-    await Promise.all([
-      db.select({ balance: wallets.balance }).from(wallets),
-      db
-        .select({
-          id: transactions.id,
-          type: transactions.type,
-          amount: transactions.amount,
-          source: transactions.source,
-          createdAt: transactions.createdAt,
-        })
-        .from(transactions)
-        .where(and(gte(transactions.createdAt, range.fromDate), lte(transactions.createdAt, range.toDate))),
-      db
-        .select({
-          id: transactions.id,
-          type: transactions.type,
-          amount: transactions.amount,
-          source: transactions.source,
-          createdAt: transactions.createdAt,
-        })
-        .from(transactions)
-        .where(gt(transactions.createdAt, range.toDate)),
-      db
-        .select({
-          id: transactions.id,
-          type: transactions.type,
-          amount: transactions.amount,
-          source: transactions.source,
-          createdAt: transactions.createdAt,
-        })
-        .from(transactions)
-        .where(gte(transactions.createdAt, range.fromDate)),
-      db.query.expenses.findMany({
-        where: and(gte(expenses.expenseDate, range.fromDate), lte(expenses.expenseDate, range.toDate)),
-      }).then((rows) =>
+  ] = await Promise.all([
+    db.select({ balance: wallets.balance }).from(wallets),
+    db
+      .select({
+        id: transactions.id,
+        type: transactions.type,
+        amount: transactions.amount,
+        source: transactions.source,
+        effectiveDate: transactions.effectiveDate,
+      })
+      .from(transactions)
+      .where(
+        and(
+          gte(transactions.effectiveDate, range.fromDate),
+          lte(transactions.effectiveDate, range.toDate),
+        ),
+      ),
+    db
+      .select({
+        id: transactions.id,
+        type: transactions.type,
+        amount: transactions.amount,
+        source: transactions.source,
+        effectiveDate: transactions.effectiveDate,
+      })
+      .from(transactions)
+      .where(gt(transactions.effectiveDate, range.toDate)),
+    db
+      .select({
+        id: transactions.id,
+        type: transactions.type,
+        amount: transactions.amount,
+        source: transactions.source,
+        effectiveDate: transactions.effectiveDate,
+      })
+      .from(transactions)
+      .where(gte(transactions.effectiveDate, range.fromDate)),
+    db.query.expenses
+      .findMany({
+        where: and(
+          gte(expenses.expenseDate, range.fromDate),
+          lte(expenses.expenseDate, range.toDate),
+        ),
+      })
+      .then((rows) =>
         rows
           .map((row) => ({
             id: row.id,
@@ -1295,37 +1375,40 @@ async function buildFinanceReconciliation(range: ReportDateRange, summary: Compa
           }))
           .filter(isCapitalizedInventoryExpense),
       ),
-      db
-        .select({
-          amount: payments.amount,
-        })
-        .from(payments)
-        .where(
-          and(
-            eq(payments.method, "expense_offset"),
-            gte(payments.paymentDate, range.fromDate),
-            lte(payments.paymentDate, range.toDate),
-          ),
+    db
+      .select({
+        amount: payments.amount,
+      })
+      .from(payments)
+      .where(
+        and(
+          eq(payments.method, "expense_offset"),
+          eq(payments.status, "confirmed"),
+          gte(payments.effectiveDate, range.fromDate),
+          lte(payments.effectiveDate, range.toDate),
         ),
-      db
-        .select({
-          lossAmount: failedProductionChemicalRecoveries.lossAmount,
-        })
-        .from(failedProductionChemicalRecoveries)
-        .where(
-          and(
-            gte(failedProductionChemicalRecoveries.createdAt, range.fromDate),
-            lte(failedProductionChemicalRecoveries.createdAt, range.toDate),
-          ),
+      ),
+    db
+      .select({
+        lossAmount: failedProductionChemicalRecoveries.lossAmount,
+      })
+      .from(failedProductionChemicalRecoveries)
+      .where(
+        and(
+          gte(failedProductionChemicalRecoveries.createdAt, range.fromDate),
+          lte(failedProductionChemicalRecoveries.createdAt, range.toDate),
         ),
-    ]);
+      ),
+  ]);
 
   const currentAccountBalance = walletRows.reduce(
     (sum, row) => sum + toNumber(row.balance),
     0,
   );
 
-  const normalizeTransactions = (rows: Array<{ type: string; amount: string | number; source: string }>) =>
+  const normalizeTransactions = (
+    rows: Array<{ type: string; amount: string | number; source: string }>,
+  ) =>
     rows.map((row) => ({
       type: row.type,
       source: row.source,
@@ -1343,10 +1426,12 @@ async function buildFinanceReconciliation(range: ReportDateRange, summary: Compa
     inRange.reduce((sum, row) => sum + signedAmount(row), 0),
   );
   const balanceAsOfEnd = roundCurrency(
-    currentAccountBalance - afterEnd.reduce((sum, row) => sum + signedAmount(row), 0),
+    currentAccountBalance -
+      afterEnd.reduce((sum, row) => sum + signedAmount(row), 0),
   );
   const balanceAsOfStart = roundCurrency(
-    currentAccountBalance - afterStart.reduce((sum, row) => sum + signedAmount(row), 0),
+    currentAccountBalance -
+      afterStart.reduce((sum, row) => sum + signedAmount(row), 0),
   );
 
   const sumBySource = (predicate: (source: string) => boolean) =>
@@ -1356,9 +1441,19 @@ async function buildFinanceReconciliation(range: ReportDateRange, summary: Compa
         .reduce((sum, row) => sum + signedAmount(row), 0),
     );
 
-  const salesInflows = sumBySource((source) => FINANCE_SALE_SOURCES.includes(source as (typeof FINANCE_SALE_SOURCES)[number]));
+  const salesInflows = sumBySource((source) =>
+    FINANCE_SALE_SOURCES.includes(
+      source as (typeof FINANCE_SALE_SOURCES)[number],
+    ),
+  );
   const expenseOutflows = roundCurrency(
-    Math.abs(sumBySource((source) => FINANCE_EXPENSE_SOURCES.includes(source as (typeof FINANCE_EXPENSE_SOURCES)[number]))),
+    Math.abs(
+      sumBySource((source) =>
+        FINANCE_EXPENSE_SOURCES.includes(
+          source as (typeof FINANCE_EXPENSE_SOURCES)[number],
+        ),
+      ),
+    ),
   );
   const payrollOutflows = roundCurrency(
     Math.abs(sumBySource((source) => source.startsWith("Payroll"))),
@@ -1366,14 +1461,20 @@ async function buildFinanceReconciliation(range: ReportDateRange, summary: Compa
   const advanceOutflows = roundCurrency(
     Math.abs(sumBySource((source) => source === "Advance Payment")),
   );
-  const manualAdjustments = sumBySource((source) => source === "Manual Adjustment");
+  const manualAdjustments = sumBySource(
+    (source) => source === "Manual Adjustment",
+  );
   const openingBalances = sumBySource((source) => source === "Opening Balance");
   const otherMovements = roundCurrency(
     inRange
       .filter(
         (row) =>
-          !FINANCE_SALE_SOURCES.includes(row.source as (typeof FINANCE_SALE_SOURCES)[number]) &&
-          !FINANCE_EXPENSE_SOURCES.includes(row.source as (typeof FINANCE_EXPENSE_SOURCES)[number]) &&
+          !FINANCE_SALE_SOURCES.includes(
+            row.source as (typeof FINANCE_SALE_SOURCES)[number],
+          ) &&
+          !FINANCE_EXPENSE_SOURCES.includes(
+            row.source as (typeof FINANCE_EXPENSE_SOURCES)[number],
+          ) &&
           !row.source.startsWith("Payroll") &&
           row.source !== "Advance Payment" &&
           row.source !== "Manual Adjustment" &&
@@ -1394,7 +1495,9 @@ async function buildFinanceReconciliation(range: ReportDateRange, summary: Compa
     (sum, row) => sum + toNumber(row.amount),
     0,
   );
-  const payrollCashGap = roundCurrency(summary.payroll + summary.commissions + summary.tada - payrollOutflows);
+  const payrollCashGap = roundCurrency(
+    summary.payroll + summary.commissions + summary.tada - payrollOutflows,
+  );
 
   const bridgeRows: FinanceReconciliationRow[] = [
     {
@@ -1402,56 +1505,67 @@ async function buildFinanceReconciliation(range: ReportDateRange, summary: Compa
       label: "Operational Net Profit",
       amount: summary.netProfit,
       direction: "positive",
-      description: "Net profit from the company report for the selected period.",
+      description:
+        "Net profit from the company report for the selected period.",
     },
     {
       type: "cogs_non_cash",
       label: "Add Back Non-cash COGS",
       amount: summary.totalCogs,
       direction: "positive",
-      description: "Sold-goods cost reduces profit now, but the cash left the business when inventory was purchased.",
+      description:
+        "Sold-goods cost reduces profit now, but the cash left the business when inventory was purchased.",
     },
     {
       type: "capitalized_inventory",
       label: "Less Inventory Purchase Cash Outflows",
       amount: capitalizedInventoryPurchases,
       direction: "negative",
-      description: "Supplier purchases move cash in finance but are excluded from current-period operating expense.",
+      description:
+        "Supplier purchases move cash in finance but are excluded from current-period operating expense.",
     },
     {
       type: "expense_offsets",
       label: "Less Non-cash Expense Offsets",
       amount: nonCashExpenseOffsets,
       direction: "negative",
-      description: "Expense-offset settlements count as realized revenue but do not create a wallet credit.",
+      description:
+        "Expense-offset settlements count as realized revenue but do not create a wallet credit.",
     },
     {
       type: "failed_batch_losses",
       label: "Add Back Non-cash Failed Batch Losses",
       amount: failedBatchLosses,
       direction: "positive",
-      description: "Failed-batch chemical write-offs reduce profit when settled but do not move wallet cash.",
+      description:
+        "Failed-batch chemical write-offs reduce profit when settled but do not move wallet cash.",
     },
     {
       type: "payroll_cash_gap",
       label: "Payroll Cash vs Expense Timing",
       amount: payrollCashGap,
       direction: payrollCashGap >= 0 ? "positive" : "negative",
-      description: "Difference between payroll expense shown in P&L and the actual wallet debit recorded in finance.",
+      description:
+        "Difference between payroll expense shown in P&L and the actual wallet debit recorded in finance.",
     },
     {
       type: "advance_payments",
       label: "Less Salary Advances",
       amount: advanceOutflows,
       direction: "negative",
-      description: "Salary advances reduce wallet balance but are not operating expenses in this report.",
+      description:
+        "Salary advances reduce wallet balance but are not operating expenses in this report.",
     },
     {
       type: "manual_and_opening",
       label: "Manual / Opening Balance Adjustments",
       amount: manualAdjustments + openingBalances + otherMovements,
-      direction: manualAdjustments + openingBalances + otherMovements >= 0 ? "positive" : "negative",
-      description: "Finance-only balance events that do not belong inside operating profit.",
+      direction:
+        manualAdjustments + openingBalances + otherMovements >= 0
+          ? "positive"
+          : "negative",
+      description:
+        "Finance-only balance events that do not belong inside operating profit.",
     },
   ];
 
@@ -1474,7 +1588,8 @@ async function buildFinanceReconciliation(range: ReportDateRange, summary: Compa
       label: "Remaining Timing Difference",
       amount: Math.abs(bridgeDifference),
       direction: bridgeDifference >= 0 ? "positive" : "negative",
-      description: "Residual timing difference between realized profit and wallet movement after the mapped bridge items.",
+      description:
+        "Residual timing difference between realized profit and wallet movement after the mapped bridge items.",
     });
   }
 
@@ -1498,13 +1613,20 @@ async function buildFinanceReconciliation(range: ReportDateRange, summary: Compa
 export async function getCompanyReportData(input?: {
   dateFrom?: string;
   dateTo?: string;
+  source?: ReportSource;
 }) {
+  const source = input?.source ?? "all";
   const range = createReportDateRange(input);
   const previousRange = createPreviousRange(range);
-  const trendFromDate = startOfMonth(addMonths(range.toDate, -TREND_MONTHS + 1));
-  const preloadFromDate = previousRange.fromDate < trendFromDate ? previousRange.fromDate : trendFromDate;
+  const trendFromDate = startOfMonth(
+    addMonths(range.toDate, -TREND_MONTHS + 1),
+  );
+  const preloadFromDate =
+    previousRange.fromDate < trendFromDate
+      ? previousRange.fromDate
+      : trendFromDate;
 
-  const context = await loadContext(preloadFromDate, range.toDate);
+  const context = await loadContext(preloadFromDate, range.toDate, source);
   const current = buildSnapshot(context, range);
   const previous = buildSnapshot(context, previousRange);
   const monthlyTrend: CompanyTrendPoint[] = [];
@@ -1524,10 +1646,28 @@ export async function getCompanyReportData(input?: {
     });
   }
 
-  const reconciliation = await buildFinanceReconciliation(range, current.summary);
+  const reconciliation =
+    source === "all"
+      ? await buildFinanceReconciliation(range, current.summary)
+      : ({
+          currentAccountBalance: 0,
+          balanceAsOfStart: 0,
+          balanceAsOfEnd: 0,
+          periodNetMovement: 0,
+          salesInflows: 0,
+          expenseOutflows: 0,
+          payrollOutflows: 0,
+          advanceOutflows: 0,
+          manualAdjustments: 0,
+          openingBalances: 0,
+          otherMovements: 0,
+          bridgeDifference: 0,
+          bridgeRows: [],
+        } satisfies FinanceReconciliation);
 
   return {
     generatedAt: new Date().toISOString(),
+    source,
     comparisonLabel: createComparisonLabel(range, previousRange),
     reportPeriod: {
       dateFrom: range.fromDate.toISOString(),
@@ -1543,15 +1683,30 @@ export async function getCompanyReportData(input?: {
     status: current.status,
     monthlyTrend,
     deltas: {
-      revenuePercent: calculateDelta(current.summary.totalRevenue, previous.summary.totalRevenue),
-      grossProfitPercent: calculateDelta(current.summary.grossProfit, previous.summary.grossProfit),
-      grossMarginPoints: calculatePointDelta(current.summary.grossMargin, previous.summary.grossMargin),
+      revenuePercent: calculateDelta(
+        current.summary.totalRevenue,
+        previous.summary.totalRevenue,
+      ),
+      grossProfitPercent: calculateDelta(
+        current.summary.grossProfit,
+        previous.summary.grossProfit,
+      ),
+      grossMarginPoints: calculatePointDelta(
+        current.summary.grossMargin,
+        previous.summary.grossMargin,
+      ),
       operatingExpensesPercent: calculateDelta(
         current.summary.totalOperatingExpenses,
         previous.summary.totalOperatingExpenses,
       ),
-      netProfitPercent: calculateDelta(current.summary.netProfit, previous.summary.netProfit),
-      netMarginPoints: calculatePointDelta(current.summary.netMargin, previous.summary.netMargin),
+      netProfitPercent: calculateDelta(
+        current.summary.netProfit,
+        previous.summary.netProfit,
+      ),
+      netMarginPoints: calculatePointDelta(
+        current.summary.netMargin,
+        previous.summary.netMargin,
+      ),
     },
     deductions: {
       invoiceExpenses: current.summary.invoiceExpenses,

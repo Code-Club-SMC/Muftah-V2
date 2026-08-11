@@ -8,6 +8,7 @@ import {
   warehouses,
 } from "@/db/schemas/inventory-schema";
 import { requireReportsViewMiddleware } from "@/lib/middlewares";
+import { REPORT_SOURCES, type ReportSource } from "@/lib/report-source";
 import {
   buildScopedStatus,
   buildVariantLabel,
@@ -30,6 +31,7 @@ import {
 
 export interface RecipeProfitLossResult {
   generatedAt: string;
+  source: ReportSource;
   comparisonLabel: string;
   reportPeriod: {
     dateFrom: string;
@@ -85,6 +87,7 @@ export const getRecipeProfitLossFn = createServerFn()
         recipeId: z.string().min(1),
         dateFrom: z.string().optional(),
         dateTo: z.string().optional(),
+        source: z.enum(REPORT_SOURCES).default("all"),
       })
       .parse(input),
   )
@@ -129,29 +132,35 @@ export const getRecipeProfitLossFn = createServerFn()
       monthlyTrend,
       invoiceDetails,
       failedBatchLosses,
-    ] =
-      await Promise.all([
-        fetchScopedSummary({
-          recipeId: data.recipeId,
-          fromDate: range.fromDate,
-          toDate: range.toDate,
-        }),
-        fetchScopedSummary({
-          recipeId: data.recipeId,
-          fromDate: previousRange.fromDate,
-          toDate: previousRange.toDate,
-        }),
-        fetchScopedTrend({
-          recipeId: data.recipeId,
-          endDate: range.toDate,
-          months: 6,
-        }),
-        fetchRecipeInvoiceDetails(data.recipeId, range),
-        fetchScopedFailedBatchLosses({ recipeId: data.recipeId }, range),
-      ]);
+    ] = await Promise.all([
+      fetchScopedSummary({
+        recipeId: data.recipeId,
+        fromDate: range.fromDate,
+        toDate: range.toDate,
+        source: data.source,
+      }),
+      fetchScopedSummary({
+        recipeId: data.recipeId,
+        fromDate: previousRange.fromDate,
+        toDate: previousRange.toDate,
+        source: data.source,
+      }),
+      fetchScopedTrend({
+        recipeId: data.recipeId,
+        endDate: range.toDate,
+        months: 6,
+        source: data.source,
+      }),
+      fetchRecipeInvoiceDetails(data.recipeId, range, data.source),
+      fetchScopedFailedBatchLosses(
+        { recipeId: data.recipeId, source: data.source },
+        range,
+      ),
+    ]);
 
     return {
       generatedAt: new Date().toISOString(),
+      source: data.source,
       comparisonLabel: createComparisonLabel(range, previousRange),
       reportPeriod: {
         dateFrom: range.fromDate.toISOString(),

@@ -99,6 +99,11 @@ export const navigations: NavigationItem[] = [
         exact: true,
       },
       {
+        title: "Offline Invoices",
+        url: "/sales/offline",
+        icon: InvoiceIcon,
+      },
+      {
         title: "Orders",
         url: "/sales/orders",
         icon: InvoiceIcon,
@@ -129,7 +134,7 @@ export const navigations: NavigationItem[] = [
         icon: LedgerIcon,
       },
       {
-        title: "Credit Recovery",
+        title: "Outstanding Recovery",
         url: "/sales/recovery",
         icon: LedgerIcon,
       },

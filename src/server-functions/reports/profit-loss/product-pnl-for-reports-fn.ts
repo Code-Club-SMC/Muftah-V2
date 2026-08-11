@@ -4,6 +4,7 @@ import { z } from "zod";
 import { db } from "@/db";
 import { products } from "@/db/schemas/inventory-schema";
 import { requireReportsViewMiddleware } from "@/lib/middlewares";
+import { REPORT_SOURCES, type ReportSource } from "@/lib/report-source";
 import {
   buildScopedStatus,
   calculateDelta,
@@ -27,6 +28,7 @@ import {
 
 export interface ProductProfitLossForReportsResult {
   generatedAt: string;
+  source: ReportSource;
   comparisonLabel: string;
   reportPeriod: {
     dateFrom: string;
@@ -73,6 +75,7 @@ export const getProductProfitLossForReportsFn = createServerFn()
         productId: z.string().min(1),
         dateFrom: z.string().optional(),
         dateTo: z.string().optional(),
+        source: z.enum(REPORT_SOURCES).default("all"),
       })
       .parse(input),
   )
@@ -98,30 +101,36 @@ export const getProductProfitLossForReportsFn = createServerFn()
       recipesData,
       recentInvoices,
       failedBatchLosses,
-    ] =
-      await Promise.all([
-        fetchScopedSummary({
-          productId: data.productId,
-          fromDate: range.fromDate,
-          toDate: range.toDate,
-        }),
-        fetchScopedSummary({
-          productId: data.productId,
-          fromDate: previousRange.fromDate,
-          toDate: previousRange.toDate,
-        }),
-        fetchScopedTrend({
-          productId: data.productId,
-          endDate: range.toDate,
-          months: 6,
-        }),
-        fetchProductRecipeBreakdown(data.productId, range),
-        fetchProductRecentInvoices(data.productId, range, 12),
-        fetchScopedFailedBatchLosses({ productId: data.productId }, range),
-      ]);
+    ] = await Promise.all([
+      fetchScopedSummary({
+        productId: data.productId,
+        fromDate: range.fromDate,
+        toDate: range.toDate,
+        source: data.source,
+      }),
+      fetchScopedSummary({
+        productId: data.productId,
+        fromDate: previousRange.fromDate,
+        toDate: previousRange.toDate,
+        source: data.source,
+      }),
+      fetchScopedTrend({
+        productId: data.productId,
+        endDate: range.toDate,
+        months: 6,
+        source: data.source,
+      }),
+      fetchProductRecipeBreakdown(data.productId, range, data.source),
+      fetchProductRecentInvoices(data.productId, range, 12, data.source),
+      fetchScopedFailedBatchLosses(
+        { productId: data.productId, source: data.source },
+        range,
+      ),
+    ]);
 
     return {
       generatedAt: new Date().toISOString(),
+      source: data.source,
       comparisonLabel: createComparisonLabel(range, previousRange),
       reportPeriod: {
         dateFrom: range.fromDate.toISOString(),

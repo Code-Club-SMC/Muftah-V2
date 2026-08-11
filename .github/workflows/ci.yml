@@ -35,7 +35,7 @@ jobs:
         run: bun run build
 
   quality:
-    name: Quality Signals (Non-Blocking)
+    name: Typecheck and Tests (Required)
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -56,15 +56,63 @@ jobs:
         run: bun run lint
 
       - name: Typecheck
-        continue-on-error: true
         run: bun run typecheck
 
       - name: Tests (if present)
-        continue-on-error: true
         shell: bash
         run: |
           if git ls-files | grep -Eq '(test|spec)\.(c|m)?(t|j)sx?$'; then
-            bun run test
+            bunx vitest run --maxWorkers=2
           else
             echo "No test files found. Skipping tests."
           fi
+
+  postgres-integration:
+    name: PostgreSQL Integration (Required)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/titan_offline_test
+      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/titan_offline_test
+      OFFLINE_SALES_RUN_DB_TESTS: "true"
+      OFFLINE_SALES_IMPORT_ENABLED: "true"
+      OFFLINE_SALES_ACTIVE_SIGNING_VERSION: "1"
+      OFFLINE_SALES_SIGNING_KEYS: '{"1":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="}'
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: titan_offline_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d titan_offline_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Apply migrations to isolated test database
+        run: bun run db:migrate:test
+
+      - name: Run invoice and offline sales database tests
+        run: >-
+          bunx vitest run --config vitest.integration.config.ts
+          src/__tests__/integration/settlement-service.integration.test.ts
+          src/__tests__/integration/invoice-number.integration.test.ts
+          src/lib/sales/offline/offline-sales.integration.test.ts
+          --maxWorkers=1

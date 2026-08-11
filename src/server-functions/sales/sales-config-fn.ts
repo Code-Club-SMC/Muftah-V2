@@ -26,7 +26,6 @@ import {
   and,
   gte,
   lte,
-  inArray,
   ne,
   sum,
   count,
@@ -151,9 +150,12 @@ export const updateOrderBookerFn = createServerFn()
     if (updates.name !== undefined) updateValues.name = updates.name;
     if (updates.phone !== undefined) updateValues.phone = updates.phone;
     if (updates.address !== undefined) updateValues.address = updates.address;
-    if (updates.assignedArea !== undefined) updateValues.assignedArea = updates.assignedArea;
-    if (updates.commissionRate !== undefined) updateValues.commissionRate = updates.commissionRate;
-    if (updates.employeeId !== undefined) updateValues.employeeId = updates.employeeId;
+    if (updates.assignedArea !== undefined)
+      updateValues.assignedArea = updates.assignedArea;
+    if (updates.commissionRate !== undefined)
+      updateValues.commissionRate = updates.commissionRate;
+    if (updates.employeeId !== undefined)
+      updateValues.employeeId = updates.employeeId;
     if (updates.status !== undefined) updateValues.status = updates.status;
 
     const [updated] = await db
@@ -193,8 +195,8 @@ export const getCustomerProfileFn = createServerFn()
       db
         .select({
           totalSale: sql<number>`COALESCE(SUM(${invoices.amount}), 0)`,
-          payment: sql<number>`COALESCE(SUM(${invoices.cash}), 0)`,
-          credit: sql<number>`COALESCE(SUM(${invoices.credit}), 0)`,
+          totalPaidAmount: sql<number>`COALESCE(SUM(${invoices.paidAmount}), 0)`,
+          outstandingAmount: sql<number>`COALESCE(SUM(${invoices.outstandingAmount}), 0)`,
           expenses: sql<number>`COALESCE(SUM(${invoices.expenses}), 0)`,
           invoiceDiscount: sql<number>`COALESCE(SUM(${invoices.invoiceDiscount}), 0)`,
         })
@@ -208,7 +210,7 @@ export const getCustomerProfileFn = createServerFn()
         })
         .from(invoiceItems)
         .innerJoin(invoices, eq(invoiceItems.invoiceId, invoices.id))
-      .where(eq(invoices.customerId, data.id)),
+        .where(eq(invoices.customerId, data.id)),
     ]);
 
     const lifetimeProfit =
@@ -219,8 +221,8 @@ export const getCustomerProfileFn = createServerFn()
     return {
       ...customer,
       totalSale: String(Number(invoiceTotals?.totalSale) || 0),
-      payment: String(Number(invoiceTotals?.payment) || 0),
-      credit: String(Number(invoiceTotals?.credit) || 0),
+      totalPaidAmount: String(Number(invoiceTotals?.totalPaidAmount) || 0),
+      outstandingAmount: String(Number(invoiceTotals?.outstandingAmount) || 0),
       expenses: String(Number(invoiceTotals?.expenses) || 0),
       weightSaleKg: String(Number(lineTotals?.weightSaleKg) || 0),
       lifetimeProfit,
@@ -242,9 +244,7 @@ export const getSalesOverviewFn = createServerFn()
       .parse(input),
   )
   .handler(async ({ data }) => {
-    const conditions: any[] = [
-      inArray(invoices.status, ["saved", "paid", "partially_paid"]),
-    ];
+    const conditions: any[] = [eq(invoices.status, "saved")];
     if (data.dateFrom) {
       conditions.push(gte(invoices.date, new Date(data.dateFrom)));
     }
@@ -267,15 +267,18 @@ export const getSalesOverviewFn = createServerFn()
       .innerJoin(invoices, eq(invoiceItems.invoiceId, invoices.id))
       .where(whereClause);
 
-    const productMap = new Map<string, {
-      name: string;
-      totalCartons: number;
-      totalUnits: number;
-      revenue: number;
-      costOfGoodsSold: number;
-      profit: number;
-      invoiceCount: number;
-    }>();
+    const productMap = new Map<
+      string,
+      {
+        name: string;
+        totalCartons: number;
+        totalUnits: number;
+        revenue: number;
+        costOfGoodsSold: number;
+        profit: number;
+        invoiceCount: number;
+      }
+    >();
 
     for (const item of items) {
       const name = item.pack || "Unknown";
@@ -324,7 +327,8 @@ export const getSalesOverviewFn = createServerFn()
 
     const totalRevenue = Number(totalRes.total) || 0;
     const totalInvoices = Number(countRes.value) || 0;
-    const totalProfit = (Number(profitRes?.revenue) || 0) - (Number(profitRes?.cogs) || 0);
+    const totalProfit =
+      (Number(profitRes?.revenue) || 0) - (Number(profitRes?.cogs) || 0);
 
     // ── Customer type breakdown ───────────────────────────────────────────
     const customerTypeRows = await db
@@ -400,7 +404,7 @@ export const getSalesOverviewFn = createServerFn()
       const prevTo = new Date(from.getTime() - 86400000);
 
       const prevConditions = [
-        inArray(invoices.status, ["saved", "paid", "partially_paid"]),
+        eq(invoices.status, "saved"),
         gte(invoices.date, prevFrom),
         lte(invoices.date, prevTo),
       ];
@@ -425,11 +429,15 @@ export const getSalesOverviewFn = createServerFn()
 
       previousRevenue = Number(prevTotalRes.total) || 0;
       previousInvoices = Number(prevCountRes.value) || 0;
-      previousProfit = (Number(prevProfitRes?.revenue) || 0) - (Number(prevProfitRes?.cogs) || 0);
+      previousProfit =
+        (Number(prevProfitRes?.revenue) || 0) -
+        (Number(prevProfitRes?.cogs) || 0);
     }
 
     return {
-      products: Array.from(productMap.values()).sort((a, b) => b.revenue - a.revenue),
+      products: Array.from(productMap.values()).sort(
+        (a, b) => b.revenue - a.revenue,
+      ),
       totalRevenue,
       totalInvoices,
       totalProfit,

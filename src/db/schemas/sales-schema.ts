@@ -112,6 +112,9 @@ export const invoices = pgTable(
     paidAmount: decimal("paid_amount", { precision: 12, scale: 2 })
       .notNull()
       .default("0"),
+    returnedAmount: decimal("returned_amount", { precision: 12, scale: 2 })
+      .notNull()
+      .default("0"),
     outstandingAmount: decimal("outstanding_amount", {
       precision: 12,
       scale: 2,
@@ -150,6 +153,10 @@ export const invoices = pgTable(
     orderId: text("order_id").references(() => orders.id),
     // Denormalized order booker for fast portal queries (recoveries).
     orderBookerId: text("order_booker_id").references(() => orderBookers.id),
+    // The database migration owns this FK. Keeping the Drizzle column as plain
+    // text avoids a sales-schema <-> offline-sales-schema module cycle that
+    // corrupts relational query inference across the application.
+    offlineSalesSlotId: text("offline_sales_slot_id"),
     ...timestamps,
   },
   (table) => ({
@@ -161,9 +168,12 @@ export const invoices = pgTable(
     orderIdUnique: uniqueIndex("invoices_order_id_unique")
       .on(table.orderId)
       .where(sql`${table.orderId} is not null`),
+    offlineSalesSlotUnique: uniqueIndex("invoices_offline_sales_slot_unique")
+      .on(table.offlineSalesSlotId)
+      .where(sql`${table.offlineSalesSlotId} is not null`),
     settlementAmountsCheck: check(
       "invoices_settlement_amounts_check",
-      sql`${table.paidAmount} >= 0 and ${table.outstandingAmount} >= 0 and ${table.paidAmount} + ${table.outstandingAmount} = ${table.totalPrice}`,
+      sql`${table.paidAmount} >= 0 and ${table.returnedAmount} >= 0 and ${table.outstandingAmount} >= 0 and ${table.paidAmount} + ${table.returnedAmount} + ${table.outstandingAmount} = ${table.totalPrice}`,
     ),
     sourceCheck: check(
       "invoices_source_check",

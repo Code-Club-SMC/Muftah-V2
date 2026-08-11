@@ -310,8 +310,8 @@ function SalesmanLedgerPage() {
       {/* Summary Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <SummaryCard label="Total Sales" value={summary.periodTotalSales} color="text-emerald-700" />
-        <SummaryCard label="Cash" value={summary.periodTotalCash} color="text-blue-700" />
-        <SummaryCard label="Credit" value={summary.periodTotalCredit} color="text-rose-700" />
+        <SummaryCard label="Paid Amount" value={summary.periodPayments} color="text-blue-700" />
+        <SummaryCard label="Returns" value={summary.periodReturns} color="text-amber-700" />
         <SummaryCard
           label="Closing Balance"
           value={summary.closingBalance}
@@ -438,7 +438,6 @@ function SummaryCard({
 function LedgerTableRow({ entry }: { entry: LedgerEntry }) {
   const isInvoice = entry.type === "invoice";
   const isReturn = entry.type === "return";
-  const isInvoiceCashPayment = entry.type === "payment" && entry.method === "invoice_cash";
 
   return (
     <TableRow>
@@ -464,16 +463,15 @@ function LedgerTableRow({ entry }: { entry: LedgerEntry }) {
         {isInvoice ? (
           <span className="flex items-center gap-1">
             <Package className="size-3 text-muted-foreground" />
-            {entry.slipNumber || "—"}
+            {entry.invoiceNumber}
           </span>
         ) : isReturn ? (
           <div className="space-y-1">
             <div className="font-medium text-amber-700 dark:text-amber-400">
-              Return #{entry.returnNumber ?? "—"}
+              Return #{entry.returnNumber}
             </div>
             <div className="text-xs text-muted-foreground">
-              {entry.invoiceSlipNumber ? `Invoice #${entry.invoiceSlipNumber} · ` : ""}
-              {entry.reason}
+              Invoice #{entry.invoiceNumber} · {entry.reason}
             </div>
           </div>
         ) : (
@@ -482,11 +480,9 @@ function LedgerTableRow({ entry }: { entry: LedgerEntry }) {
               <ArrowDownLeft className="size-3 text-emerald-500" />
               {entry.reference || entry.method}
             </span>
-            {isInvoiceCashPayment && (
-              <div className="text-[10px] text-muted-foreground">
-                Invoice cash settlement. Already reflected in invoice cash split.
-              </div>
-            )}
+            <div className="text-[10px] text-muted-foreground">
+              Invoice #{entry.invoiceNumber}
+            </div>
           </div>
         )}
       </TableCell>
@@ -500,7 +496,7 @@ function LedgerTableRow({ entry }: { entry: LedgerEntry }) {
         {isInvoice ? (
           <span className="text-rose-600 font-medium flex items-center justify-end gap-1">
             <ArrowUpRight className="size-3" />
-            {formatPKR(entry.credit, false)}
+            {formatPKR(entry.totalPrice, false)}
           </span>
         ) : (
           <span className="text-muted-foreground">—</span>
@@ -511,7 +507,7 @@ function LedgerTableRow({ entry }: { entry: LedgerEntry }) {
           <span
             className={cn(
               "font-medium flex items-center justify-end gap-1",
-              isReturn ? "text-amber-600" : isInvoiceCashPayment ? "text-muted-foreground/60" : "text-emerald-600",
+              isReturn ? "text-amber-600" : "text-emerald-600",
             )}
           >
             <ArrowDownLeft className="size-3" />

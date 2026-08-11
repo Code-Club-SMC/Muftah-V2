@@ -42,7 +42,7 @@ interface RecoveryEntry {
   slipId: string;
   slipNumber: string;
   customerName: string;
-  amountDue: number;
+  outstandingAmount: number;
   recoveryAmount: number;
 }
 
@@ -69,6 +69,19 @@ export function BatchRecoveriesDialog() {
   });
 
   const slips = slipsData?.slips ?? [];
+  const eligibleWallets = useMemo(
+    () =>
+      wallets.filter((wallet) =>
+        method === "cash" ? wallet.type === "cash" : wallet.type === "bank",
+      ),
+    [method, wallets],
+  );
+
+  useEffect(() => {
+    if (!eligibleWallets.some((wallet) => wallet.id === walletId)) {
+      setWalletId(eligibleWallets[0]?.id ?? "");
+    }
+  }, [eligibleWallets, walletId]);
 
   // Clear selected slips when order booker filter changes
   useEffect(() => {
@@ -86,15 +99,9 @@ export function BatchRecoveriesDialog() {
   const { mutateAsync: batchReconcile, isPending } = useMutation({
     mutationFn: batchReconcileSlipsFn,
     onSuccess: (result) => {
-      const successes = result.results.filter((r) => r.success);
-      const failures = result.results.filter((r) => !r.success);
-
-      if (successes.length > 0) {
-        toast.success(`Recovered ${PKR(totalRecovery)} across ${successes.length} slip(s)`);
-      }
-      if (failures.length > 0) {
-        toast.error(`${failures.length} slip(s) failed: ${failures.map((f) => f.error).join(", ")}`);
-      }
+      toast.success(
+        `Recorded ${PKR(totalRecovery)} across ${result.results.length} invoice(s)`,
+      );
 
       qc.invalidateQueries({ queryKey: ["open-slips-for-recovery"] });
       qc.invalidateQueries({ queryKey: ["overdue-slips"] });
@@ -115,8 +122,8 @@ export function BatchRecoveriesDialog() {
           slipId: slip.id,
           slipNumber: slip.slipNumber,
           customerName: slip.customerName,
-          amountDue: slip.amountDue,
-          recoveryAmount: slip.amountDue,
+          outstandingAmount: slip.outstandingAmount,
+          recoveryAmount: slip.outstandingAmount,
         });
       }
       return next;
@@ -128,7 +135,10 @@ export function BatchRecoveriesDialog() {
       const next = new Map(prev);
       const entry = next.get(slipId);
       if (entry) {
-        next.set(slipId, { ...entry, recoveryAmount: Math.min(amount, entry.amountDue) });
+        next.set(slipId, {
+          ...entry,
+          recoveryAmount: Math.min(amount, entry.outstandingAmount),
+        });
       }
       return next;
     });
@@ -144,8 +154,8 @@ export function BatchRecoveriesDialog() {
           slipId: s.id,
           slipNumber: s.slipNumber,
           customerName: s.customerName,
-          amountDue: s.amountDue,
-          recoveryAmount: s.amountDue,
+          outstandingAmount: s.outstandingAmount,
+          recoveryAmount: s.outstandingAmount,
         });
       });
       setSelected(next);
@@ -155,6 +165,14 @@ export function BatchRecoveriesDialog() {
   const handleSubmit = async () => {
     if (selected.size === 0) {
       toast.error("Select at least one slip");
+      return;
+    }
+    if (!walletId) {
+      toast.error("Select a destination account");
+      return;
+    }
+    if (method === "bank_transfer" && !reference.trim()) {
+      toast.error("Enter the bank reference");
       return;
     }
 
@@ -245,7 +263,7 @@ export function BatchRecoveriesDialog() {
                   <SelectValue placeholder="Select account" />
                 </SelectTrigger>
                 <SelectContent>
-                  {wallets.map((w) => (
+                  {eligibleWallets.map((w) => (
                     <SelectItem key={w.id} value={w.id}>
                       {w.name}
                     </SelectItem>
@@ -254,7 +272,9 @@ export function BatchRecoveriesDialog() {
               </Select>
             </div>
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">Reference (optional)</label>
+              <label className="text-xs font-medium text-muted-foreground">
+                {method === "bank_transfer" ? "Bank Reference" : "Reference (optional)"}
+              </label>
               <Input
                 value={reference}
                 onChange={(e) => setReference(e.target.value)}
@@ -331,20 +351,20 @@ export function BatchRecoveriesDialog() {
                           {slip.invoiceDate ? format(new Date(slip.invoiceDate), "dd MMM yy") : "—"}
                         </TableCell>
                         <TableCell className="text-xs tabular-nums text-red-600">
-                          {slip.creditReturnDate
-                            ? format(new Date(slip.creditReturnDate), "dd MMM yy")
+                          {slip.paymentDueDate
+                            ? format(new Date(slip.paymentDueDate), "dd MMM yy")
                             : "—"}
                         </TableCell>
                         <TableCell className="text-sm tabular-nums text-right font-semibold text-red-600">
-                          {PKR(slip.amountDue)}
+                          {PKR(slip.outstandingAmount)}
                         </TableCell>
                         <TableCell>
                           {isSelected ? (
                             <Input
                               type="number"
                               min={1}
-                              max={slip.amountDue}
-                              value={entry?.recoveryAmount ?? slip.amountDue}
+                              max={slip.outstandingAmount}
+                              value={entry?.recoveryAmount ?? slip.outstandingAmount}
                               onChange={(e) => updateRecoveryAmount(slip.id, Number(e.target.value))}
                               className="h-8 text-right text-sm"
                             />

@@ -80,19 +80,19 @@ export const CustomersTable = () => {
       ),
     },
     {
-      accessorKey: "payment",
-      header: "Total Paid",
+      accessorKey: "totalPaidAmount",
+      header: "Paid Amount",
       cell: ({ row }) => (
         <span className="tabular-nums text-sm font-medium text-green-600">
-          {PKR(Number(row.original.payment))}
+          {PKR(Number(row.original.totalPaidAmount))}
         </span>
       ),
     },
     {
-      accessorKey: "credit",
-      header: "Outstanding",
+      accessorKey: "outstandingAmount",
+      header: "Outstanding Amount",
       cell: ({ row }) => {
-        const val = Number(row.original.credit);
+        const val = Number(row.original.outstandingAmount);
         return val > 0 ? (
           <Badge variant="destructive" className="tabular-nums font-semibold text-xs">
             {PKR(val)}

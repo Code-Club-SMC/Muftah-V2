@@ -1,6 +1,12 @@
 import { useState, useRef } from "react";
 import { Link } from "@tanstack/react-router";
-import { Printer, FileText, Loader2, ArrowLeft, CalendarRange } from "lucide-react";
+import {
+  Printer,
+  FileText,
+  Loader2,
+  ArrowLeft,
+  CalendarRange,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DatePickerWithRange } from "@/components/custom/date-range-picker";
 import type { DateRange } from "react-day-picker";
@@ -59,6 +65,7 @@ interface ReportPageShellProps {
   accentColor?: AccentColor;
   emptyMessage?: string;
   actions?: React.ReactNode;
+  filters?: React.ReactNode;
 }
 
 export function ReportPageShell({
@@ -71,6 +78,7 @@ export function ReportPageShell({
   accentColor = "emerald",
   emptyMessage = "Select a date range and click Generate to view the report.",
   actions,
+  filters,
 }: ReportPageShellProps) {
   const [dateRange, setDateRange] = useState<DateRange | undefined>({
     from: startOfMonth(new Date()),
@@ -137,12 +145,18 @@ export function ReportPageShell({
               <DatePickerWithRange
                 date={dateRange}
                 onDateChange={(d) => {
-                  setDateRange(d ?? { from: startOfMonth(new Date()), to: endOfMonth(new Date()) });
+                  setDateRange(
+                    d ?? {
+                      from: startOfMonth(new Date()),
+                      to: endOfMonth(new Date()),
+                    },
+                  );
                   setHasGenerated(false);
                 }}
                 className="w-64"
               />
             </div>
+            {filters}
             <Button
               onClick={handleGenerate}
               disabled={isLoading || !dateRange?.from}
@@ -156,9 +170,7 @@ export function ReportPageShell({
               Generate Report
             </Button>
             {actions && hasGenerated && !isEmpty && (
-              <div className="sm:ml-auto print:hidden">
-                {actions}
-              </div>
+              <div className="sm:ml-auto print:hidden">{actions}</div>
             )}
           </div>
         </div>
@@ -169,7 +181,9 @@ export function ReportPageShell({
           <div className="hidden print:block mb-4 pb-3 border-b-2 border-black">
             <div className="flex justify-between items-start">
               <div>
-                <h1 className="text-lg font-bold uppercase tracking-tight">{title}</h1>
+                <h1 className="text-lg font-bold uppercase tracking-tight">
+                  {title}
+                </h1>
               </div>
               <div className="text-right text-[10pt]">
                 <div className="font-bold">Titan ERP</div>
@@ -178,9 +192,17 @@ export function ReportPageShell({
             {dateRange?.from && dateRange?.to && (
               <div className="text-[10pt] mt-1">
                 <span className="font-semibold">Period:</span>{" "}
-                {dateRange.from.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}
+                {dateRange.from.toLocaleDateString("en-GB", {
+                  day: "2-digit",
+                  month: "short",
+                  year: "numeric",
+                })}
                 {" — "}
-                {dateRange.to.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}
+                {dateRange.to.toLocaleDateString("en-GB", {
+                  day: "2-digit",
+                  month: "short",
+                  year: "numeric",
+                })}
               </div>
             )}
           </div>
@@ -211,7 +233,7 @@ export function ReportPageShell({
           ) : (
             <>
               {children}
-              
+
               {/* Print-only signature section */}
               <div className="hidden print:block mt-12 pt-8 border-t border-gray-300">
                 <div className="grid grid-cols-2 gap-8 text-sm">

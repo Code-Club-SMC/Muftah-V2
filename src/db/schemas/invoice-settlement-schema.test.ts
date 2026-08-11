@@ -38,6 +38,7 @@ describe("invoice settlement database contract", () => {
         "invoice_number",
         "source",
         "paid_amount",
+        "returned_amount",
         "outstanding_amount",
         "payment_due_date",
         "payment_status",
@@ -86,7 +87,12 @@ describe("invoice settlement database contract", () => {
 
   it("uses unambiguous slip totals and effective wallet dates", () => {
     expect(columnNames(slipRecords)).toEqual(
-      expect.arrayContaining(["invoice_amount", "paid_amount", "outstanding_amount"]),
+      expect.arrayContaining([
+        "invoice_amount",
+        "paid_amount",
+        "returned_amount",
+        "outstanding_amount",
+      ]),
     );
     expect(columnNames(slipRecords)).not.toEqual(
       expect.arrayContaining(["amount_due", "amount_recovered"]),

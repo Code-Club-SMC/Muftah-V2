@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { db } from "@/db";
 import { requireManufacturingViewMiddleware } from "@/lib/middlewares";
 import { z } from "zod";
-import { eq, and, sql, gte, lte, inArray } from "drizzle-orm";
+import { eq, and, sql, gte, lte, inArray, ne } from "drizzle-orm";
 import { products, recipes } from "@/db/schemas/inventory-schema";
 import { invoices, invoiceItems, customers } from "@/db/schemas/sales-schema";
 
@@ -32,7 +32,7 @@ export type ProductProfitLossResult = {
     invoices: Array<{
       invoiceId: string;
       date: Date;
-      slipNumber: string | null;
+      invoiceNumber: string;
       customerName: string | null;
       status: string | null;
       revenue: number;
@@ -123,7 +123,7 @@ export const getProductProfitLossFn = createServerFn()
       .innerJoin(invoices, eq(invoiceItems.invoiceId, invoices.id))
       .where(
         and(
-          inArray(invoices.status, ["paid", "partially_paid"]),
+          ne(invoices.status, "voided"),
           inArray(invoiceItems.recipeId, recipeIds),
           gte(invoices.date, fromDate),
           lte(invoices.date, toDate),
@@ -152,7 +152,7 @@ export const getProductProfitLossFn = createServerFn()
       {
         invoiceId: string;
         date: Date;
-        slipNumber: string | null;
+        invoiceNumber: string;
         customerName: string;
         status: string;
         revenue: number;
@@ -166,7 +166,7 @@ export const getProductProfitLossFn = createServerFn()
         .select({
           invoiceId: invoices.id,
           date: invoices.date,
-          slipNumber: invoices.slipNumber,
+          invoiceNumber: invoices.invoiceNumber,
           customerName: customers.name,
           status: invoices.status,
           revenue: sql<number>`COALESCE(SUM(${invoiceItems.amount}), 0)`,
@@ -178,7 +178,7 @@ export const getProductProfitLossFn = createServerFn()
         .where(
           and(
             eq(invoiceItems.recipeId, recipeId),
-            inArray(invoices.status, ["paid", "partially_paid"]),
+            ne(invoices.status, "voided"),
             gte(invoices.date, fromDate),
             lte(invoices.date, toDate),
           ),
@@ -186,7 +186,7 @@ export const getProductProfitLossFn = createServerFn()
         .groupBy(
           invoices.id,
           invoices.date,
-          invoices.slipNumber,
+          invoices.invoiceNumber,
           customers.name,
           invoices.status,
         )
@@ -195,7 +195,7 @@ export const getProductProfitLossFn = createServerFn()
       recipeInvoiceDetails[recipeId] = details.map((row) => ({
         invoiceId: row.invoiceId,
         date: row.date,
-        slipNumber: row.slipNumber,
+        invoiceNumber: row.invoiceNumber,
         customerName: row.customerName,
         status: row.status,
         revenue: Number(row.revenue),

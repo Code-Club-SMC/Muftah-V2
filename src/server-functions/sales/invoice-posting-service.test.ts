@@ -45,16 +45,16 @@ describe("shared invoice posting contract", () => {
 		);
 		expect(postingSource).toContain("buildConfiguredRecipePriceMap({");
 		expect(postingSource).toContain("preferConfiguredRate:");
-		expect(postingSource).toContain(
-			"!item.isPriceOverride && !item.preserveStoredDistributorRate",
+		expect(postingSource).toMatch(
+			/!item\.isPriceOverride\s*&&\s*!item\.preserveStoredDistributorRate/,
 		);
 		expect(postingSource).toContain("calculateSettlement(");
 		expect(postingSource).toContain("assertSettlementDueDate(");
 	});
 
-	it("allows offline posting only for an existing distributor", () => {
+	it("requires an existing distributor for direct offline sales", () => {
 		expect(postingSource).toContain(
-			'input.source === "offline_import" && !customerId',
+			'input.offlineSaleType === "direct_distributor"',
 		);
 		expect(postingSource).toContain(
 			'customerRecord?.customerType !== "distributor"',

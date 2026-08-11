@@ -495,8 +495,8 @@ function InvoicesContent() {
                   <TableHead className="text-[11px]">Type</TableHead>
                   <TableHead className="text-[11px]">Warehouse</TableHead>
                   <TableHead className="text-[11px] text-right">Total</TableHead>
-                  <TableHead className="text-[11px] text-right">Cash</TableHead>
-                  <TableHead className="text-[11px] text-right">Credit</TableHead>
+                  <TableHead className="text-[11px] text-right">Paid Amount</TableHead>
+                  <TableHead className="text-[11px] text-right">Outstanding Amount</TableHead>
                   <TableHead className="text-[11px]">Status</TableHead>
                   <TableHead className="text-[11px] w-[50px]" />
                 </TableRow>
@@ -613,20 +613,20 @@ const InvoiceRow = ({
   onPrint: (id: string) => void;
   onDelete: (id: string) => void;
 }) => {
-  const credit = Number(invoice.credit);
-  const cash = Number(invoice.cash);
+  const outstandingAmount = Number(invoice.outstandingAmount);
+  const paidAmount = Number(invoice.paidAmount);
 
   let statusLabel: string;
   let statusVariant: "default" | "destructive" | "outline";
 
-  if (credit === 0 && cash > 0) {
+  if (invoice.paymentStatus === "paid") {
     statusLabel = "Paid";
     statusVariant = "default";
-  } else if (cash === 0 && credit > 0) {
-    statusLabel = "Credit";
+  } else if (invoice.paymentStatus === "unpaid") {
+    statusLabel = "Outstanding";
     statusVariant = "destructive";
-  } else if (cash > 0 && credit > 0) {
-    statusLabel = "Partial";
+  } else if (invoice.paymentStatus === "partially_paid") {
+    statusLabel = "Partially Paid";
     statusVariant = "outline";
   } else {
     statusLabel = "Unknown";
@@ -641,7 +641,7 @@ const InvoiceRow = ({
           params={{ invoiceId: invoice.id }}
           className="hover:underline underline-offset-2"
         >
-          {invoice.slipNumber || "—"}
+          {invoice.invoiceNumber || "—"}
         </Link>
       </TableCell>
       <TableCell className="text-sm tabular-nums">
@@ -650,7 +650,7 @@ const InvoiceRow = ({
       <TableCell>
         <div className="flex flex-col">
           <span className="font-medium text-sm">
-            {invoice.customer?.name || "Cash / Walk-in"}
+            {invoice.customer?.name || "Walk-in Customer"}
           </span>
           {invoice.customer?.mobileNumber && (
             <span className="text-[10px] text-muted-foreground">{invoice.customer.mobileNumber}</span>
@@ -668,14 +668,14 @@ const InvoiceRow = ({
       </TableCell>
       <TableCell className={cn(
         "text-sm tabular-nums text-right",
-        cash > 0 ? "text-green-600" : "text-muted-foreground"
+        paidAmount > 0 ? "text-green-600" : "text-muted-foreground"
       )}>
-        {PKR(cash)}
+        {PKR(paidAmount)}
       </TableCell>
       <TableCell className="text-sm tabular-nums text-right">
-        {credit > 0 ? (
+        {outstandingAmount > 0 ? (
           <Badge variant="destructive" className="tabular-nums text-[10px] font-semibold">
-            {PKR(credit)}
+            {PKR(outstandingAmount)}
           </Badge>
         ) : (
           <span className="text-green-600 text-xs">Settled</span>

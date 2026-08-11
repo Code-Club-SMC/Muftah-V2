@@ -11,7 +11,7 @@ import { createId } from "@paralleldrive/cuid2";
 const customerSortFields = {
   name: customers.name,
   totalSale: customers.totalSale,
-  credit: customers.credit,
+  outstandingAmount: customers.outstandingAmount,
   createdAt: customers.createdAt,
 } as const;
 
@@ -91,7 +91,7 @@ export const getCustomersFn = createServerFn()
         customerType: z.enum(["distributor", "retailer"]).optional(),
         city: z.string().optional(),
         outstandingOnly: z.boolean().default(false),
-        sortBy: z.enum(["name", "totalSale", "credit", "createdAt"]).default("createdAt"),
+        sortBy: z.enum(["name", "totalSale", "outstandingAmount", "createdAt"]).default("createdAt"),
         sortOrder: z.enum(["asc", "desc"]).default("desc"),
       })
       .parse(input),
@@ -119,7 +119,7 @@ export const getCustomersFn = createServerFn()
     }
 
     if (data.outstandingOnly) {
-      conditions.push(gt(customers.credit, "0"));
+      conditions.push(gt(customers.outstandingAmount, "0"));
     }
 
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
@@ -186,14 +186,14 @@ export const getCustomerStatsFn = createServerFn()
       .where(revenueConditions.length > 0 ? and(...revenueConditions) : undefined);
 
     const [totalOutstandingResult] = await db
-      .select({ value: drizzleSum(customers.credit) })
+      .select({ value: drizzleSum(customers.outstandingAmount) })
       .from(customers)
-      .where(gt(customers.credit, "0"));
+      .where(gt(customers.outstandingAmount, "0"));
 
     const [outstandingCountResult] = await db
       .select({ value: count() })
       .from(customers)
-      .where(gt(customers.credit, "0"));
+      .where(gt(customers.outstandingAmount, "0"));
 
     return {
       totalCustomers: Number(countResult.value) || 0,
@@ -257,8 +257,8 @@ export const getCustomerLedgerFn = createServerFn()
     const [aggResult] = await db
       .select({
         periodRevenue: drizzleSum(invoices.totalPrice),
-        periodCash:    drizzleSum(invoices.cash),
-        periodCredit:  drizzleSum(invoices.credit),
+        periodPaidAmount: drizzleSum(invoices.paidAmount),
+        periodOutstandingAmount: drizzleSum(invoices.outstandingAmount),
       })
       .from(invoices)
       .where(invoiceWhereClause);
@@ -287,19 +287,19 @@ export const getCustomerLedgerFn = createServerFn()
       .from(invoices)
       .where(and(
         eq(invoices.customerId, data.customerId),
-        lt(invoices.creditReturnDate, new Date()),
-        gt(invoices.credit, "0"),
+        lt(invoices.paymentDueDate, new Date()),
+        gt(invoices.outstandingAmount, "0"),
       ));
 
     // Next due date — all-time, NOT date-scoped
     const nextDueRow = await db.query.invoices.findFirst({
       where: and(
         eq(invoices.customerId, data.customerId),
-        gt(invoices.credit, "0"),
-        isNotNull(invoices.creditReturnDate),
+        gt(invoices.outstandingAmount, "0"),
+        isNotNull(invoices.paymentDueDate),
       ),
-      orderBy: [drizzleAsc(invoices.creditReturnDate)],
-      columns: { creditReturnDate: true },
+      orderBy: [drizzleAsc(invoices.paymentDueDate)],
+      columns: { paymentDueDate: true },
     });
 
     const periodProfit = (Number(periodProfitResult?.revenue) || 0) - (Number(periodProfitResult?.cogs) || 0);
@@ -311,12 +311,12 @@ export const getCustomerLedgerFn = createServerFn()
       total: Number(totalResult.value),
       pageCount: Math.ceil(Number(totalResult.value) / data.limit),
       periodRevenue: Number(aggResult.periodRevenue) || 0,
-      periodCash:    Number(aggResult.periodCash) || 0,
-      periodCredit:  Number(aggResult.periodCredit) || 0,
+      periodPaidAmount: Number(aggResult.periodPaidAmount) || 0,
+      periodOutstandingAmount: Number(aggResult.periodOutstandingAmount) || 0,
       periodProfit,
       lifetimeProfit,
       overdueInvoices: Number(overdueResult.value) || 0,
-      nextDueDate: nextDueRow?.creditReturnDate ?? null,
+      nextDueDate: nextDueRow?.paymentDueDate ?? null,
     };
   });
 

@@ -32,7 +32,6 @@ import {
   ChevronRight,
   ChevronDown,
   AlertCircle,
-  Link,
   Search,
   ArrowUpDown,
   Clock,
@@ -469,8 +468,7 @@ function DistributorLedgerPage() {
               Quick Stats
             </h3>
             <div className="space-y-2">
-              <StatRow label="Total Cash" value={summary.periodTotalCash} />
-              <StatRow label="Total Credit" value={summary.periodTotalCredit} />
+              <StatRow label="Paid Amount" value={summary.periodPayments} />
               <StatRow label="Returns" value={summary.periodReturns} />
               <StatRow label="Invoices" value={summary.invoiceCount} isCount />
               <StatRow label="Payments" value={summary.paymentCount} isCount />
@@ -537,7 +535,6 @@ function LedgerTableRow({
 }) {
   const isInvoice = entry.type === "invoice";
   const isReturn = entry.type === "return";
-  const isInvoiceCashPayment = entry.type === "payment" && entry.method === "invoice_cash";
 
   return (
     <>
@@ -568,35 +565,35 @@ function LedgerTableRow({
           {isInvoice ? (
             <div className="space-y-1">
               <div>
-                Invoice <strong>#{entry.slipNumber || "—"}</strong>
+                Invoice <strong>#{entry.invoiceNumber}</strong>
                 {entry.warehouseName && ` — ${entry.warehouseName}`}
               </div>
               <div className="text-xs text-muted-foreground">
                 Total: {formatPKR(entry.totalPrice, false)}{" "}
                 <span className="text-muted-foreground/70">
-                  (Cash: {formatPKR(entry.cash, false)} + Credit: {formatPKR(entry.credit, false)})
+                  (Paid Amount: {formatPKR(entry.paidAmount, false)} · Returned Amount: {formatPKR(entry.returnedAmount, false)} · Outstanding Amount: {formatPKR(entry.outstandingAmount, false)})
                 </span>
               </div>
-              {entry.slipStatus && (
+              {entry.paymentStatus && (
                 <Badge
                   variant="outline"
                   className={cn(
                     "text-[10px]",
-                    entry.slipStatus === "closed"
+                    entry.paymentStatus === "paid"
                       ? "border-green-300 text-green-700 bg-green-50 dark:bg-green-950/20"
-                      : entry.slipStatus === "partially_recovered"
+                      : entry.paymentStatus === "partially_paid"
                         ? "border-yellow-300 text-yellow-700 bg-yellow-50 dark:bg-yellow-950/20"
                         : "border-red-300 text-red-700 bg-red-50 dark:bg-red-950/20",
                   )}
                 >
-                  Slip: {entry.slipStatus.replace("_", " ")}
+                  Payment: {entry.paymentStatus.replace("_", " ")}
                 </Badge>
               )}
             </div>
           ) : isReturn ? (
             <div className="space-y-1">
               <div className="font-medium text-amber-700 dark:text-amber-400">
-                Sales Return #{entry.returnNumber ?? "—"}
+                Sales Return #{entry.returnNumber}
               </div>
               <div className="text-xs text-muted-foreground">
                 Reason: {entry.reason}
@@ -604,43 +601,27 @@ function LedgerTableRow({
               <div className="text-[10px] text-muted-foreground capitalize">
                 Condition: {entry.condition}
               </div>
-              {entry.invoiceSlipNumber && (
-                <div className="flex items-center gap-1 text-xs text-blue-600">
-                  <Link className="size-3" />
-                  <span>Linked to Invoice #{entry.invoiceSlipNumber}</span>
-                </div>
-              )}
+              <div className="text-xs text-blue-600">
+                Invoice #{entry.invoiceNumber}
+              </div>
             </div>
           ) : (
             <div className="space-y-1">
-              <div className={cn(isInvoiceCashPayment && "text-muted-foreground")}>
-                Payment <span className="capitalize">({entry.method})</span>
+              <div>
+                Payment <span className="capitalize">({entry.method.replaceAll("_", " ")})</span>
                 {entry.reference && ` — Ref: ${entry.reference}`}
-                {isInvoiceCashPayment && (
-                  <Badge variant="outline" className="ml-1.5 text-[9px] border-gray-300 text-gray-500">Settled</Badge>
-                )}
               </div>
-              {isInvoiceCashPayment && (
-                <div className="text-[10px] text-muted-foreground">
-                  Cash settled during invoice creation — already reflected in the invoice cash split
-                </div>
-              )}
-              {entry.invoiceSlipNumber && (
-                <div className="flex items-center gap-1 text-xs text-blue-600">
-                  <Link className="size-3" />
-                  <span>Linked to Invoice #{entry.invoiceSlipNumber}</span>
-                </div>
-              )}
+              <div className="text-xs text-blue-600">
+                Invoice #{entry.invoiceNumber}
+              </div>
             </div>
           )}
         </TableCell>
         <TableCell className="text-sm tabular-nums text-right">
-          {isInvoice ? formatPKR(entry.credit, false) : "—"}
+          {isInvoice ? formatPKR(entry.totalPrice, false) : "—"}
         </TableCell>
         <TableCell className={cn("text-sm tabular-nums text-right", isReturn ? "text-amber-600" : "text-green-600")}>
-          {isReturn ? formatPKR(entry.amount, false) : !isInvoice && !isInvoiceCashPayment ? formatPKR(entry.amount, false) : isInvoiceCashPayment ? (
-            <span className="text-muted-foreground/60 text-xs">{formatPKR(entry.amount, false)}</span>
-          ) : "—"}
+          {!isInvoice ? formatPKR(entry.amount, false) : "—"}
         </TableCell>
         <TableCell className="text-sm tabular-nums text-right font-semibold">
           {formatPKR(entry.runningBalance, false)}
@@ -710,18 +691,22 @@ function LedgerTableRow({
                   <span className="font-medium capitalize">{entry.status}</span>
                 </div>
                 <div>
-                  <span className="text-muted-foreground">Cash:</span>{" "}
-                  <span className="font-medium">{formatPKR(entry.cash, false)}</span>
+                  <span className="text-muted-foreground">Paid Amount:</span>{" "}
+                  <span className="font-medium">{formatPKR(entry.paidAmount, false)}</span>
                 </div>
                 <div>
-                  <span className="text-muted-foreground">Credit:</span>{" "}
-                  <span className="font-medium">{formatPKR(entry.credit, false)}</span>
+                  <span className="text-muted-foreground">Returned Amount:</span>{" "}
+                  <span className="font-medium">{formatPKR(entry.returnedAmount, false)}</span>
                 </div>
-                {entry.creditReturnDate && (
+                <div>
+                  <span className="text-muted-foreground">Outstanding Amount:</span>{" "}
+                  <span className="font-medium">{formatPKR(entry.outstandingAmount, false)}</span>
+                </div>
+                {entry.paymentDueDate && (
                   <div>
-                    <span className="text-muted-foreground">Credit Return:</span>{" "}
+                    <span className="text-muted-foreground">Payment Due Date:</span>{" "}
                     <span className="font-medium">
-                      {format(new Date(entry.creditReturnDate), "dd MMM yyyy")}
+                      {format(new Date(entry.paymentDueDate), "dd MMM yyyy")}
                     </span>
                   </div>
                 )}

@@ -15,7 +15,7 @@ interface Props {
   filters?: {
     dateFrom?: string;
     dateTo?: string;
-    status?: "paid" | "credit" | "partial";
+    status?: "paid" | "outstanding" | "partial";
     customerType?: "distributor" | "retailer";
     warehouseId?: string;
     amountMin?: number;
@@ -46,7 +46,7 @@ const cards: {
   },
   {
     key: "totalOutstanding",
-    label: "Outstanding Credit",
+    label: "Outstanding Amount",
     icon: AlertCircle,
     format: PKR,
     theme: "rose",

@@ -1,10 +1,5 @@
 import { useGetCustomerStats } from "@/hooks/sales/use-customers";
-import {
-  Users,
-  DollarSign,
-  AlertTriangle,
-  UserCheck,
-} from "lucide-react";
+import { Users, DollarSign, AlertTriangle, UserCheck } from "lucide-react";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 
@@ -35,14 +30,12 @@ const cards = [
   },
   {
     key: "customersWithOutstanding",
-    label: "Customers with Debt",
+    label: "Customers with Outstanding Amount",
     icon: UserCheck,
     format: (v: number) => v.toLocaleString(),
     theme: "amber",
   },
 ] as const;
-
-type KPITheme = "blue" | "rose" | "emerald" | "violet" | "amber";
 
 const sharpThemeStyles = {
   blue: {
@@ -116,7 +109,12 @@ export const CustomerKpiCards = ({ dateFrom, dateTo }: Props) => {
             </div>
 
             <div className="relative z-10 space-y-1">
-              <h3 className={cn("text-3xl font-bold tracking-tight text-foreground tabular-nums", styles.iconText)}>
+              <h3
+                className={cn(
+                  "text-3xl font-bold tracking-tight text-foreground tabular-nums",
+                  styles.iconText,
+                )}
+              >
                 {card.format(value ?? 0)}
               </h3>
               <div className="h-4" />

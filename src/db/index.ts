@@ -11,6 +11,7 @@ import * as supplierSchema from "./schemas/supplier-schema";
 import * as hrSchema from "./schemas/hr-schema";
 import * as rbacSchema from "./schemas/rbac-schema";
 import * as offlineAttendanceSchema from "./schemas/offline-attendance-schema";
+import * as offlineSalesSchema from "./schemas/offline-sales-schema";
 
 const schema = {
   ...authSchema,
@@ -24,6 +25,7 @@ const schema = {
   ...hrSchema,
   ...rbacSchema,
   ...offlineAttendanceSchema,
+  ...offlineSalesSchema,
 };
 
 if (!process.env.DATABASE_URL) {
@@ -119,3 +121,12 @@ export const {
   attendancePunchCorrectionAudit,
   payrollAttendanceInvalidations,
 } = offlineAttendanceSchema;
+export const {
+  offlineSalesWorkbooks,
+  offlineSalesInvoiceSlots,
+  offlineSalesImportBatches,
+  offlineSalesStagedInvoices,
+  offlineSalesStagedItems,
+  offlineSalesStagedPayments,
+  stockReconciliationIssues,
+} = offlineSalesSchema;

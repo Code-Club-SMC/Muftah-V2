@@ -16,7 +16,7 @@ export const Route = createFileRoute(
     throw redirect({
       to: "/reports/profit-loss/product/$productId",
       params: { productId },
-      search: { from, to },
+      search: { from, to, source: "all" },
     });
   },
 });

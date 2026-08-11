@@ -127,15 +127,15 @@ function CustomerLedgerPage() {
     total,
     pageCount,
     periodRevenue,
-    periodCash,
-    periodCredit,
+    periodPaidAmount,
+    periodOutstandingAmount,
     periodProfit,
     lifetimeProfit,
     overdueInvoices,
     nextDueDate,
   } = data;
 
-  const outstandingCredit = Number(customer.credit);
+  const outstandingAmount = Number(customer.outstandingAmount);
 
   return (
     <div className="space-y-6">
@@ -196,27 +196,26 @@ function CustomerLedgerPage() {
                 ...invoices.map((inv: any) => ({
                   type: "invoice" as const,
                   date: inv.date,
-                  description: `Invoice #${inv.slipNumber || ""}`,
+                  description: `Invoice #${inv.invoiceNumber}`,
                   warehouse: inv.warehouse?.name || "—",
                   total: Number(inv.totalPrice),
-                  cash: Number(inv.cash),
-                  credit: Number(inv.credit),
+                  paidAmount: Number(inv.paidAmount),
+                  returnedAmount: Number(inv.returnedAmount),
+                  outstandingAmount: Number(inv.outstandingAmount),
                 })),
-                ...(paymentsData?.data || []).map((p: any) => ({
+                ...(paymentsData?.data || []).filter((p: any) => p.status === "confirmed").map((p: any) => ({
                   type: "payment" as const,
-                  date: p.paymentDate,
+                  date: p.effectiveDate,
                   description: `Payment (${p.method})`,
                   warehouse: "—",
                   total: 0,
-                  cash: 0,
-                  credit: 0,
                   paymentAmount: Number(p.amount),
                 })),
               ].sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
               let balance = 0;
               return raw.map((entry: any) => {
                 if (entry.type === "invoice") {
-                  balance += entry.credit;
+                  balance += entry.total;
                 } else {
                   balance = Math.max(0, balance - (entry.paymentAmount || 0));
                 }
@@ -225,9 +224,9 @@ function CustomerLedgerPage() {
             })()}
             summary={{
               periodRevenue,
-              periodCash,
-              periodCredit,
-              outstandingCredit,
+              periodPaidAmount,
+              periodOutstandingAmount,
+              outstandingAmount,
               invoiceCount: total,
               paymentCount: paymentsData?.total || 0,
             }}
@@ -237,8 +236,9 @@ function CustomerLedgerPage() {
               { key: "description", label: "Description" },
               { key: "warehouse", label: "Warehouse" },
               { key: "total", label: "Total", format: (v: any) => PKR(Number(v || 0)) },
-              { key: "cash", label: "Cash", format: (v: any) => PKR(Number(v || 0)) },
-              { key: "credit", label: "Credit", format: (v: any) => PKR(Number(v || 0)) },
+              { key: "paidAmount", label: "Paid Amount", format: (v: any) => PKR(Number(v || 0)) },
+              { key: "returnedAmount", label: "Returned Amount", format: (v: any) => PKR(Number(v || 0)) },
+              { key: "outstandingAmount", label: "Outstanding Amount", format: (v: any) => PKR(Number(v || 0)) },
               { key: "balance", label: "Balance", format: (v: any) => PKR(Number(v || 0)) },
             ]}
           />
@@ -250,7 +250,7 @@ function CustomerLedgerPage() {
         <div
           className={cn(
             "flex-1 min-w-[200px] p-4 rounded-xl border",
-            outstandingCredit > 0
+            outstandingAmount > 0
               ? "bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-800"
               : "bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800",
           )}
@@ -259,7 +259,7 @@ function CustomerLedgerPage() {
             <p className="text-xs font-semibold uppercase text-muted-foreground">
               Outstanding Balance
             </p>
-            {outstandingCredit > 0 ? (
+            {outstandingAmount > 0 ? (
               <Badge variant="destructive" className="text-[10px]">Unpaid</Badge>
             ) : (
               <Badge
@@ -273,10 +273,10 @@ function CustomerLedgerPage() {
           <p
             className={cn(
               "text-2xl font-bold tabular-nums",
-              outstandingCredit > 0 ? "text-red-700" : "text-green-700",
+              outstandingAmount > 0 ? "text-red-700" : "text-green-700",
             )}
           >
-            {PKR(outstandingCredit)}
+            {PKR(outstandingAmount)}
           </p>
         </div>
 
@@ -343,22 +343,22 @@ function CustomerLedgerPage() {
           <div className="flex items-center gap-1.5 mb-2">
             <CreditCard className="size-3.5 text-blue-600" />
             <p className="text-[10px] font-semibold uppercase text-muted-foreground">
-              Cash Collected
+              Paid Amount
             </p>
           </div>
           <p className="text-xl font-bold tabular-nums text-blue-700">
-            {PKR(periodCash)}
+            {PKR(periodPaidAmount)}
           </p>
         </div>
         <div className="p-4 rounded-xl border bg-card">
           <div className="flex items-center gap-1.5 mb-2">
             <CreditCard className="size-3.5 text-rose-600" />
             <p className="text-[10px] font-semibold uppercase text-muted-foreground">
-              Credit Added
+              Outstanding Amount
             </p>
           </div>
           <p className="text-xl font-bold tabular-nums text-rose-700">
-            {PKR(periodCredit)}
+            {PKR(periodOutstandingAmount)}
           </p>
         </div>
         <div className="p-4 rounded-xl border bg-card">
@@ -394,11 +394,11 @@ function CustomerLedgerPage() {
             <TableHeader>
               <TableRow>
                 <TableHead className="text-[11px]">Date</TableHead>
-                <TableHead className="text-[11px]">Warehouse</TableHead>
+                <TableHead className="text-[11px]">Invoice #</TableHead>
                 <TableHead className="text-[11px] text-right">Total</TableHead>
-                <TableHead className="text-[11px] text-right">Cash</TableHead>
-                <TableHead className="text-[11px] text-right">Credit</TableHead>
-                <TableHead className="text-[11px] text-right">Balance</TableHead>
+                <TableHead className="text-[11px] text-right">Paid Amount</TableHead>
+                <TableHead className="text-[11px] text-right">Returned Amount</TableHead>
+                <TableHead className="text-[11px] text-right">Outstanding Amount</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -413,10 +413,10 @@ function CustomerLedgerPage() {
                 </TableRow>
               ) : (
                 invoices.map((inv: any) => {
-                  const cash = Number(inv.cash);
-                  const credit = Number(inv.credit);
+                  const paidAmount = Number(inv.paidAmount);
+                  const returnedAmount = Number(inv.returnedAmount);
+                  const invoiceOutstanding = Number(inv.outstandingAmount);
                   const totalVal = Number(inv.totalPrice);
-                  const balance = credit;
 
                   return (
                     <TableRow
@@ -431,7 +431,7 @@ function CustomerLedgerPage() {
                         {format(new Date(inv.date), "dd MMM yyyy")}
                       </TableCell>
                       <TableCell className="text-sm">
-                        {inv.warehouse?.name || "—"}
+                        {inv.invoiceNumber}
                       </TableCell>
                       <TableCell className="text-sm tabular-nums text-right font-semibold">
                         {PKR(totalVal)}
@@ -439,27 +439,22 @@ function CustomerLedgerPage() {
                       <TableCell
                         className={cn(
                           "text-sm tabular-nums text-right",
-                          cash > 0 ? "text-green-600" : "text-muted-foreground",
+                          paidAmount > 0 ? "text-green-600" : "text-muted-foreground",
                         )}
                       >
-                        {PKR(cash)}
+                        {PKR(paidAmount)}
                       </TableCell>
                       <TableCell className="text-sm tabular-nums text-right">
-                        {credit > 0 ? (
+                        {returnedAmount > 0 ? PKR(returnedAmount) : "—"}
+                      </TableCell>
+                      <TableCell className="text-sm tabular-nums text-right">
+                        {invoiceOutstanding > 0 ? (
                           <Badge variant="destructive" className="text-[10px]">
-                            {PKR(credit)}
+                            {PKR(invoiceOutstanding)}
                           </Badge>
                         ) : (
                           <span className="text-green-600 text-xs">—</span>
                         )}
-                      </TableCell>
-                      <TableCell
-                        className={cn(
-                          "text-sm tabular-nums text-right font-semibold",
-                          balance > 0 ? "text-red-600" : "text-green-600",
-                        )}
-                      >
-                        {PKR(balance)}
                       </TableCell>
                     </TableRow>
                   );

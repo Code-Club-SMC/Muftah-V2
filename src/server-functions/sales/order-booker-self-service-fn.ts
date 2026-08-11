@@ -1,9 +1,15 @@
 import { createServerFn } from "@tanstack/react-start";
 import { db } from "@/db";
-import { orders, orderItems, orderBookerTrips, commissionRecords, payments } from "@/db/schemas/sales-erp-schema";
+import {
+  orders,
+  orderItems,
+  orderBookerTrips,
+  commissionRecords,
+} from "@/db/schemas/sales-erp-schema";
 import { orderBookers } from "@/db/schemas/sales-erp-schema";
-import { invoices, customers } from "@/db/schemas/sales-schema";
+import { invoices } from "@/db/schemas/sales-schema";
 import { tadaRates } from "@/db/schemas/hr-schema";
+import { wallets } from "@/db/schemas/finance-schema";
 import { eq, and, gte, lte, desc, ilike, or, sql, gt } from "drizzle-orm";
 import { z } from "zod";
 import { createId } from "@paralleldrive/cuid2";
@@ -20,6 +26,7 @@ import {
   allocateNextBillNumberInTx,
   isOrderBillNumberUniqueViolation,
 } from "./order-bill-number";
+import { recordRecoveryPayment } from "./settlement-service";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // ORDER BOOKER SELF-SERVICE
@@ -48,7 +55,9 @@ type OrderBookerPortalAccess =
       message: string;
     };
 
-async function getOrderBookerPortalAccess(session: any): Promise<OrderBookerPortalAccess> {
+async function getOrderBookerPortalAccess(
+  session: any,
+): Promise<OrderBookerPortalAccess> {
   if (!session?.user?.id) {
     throw new InternalError("Unable to verify the current account.");
   }
@@ -70,7 +79,8 @@ async function getOrderBookerPortalAccess(session: any): Promise<OrderBookerPort
       return {
         allowed: false,
         reason: ORDER_BOOKER_PROFILE_INACTIVE,
-        message: "This order booker profile is inactive. Contact an administrator.",
+        message:
+          "This order booker profile is inactive. Contact an administrator.",
       };
     }
 
@@ -99,7 +109,9 @@ async function getOrderBookerPortalAccess(session: any): Promise<OrderBookerPort
   } catch (error) {
     if (!(error instanceof AppError)) {
       console.error("[getOrderBookerPortalAccess] DB error:", error);
-      throw new InternalError("Failed to verify your account. Please try again.");
+      throw new InternalError(
+        "Failed to verify your account. Please try again.",
+      );
     }
 
     throw error;
@@ -133,7 +145,9 @@ export const getMyOrdersFn = createServerFn()
       .object({
         page: z.coerce.number().int().min(1).default(1),
         limit: z.coerce.number().int().min(1).max(100).default(25),
-        status: z.enum(["pending", "confirmed", "delivered", "returned"]).optional(),
+        status: z
+          .enum(["pending", "confirmed", "delivered", "returned"])
+          .optional(),
         search: z.string().optional(),
         fromDate: z.string().optional(),
         toDate: z.string().optional(),
@@ -145,8 +159,10 @@ export const getMyOrdersFn = createServerFn()
 
     const conditions: any[] = [eq(orders.orderBookerId, ob.id)];
     if (data.status) conditions.push(eq(orders.status, data.status));
-    if (data.fromDate) conditions.push(gte(orders.createdAt, new Date(data.fromDate)));
-    if (data.toDate) conditions.push(lte(orders.createdAt, new Date(data.toDate)));
+    if (data.fromDate)
+      conditions.push(gte(orders.createdAt, new Date(data.fromDate)));
+    if (data.toDate)
+      conditions.push(lte(orders.createdAt, new Date(data.toDate)));
     if (data.search) {
       const safeSearch = data.search.replace(/[%_]/g, "");
       if (safeSearch) {
@@ -249,7 +265,12 @@ export const createMyOrderFn = createServerFn()
 // Trips — Paginated with filters
 // ---------------------------------------------------------------------------
 
-const tripVehicleTypeSchema = z.enum(["own", "company", "own_vehicle", "company_vehicle"]);
+const tripVehicleTypeSchema = z.enum([
+  "own",
+  "company",
+  "own_vehicle",
+  "company_vehicle",
+]);
 
 export const getMyTripsFn = createServerFn()
   .middleware([requireOrderBookerViewMiddleware])
@@ -268,11 +289,18 @@ export const getMyTripsFn = createServerFn()
     const ob = await requireOrderBookerFromSession(context.session);
 
     const conditions: any[] = [eq(orderBookerTrips.orderBookerId, ob.id)];
-    if (data.fromDate) conditions.push(gte(orderBookerTrips.tripDate, new Date(data.fromDate)));
-    if (data.toDate) conditions.push(lte(orderBookerTrips.tripDate, new Date(data.toDate)));
+    if (data.fromDate)
+      conditions.push(gte(orderBookerTrips.tripDate, new Date(data.fromDate)));
+    if (data.toDate)
+      conditions.push(lte(orderBookerTrips.tripDate, new Date(data.toDate)));
     if (data.vehicleType) {
       const vt = data.vehicleType;
-      const dbValue = vt === "own" ? "own_vehicle" : vt === "company" ? "company_vehicle" : vt;
+      const dbValue =
+        vt === "own"
+          ? "own_vehicle"
+          : vt === "company"
+            ? "company_vehicle"
+            : vt;
       conditions.push(eq(orderBookerTrips.vehicleType, dbValue));
     }
 
@@ -324,10 +352,13 @@ export const createMyTripFn = createServerFn()
       orderBy: [desc(tadaRates.effectiveFrom)],
     });
 
-    const tadaAmount = activeRate ? data.distanceKm * Number(activeRate.ratePerKm) : 0;
+    const tadaAmount = activeRate
+      ? data.distanceKm * Number(activeRate.ratePerKm)
+      : 0;
 
     const vt = data.vehicleType;
-    const dbVehicleType = vt === "own" ? "own_vehicle" : vt === "company" ? "company_vehicle" : vt;
+    const dbVehicleType =
+      vt === "own" ? "own_vehicle" : vt === "company" ? "company_vehicle" : vt;
 
     const [trip] = await db
       .insert(orderBookerTrips)
@@ -335,9 +366,10 @@ export const createMyTripFn = createServerFn()
         orderBookerId: ob.id,
         tripDate: new Date(data.date),
         destination: data.areaVisited,
-          distanceKm: String(data.distanceKm),
+        distanceKm: String(data.distanceKm),
         vehicleType: dbVehicleType,
-        fuelCost: dbVehicleType === "own_vehicle" ? String(data.fuelCost || 0) : "0",
+        fuelCost:
+          dbVehicleType === "own_vehicle" ? String(data.fuelCost || 0) : "0",
         tadaAmount: String(tadaAmount),
         notes: data.notes ?? null,
       })
@@ -368,8 +400,12 @@ export const getMyCommissionFn = createServerFn()
 
     const conditions: any[] = [eq(commissionRecords.orderBookerId, ob.id)];
     if (data.status) conditions.push(eq(commissionRecords.status, data.status));
-    if (data.fromDate) conditions.push(gte(commissionRecords.createdAt, new Date(data.fromDate)));
-    if (data.toDate) conditions.push(lte(commissionRecords.createdAt, new Date(data.toDate)));
+    if (data.fromDate)
+      conditions.push(
+        gte(commissionRecords.createdAt, new Date(data.fromDate)),
+      );
+    if (data.toDate)
+      conditions.push(lte(commissionRecords.createdAt, new Date(data.toDate)));
 
     const whereClause = and(...conditions);
     const limit = data.limit;
@@ -449,9 +485,9 @@ export const getMyRecoveriesFn = createServerFn()
     const conditions: any[] = [eq(invoices.orderBookerId, ob.id)];
 
     if (data.status === "outstanding") {
-      conditions.push(gt(invoices.credit, "0"));
+      conditions.push(gt(invoices.outstandingAmount, "0"));
     } else if (data.status === "paid") {
-      conditions.push(eq(invoices.credit, "0"));
+      conditions.push(eq(invoices.outstandingAmount, "0"));
     }
 
     const whereClause = and(...conditions);
@@ -470,16 +506,23 @@ export const getMyRecoveriesFn = createServerFn()
         offset,
         with: {
           customer: { columns: { id: true, name: true, mobileNumber: true } },
-          order: { columns: { id: true, billNumber: true, shopkeeperName: true } },
+          order: {
+            columns: { id: true, billNumber: true, shopkeeperName: true },
+          },
         },
       }),
       db
         .select({
-          totalOutstanding: sql<number>`COALESCE(SUM(${invoices.credit}), 0)`,
-          totalCollected: sql<number>`COALESCE(SUM(${invoices.cash}), 0)`,
+          totalOutstanding: sql<number>`COALESCE(SUM(${invoices.outstandingAmount}), 0)`,
+          totalCollected: sql<number>`COALESCE(SUM(${invoices.paidAmount}), 0)`,
         })
         .from(invoices)
-        .where(and(eq(invoices.orderBookerId, ob.id), gt(invoices.credit, "0"))),
+        .where(
+          and(
+            eq(invoices.orderBookerId, ob.id),
+            gt(invoices.outstandingAmount, "0"),
+          ),
+        ),
     ]);
 
     return {
@@ -498,6 +541,16 @@ export const getMyRecoveriesFn = createServerFn()
     };
   });
 
+export const getMyRecoveryAccountsFn = createServerFn()
+  .middleware([requireOrderBookerRecoveriesManageMiddleware])
+  .handler(async ({ context }) => {
+    await requireOrderBookerFromSession(context.session);
+    return db
+      .select({ id: wallets.id, name: wallets.name, type: wallets.type })
+      .from(wallets)
+      .orderBy(wallets.name);
+  });
+
 export const recordMyRecoveryFn = createServerFn()
   .middleware([requireOrderBookerRecoveriesManageMiddleware])
   .inputValidator((input: any) =>
@@ -505,8 +558,12 @@ export const recordMyRecoveryFn = createServerFn()
       .object({
         invoiceId: z.string().min(1, "Invoice is required"),
         amount: z.number().positive("Amount must be greater than 0"),
-        method: z.enum(["cash", "bank_transfer"]).default("cash"),
+        method: z.enum(["cash", "bank_transfer", "cheque"]).default("cash"),
+        walletId: z.string().min(1, "Destination account is required"),
         reference: z.string().optional(),
+        chequeNumber: z.string().optional(),
+        chequeBank: z.string().optional(),
+        chequeDate: z.coerce.date().optional(),
         notes: z.string().optional(),
       })
       .parse(input),
@@ -533,7 +590,7 @@ export const recordMyRecoveryFn = createServerFn()
         );
       }
 
-      const outstanding = Number(invoice.credit);
+      const outstanding = Number(invoice.outstandingAmount);
       if (outstanding <= 0) {
         throw new AppError(
           "This invoice has no outstanding balance.",
@@ -550,50 +607,35 @@ export const recordMyRecoveryFn = createServerFn()
         );
       }
 
-      // 2. Insert payment record
-      const [payment] = await tx
-        .insert(payments)
-        .values({
-          id: createId(),
-          customerId: invoice.customerId,
-          invoiceId: invoice.id,
-          amount: data.amount.toString(),
+      const paymentDate = new Date();
+      const payment = await recordRecoveryPayment(tx, {
+        invoiceId: invoice.id,
+        actorId: userId,
+        payment: {
           method: data.method,
+          amount: data.amount,
+          walletId: data.walletId,
           reference: data.reference,
+          chequeNumber: data.chequeNumber,
+          chequeBank: data.chequeBank,
+          chequeDate: data.chequeDate,
+          paymentDate,
+          sourceRecordId: `order-booker-recovery-${createId()}`,
           notes: data.notes ?? `Recovery by order booker: ${ob.name}`,
-          recordedById: userId,
-          paymentDate: new Date(),
-        })
-        .returning();
+        },
+      });
 
-      // 3. Update customer ledger
-      await tx
-        .update(customers)
-        .set({
-          payment: sql`${customers.payment} + ${data.amount}`,
-          credit: sql`${customers.credit} - ${data.amount}`,
-        })
-        .where(eq(customers.id, invoice.customerId));
-
-      // 4. Update invoice credit + status
-      const newCredit = Math.max(0, outstanding - data.amount);
-      const newStatus = newCredit === 0 ? "paid" : "partially_paid";
-
-      await tx
-        .update(invoices)
-        .set({
-          credit: newCredit.toString(),
-          cash: sql`${invoices.cash} + ${data.amount}`,
-          status: newStatus,
-          updatedAt: new Date(),
-        })
-        .where(eq(invoices.id, invoice.id));
+      const updatedInvoice = await tx.query.invoices.findFirst({
+        where: eq(invoices.id, invoice.id),
+        columns: { outstandingAmount: true, paymentStatus: true },
+      });
+      if (!updatedInvoice) throw new Error("Updated invoice was not found");
 
       return {
         payment,
         invoiceId: invoice.id,
-        remainingOutstanding: newCredit,
-        newStatus,
+        remainingOutstanding: Number(updatedInvoice.outstandingAmount),
+        newStatus: updatedInvoice.paymentStatus,
       };
     });
   });

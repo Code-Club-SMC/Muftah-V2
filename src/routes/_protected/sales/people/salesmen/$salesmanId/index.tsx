@@ -71,7 +71,7 @@ function SalesmanProfilePage() {
 
   if (!data) return null;
 
-  const { salesman, customers, totalSales, totalCredit, totalCash, outstandingBalance } = data;
+  const { salesman, customers, totalSales, paidAmount, outstandingAmount } = data;
 
   return (
     <div className="space-y-6">
@@ -118,17 +118,17 @@ function SalesmanProfilePage() {
           <p className="text-xl font-bold tabular-nums text-emerald-700">{PKR(totalSales)}</p>
         </div>
         <div className="p-4 rounded-xl border bg-card">
-          <p className="text-[10px] font-semibold uppercase text-muted-foreground mb-2">Cash Collected</p>
-          <p className="text-xl font-bold tabular-nums text-blue-700">{PKR(totalCash)}</p>
+          <p className="text-[10px] font-semibold uppercase text-muted-foreground mb-2">Paid Amount</p>
+          <p className="text-xl font-bold tabular-nums text-blue-700">{PKR(paidAmount)}</p>
         </div>
         <div className="p-4 rounded-xl border bg-card">
-          <p className="text-[10px] font-semibold uppercase text-muted-foreground mb-2">Credit</p>
-          <p className="text-xl font-bold tabular-nums text-rose-700">{PKR(totalCredit)}</p>
+          <p className="text-[10px] font-semibold uppercase text-muted-foreground mb-2">Invoices</p>
+          <p className="text-xl font-bold tabular-nums text-rose-700">{data.invoiceCount.toLocaleString("en-PK")}</p>
         </div>
         <div className="p-4 rounded-xl border bg-card">
           <p className="text-[10px] font-semibold uppercase text-muted-foreground mb-2">Outstanding</p>
-          <p className={cn("text-xl font-bold tabular-nums", outstandingBalance > 0 ? "text-red-700" : "text-green-700")}>
-            {PKR(outstandingBalance)}
+          <p className={cn("text-xl font-bold tabular-nums", outstandingAmount > 0 ? "text-red-700" : "text-green-700")}>
+            {PKR(outstandingAmount)}
           </p>
         </div>
       </div>

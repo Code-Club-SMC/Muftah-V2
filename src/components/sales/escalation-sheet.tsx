@@ -1,5 +1,5 @@
 /**
- * Escalation Sheet Component for Credit Recovery
+ * Escalation Sheet Component for Outstanding Recovery
  * Professional form with Zod validation, similar to add-warehouse-form pattern
  */
 
@@ -44,14 +44,14 @@ interface EscalationSheetProps {
   slip: {
     id: string;
     slipNumber: string;
-    amountDue: number;
+    outstandingAmount: number;
     escalationLevel: number;
     recoveryStatus: string | null;
     nextFollowUpDate: Date | null;
     customerName: string;
     customerMobile?: string | null;
     invoiceDate: Date;
-    creditReturnDate: Date | null;
+    paymentDueDate: Date | null;
   };
   onEscalate: (data: EscalationFormData) => Promise<void>;
   onDeEscalate: () => Promise<void>;
@@ -175,18 +175,18 @@ export function EscalationSheet({
           </div>
           <div className="text-right">
             <p className="text-lg font-bold text-red-600 tabular-nums">
-              {formatPKR(slip.amountDue, false)}
+              {formatPKR(slip.outstandingAmount, false)}
             </p>
-            <p className="text-[10px] text-muted-foreground">Amount Due</p>
+            <p className="text-[10px] text-muted-foreground">Outstanding Amount</p>
           </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
           <EscalationBadge level={slip.escalationLevel} />
           <StatusBadge status={slip.recoveryStatus} />
-          {slip.creditReturnDate && (
+          {slip.paymentDueDate && (
             <Badge variant="outline" className="text-[10px]">
-              Due: {new Date(slip.creditReturnDate).toLocaleDateString()}
+              Due: {new Date(slip.paymentDueDate).toLocaleDateString()}
             </Badge>
           )}
         </div>
@@ -200,12 +200,12 @@ export function EscalationSheet({
             <span className="text-muted-foreground">Days Overdue:</span>{" "}
             <span className={cn(
               "font-medium",
-              slip.creditReturnDate && new Date() > new Date(slip.creditReturnDate)
+              slip.paymentDueDate && new Date() > new Date(slip.paymentDueDate)
                 ? "text-red-600"
                 : "text-green-600",
             )}>
-              {slip.creditReturnDate
-                ? Math.max(0, Math.floor((new Date().getTime() - new Date(slip.creditReturnDate).getTime()) / (1000 * 60 * 60 * 24)))
+              {slip.paymentDueDate
+                ? Math.max(0, Math.floor((new Date().getTime() - new Date(slip.paymentDueDate).getTime()) / (1000 * 60 * 60 * 24)))
                 : 0} days
             </span>
           </div>

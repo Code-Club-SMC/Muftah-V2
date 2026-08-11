@@ -12,6 +12,7 @@ export async function calculateCommissionForOrder(
   orderBookerId: string,
   orderId: string,
   fulfilledAmount: number,
+  earnedAt: Date = new Date(),
 ) {
   // 1. Try order-booker-specific tiers first
   let tiers = await tx.query.commissionTiers.findMany({
@@ -55,10 +56,19 @@ export async function calculateCommissionForOrder(
       fulfilledAmount: fulfilledAmount.toString(),
       appliedRate: commissionResult.rate.toString(),
       commissionAmount: commissionResult.amount.toFixed(2),
+      earnedAt,
       status: "accrued",
     })
-    .onConflictDoNothing({
+    .onConflictDoUpdate({
       target: [commissionRecords.orderBookerId, commissionRecords.orderId],
+      set: {
+        fulfilledAmount: fulfilledAmount.toString(),
+        appliedRate: commissionResult.rate.toString(),
+        commissionAmount: commissionResult.amount.toFixed(2),
+        earnedAt,
+        status: "accrued",
+        updatedAt: new Date(),
+      },
     });
 
   const record = await tx.query.commissionRecords.findFirst({

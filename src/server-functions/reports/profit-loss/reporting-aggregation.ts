@@ -3,7 +3,7 @@ import { clampRatio } from "./reporting-math";
 export interface AggregatableRealizedLine {
 	invoiceId: string;
 	invoiceDate: Date;
-	slipNumber: string | null;
+	invoiceNumber: string;
 	customerName: string;
 	invoiceStatus: string;
 	recipeId: string | null;
@@ -95,7 +95,7 @@ export function aggregateRealizedInvoiceRows<
 
 		return {
 			invoiceId: first.invoiceId,
-			invoiceNumber: first.slipNumber,
+			invoiceNumber: first.invoiceNumber,
 			invoiceDate: first.invoiceDate.toISOString(),
 			customerName: first.customerName,
 			invoiceStatus: first.invoiceStatus,

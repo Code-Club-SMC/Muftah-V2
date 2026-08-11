@@ -71,17 +71,14 @@ export function LedgerPrintExport({
 
   const balLabel = (v: number) => (v >= 0 ? "Dr." : "Cr.");
 
-  const isInvoiceCashSettlement = (entry: LedgerEntry) =>
-    entry.type === "payment" && entry.method === "invoice_cash";
-
   const getDebitAmount = (entry: LedgerEntry) =>
-    entry.type === "invoice" ? entry.credit : 0;
+    entry.type === "invoice" ? entry.totalPrice : 0;
 
   const getCreditAmount = (entry: LedgerEntry) => {
     if (entry.type === "return") {
       return entry.amount;
     }
-    if (entry.type === "payment" && entry.method !== "invoice_cash") {
+    if (entry.type === "payment") {
       return entry.amount;
     }
     return 0;
@@ -118,10 +115,10 @@ export function LedgerPrintExport({
         .map((entry) => {
           const isInvoice = entry.type === "invoice";
           const isReturn = entry.type === "return";
-          const isCashSettlement = isInvoiceCashSettlement(entry);
           const pay = entry.type === "payment" ? entry : null;
 
-          // Debit = credit portion for invoices (what affects balance)
+          // Every invoice is a full debit. Confirmed payments and approved
+          // returns are credits.
           const debitAmount = getDebitAmount(entry);
           const creditAmount = getCreditAmount(entry);
 
@@ -129,20 +126,17 @@ export function LedgerPrintExport({
           totalCredit += creditAmount;
 
           const desc = isInvoice
-            ? `${entry.warehouseName || "Invoice"}<br><span style="font-size:10px;color:#64748b;">Total: ${fmtPKR(entry.totalPrice)} (Cash: ${fmtPKR(entry.cash)} + Credit: ${fmtPKR(entry.credit)})</span>`
+            ? `${entry.warehouseName || "Invoice"}<br><span style="font-size:10px;color:#64748b;">Paid Amount: ${fmtPKR(entry.paidAmount)} · Returned Amount: ${fmtPKR(entry.returnedAmount)} · Outstanding Amount: ${fmtPKR(entry.outstandingAmount)}</span>`
             : isReturn
-              ? `<span style="color:#b45309;font-weight:600;">Sales Return #${entry.returnNumber ?? "—"}</span>${entry.invoiceSlipNumber ? `<br><span style="font-size:10px;color:#3b82f6;">Linked to #${entry.invoiceSlipNumber}</span>` : ""}<br><span style="font-size:10px;color:#64748b;">Reason: ${entry.reason} · Condition: ${entry.condition}</span>`
-            : isCashSettlement
-              ? `<span style="color:#64748b;">Cash settled during invoice creation${entry.invoiceSlipNumber ? ` (Invoice #${entry.invoiceSlipNumber})` : ""}</span><br><span style="font-size:9px;color:#94a3b8;">Already reflected in the invoice cash split</span>`
-              : `Payment (${entry.method})${entry.reference ? `<br><span style="font-size:10px;color:#64748b;">Ref: ${entry.reference}</span>` : ""}${entry.invoiceSlipNumber ? `<br><span style="font-size:10px;color:#3b82f6;">Linked to #${entry.invoiceSlipNumber}</span>` : ""}`;
+              ? `<span style="color:#b45309;font-weight:600;">Sales Return #${entry.returnNumber}</span><br><span style="font-size:10px;color:#3b82f6;">Invoice #${entry.invoiceNumber}</span><br><span style="font-size:10px;color:#64748b;">Reason: ${entry.reason} · Condition: ${entry.condition}</span>`
+              : `Payment (${entry.method.replaceAll("_", " ")})${entry.reference ? `<br><span style="font-size:10px;color:#64748b;">Ref: ${entry.reference}</span>` : ""}<br><span style="font-size:10px;color:#3b82f6;">Invoice #${entry.invoiceNumber}</span>`;
 
           const vrNo = isInvoice
-            ? (entry.slipNumber || "—")
+            ? entry.invoiceNumber
             : isReturn
               ? `RET-${entry.returnNumber ?? "—"}`
               : (pay?.reference || "—");
-          const rowBg = isReturn ? "#fff7ed" : isCashSettlement ? "#f8f8f8" : !isInvoice ? "#f8fff8" : "#fff";
-          const rowOpacity = isCashSettlement ? "opacity:0.75;" : "";
+          const rowBg = isReturn ? "#fff7ed" : !isInvoice ? "#f8fff8" : "#fff";
           const creditStyle = isReturn
             ? "color:#b45309;font-weight:600;"
             : creditAmount > 0
@@ -196,12 +190,12 @@ export function LedgerPrintExport({
           }
 
           return `
-            <tr style="background:${rowBg};${rowOpacity}">
+            <tr style="background:${rowBg};">
               <td style="border:1px solid #ccc;padding:6px 8px;font-size:11px;white-space:nowrap;">${format(new Date(entry.date), "dd-MMM-yyyy")}</td>
               <td style="border:1px solid #ccc;padding:6px 8px;font-size:11px;font-weight:600;">${vrNo}</td>
               <td style="border:1px solid #ccc;padding:6px 8px;font-size:11px;">${desc}</td>
               <td style="border:1px solid #ccc;padding:6px 8px;font-size:11px;text-align:right;${debitAmount > 0 ? "font-weight:600;" : "color:#94a3b8;"}">${debitAmount > 0 ? fmtPKR(debitAmount) : "—"}</td>
-              <td style="border:1px solid #ccc;padding:6px 8px;font-size:11px;text-align:right;${creditStyle}">${creditAmount > 0 ? fmtPKR(creditAmount) : isCashSettlement ? fmtPKR(pay?.amount ?? 0) : "—"}</td>
+              <td style="border:1px solid #ccc;padding:6px 8px;font-size:11px;text-align:right;${creditStyle}">${creditAmount > 0 ? fmtPKR(creditAmount) : "—"}</td>
               <td style="border:1px solid #ccc;padding:6px 8px;font-size:11px;text-align:right;font-weight:700;">${fmtPKR(entry.runningBalance)} <span style="font-weight:400;font-size:10px;color:#64748b;">${balLabel(entry.runningBalance)}</span></td>
             </tr>
             ${lineItemsHtml}
@@ -365,21 +359,18 @@ export function LedgerPrintExport({
       const rows = exportEntries.map((entry) => {
         const isInvoice = entry.type === "invoice";
         const isReturn = entry.type === "return";
-        const isCashSettlement = isInvoiceCashSettlement(entry);
         const date = format(new Date(entry.date), "dd-MMM-yyyy");
         const vrNo = isInvoice
-          ? (entry.slipNumber || "")
+          ? entry.invoiceNumber
           : isReturn
             ? `RET-${entry.returnNumber ?? ""}`
             : (entry.reference || "");
         const desc = isInvoice
-          ? `${entry.warehouseName || "Invoice"} (Total: ${entry.totalPrice}, Cash: ${entry.cash}, Credit: ${entry.credit})`
+          ? `${entry.warehouseName || "Invoice"} (Paid Amount: ${entry.paidAmount}, Returned Amount: ${entry.returnedAmount}, Outstanding Amount: ${entry.outstandingAmount})`
           : isReturn
-            ? `Sales Return #${entry.returnNumber ?? ""}${entry.invoiceSlipNumber ? ` (Invoice ${entry.invoiceSlipNumber})` : ""} - ${entry.reason}`
-          : isCashSettlement
-            ? `Invoice cash settlement${entry.invoiceSlipNumber ? ` (${entry.invoiceSlipNumber})` : ""}`
-            : `Payment (${entry.method})${entry.reference ? ` Ref: ${entry.reference}` : ""}`;
-        const debit = isInvoice ? String(entry.credit) : "";
+            ? `Sales Return #${entry.returnNumber} (Invoice ${entry.invoiceNumber}) - ${entry.reason}`
+            : `Payment (${entry.method.replaceAll("_", " ")}) for Invoice ${entry.invoiceNumber}${entry.reference ? ` Ref: ${entry.reference}` : ""}`;
+        const debit = isInvoice ? String(entry.totalPrice) : "";
         const credit = !isInvoice ? String(entry.amount) : "";
         const balance = `${entry.runningBalance} ${balLabel(entry.runningBalance)}`;
         const status = isInvoice || isReturn ? entry.status : "";

@@ -80,9 +80,9 @@ function RecoveryPage() {
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Credit Recovery</h1>
+          <h1 className="text-2xl font-bold tracking-tight">Outstanding Recovery</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Track overdue credit, assign recovery staff, and monitor follow-ups.
+            Track overdue invoices, assign recovery staff, and monitor follow-ups.
           </p>
         </div>
         <OverdueCheckButton />
@@ -233,7 +233,7 @@ function DueTodaySection() {
               <TableHead className="text-[11px]">Customer</TableHead>
               <TableHead className="text-[11px]">Type</TableHead>
               <TableHead className="text-[11px]">Due Date</TableHead>
-              <TableHead className="text-[11px] text-right">Amount Due</TableHead>
+              <TableHead className="text-[11px] text-right">Outstanding Amount</TableHead>
               <TableHead className="text-[11px]">Original Salesman</TableHead>
               <TableHead className="text-[11px]">Assigned To</TableHead>
               <TableHead className="text-[11px]">Status</TableHead>
@@ -257,25 +257,25 @@ function DueTodaySection() {
               </TableRow>
             ) : (
               data.slips.map((s: RecoverySlip) => (
-                <TableRow key={s.id} className={cn(Number(s.amountDue) === 0 && "bg-green-50/50 dark:bg-green-950/10")}>
+                <TableRow key={s.id} className={cn(Number(s.outstandingAmount) === 0 && "bg-green-50/50 dark:bg-green-950/10")}>
                   <TableCell className="font-mono text-xs">{s.slipNumber}</TableCell>
                   <TableCell className="text-sm">{s.customer?.name}</TableCell>
                   <TableCell className="text-xs capitalize">{s.customer?.customerType}</TableCell>
                   <TableCell className="text-xs tabular-nums">
-                    {s.invoice?.creditReturnDate
-                      ? format(new Date(s.invoice.creditReturnDate), "dd MMM yy")
+                    {s.invoice?.paymentDueDate
+                      ? format(new Date(s.invoice.paymentDueDate), "dd MMM yy")
                       : "—"}
                   </TableCell>
                   <TableCell className={cn(
                     "text-sm tabular-nums text-right font-semibold",
-                    Number(s.amountDue) === 0 ? "text-green-600" : "text-red-600"
+                    Number(s.outstandingAmount) === 0 ? "text-green-600" : "text-red-600"
                   )}>
-                    {PKR(Number(s.amountDue))}
+                    {PKR(Number(s.outstandingAmount))}
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">{s.salesman?.name ?? "—"}</TableCell>
                   <TableCell className="text-sm text-muted-foreground">{s.recoveryAssignedTo?.name ?? "—"}</TableCell>
                   <TableCell>
-                    {Number(s.amountDue) === 0 ? (
+                    {Number(s.outstandingAmount) === 0 ? (
                       <Badge variant="outline" className="text-[10px] bg-green-50 text-green-700 border-green-200">
                         Ready to Close
                       </Badge>
@@ -367,7 +367,7 @@ function RecoveryQueueSection() {
             <TableRow>
               <TableHead className="text-[11px]">Slip</TableHead>
               <TableHead className="text-[11px]">Customer</TableHead>
-              <TableHead className="text-[11px]">Amount Due</TableHead>
+              <TableHead className="text-[11px]">Outstanding Amount</TableHead>
               <TableHead className="text-[11px]">Status</TableHead>
               <TableHead className="text-[11px]">Assigned To</TableHead>
               <TableHead className="text-[11px]">Next Follow-up</TableHead>
@@ -396,7 +396,7 @@ function RecoveryQueueSection() {
                   <TableCell className="font-mono text-xs">{s.slipNumber}</TableCell>
                   <TableCell className="text-sm">{s.customer?.name}</TableCell>
                   <TableCell className="text-sm tabular-nums text-right font-semibold text-red-600">
-                    {PKR(Number(s.amountDue))}
+                    {PKR(Number(s.outstandingAmount))}
                   </TableCell>
                   <TableCell><RecoveryStatusBadge status={s.recoveryStatus} /></TableCell>
                   <TableCell className="text-sm text-muted-foreground">{s.recoveryAssignedTo?.name ?? "—"}</TableCell>

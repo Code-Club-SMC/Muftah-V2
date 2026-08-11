@@ -8,6 +8,7 @@ import {
   getMyCommissionFn,
   getMyProfileFn,
   getMyRecoveriesFn,
+  getMyRecoveryAccountsFn,
   recordMyRecoveryFn,
 } from "@/server-functions/sales/order-booker-self-service-fn";
 
@@ -21,6 +22,7 @@ export const orderBookerKeys = {
   trips: (params?: Record<string, any>) => [...orderBookerKeys.all, "trips", params ?? {}] as const,
   commission: (params?: Record<string, any>) => [...orderBookerKeys.all, "commission", params ?? {}] as const,
   recoveries: (params?: Record<string, any>) => [...orderBookerKeys.all, "recoveries", params ?? {}] as const,
+  recoveryAccounts: () => [...orderBookerKeys.all, "recovery-accounts"] as const,
   profile: () => [...orderBookerKeys.all, "profile"] as const,
 };
 
@@ -151,12 +153,20 @@ export function useMyRecoveries(params?: {
   });
 }
 
+export function useMyRecoveryAccounts() {
+  return useQuery({
+    queryKey: orderBookerKeys.recoveryAccounts(),
+    queryFn: () => getMyRecoveryAccountsFn(),
+    staleTime: 5 * 60_000,
+  });
+}
+
 export function useRecordMyRecovery() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: recordMyRecoveryFn,
     onSuccess: () => {
-      toast.success("Recovery recorded");
+      toast.success("Payment recorded");
       qc.invalidateQueries({ queryKey: orderBookerKeys.recoveries() });
     },
     onError: (error: Error) => {

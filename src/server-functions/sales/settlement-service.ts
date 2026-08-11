@@ -1,7 +1,7 @@
 import { createId } from "@paralleldrive/cuid2";
 import type { db as rootDb } from "@/db";
 import { wallets, transactions } from "@/db/schemas/finance-schema";
-import { payments, slipRecords } from "@/db/schemas/sales-erp-schema";
+import { payments, salesReturns, slipRecords } from "@/db/schemas/sales-erp-schema";
 import { customers, invoices } from "@/db/schemas/sales-schema";
 import type {
 	PaymentInput,
@@ -16,7 +16,7 @@ import {
 	calculateSettlement,
 } from "@/lib/sales/settlement/math";
 import { moneyString, roundMoney } from "@/lib/sales/settlement/money";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { recordInvoiceTimelineEvent } from "./invoice-timeline-log";
 
 export type SalesTransaction = Parameters<
@@ -213,6 +213,22 @@ async function listSettlementPayments(
 	return rows.map(paymentForMath);
 }
 
+async function getApprovedReturnAmount(
+	tx: SalesTransaction,
+	invoiceId: string,
+): Promise<number> {
+	const rows = await tx.query.salesReturns.findMany({
+		where: and(
+			eq(salesReturns.invoiceId, invoiceId),
+			inArray(salesReturns.status, ["approved", "completed"]),
+		),
+		columns: { totalAmount: true },
+	});
+	return roundMoney(
+		rows.reduce((sum, row) => sum + Number(row.totalAmount), 0),
+	);
+}
+
 async function assertWalletType(
 	tx: SalesTransaction,
 	walletId: string,
@@ -351,7 +367,11 @@ async function assertProposedSettlement(
 		method: payment.method,
 		status: initialStatus(payment.method),
 	}));
-	const totals = calculateSettlement(Number(invoice.totalPrice), [
+	const returnedAmount = await getApprovedReturnAmount(tx, invoice.id);
+	const netReceivable = roundMoney(
+		Number(invoice.totalPrice) - returnedAmount,
+	);
+	const totals = calculateSettlement(netReceivable, [
 		...existing,
 		...proposed,
 	]);
@@ -368,14 +388,20 @@ export async function recalculateInvoiceSettlement(
 ): Promise<SettlementTotals> {
 	const invoice = await lockInvoice(tx, invoiceId);
 	const totalPrice = options?.totalPrice ?? Number(invoice.totalPrice);
+	const returnedAmount = await getApprovedReturnAmount(tx, invoice.id);
+	const netReceivable = roundMoney(totalPrice - returnedAmount);
+	if (netReceivable < 0) {
+		throw new Error("Returned Amount cannot exceed invoice total");
+	}
 	const paymentDueDate =
 		options && "paymentDueDate" in options
 			? options.paymentDueDate
 			: invoice.paymentDueDate;
-	const totals = calculateSettlement(
-		totalPrice,
+	const paymentTotals = calculateSettlement(
+		netReceivable,
 		await listSettlementPayments(tx, invoice.id),
 	);
+	const totals: SettlementTotals = { ...paymentTotals, totalPrice };
 	assertSettlementDueDate(totals, paymentDueDate);
 
 	const paidDelta = roundMoney(totals.paidAmount - Number(invoice.paidAmount));
@@ -391,6 +417,7 @@ export async function recalculateInvoiceSettlement(
 				: {}),
 			...(options && "paymentDueDate" in options ? { paymentDueDate } : {}),
 			paidAmount: moneyString(totals.paidAmount),
+			returnedAmount: moneyString(returnedAmount),
 			outstandingAmount: moneyString(totals.outstandingAmount),
 			paymentStatus: totals.paymentStatus,
 		})
@@ -401,6 +428,7 @@ export async function recalculateInvoiceSettlement(
 		.set({
 			invoiceAmount: moneyString(totals.totalPrice),
 			paidAmount: moneyString(totals.paidAmount),
+			returnedAmount: moneyString(returnedAmount),
 			outstandingAmount: moneyString(totals.outstandingAmount),
 			status:
 				totals.outstandingAmount === 0

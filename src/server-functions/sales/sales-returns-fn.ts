@@ -8,12 +8,11 @@ import {
   finishedGoodsStock,
   returnedFinishedGoodsStock,
 } from "@/db/schemas/inventory-schema";
-import { customers, invoiceItems, invoices } from "@/db/schemas/sales-schema";
+import { invoiceItems, invoices } from "@/db/schemas/sales-schema";
 import {
   salesReturns,
   salesReturnItems,
   salesReturnStockTraces,
-  slipRecords,
 } from "@/db/schemas/sales-erp-schema";
 import { recordInvoiceTimelineEvent } from "./invoice-timeline-log";
 import {
@@ -21,7 +20,8 @@ import {
   requireSalesManageMiddleware,
 } from "@/lib/middlewares";
 import { z } from "zod";
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
+import { recalculateInvoiceSettlement } from "./settlement-service";
 
 function getUnitsPerCarton(item: {
   packsPerCarton?: number | null;
@@ -30,7 +30,11 @@ function getUnitsPerCarton(item: {
   return item.packsPerCarton || item.actualPackSize || 1;
 }
 
-function getTotalUnits(cartons: number, quantity: number, unitsPerCarton: number) {
+function getTotalUnits(
+  cartons: number,
+  quantity: number,
+  unitsPerCarton: number,
+) {
   return cartons * unitsPerCarton + quantity;
 }
 
@@ -49,7 +53,8 @@ function calculateInboundStockState(params: {
     params.inboundCartons * params.unitsPerCarton + params.inboundContainers;
   const nextUnits = existingUnits + inboundUnits;
   const nextTotalInventoryValue =
-    params.existingTotalInventoryValue + inboundUnits * params.inboundCostPerUnit;
+    params.existingTotalInventoryValue +
+    inboundUnits * params.inboundCostPerUnit;
   const nextCartons = Math.floor(nextUnits / params.unitsPerCarton);
   const nextContainers = nextUnits % params.unitsPerCarton;
   const nextWacPerPack =
@@ -101,7 +106,11 @@ async function getReturnedUnitsByInvoiceItem(
     if (returnItem.salesReturn.invoiceId !== invoiceId) {
       continue;
     }
-    if (!statuses.includes(returnItem.salesReturn.status as (typeof statuses)[number])) {
+    if (
+      !statuses.includes(
+        returnItem.salesReturn.status as (typeof statuses)[number],
+      )
+    ) {
       continue;
     }
     if (excludeReturnId && returnItem.salesReturn.id === excludeReturnId) {
@@ -167,7 +176,12 @@ export const getSalesReturnDetailFn = createServerFn()
       where: eq(salesReturns.id, data.returnId),
       with: {
         invoice: {
-          columns: { id: true, slipNumber: true, totalPrice: true, status: true },
+          columns: {
+            id: true,
+            slipNumber: true,
+            totalPrice: true,
+            status: true,
+          },
         },
         customer: { columns: { id: true, name: true } },
         approvedBy: { columns: { id: true, name: true } },
@@ -245,7 +259,9 @@ export const createSalesReturnFn = createServerFn()
         const cpp = getUnitsPerCarton(invoiceItem);
         const totalUnitsReturned = getTotalUnits(cartons, units, cpp);
         if (totalUnitsReturned <= 0) {
-          throw new Error(`Return quantity must be greater than zero for ${invoiceItem.pack}`);
+          throw new Error(
+            `Return quantity must be greater than zero for ${invoiceItem.pack}`,
+          );
         }
         const totalUnitsInvoiced = getTotalUnits(
           invoiceItem.numberOfCartons,
@@ -254,15 +270,20 @@ export const createSalesReturnFn = createServerFn()
         );
         requestUnitsByItem.set(
           item.invoiceItemId,
-          (requestUnitsByItem.get(item.invoiceItemId) ?? 0) + totalUnitsReturned,
+          (requestUnitsByItem.get(item.invoiceItemId) ?? 0) +
+            totalUnitsReturned,
         );
-        const alreadyReservedUnits = reservedUnitsByItem.get(item.invoiceItemId) ?? 0;
+        const alreadyReservedUnits =
+          reservedUnitsByItem.get(item.invoiceItemId) ?? 0;
         const remainingReturnableUnits = Math.max(
           0,
           totalUnitsInvoiced - alreadyReservedUnits,
         );
 
-        if ((requestUnitsByItem.get(item.invoiceItemId) ?? 0) > remainingReturnableUnits) {
+        if (
+          (requestUnitsByItem.get(item.invoiceItemId) ?? 0) >
+          remainingReturnableUnits
+        ) {
           throw new Error(
             `Return quantity exceeds remaining returnable quantity for ${invoiceItem.pack}`,
           );
@@ -270,7 +291,8 @@ export const createSalesReturnFn = createServerFn()
 
         const refundPerUnit =
           item.refundPerUnit ??
-          (Number(invoiceItem.retailPrice || 0) || Number(invoiceItem.perCartonPrice) / cpp);
+          (Number(invoiceItem.retailPrice || 0) ||
+            Number(invoiceItem.perCartonPrice) / cpp);
         const lineRefund = totalUnitsReturned * refundPerUnit;
         totalAmount += lineRefund;
       }
@@ -299,7 +321,8 @@ export const createSalesReturnFn = createServerFn()
           const totalUnitsReturned = getTotalUnits(cartons, units, cpp);
           const refundPerUnit =
             item.refundPerUnit ??
-            (Number(invoiceItem.retailPrice || 0) || Number(invoiceItem.perCartonPrice) / cpp);
+            (Number(invoiceItem.retailPrice || 0) ||
+              Number(invoiceItem.perCartonPrice) / cpp);
           const lineRefund = totalUnitsReturned * refundPerUnit;
 
           return {
@@ -378,9 +401,15 @@ export const processSalesReturnFn = createServerFn()
         .returning();
 
       if (data.action === "approve" && salesReturn.invoice) {
-        // Reduce customer credit by return amount if invoice was on credit
         const returnAmount = Number(salesReturn.totalAmount);
-        const invoiceItemIds = salesReturn.items.map((item) => item.invoiceItemId);
+        if (returnAmount > Number(salesReturn.invoice.outstandingAmount)) {
+          throw new Error(
+            "Returned Amount cannot exceed this invoice's Outstanding Amount",
+          );
+        }
+        const invoiceItemIds = salesReturn.items.map(
+          (item) => item.invoiceItemId,
+        );
         const approvedUnitsByItem = await getReturnedUnitsByInvoiceItem(
           tx,
           salesReturn.invoiceId,
@@ -391,7 +420,9 @@ export const processSalesReturnFn = createServerFn()
         const invoiceItemRows = await tx.query.invoiceItems.findMany({
           where: inArray(invoiceItems.id, invoiceItemIds),
         });
-        const invoiceItemMap = new Map(invoiceItemRows.map((item) => [item.id, item]));
+        const invoiceItemMap = new Map(
+          invoiceItemRows.map((item) => [item.id, item]),
+        );
 
         for (const returnItem of salesReturn.items) {
           const invoiceItem = invoiceItemMap.get(returnItem.invoiceItemId);
@@ -399,12 +430,17 @@ export const processSalesReturnFn = createServerFn()
             throw new Error("Invoice item not found for return approval");
           }
           if (!invoiceItem.recipeId) {
-            throw new Error(`Invoice item "${invoiceItem.pack}" cannot be restocked because it has no recipe mapping`);
+            throw new Error(
+              `Invoice item "${invoiceItem.pack}" cannot be restocked because it has no recipe mapping`,
+            );
           }
           const stockWarehouseId =
-            salesReturn.invoice.stockWarehouseId ?? salesReturn.invoice.warehouseId;
+            salesReturn.invoice.stockWarehouseId ??
+            salesReturn.invoice.warehouseId;
           if (!stockWarehouseId) {
-            throw new Error("Invoice warehouse is required to restock approved returns");
+            throw new Error(
+              "Invoice warehouse is required to restock approved returns",
+            );
           }
 
           const unitsPerCarton = getUnitsPerCarton(invoiceItem);
@@ -439,20 +475,26 @@ export const processSalesReturnFn = createServerFn()
             unitsPerCarton,
           );
           const destination =
-            salesReturn.condition === "good" ? "sellable" : salesReturn.condition;
+            salesReturn.condition === "good"
+              ? "sellable"
+              : salesReturn.condition;
 
           if (salesReturn.condition === "good") {
-            const existingSellableStock = await tx.query.finishedGoodsStock.findFirst({
-              where: and(
-                eq(finishedGoodsStock.warehouseId, stockWarehouseId),
-                eq(finishedGoodsStock.recipeId, invoiceItem.recipeId),
-              ),
-            });
+            const existingSellableStock =
+              await tx.query.finishedGoodsStock.findFirst({
+                where: and(
+                  eq(finishedGoodsStock.warehouseId, stockWarehouseId),
+                  eq(finishedGoodsStock.recipeId, invoiceItem.recipeId),
+                ),
+              });
 
             const nextState = calculateInboundStockState({
               existingCartons: existingSellableStock?.quantityCartons ?? 0,
-              existingContainers: existingSellableStock?.quantityContainers ?? 0,
-              existingTotalInventoryValue: Number(existingSellableStock?.totalInventoryValue ?? 0),
+              existingContainers:
+                existingSellableStock?.quantityContainers ?? 0,
+              existingTotalInventoryValue: Number(
+                existingSellableStock?.totalInventoryValue ?? 0,
+              ),
               unitsPerCarton,
               inboundCartons,
               inboundContainers,
@@ -465,9 +507,12 @@ export const processSalesReturnFn = createServerFn()
                 .set({
                   quantityCartons: nextState.nextCartons,
                   quantityContainers: nextState.nextContainers,
-                  weightedAverageCostPerPack: nextState.nextWacPerPack.toFixed(4),
-                  weightedAverageCostPerCarton: nextState.nextWacPerCarton.toFixed(4),
-                  totalInventoryValue: nextState.nextTotalInventoryValue.toFixed(2),
+                  weightedAverageCostPerPack:
+                    nextState.nextWacPerPack.toFixed(4),
+                  weightedAverageCostPerCarton:
+                    nextState.nextWacPerCarton.toFixed(4),
+                  totalInventoryValue:
+                    nextState.nextTotalInventoryValue.toFixed(2),
                   updatedAt: new Date(),
                 })
                 .where(eq(finishedGoodsStock.id, existingSellableStock.id));
@@ -479,23 +524,32 @@ export const processSalesReturnFn = createServerFn()
                 quantityCartons: nextState.nextCartons,
                 quantityContainers: nextState.nextContainers,
                 weightedAverageCostPerPack: nextState.nextWacPerPack.toFixed(4),
-                weightedAverageCostPerCarton: nextState.nextWacPerCarton.toFixed(4),
-                totalInventoryValue: nextState.nextTotalInventoryValue.toFixed(2),
+                weightedAverageCostPerCarton:
+                  nextState.nextWacPerCarton.toFixed(4),
+                totalInventoryValue:
+                  nextState.nextTotalInventoryValue.toFixed(2),
               });
             }
           } else {
-            const existingReturnedStock = await tx.query.returnedFinishedGoodsStock.findFirst({
-              where: and(
-                eq(returnedFinishedGoodsStock.warehouseId, stockWarehouseId),
-                eq(returnedFinishedGoodsStock.recipeId, invoiceItem.recipeId),
-                eq(returnedFinishedGoodsStock.condition, salesReturn.condition),
-              ),
-            });
+            const existingReturnedStock =
+              await tx.query.returnedFinishedGoodsStock.findFirst({
+                where: and(
+                  eq(returnedFinishedGoodsStock.warehouseId, stockWarehouseId),
+                  eq(returnedFinishedGoodsStock.recipeId, invoiceItem.recipeId),
+                  eq(
+                    returnedFinishedGoodsStock.condition,
+                    salesReturn.condition,
+                  ),
+                ),
+              });
 
             const nextState = calculateInboundStockState({
               existingCartons: existingReturnedStock?.quantityCartons ?? 0,
-              existingContainers: existingReturnedStock?.quantityContainers ?? 0,
-              existingTotalInventoryValue: Number(existingReturnedStock?.totalInventoryValue ?? 0),
+              existingContainers:
+                existingReturnedStock?.quantityContainers ?? 0,
+              existingTotalInventoryValue: Number(
+                existingReturnedStock?.totalInventoryValue ?? 0,
+              ),
               unitsPerCarton,
               inboundCartons,
               inboundContainers,
@@ -508,12 +562,17 @@ export const processSalesReturnFn = createServerFn()
                 .set({
                   quantityCartons: nextState.nextCartons,
                   quantityContainers: nextState.nextContainers,
-                  weightedAverageCostPerPack: nextState.nextWacPerPack.toFixed(4),
-                  weightedAverageCostPerCarton: nextState.nextWacPerCarton.toFixed(4),
-                  totalInventoryValue: nextState.nextTotalInventoryValue.toFixed(2),
+                  weightedAverageCostPerPack:
+                    nextState.nextWacPerPack.toFixed(4),
+                  weightedAverageCostPerCarton:
+                    nextState.nextWacPerCarton.toFixed(4),
+                  totalInventoryValue:
+                    nextState.nextTotalInventoryValue.toFixed(2),
                   updatedAt: new Date(),
                 })
-                .where(eq(returnedFinishedGoodsStock.id, existingReturnedStock.id));
+                .where(
+                  eq(returnedFinishedGoodsStock.id, existingReturnedStock.id),
+                );
             } else {
               await tx.insert(returnedFinishedGoodsStock).values({
                 id: createId(),
@@ -523,8 +582,10 @@ export const processSalesReturnFn = createServerFn()
                 quantityCartons: nextState.nextCartons,
                 quantityContainers: nextState.nextContainers,
                 weightedAverageCostPerPack: nextState.nextWacPerPack.toFixed(4),
-                weightedAverageCostPerCarton: nextState.nextWacPerCarton.toFixed(4),
-                totalInventoryValue: nextState.nextTotalInventoryValue.toFixed(2),
+                weightedAverageCostPerCarton:
+                  nextState.nextWacPerCarton.toFixed(4),
+                totalInventoryValue:
+                  nextState.nextTotalInventoryValue.toFixed(2),
               });
             }
           }
@@ -547,34 +608,12 @@ export const processSalesReturnFn = createServerFn()
           });
         }
 
-        await tx
-          .update(customers)
-          .set({
-            credit: sql`${customers.credit} - ${returnAmount.toFixed(2)}`,
-            payment: sql`${customers.payment} + ${returnAmount.toFixed(2)}`,
-          })
-          .where(eq(customers.id, salesReturn.customerId));
-
         // NOTE: Invoice totals are intentionally NOT mutated here.
         // Sales returns are immutable dated events surfaced in the ledger
         // reader (see ledger-fn.ts). Mutating invoice.credit/amount would
         // rewrite past-period statements and break historical immutability.
 
-        // Update slip amount due
-        const slip = await tx.query.slipRecords.findFirst({
-          where: eq(slipRecords.invoiceId, salesReturn.invoiceId),
-        });
-        if (slip) {
-          const newDue = Math.max(0, Number(slip.amountDue) - returnAmount);
-          await tx
-            .update(slipRecords)
-            .set({
-              amountDue: newDue.toFixed(2),
-              status: newDue === 0 ? "closed" : slip.status,
-              updatedAt: new Date(),
-            })
-            .where(eq(slipRecords.id, slip.id));
-        }
+        await recalculateInvoiceSettlement(tx, salesReturn.invoiceId);
       }
 
       await recordInvoiceTimelineEvent(
@@ -584,7 +623,7 @@ export const processSalesReturnFn = createServerFn()
           title: `Return ${data.action === "approve" ? "approved" : "rejected"}`,
           description:
             data.action === "approve"
-              ? `Return #${salesReturn.returnNumber} approved. Customer credit reduced by PKR ${Number(salesReturn.totalAmount).toFixed(2)}. Inventory disposition: ${salesReturn.condition === "good" ? "restocked to sellable stock" : `moved to ${salesReturn.condition} returned stock`}.`
+              ? `Return #${salesReturn.returnNumber} approved. Outstanding Amount reduced by PKR ${Number(salesReturn.totalAmount).toFixed(2)}. Inventory disposition: ${salesReturn.condition === "good" ? "restocked to sellable stock" : `moved to ${salesReturn.condition} returned stock`}.`
               : `Return #${salesReturn.returnNumber} rejected. Reason: ${data.notes ?? "Not specified"}.`,
           metadata: {
             salesReturnId: salesReturn.id,

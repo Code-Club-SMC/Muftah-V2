@@ -208,7 +208,7 @@ export function CreateDistributorDialog({ open, onOpenChange }: Props) {
             <form.Field name="creditLimit">
               {(field) => (
                 <Field>
-                  <FieldLabel>Credit Limit (PKR)</FieldLabel>
+                  <FieldLabel>Pay-Later Limit (PKR)</FieldLabel>
                   <Input
                     type="number"
                     min="0"

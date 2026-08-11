@@ -252,6 +252,9 @@ export const slipRecords = pgTable("slip_records", {
   paidAmount: decimal("paid_amount", { precision: 12, scale: 2 })
     .notNull()
     .default("0"),
+  returnedAmount: decimal("returned_amount", { precision: 12, scale: 2 })
+    .notNull()
+    .default("0"),
   outstandingAmount: decimal("outstanding_amount", {
     precision: 12,
     scale: 2,
@@ -275,7 +278,7 @@ export const slipRecords = pgTable("slip_records", {
   invoiceUnique: uniqueIndex("slip_records_invoice_unique").on(table.invoiceId),
   settlementAmountsCheck: check(
     "slip_records_settlement_amounts_check",
-    sql`${table.invoiceAmount} >= 0 and ${table.paidAmount} >= 0 and ${table.outstandingAmount} >= 0 and ${table.paidAmount} + ${table.outstandingAmount} = ${table.invoiceAmount}`,
+    sql`${table.invoiceAmount} >= 0 and ${table.paidAmount} >= 0 and ${table.returnedAmount} >= 0 and ${table.outstandingAmount} >= 0 and ${table.paidAmount} + ${table.returnedAmount} + ${table.outstandingAmount} = ${table.invoiceAmount}`,
   ),
 }));
 
@@ -432,6 +435,7 @@ export const commissionRecords = pgTable("commission_records", {
   appliedRate: decimal("applied_rate", { precision: 5, scale: 2 }).notNull(),
   commissionAmount: decimal("commission_amount", { precision: 12, scale: 2 }).notNull(),
   calculatedAt: timestamp("calculated_at").defaultNow().notNull(),
+  earnedAt: timestamp("earned_at", { withTimezone: true }).defaultNow().notNull(),
   status: text("status").notNull().default("accrued"), // "accrued" | "paid" | "reversed"
   paidInPayslipId: text("paid_in_payslip_id"),
   ...timestamps,

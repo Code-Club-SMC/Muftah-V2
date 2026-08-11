@@ -206,7 +206,7 @@ const CustomerRow = ({
   customer: any;
 }) => {
   const navigate = useNavigate();
-  const outstanding = Number(customer.credit);
+  const outstanding = Number(customer.outstandingAmount);
   const avgPerKg = Number(customer.weightSaleKg) > 0
     ? Number(customer.totalSale) / Number(customer.weightSaleKg)
     : 0;
@@ -244,7 +244,7 @@ const CustomerRow = ({
         {PKR(Number(customer.totalSale))}
       </TableCell>
       <TableCell className="text-sm tabular-nums text-right text-green-600">
-        {PKR(Number(customer.payment))}
+        {PKR(Number(customer.totalPaidAmount))}
       </TableCell>
       <TableCell className="text-sm tabular-nums text-right">
         {outstanding > 0 ? (

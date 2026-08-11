@@ -30,6 +30,7 @@ import { Route as AuthLayout2FaIndexRouteImport } from './routes/_authLayout/2-f
 import { Route as ApiInternalBootstrapAdminRouteImport } from './routes/api/internal/bootstrap-admin'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ProtectedSuppliersSupplierIdRouteImport } from './routes/_protected/suppliers/$supplierId'
+import { Route as ProtectedSalesOfflineRouteImport } from './routes/_protected/sales/offline'
 import { Route as ProtectedOperatorRunIdRouteImport } from './routes/_protected/operator/$runId'
 import { Route as ProtectedFinancePaymentVerificationRouteImport } from './routes/_protected/finance/payment-verification'
 import { Route as ProtectedSalesRecoveryIndexRouteImport } from './routes/_protected/sales/recovery/index'
@@ -44,8 +45,9 @@ import { Route as ProtectedReportsSalesIndexRouteImport } from './routes/_protec
 import { Route as ProtectedReportsSalariesIndexRouteImport } from './routes/_protected/reports/salaries/index'
 import { Route as ProtectedReportsPurchasesIndexRouteImport } from './routes/_protected/reports/purchases/index'
 import { Route as ProtectedReportsProfitLossIndexRouteImport } from './routes/_protected/reports/profit-loss/index'
+import { Route as ProtectedReportsOutstandingIndexRouteImport } from './routes/_protected/reports/outstanding/index'
 import { Route as ProtectedReportsExpensesIndexRouteImport } from './routes/_protected/reports/expenses/index'
-import { Route as ProtectedReportsCreditsIndexRouteImport } from './routes/_protected/reports/credits/index'
+import { Route as ProtectedReportsCollectionsIndexRouteImport } from './routes/_protected/reports/collections/index'
 import { Route as ProtectedOrderBookerTripsIndexRouteImport } from './routes/_protected/order-booker/trips/index'
 import { Route as ProtectedOrderBookerRecoveriesIndexRouteImport } from './routes/_protected/order-booker/recoveries/index'
 import { Route as ProtectedOrderBookerOrdersIndexRouteImport } from './routes/_protected/order-booker/orders/index'
@@ -199,6 +201,11 @@ const ProtectedSuppliersSupplierIdRoute =
     path: '/suppliers/$supplierId',
     getParentRoute: () => ProtectedRouteRoute,
   } as any)
+const ProtectedSalesOfflineRoute = ProtectedSalesOfflineRouteImport.update({
+  id: '/sales/offline',
+  path: '/sales/offline',
+  getParentRoute: () => ProtectedRouteRoute,
+} as any)
 const ProtectedOperatorRunIdRoute = ProtectedOperatorRunIdRouteImport.update({
   id: '/operator/$runId',
   path: '/operator/$runId',
@@ -282,16 +289,22 @@ const ProtectedReportsProfitLossIndexRoute =
     path: '/profit-loss/',
     getParentRoute: () => ProtectedReportsRouteRoute,
   } as any)
+const ProtectedReportsOutstandingIndexRoute =
+  ProtectedReportsOutstandingIndexRouteImport.update({
+    id: '/outstanding/',
+    path: '/outstanding/',
+    getParentRoute: () => ProtectedReportsRouteRoute,
+  } as any)
 const ProtectedReportsExpensesIndexRoute =
   ProtectedReportsExpensesIndexRouteImport.update({
     id: '/expenses/',
     path: '/expenses/',
     getParentRoute: () => ProtectedReportsRouteRoute,
   } as any)
-const ProtectedReportsCreditsIndexRoute =
-  ProtectedReportsCreditsIndexRouteImport.update({
-    id: '/credits/',
-    path: '/credits/',
+const ProtectedReportsCollectionsIndexRoute =
+  ProtectedReportsCollectionsIndexRouteImport.update({
+    id: '/collections/',
+    path: '/collections/',
     getParentRoute: () => ProtectedReportsRouteRoute,
   } as any)
 const ProtectedOrderBookerTripsIndexRoute =
@@ -559,6 +572,7 @@ export interface FileRoutesByFullPath {
   '/attendance/scan': typeof AttendanceScanRoute
   '/finance/payment-verification': typeof ProtectedFinancePaymentVerificationRoute
   '/operator/$runId': typeof ProtectedOperatorRunIdRoute
+  '/sales/offline': typeof ProtectedSalesOfflineRoute
   '/suppliers/$supplierId': typeof ProtectedSuppliersSupplierIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/internal/bootstrap-admin': typeof ApiInternalBootstrapAdminRoute
@@ -597,8 +611,9 @@ export interface FileRoutesByFullPath {
   '/order-booker/orders/': typeof ProtectedOrderBookerOrdersIndexRoute
   '/order-booker/recoveries/': typeof ProtectedOrderBookerRecoveriesIndexRoute
   '/order-booker/trips/': typeof ProtectedOrderBookerTripsIndexRoute
-  '/reports/credits/': typeof ProtectedReportsCreditsIndexRoute
+  '/reports/collections/': typeof ProtectedReportsCollectionsIndexRoute
   '/reports/expenses/': typeof ProtectedReportsExpensesIndexRoute
+  '/reports/outstanding/': typeof ProtectedReportsOutstandingIndexRoute
   '/reports/profit-loss/': typeof ProtectedReportsProfitLossIndexRoute
   '/reports/purchases/': typeof ProtectedReportsPurchasesIndexRoute
   '/reports/salaries/': typeof ProtectedReportsSalariesIndexRoute
@@ -638,6 +653,7 @@ export interface FileRoutesByTo {
   '/attendance/scan': typeof AttendanceScanRoute
   '/finance/payment-verification': typeof ProtectedFinancePaymentVerificationRoute
   '/operator/$runId': typeof ProtectedOperatorRunIdRoute
+  '/sales/offline': typeof ProtectedSalesOfflineRoute
   '/suppliers/$supplierId': typeof ProtectedSuppliersSupplierIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/internal/bootstrap-admin': typeof ApiInternalBootstrapAdminRoute
@@ -675,8 +691,9 @@ export interface FileRoutesByTo {
   '/order-booker/orders': typeof ProtectedOrderBookerOrdersIndexRoute
   '/order-booker/recoveries': typeof ProtectedOrderBookerRecoveriesIndexRoute
   '/order-booker/trips': typeof ProtectedOrderBookerTripsIndexRoute
-  '/reports/credits': typeof ProtectedReportsCreditsIndexRoute
+  '/reports/collections': typeof ProtectedReportsCollectionsIndexRoute
   '/reports/expenses': typeof ProtectedReportsExpensesIndexRoute
+  '/reports/outstanding': typeof ProtectedReportsOutstandingIndexRoute
   '/reports/profit-loss': typeof ProtectedReportsProfitLossIndexRoute
   '/reports/purchases': typeof ProtectedReportsPurchasesIndexRoute
   '/reports/salaries': typeof ProtectedReportsSalariesIndexRoute
@@ -720,6 +737,7 @@ export interface FileRoutesById {
   '/attendance/scan': typeof AttendanceScanRoute
   '/_protected/finance/payment-verification': typeof ProtectedFinancePaymentVerificationRoute
   '/_protected/operator/$runId': typeof ProtectedOperatorRunIdRoute
+  '/_protected/sales/offline': typeof ProtectedSalesOfflineRoute
   '/_protected/suppliers/$supplierId': typeof ProtectedSuppliersSupplierIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/internal/bootstrap-admin': typeof ApiInternalBootstrapAdminRoute
@@ -758,8 +776,9 @@ export interface FileRoutesById {
   '/_protected/order-booker/orders/': typeof ProtectedOrderBookerOrdersIndexRoute
   '/_protected/order-booker/recoveries/': typeof ProtectedOrderBookerRecoveriesIndexRoute
   '/_protected/order-booker/trips/': typeof ProtectedOrderBookerTripsIndexRoute
-  '/_protected/reports/credits/': typeof ProtectedReportsCreditsIndexRoute
+  '/_protected/reports/collections/': typeof ProtectedReportsCollectionsIndexRoute
   '/_protected/reports/expenses/': typeof ProtectedReportsExpensesIndexRoute
+  '/_protected/reports/outstanding/': typeof ProtectedReportsOutstandingIndexRoute
   '/_protected/reports/profit-loss/': typeof ProtectedReportsProfitLossIndexRoute
   '/_protected/reports/purchases/': typeof ProtectedReportsPurchasesIndexRoute
   '/_protected/reports/salaries/': typeof ProtectedReportsSalariesIndexRoute
@@ -802,6 +821,7 @@ export interface FileRouteTypes {
     | '/attendance/scan'
     | '/finance/payment-verification'
     | '/operator/$runId'
+    | '/sales/offline'
     | '/suppliers/$supplierId'
     | '/api/auth/$'
     | '/api/internal/bootstrap-admin'
@@ -840,8 +860,9 @@ export interface FileRouteTypes {
     | '/order-booker/orders/'
     | '/order-booker/recoveries/'
     | '/order-booker/trips/'
-    | '/reports/credits/'
+    | '/reports/collections/'
     | '/reports/expenses/'
+    | '/reports/outstanding/'
     | '/reports/profit-loss/'
     | '/reports/purchases/'
     | '/reports/salaries/'
@@ -881,6 +902,7 @@ export interface FileRouteTypes {
     | '/attendance/scan'
     | '/finance/payment-verification'
     | '/operator/$runId'
+    | '/sales/offline'
     | '/suppliers/$supplierId'
     | '/api/auth/$'
     | '/api/internal/bootstrap-admin'
@@ -918,8 +940,9 @@ export interface FileRouteTypes {
     | '/order-booker/orders'
     | '/order-booker/recoveries'
     | '/order-booker/trips'
-    | '/reports/credits'
+    | '/reports/collections'
     | '/reports/expenses'
+    | '/reports/outstanding'
     | '/reports/profit-loss'
     | '/reports/purchases'
     | '/reports/salaries'
@@ -962,6 +985,7 @@ export interface FileRouteTypes {
     | '/attendance/scan'
     | '/_protected/finance/payment-verification'
     | '/_protected/operator/$runId'
+    | '/_protected/sales/offline'
     | '/_protected/suppliers/$supplierId'
     | '/api/auth/$'
     | '/api/internal/bootstrap-admin'
@@ -1000,8 +1024,9 @@ export interface FileRouteTypes {
     | '/_protected/order-booker/orders/'
     | '/_protected/order-booker/recoveries/'
     | '/_protected/order-booker/trips/'
-    | '/_protected/reports/credits/'
+    | '/_protected/reports/collections/'
     | '/_protected/reports/expenses/'
+    | '/_protected/reports/outstanding/'
     | '/_protected/reports/profit-loss/'
     | '/_protected/reports/purchases/'
     | '/_protected/reports/salaries/'
@@ -1195,6 +1220,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProtectedSuppliersSupplierIdRouteImport
       parentRoute: typeof ProtectedRouteRoute
     }
+    '/_protected/sales/offline': {
+      id: '/_protected/sales/offline'
+      path: '/sales/offline'
+      fullPath: '/sales/offline'
+      preLoaderRoute: typeof ProtectedSalesOfflineRouteImport
+      parentRoute: typeof ProtectedRouteRoute
+    }
     '/_protected/operator/$runId': {
       id: '/_protected/operator/$runId'
       path: '/operator/$runId'
@@ -1293,6 +1325,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProtectedReportsProfitLossIndexRouteImport
       parentRoute: typeof ProtectedReportsRouteRoute
     }
+    '/_protected/reports/outstanding/': {
+      id: '/_protected/reports/outstanding/'
+      path: '/outstanding'
+      fullPath: '/reports/outstanding/'
+      preLoaderRoute: typeof ProtectedReportsOutstandingIndexRouteImport
+      parentRoute: typeof ProtectedReportsRouteRoute
+    }
     '/_protected/reports/expenses/': {
       id: '/_protected/reports/expenses/'
       path: '/expenses'
@@ -1300,11 +1339,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProtectedReportsExpensesIndexRouteImport
       parentRoute: typeof ProtectedReportsRouteRoute
     }
-    '/_protected/reports/credits/': {
-      id: '/_protected/reports/credits/'
-      path: '/credits'
-      fullPath: '/reports/credits/'
-      preLoaderRoute: typeof ProtectedReportsCreditsIndexRouteImport
+    '/_protected/reports/collections/': {
+      id: '/_protected/reports/collections/'
+      path: '/collections'
+      fullPath: '/reports/collections/'
+      preLoaderRoute: typeof ProtectedReportsCollectionsIndexRouteImport
       parentRoute: typeof ProtectedReportsRouteRoute
     }
     '/_protected/order-booker/trips/': {
@@ -1633,8 +1672,9 @@ const AuthLayoutRouteRouteWithChildren = AuthLayoutRouteRoute._addFileChildren(
 
 interface ProtectedReportsRouteRouteChildren {
   ProtectedReportsIndexRoute: typeof ProtectedReportsIndexRoute
-  ProtectedReportsCreditsIndexRoute: typeof ProtectedReportsCreditsIndexRoute
+  ProtectedReportsCollectionsIndexRoute: typeof ProtectedReportsCollectionsIndexRoute
   ProtectedReportsExpensesIndexRoute: typeof ProtectedReportsExpensesIndexRoute
+  ProtectedReportsOutstandingIndexRoute: typeof ProtectedReportsOutstandingIndexRoute
   ProtectedReportsProfitLossIndexRoute: typeof ProtectedReportsProfitLossIndexRoute
   ProtectedReportsPurchasesIndexRoute: typeof ProtectedReportsPurchasesIndexRoute
   ProtectedReportsSalariesIndexRoute: typeof ProtectedReportsSalariesIndexRoute
@@ -1645,8 +1685,9 @@ interface ProtectedReportsRouteRouteChildren {
 
 const ProtectedReportsRouteRouteChildren: ProtectedReportsRouteRouteChildren = {
   ProtectedReportsIndexRoute: ProtectedReportsIndexRoute,
-  ProtectedReportsCreditsIndexRoute: ProtectedReportsCreditsIndexRoute,
+  ProtectedReportsCollectionsIndexRoute: ProtectedReportsCollectionsIndexRoute,
   ProtectedReportsExpensesIndexRoute: ProtectedReportsExpensesIndexRoute,
+  ProtectedReportsOutstandingIndexRoute: ProtectedReportsOutstandingIndexRoute,
   ProtectedReportsProfitLossIndexRoute: ProtectedReportsProfitLossIndexRoute,
   ProtectedReportsPurchasesIndexRoute: ProtectedReportsPurchasesIndexRoute,
   ProtectedReportsSalariesIndexRoute: ProtectedReportsSalariesIndexRoute,
@@ -1684,6 +1725,7 @@ interface ProtectedRouteRouteChildren {
   ProtectedReportsRouteRoute: typeof ProtectedReportsRouteRouteWithChildren
   ProtectedFinancePaymentVerificationRoute: typeof ProtectedFinancePaymentVerificationRoute
   ProtectedOperatorRunIdRoute: typeof ProtectedOperatorRunIdRoute
+  ProtectedSalesOfflineRoute: typeof ProtectedSalesOfflineRoute
   ProtectedSuppliersSupplierIdRoute: typeof ProtectedSuppliersSupplierIdRoute
   ProtectedDashboardIndexRoute: typeof ProtectedDashboardIndexRoute
   ProtectedHrIndexRoute: typeof ProtectedHrIndexRoute
@@ -1745,6 +1787,7 @@ const ProtectedRouteRouteChildren: ProtectedRouteRouteChildren = {
   ProtectedFinancePaymentVerificationRoute:
     ProtectedFinancePaymentVerificationRoute,
   ProtectedOperatorRunIdRoute: ProtectedOperatorRunIdRoute,
+  ProtectedSalesOfflineRoute: ProtectedSalesOfflineRoute,
   ProtectedSuppliersSupplierIdRoute: ProtectedSuppliersSupplierIdRoute,
   ProtectedDashboardIndexRoute: ProtectedDashboardIndexRoute,
   ProtectedHrIndexRoute: ProtectedHrIndexRoute,

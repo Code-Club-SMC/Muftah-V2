@@ -223,10 +223,10 @@ const buildDistributorData = (inv: any): DistributorInvoiceData => {
       mob: "",
     },
     date: format(new Date(inv.date), "dd-MMM-yyyy"),
-    estNo: inv.slipNumber ?? inv.id.slice(-8).toUpperCase(),
-    docNo: inv.slipNumber ?? inv.id.slice(-8).toUpperCase(),
+    estNo: inv.invoiceNumber ?? inv.id.slice(-8).toUpperCase(),
+    docNo: inv.invoiceNumber ?? inv.id.slice(-8).toUpperCase(),
     pvNo: "—",
-    mBillNo: inv.slipNumber ?? "—",
+    mBillNo: inv.invoiceNumber ?? "—",
     transporter: inv.warehouse?.name ?? "—",
     biltyNo: "—",
     dispDate: "—",
@@ -242,7 +242,7 @@ const buildDistributorData = (inv: any): DistributorInvoiceData => {
 const buildRetailerData = (inv: any): RetailerInvoiceData => {
   const isDist = inv.customer?.customerType === "distributor";
   return {
-    invoiceNo: inv.slipNumber ?? inv.id.slice(-8).toUpperCase(),
+    invoiceNo: inv.invoiceNumber ?? inv.id.slice(-8).toUpperCase(),
     date: format(new Date(inv.date), "dd-MMM-yyyy"),
     customer: {
       name: inv.customer?.name ?? "N/A",

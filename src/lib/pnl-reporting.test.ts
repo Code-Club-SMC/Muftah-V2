@@ -652,7 +652,7 @@ describe("P&L Phase 4 — edge-case audit on company reporting core", () => {
 		expect(src).toContain("paymentWindowRows");
 		expect(src).toContain("returnWindowRows");
 		expect(src).toContain("inArray(invoices.id, invoiceIds)");
-		expect(src).toContain("paymentDate < range.fromDate");
+		expect(src).toContain("effectiveDate < range.fromDate");
 	});
 
 	it("loads TA/DA by payable timing, not only trip date inside report range", () => {
@@ -683,7 +683,7 @@ describe("aggregateRealizedInvoiceRows", () => {
 		return {
 			invoiceId: "inv-1",
 			invoiceDate: new Date("2026-06-22"),
-			slipNumber: "INV-1",
+			invoiceNumber: "INV-1",
 			customerName: "Hikmat",
 			invoiceStatus: "paid",
 			recipeId: "recipe-1",
@@ -759,7 +759,7 @@ describe("aggregateRealizedInvoiceRows", () => {
 			makeLine({ invoiceId: "inv-1" }),
 			makeLine({
 				invoiceId: "inv-2",
-				slipNumber: "INV-2",
+				invoiceNumber: "INV-2",
 			}),
 		];
 

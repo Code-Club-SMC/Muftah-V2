@@ -187,7 +187,7 @@ function ReconciliationPage() {
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Slip Reconciliation</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Recover payments against open credit slips. Search by slip number,
+          Record payments against invoices with an Outstanding Amount. Search by slip number,
           confirm amount, and close.
         </p>
       </div>
@@ -202,7 +202,7 @@ function ReconciliationPage() {
             </p>
           </div>
           <Button size="sm" variant="outline" className="h-7 text-xs border-amber-300" asChild>
-            <Link to="/sales/recovery">Go to Credit Recovery</Link>
+            <Link to="/sales/recovery">Go to Outstanding Recovery</Link>
           </Button>
         </div>
       ) : null}
@@ -306,7 +306,7 @@ function ReconciliationPage() {
                         Already Recovered
                       </p>
                       <p className="font-semibold text-green-600">
-                        {PKR(Number(slip.amountRecovered))}
+                        {PKR(Number(slip.paidAmount))}
                       </p>
                     </div>
                   </div>
@@ -314,7 +314,7 @@ function ReconciliationPage() {
                   <div
                     className={cn(
                       "rounded-lg p-3 border",
-                      Number(slip.amountDue) > 0
+                      Number(slip.outstandingAmount) > 0
                         ? "bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-800"
                         : "bg-green-50 dark:bg-green-950/20 border-green-200",
                     )}
@@ -325,12 +325,12 @@ function ReconciliationPage() {
                     <p
                       className={cn(
                         "text-2xl font-bold tabular-nums",
-                        Number(slip.amountDue) > 0
+                        Number(slip.outstandingAmount) > 0
                           ? "text-red-700"
                           : "text-green-700",
                       )}
                     >
-                      {PKR(Number(slip.amountDue))}
+                      {PKR(Number(slip.outstandingAmount))}
                     </p>
                   </div>
                 </CardContent>
@@ -342,7 +342,7 @@ function ReconciliationPage() {
                   <CardHeader className="pb-3">
                     <CardTitle className="text-base">Record Payment</CardTitle>
                     <CardDescription>
-                      Max: {PKR(Number(slip.amountDue))}
+                      Max: {PKR(Number(slip.outstandingAmount))}
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
@@ -362,7 +362,7 @@ function ReconciliationPage() {
                             <Input
                               type="number"
                               min="1"
-                              max={Number(slip.amountDue)}
+                              max={Number(slip.outstandingAmount)}
                               step="1"
                               value={field.state.value || ""}
                               onChange={(e) =>
@@ -466,7 +466,7 @@ function ReconciliationPage() {
                           onClick={() => {
                             form.setFieldValue(
                               "amount",
-                              Number(slip.amountDue),
+                              Number(slip.outstandingAmount),
                             );
                           }}
                         >
@@ -482,7 +482,7 @@ function ReconciliationPage() {
                     <CheckCircle2 className="size-10 text-green-500" />
                     <p className="font-semibold">Slip Fully Closed</p>
                     <p className="text-sm text-muted-foreground">
-                      All {PKR(Number(slip.amountRecovered))} recovered.
+                      All {PKR(Number(slip.paidAmount))} paid.
                     </p>
                   </CardContent>
                 </Card>
@@ -587,7 +587,7 @@ function ReconciliationPage() {
         <TabsContent value="overdue" className="mt-6 space-y-4">
           <div className="flex items-center justify-between">
             <p className="text-sm text-muted-foreground">
-              Slips whose credit return date has passed and still have outstanding balance.
+              Invoices past their Payment Due Date with an Outstanding Amount.
             </p>
           </div>
 
@@ -646,15 +646,15 @@ function ReconciliationPage() {
                         {format(new Date(s.issuedAt), "dd MMM yy")}
                       </TableCell>
                       <TableCell className="text-xs tabular-nums text-red-600 font-medium">
-                        {s.invoice?.creditReturnDate
-                          ? format(new Date(s.invoice.creditReturnDate), "dd MMM yy")
+                        {s.invoice?.paymentDueDate
+                          ? format(new Date(s.invoice.paymentDueDate), "dd MMM yy")
                           : "—"}
                       </TableCell>
                       <TableCell className="text-sm tabular-nums text-right text-red-600 font-semibold">
-                        {PKR(Number(s.amountDue))}
+                        {PKR(Number(s.outstandingAmount))}
                       </TableCell>
                       <TableCell className="text-sm tabular-nums text-right text-green-600">
-                        {PKR(Number(s.amountRecovered))}
+                        {PKR(Number(s.paidAmount))}
                       </TableCell>
                       <TableCell>
                         <Badge

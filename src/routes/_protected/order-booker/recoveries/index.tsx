@@ -28,7 +28,7 @@ import {
 } from "@/components/ui/select";
 import { Banknote, RefreshCw, AlertCircle, ArrowRight } from "lucide-react";
 import { formatPKR } from "@/lib/currency-format";
-import { useMyRecoveries, useRecordMyRecovery, orderBookerKeys } from "@/hooks/sales/use-order-booker-self-service";
+import { useMyRecoveries, useMyRecoveryAccounts, useRecordMyRecovery, orderBookerKeys } from "@/hooks/sales/use-order-booker-self-service";
 import { getMyRecoveriesFn } from "@/server-functions/sales/order-booker-self-service-fn";
 import { CustomerPagination } from "@/components/sales/customer-pagination";
 import { format } from "date-fns";
@@ -63,6 +63,7 @@ function MyRecoveriesPage() {
     limit,
     status,
   });
+  const { data: recoveryAccounts = [] } = useMyRecoveryAccounts();
 
   const recoveries = data?.data || [];
   const summary = data?.summary || { totalOutstanding: 0, totalCollected: 0, count: 0 };
@@ -186,7 +187,7 @@ function MyRecoveriesPage() {
             </TableHeader>
             <TableBody>
               {recoveries.map((inv: any) => (
-                <RecoveryRow key={inv.id} invoice={inv} />
+                <RecoveryRow key={inv.id} invoice={inv} accounts={recoveryAccounts} />
               ))}
             </TableBody>
           </Table>
@@ -207,22 +208,41 @@ function MyRecoveriesPage() {
   );
 }
 
-function RecoveryRow({ invoice }: { invoice: any }) {
+function RecoveryRow({ invoice, accounts }: { invoice: any; accounts: Array<{ id: string; name: string; type: string }> }) {
   const [open, setOpen] = useState(false);
   const [amount, setAmount] = useState("");
-  const [method, setMethod] = useState<"cash" | "bank_transfer">("cash");
+  const [method, setMethod] = useState<"cash" | "bank_transfer" | "cheque">("cash");
+  const [walletId, setWalletId] = useState("");
   const [reference, setReference] = useState("");
+  const [chequeNumber, setChequeNumber] = useState("");
+  const [chequeBank, setChequeBank] = useState("");
+  const [chequeDate, setChequeDate] = useState("");
   const [notes, setNotes] = useState("");
   const recordRecovery = useRecordMyRecovery();
 
-  const outstanding = Number(invoice.credit) || 0;
+  const outstanding = Number(invoice.outstandingAmount) || 0;
   const total = Number(invoice.totalPrice) || 0;
-  const collected = total - outstanding;
+  const collected = Number(invoice.paidAmount) || 0;
+  const eligibleAccounts = accounts.filter((account) =>
+    method === "cash" ? account.type === "cash" : account.type === "bank",
+  );
 
   const handleSubmit = () => {
     const numAmount = Number(amount);
     if (!numAmount || numAmount <= 0) {
       toast.error("Enter a valid amount");
+      return;
+    }
+    if (!walletId) {
+      toast.error("Select a destination account");
+      return;
+    }
+    if (method === "bank_transfer" && !reference.trim()) {
+      toast.error("Enter the bank reference");
+      return;
+    }
+    if (method === "cheque" && (!chequeNumber.trim() || !chequeBank.trim() || !chequeDate)) {
+      toast.error("Enter cheque number, bank, and date");
       return;
     }
     recordRecovery.mutate(
@@ -231,7 +251,11 @@ function RecoveryRow({ invoice }: { invoice: any }) {
           invoiceId: invoice.id,
           amount: numAmount,
           method,
+          walletId,
           reference: reference || undefined,
+          chequeNumber: chequeNumber || undefined,
+          chequeBank: chequeBank || undefined,
+          chequeDate: chequeDate ? new Date(`${chequeDate}T12:00:00`) : undefined,
           notes: notes || undefined,
         },
       },
@@ -240,6 +264,10 @@ function RecoveryRow({ invoice }: { invoice: any }) {
           setOpen(false);
           setAmount("");
           setReference("");
+          setWalletId("");
+          setChequeNumber("");
+          setChequeBank("");
+          setChequeDate("");
           setNotes("");
         },
       },
@@ -248,7 +276,7 @@ function RecoveryRow({ invoice }: { invoice: any }) {
 
   return (
     <TableRow>
-      <TableCell className="text-sm font-mono font-medium">{invoice.slipNumber || "—"}</TableCell>
+      <TableCell className="text-sm font-mono font-medium">{invoice.invoiceNumber || "—"}</TableCell>
       <TableCell className="text-sm text-muted-foreground">
         {invoice.date ? format(new Date(invoice.date), "dd MMM yyyy") : "—"}
       </TableCell>
@@ -278,7 +306,7 @@ function RecoveryRow({ invoice }: { invoice: any }) {
                 <div className="border rounded-lg p-3 bg-muted/10 space-y-1.5 text-xs">
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Invoice</span>
-                    <span className="font-mono font-medium">{invoice.slipNumber}</span>
+                    <span className="font-mono font-medium">{invoice.invoiceNumber}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Shopkeeper</span>
@@ -303,18 +331,39 @@ function RecoveryRow({ invoice }: { invoice: any }) {
                 </div>
                 <div className="space-y-1.5">
                   <Label>Method</Label>
-                  <Select value={method} onValueChange={(v) => setMethod(v as any)}>
+                  <Select value={method} onValueChange={(v) => { setMethod(v as typeof method); setWalletId(""); }}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="cash">Cash</SelectItem>
                       <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
+                      <SelectItem value="cheque">Cheque</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Reference (optional)</Label>
-                  <Input value={reference} onChange={(e) => setReference(e.target.value)} placeholder="Transaction ID / receipt no." />
+                  <Label>Destination Account</Label>
+                  <Select value={walletId} onValueChange={setWalletId}>
+                    <SelectTrigger><SelectValue placeholder="Select account" /></SelectTrigger>
+                    <SelectContent>
+                      {eligibleAccounts.map((account) => (
+                        <SelectItem key={account.id} value={account.id}>{account.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
+                {method === "bank_transfer" && (
+                  <div className="space-y-1.5">
+                    <Label>Bank Reference</Label>
+                    <Input value={reference} onChange={(e) => setReference(e.target.value)} placeholder="Transaction ID" />
+                  </div>
+                )}
+                {method === "cheque" && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5"><Label>Cheque Number</Label><Input value={chequeNumber} onChange={(e) => setChequeNumber(e.target.value)} /></div>
+                    <div className="space-y-1.5"><Label>Bank</Label><Input value={chequeBank} onChange={(e) => setChequeBank(e.target.value)} /></div>
+                    <div className="col-span-2 space-y-1.5"><Label>Cheque Date</Label><Input type="date" value={chequeDate} onChange={(e) => setChequeDate(e.target.value)} /></div>
+                  </div>
+                )}
                 <div className="space-y-1.5">
                   <Label>Notes (optional)</Label>
                   <Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Any notes..." />

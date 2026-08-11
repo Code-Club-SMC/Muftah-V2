@@ -6,7 +6,6 @@ import {
   slipRecords,
   discountRules,
   priceChangeLog,
-  orders,
   entityRecipeRates,
   salesReturns,
 } from "@/db/schemas/sales-erp-schema";
@@ -765,6 +764,8 @@ export const createInvoiceFn = createServerFn()
         source: "online",
         businessDate: new Date(),
         stockPolicy: "strict",
+        creditPolicy: "block",
+        pricingPolicy: "live",
       }),
     );
   });
@@ -860,7 +861,7 @@ export const getInvoiceStatsFn = createServerFn()
       .leftJoin(customers, eq(invoices.customerId, customers.id))
       .where(whereClause);
 
-    // Total outstanding credit
+    // Total Outstanding Amount
     const outstandingConditions = [
       ...conditions,
       gt(invoices.outstandingAmount, "0"),

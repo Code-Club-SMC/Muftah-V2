@@ -160,9 +160,9 @@ function DistributorsTab() {
                     {Number(d.defaultMargin) > 0 ? `${d.defaultMargin}%` : "—"}
                   </TableCell>
                   <TableCell className="text-sm text-right">
-                    {Number(d.credit) > 0 ? (
+                    {Number(d.outstandingAmount) > 0 ? (
                       <Badge variant="destructive" className="text-[10px] tabular-nums">
-                        {PKR(Number(d.credit))}
+                        {PKR(Number(d.outstandingAmount))}
                       </Badge>
                     ) : (
                       <Badge variant="outline" className="text-green-600 border-green-200 text-[10px]">
@@ -243,9 +243,9 @@ function RetailersTab() {
                   <TableCell className="text-sm">{r.city || "—"}</TableCell>
                   <TableCell className="text-sm text-right tabular-nums">{PKR(Number(r.totalSale))}</TableCell>
                   <TableCell className="text-sm text-right">
-                    {Number(r.credit) > 0 ? (
+                    {Number(r.outstandingAmount) > 0 ? (
                       <Badge variant="destructive" className="text-[10px] tabular-nums">
-                        {PKR(Number(r.credit))}
+                        {PKR(Number(r.outstandingAmount))}
                       </Badge>
                     ) : (
                       <Badge variant="outline" className="text-green-600 border-green-200 text-[10px]">

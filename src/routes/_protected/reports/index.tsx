@@ -1,12 +1,14 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   TrendingUp,
-  CreditCard,
+  BadgeDollarSign,
+  HandCoins,
   Users,
   ShoppingCart,
   Banknote,
   BarChart3,
 } from "lucide-react";
+import { OfflineReportPendingBanner } from "@/components/reports/offline-report-pending-banner";
 
 const reportTypes = [
   {
@@ -18,15 +20,21 @@ const reportTypes = [
   },
   {
     title: "Sales",
-    description: "Invoices, cash, credit, and revenue breakdowns.",
+    description: "Invoice totals, paid amounts, and outstanding amounts.",
     href: "/reports/sales",
     icon: TrendingUp,
   },
   {
-    title: "Credits",
-    description: "Credit slips, recovery status, and outstanding balances.",
-    href: "/reports/credits",
-    icon: CreditCard,
+    title: "Collections",
+    description: "Confirmed, pending, and exception payments by method.",
+    href: "/reports/collections",
+    icon: HandCoins,
+  },
+  {
+    title: "Outstanding",
+    description: "Invoices with amounts still waiting to be paid.",
+    href: "/reports/outstanding",
+    icon: BadgeDollarSign,
   },
   {
     title: "Salaries",
@@ -61,6 +69,8 @@ function ReportsLandingPage() {
           Generate operational reports for any date range.
         </p>
       </div>
+
+      <OfflineReportPendingBanner />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {reportTypes.map((report) => {

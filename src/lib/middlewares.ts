@@ -194,6 +194,22 @@ export const requireSalesRecoveryViewMiddleware = createPermissionMiddleware(
 export const requireSalesRecoveryManageMiddleware = createPermissionMiddleware(
   "sales.recovery.manage",
 );
+export const requireOfflineSalesViewMiddleware = createPermissionMiddleware(
+  "sales.offline.view",
+);
+export const requireOfflineSalesWorkbookManageMiddleware =
+  createPermissionMiddleware("sales.offline.workbooks.manage");
+export const requireOfflineSalesUploadMiddleware = createPermissionMiddleware(
+  "sales.offline.upload",
+);
+export const requireOfflineSalesReviewMiddleware = createPermissionMiddleware(
+  "sales.offline.review",
+);
+export const requireOfflineSalesPostMiddleware = createPermissionMiddleware(
+  "sales.offline.post",
+);
+export const requireStockReconciliationManageMiddleware =
+  createPermissionMiddleware("inventory.stock-reconciliation.manage");
 export const requireFinanceViewMiddleware = createPermissionMiddleware(
   "finance.view",
 );

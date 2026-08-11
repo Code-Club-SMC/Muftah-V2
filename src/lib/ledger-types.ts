@@ -1,50 +1,10 @@
 /**
- * Shared types and interfaces for the Ledger module
- * Used by Distributor, Shopkeeper, and Salesman ledgers
- *
- * LEDGER ACCOUNTING CONVENTIONS:
- * ───────────────────────────────────────────────────────────────────────────
- * In double-entry bookkeeping for customer/vendor ledgers:
- *
- * DEBIT (Left side):
- *   - Increases what the customer OWES us (credit sales)
- *   - Decreases what we owe the customer (overpayments, refunds)
- *   - In our context: Invoice credit amounts are DEBIT entries
- *
- * CREDIT (Right side):
- *   - Decreases what the customer owes us (payments received)
- *   - Increases what we owe the customer (overpayments)
- *   - In our context: Payment amounts are CREDIT entries
- *
- * RUNNING BALANCE:
- *   - Positive balance = Customer owes us money (accounts receivable)
- *   - Negative balance = We owe customer money (overpayment/refund due)
- *   - Zero balance = Account is settled
- *
- * OPENING BALANCE:
- *   - The balance at the START of the selected date range
- *   - Calculated as: (sum of all pre-period invoice credits) - (sum of all pre-period payments)
- *   - If no date range selected: Opening balance = 0 (shows all-time transactions)
- *
- * CLOSING BALANCE:
- *   - The balance at the END of the selected date range
- *   - Calculated as: Opening Balance + Period Credits - Period Payments
- *   - This is the customer's current outstanding amount
- *
- * CASH vs CREDIT on Invoices:
- *   - cash: Amount paid immediately (reduces balance immediately)
- *   - credit: Amount to be paid later (adds to balance)
- *   - totalPrice = cash + credit (total invoice value)
- *
- * AGING ANALYSIS:
- *   - Current: Credit not yet past due date
- *   - 1-30 Days: Past due by 1-30 days
- *   - 31-60 Days: Past due by 31-60 days
- *   - 61-90 Days: Past due by 61-90 days
- *   - 90+ Days: Past due by more than 90 days (highest risk)
+ * Customer ledger rules:
+ * - An invoice adds its full total to the amount owed.
+ * - A confirmed payment reduces the amount owed.
+ * - An approved return reduces the amount owed.
+ * - Pending, returned, cancelled, and reversed payments are not ledger money.
  */
-
-// ── Base Ledger Entry ─────────────────────────────────────────────────────
 
 export interface LedgerInvoiceItem {
   id: string;
@@ -66,21 +26,22 @@ export interface LedgerInvoiceEntry {
   type: "invoice";
   id: string;
   date: Date;
-  slipNumber: string | null;
+  invoiceNumber: string;
   warehouseName: string | null;
   totalPrice: number;
-  cash: number;
-  credit: number;
+  paidAmount: number;
+  returnedAmount: number;
+  outstandingAmount: number;
+  paymentDueDate: Date | null;
+  paymentStatus: string;
   status: string;
   runningBalance: number;
   items: LedgerInvoiceItem[];
   expenses: number;
   expensesDescription: string | null;
-  creditReturnDate: Date | null;
   remarks: string | null;
-  slipStatus: string | null;
-  slipRecoveryStatus: string | null;
-  slipAmountDue: number;
+  recoveryStatus: string | null;
+  recoveryOutstandingAmount: number;
   customerName?: string | null;
 }
 
@@ -93,8 +54,8 @@ export interface LedgerPaymentEntry {
   amount: number;
   notes: string | null;
   runningBalance: number;
-  invoiceId: string | null;
-  invoiceSlipNumber: string | null;
+  invoiceId: string;
+  invoiceNumber: string;
   customerName?: string | null;
 }
 
@@ -102,9 +63,9 @@ export interface LedgerReturnEntry {
   type: "return";
   id: string;
   date: Date;
-  returnNumber: number | null;
+  returnNumber: number;
   invoiceId: string;
-  invoiceSlipNumber: string | null;
+  invoiceNumber: string;
   amount: number;
   reason: string;
   condition: string;
@@ -114,40 +75,33 @@ export interface LedgerReturnEntry {
   customerName?: string | null;
 }
 
-export type LedgerEntry = LedgerInvoiceEntry | LedgerPaymentEntry | LedgerReturnEntry;
+export type LedgerEntry =
+  | LedgerInvoiceEntry
+  | LedgerPaymentEntry
+  | LedgerReturnEntry;
 
 export type LedgerExportType = "view" | "print" | "csv" | "pdf";
-
 export type LedgerTypeFilter = "all" | "invoice" | "payment" | "return";
-
-// ── Ledger Summary ────────────────────────────────────────────────────────
 
 export interface LedgerSummary {
   openingBalance: number;
   closingBalance: number;
   periodTotalSales: number;
-  periodTotalCash: number;
-  periodTotalCredit: number;
   periodPayments: number;
   periodReturns: number;
-  periodCashPayments: number;
   periodTotalProfit: number;
   invoiceCount: number;
   paymentCount: number;
 }
-
-// ─– Ledger Customer Info ─────────────────────────────────────────────────
 
 export interface LedgerCustomerInfo {
   id: string;
   name: string;
   city?: string | null;
   mobileNumber?: string | null;
-  credit?: string | number | null;
+  outstandingAmount?: string | number | null;
   customerType?: string | null;
 }
-
-// ── Full Ledger Response ──────────────────────────────────────────────────
 
 export interface DistributorLedgerResponse {
   customer: LedgerCustomerInfo;
@@ -161,10 +115,7 @@ export interface DistributorLedgerResponse {
 }
 
 export interface SalesmanLedgerResponse {
-  salesman: {
-    id: string;
-    name: string;
-  };
+  salesman: { id: string; name: string };
   entries: LedgerEntry[];
   summary: LedgerSummary;
   generatedAt: string;
@@ -173,8 +124,6 @@ export interface SalesmanLedgerResponse {
   pageCount: number;
   totalEntries: number;
 }
-
-// ─– Pagination & Filter Params ────────────────────────────────────────────
 
 export interface LedgerQueryParams {
   dateFrom?: string;
@@ -201,23 +150,12 @@ export interface ShopkeeperLedgerParams extends LedgerQueryParams {
   customerId: string;
 }
 
-export interface ShopkeeperLedgerResponse {
-  customer: LedgerCustomerInfo;
-  entries: LedgerEntry[];
-  summary: LedgerSummary;
-  generatedAt: string;
-  generatedBy: string;
-  page: number;
-  pageCount: number;
-  totalEntries: number;
-}
-
-// ── Export Config ───────────────────────────────────────────────────────────
+export type ShopkeeperLedgerResponse = DistributorLedgerResponse;
 
 export interface LedgerExportColumn {
   key: string;
   label: string;
-  format?: (value: any, entry: LedgerEntry) => string;
+  format?: (value: unknown, entry: LedgerEntry) => string;
   includeInCsv?: boolean;
   includeInPrint?: boolean;
 }
@@ -229,13 +167,8 @@ export interface LedgerExportConfig {
   columns: LedgerExportColumn[];
   includeLineItems?: boolean;
   includeSummary?: boolean;
-  watermark?: {
-    text: string;
-    opacity?: number;
-  };
+  watermark?: { text: string; opacity?: number };
 }
-
-// ─– Audit Log ───────────────────────────────────────────────────────────────
 
 export interface LedgerExportAudit {
   id?: string;

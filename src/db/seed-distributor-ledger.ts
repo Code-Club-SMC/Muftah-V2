@@ -2,6 +2,7 @@ import { db } from "./index";
 import { customers, invoices, invoiceItems } from "./schemas/sales-schema";
 import { payments, slipRecords, salesmen } from "./schemas/sales-erp-schema";
 import { warehouses } from "./schemas/inventory-schema";
+import { wallets } from "./schemas/finance-schema";
 import { user } from "./schemas/auth-schema";
 import { createId } from "@paralleldrive/cuid2";
 import { eq, sql } from "drizzle-orm";
@@ -91,14 +92,22 @@ async function seedDistributorLedger() {
         salesmanId: salesman.id,
         defaultMargin: "15.00",
         totalSale: "0",
-        payment: "0",
-        credit: "0",
+        totalPaidAmount: "0",
+        outstandingAmount: "0",
       })
       .returning();
     distributor = inserted;
   }
 
   console.log(`Using distributor: ${distributor.name} (${distributor.id})`);
+
+  const [cashWallet, bankWallet] = await Promise.all([
+    db.query.wallets.findFirst({ where: eq(wallets.type, "cash") }),
+    db.query.wallets.findFirst({ where: eq(wallets.type, "bank") }),
+  ]);
+  if (!cashWallet || !bankWallet) {
+    throw new Error("Create one cash account and one bank account before running this seed");
+  }
 
   // ── 5. Check if invoices already exist (idempotency) ────────────────────
   const existingInvoiceCount = await db
@@ -226,7 +235,7 @@ async function seedDistributorLedger() {
   for (const inv of invoiceData) {
     const invoiceDate = subDays(new Date(), inv.daysAgo);
     const invoiceId = createId();
-    const slipNumber = `SLIP-${slipCounter++}`;
+    const invoiceNumber = `INV-SEED-${slipCounter++}`;
 
     // Calculate totals
     const totalPrice = inv.cash + inv.credit;
@@ -234,6 +243,11 @@ async function seedDistributorLedger() {
     console.log(`Creating invoice from ${inv.daysAgo} days ago: PKR ${totalPrice.toLocaleString()}`);
 
     // Create invoice
+    const laterPayment =
+      inv.status === "paid" ? inv.credit : (inv.paidSoFar ?? 0);
+    const paidAmount = inv.cash + laterPayment;
+    const outstandingAmount = Math.max(0, totalPrice - paidAmount);
+
     await db.insert(invoices).values({
       id: invoiceId,
       date: invoiceDate,
@@ -241,13 +255,19 @@ async function seedDistributorLedger() {
       warehouseId: warehouse.id,
       performedById: adminUser.id,
       salesmanId: salesman.id,
-      slipNumber,
-      cash: inv.cash.toString(),
-      credit: inv.credit.toString(),
+      invoiceNumber,
+      paidAmount: paidAmount.toString(),
+      outstandingAmount: outstandingAmount.toString(),
       amount: totalPrice.toString(),
       totalPrice: totalPrice.toString(),
-      status: inv.status,
-      creditReturnDate: inv.credit > 0 ? addDays(invoiceDate, 30) : null,
+      status: "saved",
+      paymentStatus:
+        outstandingAmount === 0
+          ? "paid"
+          : paidAmount > 0
+            ? "partially_paid"
+            : "unpaid",
+      paymentDueDate: outstandingAmount > 0 ? addDays(invoiceDate, 30) : null,
       remarks: "Monthly bulk order",
     });
 
@@ -273,12 +293,13 @@ async function seedDistributorLedger() {
       const amountRecovered = inv.paidSoFar || 0;
       await db.insert(slipRecords).values({
         id: createId(),
-        slipNumber,
+        slipNumber: invoiceNumber,
         invoiceId,
         customerId: distributor.id,
         salesmanId: salesman.id,
-        amountDue: inv.credit.toString(),
-        amountRecovered: amountRecovered.toString(),
+        invoiceAmount: totalPrice.toString(),
+        paidAmount: paidAmount.toString(),
+        outstandingAmount: outstandingAmount.toString(),
         status: inv.slipStatus,
         recoveryStatus: inv.slipStatus === "closed" ? "resolved" : inv.slipStatus === "partially_recovered" ? "in_progress" : "pending",
         issuedAt: invoiceDate,
@@ -296,8 +317,14 @@ async function seedDistributorLedger() {
         invoiceId,
         amount: inv.cash.toString(),
         method: "cash",
+        status: "confirmed",
+        walletId: cashWallet.id,
         recordedById: adminUser.id,
         paymentDate: invoiceDate,
+        effectiveDate: invoiceDate,
+        source: "invoice_creation",
+        confirmedById: adminUser.id,
+        confirmedAt: invoiceDate,
         notes: "Cash payment at time of delivery",
       });
       totalPayments += inv.cash;
@@ -311,9 +338,16 @@ async function seedDistributorLedger() {
         invoiceId,
         amount: inv.paidSoFar.toString(),
         method: "bank_transfer",
+        status: "confirmed",
+        walletId: bankWallet.id,
         reference: `TRF-${Math.floor(Math.random() * 1000000)}`,
         recordedById: adminUser.id,
         paymentDate,
+        effectiveDate: paymentDate,
+        source: "recovery",
+        sourceRecordId: `seed-partial-${invoiceId}`,
+        confirmedById: adminUser.id,
+        confirmedAt: paymentDate,
         notes: "Partial payment via bank transfer",
       });
       totalPayments += inv.paidSoFar;
@@ -327,9 +361,16 @@ async function seedDistributorLedger() {
         invoiceId,
         amount: inv.credit.toString(),
         method: "bank_transfer",
+        status: "confirmed",
+        walletId: bankWallet.id,
         reference: `TRF-${Math.floor(Math.random() * 1000000)}`,
         recordedById: adminUser.id,
         paymentDate,
+        effectiveDate: paymentDate,
+        source: "recovery",
+        sourceRecordId: `seed-final-${invoiceId}`,
+        confirmedById: adminUser.id,
+        confirmedAt: paymentDate,
         notes: "Credit payment via bank transfer",
       });
       totalPayments += inv.credit;
@@ -345,15 +386,15 @@ async function seedDistributorLedger() {
     .update(customers)
     .set({
       totalSale: totalSales.toString(),
-      payment: totalPayments.toString(),
-      credit: outstandingCredit.toString(),
+      totalPaidAmount: totalPayments.toString(),
+      outstandingAmount: outstandingCredit.toString(),
     })
     .where(eq(customers.id, distributor.id));
 
   console.log("\n✅ Distributor ledger seed completed!");
   console.log(`   Total Sales: PKR ${totalSales.toLocaleString()}`);
   console.log(`   Total Payments: PKR ${totalPayments.toLocaleString()}`);
-  console.log(`   Outstanding Credit: PKR ${outstandingCredit.toLocaleString()}`);
+  console.log(`   Outstanding Amount: PKR ${outstandingCredit.toLocaleString()}`);
   console.log(`   Invoices Created: ${invoiceData.length}`);
   console.log(`\n📍 Navigate to: /sales/people/distributors/${distributor.id}/ledger`);
 

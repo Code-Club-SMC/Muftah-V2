@@ -85,11 +85,11 @@ export const InvoicesTable = ({ onSheetOpenChange }: Props) => {
 
   const columns: ColumnDef<any>[] = [
     {
-      accessorKey: "slipNumber",
+      accessorKey: "invoiceNumber",
       header: "Invoice No.",
       cell: ({ row }) => (
         <span className="text-sm font-mono font-medium text-primary tabular-nums">
-          {row.original.slipNumber || "—"}
+          {row.original.invoiceNumber || "—"}
         </span>
       ),
     },
@@ -108,7 +108,7 @@ export const InvoicesTable = ({ onSheetOpenChange }: Props) => {
       cell: ({ row }) => (
         <div className="flex flex-col">
           <span className="font-medium text-sm">
-            {row.original.customer?.name || "Cash / Walk-in"}
+            {row.original.customer?.name || "Walk-in Customer"}
           </span>
           {row.original.customer?.customerType && (
             <span className="text-[10px] text-muted-foreground capitalize">
@@ -128,10 +128,10 @@ export const InvoicesTable = ({ onSheetOpenChange }: Props) => {
       ),
     },
     {
-      accessorKey: "cash",
-      header: "Cash Paid",
+      accessorKey: "paidAmount",
+      header: "Paid Amount",
       cell: ({ row }) => {
-        const val = Number(row.original.cash);
+        const val = Number(row.original.paidAmount);
         return (
           <span className={cn("tabular-nums text-sm font-medium", val > 0 ? "text-green-600" : "text-muted-foreground")}>
             {PKR(val)}
@@ -140,10 +140,10 @@ export const InvoicesTable = ({ onSheetOpenChange }: Props) => {
       },
     },
     {
-      accessorKey: "credit",
-      header: "Credit",
+      accessorKey: "outstandingAmount",
+      header: "Outstanding Amount",
       cell: ({ row }) => {
-        const val = Number(row.original.credit);
+        const val = Number(row.original.outstandingAmount);
         return val > 0 ? (
           <Badge variant="destructive" className="tabular-nums font-semibold text-xs">
             {PKR(val)}
