@@ -1,1 +1,0 @@
-CREATE UNIQUE INDEX "failed_prod_recovery_run_chemical_unique_idx" ON "failed_production_chemical_recoveries" USING btree ("production_run_id","chemical_id");

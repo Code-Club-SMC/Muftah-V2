@@ -1,6 +1,0 @@
-ALTER TABLE "slip_records" DROP CONSTRAINT "slip_records_settlement_amounts_check";--> statement-breakpoint
-ALTER TABLE "invoices" DROP CONSTRAINT "invoices_settlement_amounts_check";--> statement-breakpoint
-ALTER TABLE "slip_records" ADD COLUMN "returned_amount" numeric(12, 2) DEFAULT '0' NOT NULL;--> statement-breakpoint
-ALTER TABLE "invoices" ADD COLUMN "returned_amount" numeric(12, 2) DEFAULT '0' NOT NULL;--> statement-breakpoint
-ALTER TABLE "slip_records" ADD CONSTRAINT "slip_records_settlement_amounts_check" CHECK ("slip_records"."invoice_amount" >= 0 and "slip_records"."paid_amount" >= 0 and "slip_records"."returned_amount" >= 0 and "slip_records"."outstanding_amount" >= 0 and "slip_records"."paid_amount" + "slip_records"."returned_amount" + "slip_records"."outstanding_amount" = "slip_records"."invoice_amount");--> statement-breakpoint
-ALTER TABLE "invoices" ADD CONSTRAINT "invoices_settlement_amounts_check" CHECK ("invoices"."paid_amount" >= 0 and "invoices"."returned_amount" >= 0 and "invoices"."outstanding_amount" >= 0 and "invoices"."paid_amount" + "invoices"."returned_amount" + "invoices"."outstanding_amount" = "invoices"."total_price");

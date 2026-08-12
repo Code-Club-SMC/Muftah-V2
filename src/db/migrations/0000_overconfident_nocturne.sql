@@ -63,21 +63,6 @@ CREATE TABLE "verification" (
 	"updated_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "suppliers" (
-	"id" text PRIMARY KEY NOT NULL,
-	"supplier_name" text NOT NULL,
-	"supplier_shop_name" text,
-	"email" text,
-	"phone" text,
-	"national_id" text,
-	"address" text,
-	"city" text,
-	"state" text,
-	"notes" text,
-	"created_at" timestamp DEFAULT now() NOT NULL,
-	"updated_at" timestamp DEFAULT now() NOT NULL
-);
---> statement-breakpoint
 CREATE TABLE "category_field_options" (
 	"id" text PRIMARY KEY NOT NULL,
 	"field_id" text NOT NULL,
@@ -160,6 +145,8 @@ CREATE TABLE "transactions" (
 	"amount" numeric(12, 2) NOT NULL,
 	"source" text NOT NULL,
 	"reference_id" text,
+	"effective_date" timestamp with time zone DEFAULT now() NOT NULL,
+	"reversal_of_transaction_id" text,
 	"performed_by_id" text NOT NULL,
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	"updated_at" timestamp DEFAULT now() NOT NULL
@@ -196,8 +183,6 @@ CREATE TABLE "attendance" (
 	"date" date NOT NULL,
 	"check_in" time,
 	"check_out" time,
-	"check_in_2" time,
-	"check_out_2" time,
 	"duty_hours" numeric(5, 2) DEFAULT '0',
 	"overtime_hours" numeric(5, 2) DEFAULT '0',
 	"status" "attendance_status" DEFAULT 'present' NOT NULL,
@@ -207,11 +192,50 @@ CREATE TABLE "attendance" (
 	"overtime_remarks" text,
 	"early_departure_status" text DEFAULT 'none',
 	"check_out_reason" text,
+	"shift_violations" jsonb,
 	"is_approved_leave" boolean DEFAULT false,
 	"leave_approval_status" text DEFAULT 'none',
 	"leave_type" "leave_type",
 	"entry_source" text DEFAULT 'manual',
 	"notes" text,
+	"area_visited" text,
+	"is_company_vehicle" boolean DEFAULT false,
+	"payment_mode" text,
+	"distance_km" numeric(8, 2) DEFAULT '0',
+	"per_km_rate" numeric(8, 2) DEFAULT '0',
+	"petrol_amount" numeric(10, 2) DEFAULT '0',
+	"sale_amount" numeric(12, 2) DEFAULT '0',
+	"recovery_amount" numeric(12, 2) DEFAULT '0',
+	"return_amount" numeric(12, 2) DEFAULT '0',
+	"shop_type" text,
+	"slip_numbers" text,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "attendance_punches" (
+	"id" text PRIMARY KEY NOT NULL,
+	"employee_id" text NOT NULL,
+	"timestamp" timestamp with time zone NOT NULL,
+	"attendance_date" date NOT NULL,
+	"direction" text NOT NULL,
+	"source" text DEFAULT 'qr_terminal' NOT NULL,
+	"terminal_user_id" text,
+	"note" text,
+	"offline_import_row_id" text,
+	"offline_import_identity" text,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "attendance_scan_attempts" (
+	"id" text PRIMARY KEY NOT NULL,
+	"employee_id" text,
+	"payload" text NOT NULL,
+	"reason" text NOT NULL,
+	"message" text NOT NULL,
+	"terminal_user_id" text,
+	"timestamp" timestamp with time zone NOT NULL,
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	"updated_at" timestamp DEFAULT now() NOT NULL
 );
@@ -264,9 +288,12 @@ CREATE TABLE "employees" (
 	"bank_name" text,
 	"bank_account_number" text,
 	"standard_duty_hours" integer DEFAULT 8 NOT NULL,
+	"shifts" jsonb DEFAULT '[]'::jsonb NOT NULL,
 	"basic_salary" numeric(12, 2) DEFAULT '0',
 	"rest_days" jsonb DEFAULT '[0]'::jsonb NOT NULL,
 	"allowance_config" jsonb DEFAULT '[{"id":"houseRent","name":"House Rent","amount":0,"deductions":{"absent":true,"annualLeave":false,"sickLeave":false,"specialLeave":true,"lateArrival":false,"earlyLeaving":false}},{"id":"utilities","name":"Utilities","amount":0,"deductions":{"absent":true,"annualLeave":false,"sickLeave":false,"specialLeave":true,"lateArrival":false,"earlyLeaving":false}},{"id":"conveyance","name":"Conveyance Allowance","amount":0,"deductions":{"absent":true,"annualLeave":true,"sickLeave":false,"specialLeave":true,"lateArrival":false,"earlyLeaving":false}},{"id":"fuel","name":"Fuel Allowance","amount":0,"deductions":{"absent":true,"annualLeave":true,"sickLeave":false,"specialLeave":true,"lateArrival":false,"earlyLeaving":false}},{"id":"mobile","name":"Mobile Allowance","amount":0,"deductions":{"absent":true,"annualLeave":false,"sickLeave":false,"specialLeave":true,"lateArrival":false,"earlyLeaving":false}},{"id":"bikeMaintenance","name":"Bike Maintenance","amount":0,"deductions":{"absent":true,"annualLeave":false,"sickLeave":false,"specialLeave":true,"lateArrival":false,"earlyLeaving":false}},{"id":"technical","name":"Technical Allowance","amount":0,"deductions":{"absent":true,"annualLeave":false,"sickLeave":false,"specialLeave":false,"lateArrival":false,"earlyLeaving":false}},{"id":"special","name":"Special Allowance","amount":0,"deductions":{"absent":false,"annualLeave":false,"sickLeave":false,"specialLeave":false,"lateArrival":false,"earlyLeaving":false}},{"id":"nightShift","name":"Night Shift Allowance","amount":0,"deductions":{"absent":false,"annualLeave":false,"sickLeave":false,"specialLeave":false,"lateArrival":false,"earlyLeaving":false}}]'::jsonb,
+	"basic_salary_deduction_policy_override_enabled" boolean DEFAULT false NOT NULL,
+	"basic_salary_deduction_policy_override" jsonb,
 	"annual_leave_balance" integer DEFAULT 14,
 	"annual_leave_allowance" integer DEFAULT 14,
 	"leave_year_start" date,
@@ -276,6 +303,14 @@ CREATE TABLE "employees" (
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	"updated_at" timestamp DEFAULT now() NOT NULL,
 	CONSTRAINT "employees_employee_code_unique" UNIQUE("employee_code")
+);
+--> statement-breakpoint
+CREATE TABLE "hr_payroll_settings" (
+	"id" text PRIMARY KEY DEFAULT 'default' NOT NULL,
+	"basic_salary_deduction_policy" jsonb DEFAULT '{"absent":true,"annualLeave":false,"sickLeave":false,"specialLeave":false,"lateArrival":true,"earlyLeaving":true,"notEmployed":true}'::jsonb NOT NULL,
+	"updated_by" text,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "night_shift_rates" (
@@ -322,6 +357,7 @@ CREATE TABLE "payslips" (
 	"bonus_amount" numeric(12, 2) DEFAULT '0',
 	"absent_deduction" numeric(12, 2) DEFAULT '0',
 	"leave_deduction" numeric(12, 2) DEFAULT '0',
+	"not_employed_deduction" numeric(12, 2) DEFAULT '0',
 	"advance_deduction" numeric(12, 2) DEFAULT '0',
 	"tax_deduction" numeric(12, 2) DEFAULT '0',
 	"other_deduction" numeric(12, 2) DEFAULT '0',
@@ -433,6 +469,23 @@ CREATE TABLE "chemicals" (
 	"updated_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
+CREATE TABLE "failed_production_chemical_recoveries" (
+	"id" text PRIMARY KEY NOT NULL,
+	"production_run_id" text NOT NULL,
+	"production_material_used_id" text NOT NULL,
+	"warehouse_id" text NOT NULL,
+	"chemical_id" text NOT NULL,
+	"expected_quantity" numeric(12, 3) NOT NULL,
+	"recovered_quantity" numeric(12, 3) NOT NULL,
+	"loss_quantity" numeric(12, 3) NOT NULL,
+	"cost_per_unit" numeric(10, 2) NOT NULL,
+	"loss_amount" numeric(12, 2) NOT NULL,
+	"notes" text,
+	"settled_by_id" text NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
 CREATE TABLE "finished_goods_stock" (
 	"id" text PRIMARY KEY NOT NULL,
 	"warehouse_id" text NOT NULL,
@@ -492,9 +545,23 @@ CREATE TABLE "production_materials_used" (
 	"production_run_id" text NOT NULL,
 	"material_type" text NOT NULL,
 	"material_id" text NOT NULL,
+	"progress_log_id" text,
 	"quantity_used" numeric(12, 3) NOT NULL,
 	"cost_per_unit" numeric(10, 2) NOT NULL,
 	"total_cost" numeric(12, 2) NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "production_progress_logs" (
+	"id" text PRIMARY KEY NOT NULL,
+	"production_run_id" text NOT NULL,
+	"units_produced" integer NOT NULL,
+	"original_units_produced" integer,
+	"created_by_id" text NOT NULL,
+	"edited_by_id" text,
+	"edit_reason" text,
+	"edited_at" timestamp,
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	"updated_at" timestamp DEFAULT now() NOT NULL
 );
@@ -765,6 +832,310 @@ CREATE TABLE "stock_count_sessions" (
 	"notes" text
 );
 --> statement-breakpoint
+CREATE TABLE "attendance_import_batches" (
+	"id" text PRIMARY KEY NOT NULL,
+	"workbook_id" text,
+	"outage_window_id" text,
+	"uploaded_by_user_id" text NOT NULL,
+	"reviewed_by_user_id" text,
+	"original_filename" text NOT NULL,
+	"file_sha256" text NOT NULL,
+	"byte_size" integer NOT NULL,
+	"status" text DEFAULT 'uploaded' NOT NULL,
+	"total_rows" integer DEFAULT 0 NOT NULL,
+	"ready_rows" integer DEFAULT 0 NOT NULL,
+	"duplicate_rows" integer DEFAULT 0 NOT NULL,
+	"review_rows" integer DEFAULT 0 NOT NULL,
+	"invalid_rows" integer DEFAULT 0 NOT NULL,
+	"blocked_rows" integer DEFAULT 0 NOT NULL,
+	"imported_rows" integer DEFAULT 0 NOT NULL,
+	"excluded_rows" integer DEFAULT 0 NOT NULL,
+	"last_error" text,
+	"processing_lease_id" text,
+	"processing_lease_expires_at" timestamp with time zone,
+	"uploaded_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"reviewed_at" timestamp with time zone,
+	"completed_at" timestamp with time zone,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "attendance_import_batches_byte_size_check" CHECK ("attendance_import_batches"."byte_size" > 0),
+	CONSTRAINT "attendance_import_batches_counts_check" CHECK ("attendance_import_batches"."total_rows" >= 0 AND "attendance_import_batches"."ready_rows" >= 0 AND "attendance_import_batches"."duplicate_rows" >= 0 AND "attendance_import_batches"."review_rows" >= 0 AND "attendance_import_batches"."invalid_rows" >= 0 AND "attendance_import_batches"."blocked_rows" >= 0 AND "attendance_import_batches"."imported_rows" >= 0 AND "attendance_import_batches"."excluded_rows" >= 0),
+	CONSTRAINT "attendance_import_batches_reviewer_check" CHECK ("attendance_import_batches"."reviewed_by_user_id" IS NULL OR "attendance_import_batches"."reviewed_by_user_id" <> "attendance_import_batches"."uploaded_by_user_id")
+);
+--> statement-breakpoint
+CREATE TABLE "attendance_import_rows" (
+	"id" text PRIMARY KEY NOT NULL,
+	"batch_id" text NOT NULL,
+	"workbook_id" text NOT NULL,
+	"worksheet_row_number" integer NOT NULL,
+	"record_token" text NOT NULL,
+	"raw_employee_code" text,
+	"raw_date" text,
+	"raw_time" text,
+	"raw_direction" text,
+	"raw_note" text,
+	"normalized_timestamp" timestamp with time zone,
+	"attendance_date" date,
+	"employee_id" text,
+	"content_hash" text,
+	"status" text DEFAULT 'pending' NOT NULL,
+	"reason_code" text,
+	"reason_message" text,
+	"punch_id" text,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "attendance_import_rows_row_number_check" CHECK ("attendance_import_rows"."worksheet_row_number" > 0)
+);
+--> statement-breakpoint
+CREATE TABLE "attendance_offline_workbooks" (
+	"id" text PRIMARY KEY NOT NULL,
+	"assigned_operator_user_id" text NOT NULL,
+	"template_version" integer NOT NULL,
+	"row_capacity" integer NOT NULL,
+	"signing_version" integer NOT NULL,
+	"status" text DEFAULT 'active' NOT NULL,
+	"issued_by_user_id" text NOT NULL,
+	"replaced_by_workbook_id" text,
+	"retired_by_user_id" text,
+	"retired_reason" text,
+	"issued_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"retired_at" timestamp with time zone,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "attendance_offline_workbooks_versions_check" CHECK ("attendance_offline_workbooks"."template_version" > 0 AND "attendance_offline_workbooks"."signing_version" > 0 AND "attendance_offline_workbooks"."row_capacity" > 0)
+);
+--> statement-breakpoint
+CREATE TABLE "attendance_outage_windows" (
+	"id" text PRIMARY KEY NOT NULL,
+	"workbook_id" text NOT NULL,
+	"starts_at" timestamp with time zone NOT NULL,
+	"ends_at" timestamp with time zone NOT NULL,
+	"reason" text NOT NULL,
+	"status" text DEFAULT 'pending' NOT NULL,
+	"declared_by_user_id" text NOT NULL,
+	"confirmed_by_user_id" text,
+	"confirmed_at" timestamp with time zone,
+	"rejected_at" timestamp with time zone,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "attendance_outage_windows_range_check" CHECK ("attendance_outage_windows"."starts_at" < "attendance_outage_windows"."ends_at"),
+	CONSTRAINT "attendance_outage_windows_actor_check" CHECK ("attendance_outage_windows"."confirmed_by_user_id" IS NULL OR "attendance_outage_windows"."confirmed_by_user_id" <> "attendance_outage_windows"."declared_by_user_id")
+);
+--> statement-breakpoint
+CREATE TABLE "attendance_punch_correction_audit" (
+	"id" text PRIMARY KEY NOT NULL,
+	"original_punch_id" text NOT NULL,
+	"original_import_row_id" text,
+	"action" text NOT NULL,
+	"old_values" jsonb NOT NULL,
+	"new_values" jsonb,
+	"reason" text NOT NULL,
+	"changed_by_user_id" text NOT NULL,
+	"changed_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "attendance_terminal_heartbeats" (
+	"id" text PRIMARY KEY NOT NULL,
+	"terminal_user_id" text NOT NULL,
+	"minute_bucket" timestamp with time zone NOT NULL,
+	"observed_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "payroll_attendance_invalidations" (
+	"id" text PRIMARY KEY NOT NULL,
+	"payroll_id" text NOT NULL,
+	"import_batch_id" text NOT NULL,
+	"affected_summary" jsonb NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"resolved_at" timestamp with time zone,
+	"resolved_by_user_id" text
+);
+--> statement-breakpoint
+CREATE TABLE "offline_sales_import_batches" (
+	"id" text PRIMARY KEY NOT NULL,
+	"workbook_id" text,
+	"original_filename" text NOT NULL,
+	"file_sha256" text NOT NULL,
+	"byte_size" integer NOT NULL,
+	"outage_started_at" timestamp with time zone NOT NULL,
+	"outage_ended_at" timestamp with time zone NOT NULL,
+	"outage_reason" text NOT NULL,
+	"uploaded_by_user_id" text NOT NULL,
+	"reviewed_by_user_id" text,
+	"status" text DEFAULT 'uploaded' NOT NULL,
+	"total_invoices" integer DEFAULT 0 NOT NULL,
+	"ready_invoices" integer DEFAULT 0 NOT NULL,
+	"warning_invoices" integer DEFAULT 0 NOT NULL,
+	"duplicate_invoices" integer DEFAULT 0 NOT NULL,
+	"invalid_invoices" integer DEFAULT 0 NOT NULL,
+	"needs_review_invoices" integer DEFAULT 0 NOT NULL,
+	"posted_invoices" integer DEFAULT 0 NOT NULL,
+	"excluded_invoices" integer DEFAULT 0 NOT NULL,
+	"processing_lease_id" text,
+	"processing_lease_expires_at" timestamp with time zone,
+	"last_error" text,
+	"uploaded_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"reviewed_at" timestamp with time zone,
+	"completed_at" timestamp with time zone,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "offline_sales_batches_size_check" CHECK ("offline_sales_import_batches"."byte_size" > 0),
+	CONSTRAINT "offline_sales_batches_outage_range_check" CHECK ("offline_sales_import_batches"."outage_started_at" < "offline_sales_import_batches"."outage_ended_at"),
+	CONSTRAINT "offline_sales_batches_counts_check" CHECK ("offline_sales_import_batches"."total_invoices" >= 0 and "offline_sales_import_batches"."ready_invoices" >= 0 and "offline_sales_import_batches"."warning_invoices" >= 0 and "offline_sales_import_batches"."duplicate_invoices" >= 0 and "offline_sales_import_batches"."invalid_invoices" >= 0 and "offline_sales_import_batches"."needs_review_invoices" >= 0 and "offline_sales_import_batches"."posted_invoices" >= 0 and "offline_sales_import_batches"."excluded_invoices" >= 0),
+	CONSTRAINT "offline_sales_batches_workbook_required_check" CHECK ("offline_sales_import_batches"."status" = 'rejected' or "offline_sales_import_batches"."workbook_id" is not null)
+);
+--> statement-breakpoint
+CREATE TABLE "offline_sales_invoice_slots" (
+	"id" text PRIMARY KEY NOT NULL,
+	"workbook_id" text NOT NULL,
+	"slot_number" integer NOT NULL,
+	"reserved_serial" integer NOT NULL,
+	"record_token" text NOT NULL,
+	"status" text DEFAULT 'unused' NOT NULL,
+	"staged_content_hash" text,
+	"staged_invoice_id" text,
+	"posted_invoice_id" text,
+	"consumed_at" timestamp with time zone,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "offline_sales_slots_numbers_check" CHECK ("offline_sales_invoice_slots"."slot_number" > 0 and "offline_sales_invoice_slots"."reserved_serial" > 0)
+);
+--> statement-breakpoint
+CREATE TABLE "offline_sales_staged_invoices" (
+	"id" text PRIMARY KEY NOT NULL,
+	"batch_id" text NOT NULL,
+	"workbook_id" text NOT NULL,
+	"slot_id" text NOT NULL,
+	"record_token" text NOT NULL,
+	"invoice_number" text NOT NULL,
+	"content_hash" text NOT NULL,
+	"worksheet_row_number" integer NOT NULL,
+	"sale_type" text NOT NULL,
+	"business_date" timestamp with time zone NOT NULL,
+	"distributor_code" text,
+	"customer_id" text,
+	"order_booker_code" text,
+	"bill_number" integer,
+	"order_id" text,
+	"payment_due_date" timestamp with time zone,
+	"remarks" text,
+	"invoice_amount" numeric(12, 2) DEFAULT '0' NOT NULL,
+	"paid_amount" numeric(12, 2) DEFAULT '0' NOT NULL,
+	"pending_amount" numeric(12, 2) DEFAULT '0' NOT NULL,
+	"outstanding_amount" numeric(12, 2) DEFAULT '0' NOT NULL,
+	"status" text NOT NULL,
+	"issue_codes" jsonb DEFAULT '[]'::jsonb NOT NULL,
+	"issue_details" jsonb DEFAULT '[]'::jsonb NOT NULL,
+	"warnings_acknowledged" boolean DEFAULT false NOT NULL,
+	"review_resolution" text,
+	"reviewed_by_user_id" text,
+	"reviewed_at" timestamp with time zone,
+	"posted_invoice_id" text,
+	"posted_at" timestamp with time zone,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "offline_sales_staged_amounts_check" CHECK ("offline_sales_staged_invoices"."invoice_amount" >= 0 and "offline_sales_staged_invoices"."paid_amount" >= 0 and "offline_sales_staged_invoices"."pending_amount" >= 0 and "offline_sales_staged_invoices"."outstanding_amount" >= 0 and "offline_sales_staged_invoices"."paid_amount" + "offline_sales_staged_invoices"."outstanding_amount" = "offline_sales_staged_invoices"."invoice_amount" and "offline_sales_staged_invoices"."pending_amount" <= "offline_sales_staged_invoices"."outstanding_amount"),
+	CONSTRAINT "offline_sales_staged_row_check" CHECK ("offline_sales_staged_invoices"."worksheet_row_number" > 0)
+);
+--> statement-breakpoint
+CREATE TABLE "offline_sales_staged_items" (
+	"id" text PRIMARY KEY NOT NULL,
+	"staged_invoice_id" text NOT NULL,
+	"worksheet_row_number" integer NOT NULL,
+	"product_code" text NOT NULL,
+	"recipe_id" text,
+	"carton_quantity" integer NOT NULL,
+	"loose_unit_quantity" integer NOT NULL,
+	"packs_per_carton" integer NOT NULL,
+	"base_carton_price" numeric(12, 2) NOT NULL,
+	"free_cartons" integer DEFAULT 0 NOT NULL,
+	"charged_units" integer NOT NULL,
+	"dispatched_units" integer NOT NULL,
+	"line_amount" numeric(12, 2) NOT NULL,
+	"wac_per_pack" numeric(12, 4) NOT NULL,
+	"stock_units_snapshot" integer NOT NULL,
+	"physical_stock_confirmed" boolean DEFAULT false NOT NULL,
+	"source_columns" jsonb NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "offline_sales_staged_items_quantities_check" CHECK ("offline_sales_staged_items"."worksheet_row_number" > 0 and "offline_sales_staged_items"."carton_quantity" >= 0 and "offline_sales_staged_items"."loose_unit_quantity" >= 0 and "offline_sales_staged_items"."packs_per_carton" > 0 and "offline_sales_staged_items"."free_cartons" >= 0 and "offline_sales_staged_items"."charged_units" >= 0 and "offline_sales_staged_items"."dispatched_units" >= 0 and "offline_sales_staged_items"."base_carton_price" >= 0 and "offline_sales_staged_items"."line_amount" >= 0 and "offline_sales_staged_items"."wac_per_pack" >= 0 and "offline_sales_staged_items"."stock_units_snapshot" >= 0)
+);
+--> statement-breakpoint
+CREATE TABLE "offline_sales_staged_payments" (
+	"id" text PRIMARY KEY NOT NULL,
+	"staged_invoice_id" text NOT NULL,
+	"worksheet_row_number" integer NOT NULL,
+	"method" text NOT NULL,
+	"amount" numeric(12, 2) NOT NULL,
+	"wallet_code" text NOT NULL,
+	"wallet_id" text,
+	"reference" text,
+	"cheque_number" text,
+	"cheque_bank" text,
+	"cheque_date" timestamp with time zone,
+	"payment_date" timestamp with time zone NOT NULL,
+	"source_columns" jsonb NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "offline_sales_staged_payments_amount_check" CHECK ("offline_sales_staged_payments"."worksheet_row_number" > 0 and "offline_sales_staged_payments"."amount" > 0)
+);
+--> statement-breakpoint
+CREATE TABLE "offline_sales_workbooks" (
+	"id" text PRIMARY KEY NOT NULL,
+	"factory_code" text NOT NULL,
+	"operator_user_id" text NOT NULL,
+	"issued_by_user_id" text NOT NULL,
+	"status" text DEFAULT 'active' NOT NULL,
+	"template_version" integer NOT NULL,
+	"signing_version" integer NOT NULL,
+	"invoice_capacity" integer NOT NULL,
+	"item_capacity" integer NOT NULL,
+	"payment_capacity" integer NOT NULL,
+	"reference_snapshot" jsonb NOT NULL,
+	"snapshot_sha256" text NOT NULL,
+	"snapshot_signature" text NOT NULL,
+	"manifest_signature" text NOT NULL,
+	"replacement_workbook_id" text,
+	"issued_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"closed_by_user_id" text,
+	"closed_at" timestamp with time zone,
+	"force_retired_by_user_id" text,
+	"force_retired_at" timestamp with time zone,
+	"force_retired_reason" text,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "offline_sales_workbooks_factory_check" CHECK ("offline_sales_workbooks"."factory_code" = 'F01'),
+	CONSTRAINT "offline_sales_workbooks_capacities_check" CHECK ("offline_sales_workbooks"."template_version" > 0 and "offline_sales_workbooks"."signing_version" > 0 and "offline_sales_workbooks"."invoice_capacity" > 0 and "offline_sales_workbooks"."item_capacity" > 0 and "offline_sales_workbooks"."payment_capacity" > 0)
+);
+--> statement-breakpoint
+CREATE TABLE "stock_reconciliation_issues" (
+	"id" text PRIMARY KEY NOT NULL,
+	"invoice_id" text NOT NULL,
+	"invoice_item_id" text NOT NULL,
+	"recipe_id" text NOT NULL,
+	"warehouse_id" text NOT NULL,
+	"requested_units" integer NOT NULL,
+	"available_units" integer NOT NULL,
+	"deficit_units" integer NOT NULL,
+	"snapshot_stock_units" integer NOT NULL,
+	"live_stock_units" integer NOT NULL,
+	"status" text DEFAULT 'open' NOT NULL,
+	"resolved_by_user_id" text,
+	"resolution_reason" text,
+	"resolution_reference" text,
+	"resolution_type" text,
+	"resolved_at" timestamp with time zone,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "stock_reconciliation_issues_deficit_check" CHECK ("stock_reconciliation_issues"."requested_units" > 0 and "stock_reconciliation_issues"."available_units" >= 0 and "stock_reconciliation_issues"."deficit_units" > 0 and "stock_reconciliation_issues"."deficit_units" = "stock_reconciliation_issues"."requested_units" - "stock_reconciliation_issues"."available_units"),
+	CONSTRAINT "stock_reconciliation_issues_resolution_check" CHECK ((
+        "stock_reconciliation_issues"."status" = 'open' and "stock_reconciliation_issues"."resolved_by_user_id" is null and "stock_reconciliation_issues"."resolution_reason" is null and "stock_reconciliation_issues"."resolution_reference" is null and "stock_reconciliation_issues"."resolution_type" is null and "stock_reconciliation_issues"."resolved_at" is null
+      ) or (
+        "stock_reconciliation_issues"."status" = 'resolved' and "stock_reconciliation_issues"."resolved_by_user_id" is not null and nullif(btrim("stock_reconciliation_issues"."resolution_reason"), '') is not null and nullif(btrim("stock_reconciliation_issues"."resolution_reference"), '') is not null and "stock_reconciliation_issues"."resolution_type" in ('counted_adjustment', 'missing_record') and "stock_reconciliation_issues"."resolved_at" is not null
+      ))
+);
+--> statement-breakpoint
 CREATE TABLE "app_permissions" (
 	"id" text PRIMARY KEY NOT NULL,
 	"key" text NOT NULL,
@@ -815,6 +1186,7 @@ CREATE TABLE "commission_records" (
 	"applied_rate" numeric(5, 2) NOT NULL,
 	"commission_amount" numeric(12, 2) NOT NULL,
 	"calculated_at" timestamp DEFAULT now() NOT NULL,
+	"earned_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"status" text DEFAULT 'accrued' NOT NULL,
 	"paid_in_payslip_id" text,
 	"created_at" timestamp DEFAULT now() NOT NULL,
@@ -863,6 +1235,18 @@ CREATE TABLE "discount_rules" (
 	"updated_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
+CREATE TABLE "entity_recipe_rates" (
+	"id" text PRIMARY KEY NOT NULL,
+	"entity_type" text NOT NULL,
+	"entity_id" text NOT NULL,
+	"recipe_id" text NOT NULL,
+	"price_per_carton" numeric(12, 2) NOT NULL,
+	"updated_by_id" text,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "uq_entity_recipe_rates_entity_recipe" UNIQUE("entity_type","entity_id","recipe_id")
+);
+--> statement-breakpoint
 CREATE TABLE "invoice_timeline_events" (
 	"id" text PRIMARY KEY NOT NULL,
 	"invoice_id" text NOT NULL,
@@ -900,6 +1284,7 @@ CREATE TABLE "order_booker_trips" (
 	"order_booker_id" text NOT NULL,
 	"trip_date" timestamp NOT NULL,
 	"destination" text NOT NULL,
+	"shop_type" text DEFAULT 'old' NOT NULL,
 	"distance_km" numeric(8, 2) DEFAULT '0' NOT NULL,
 	"vehicle_type" text DEFAULT 'own_vehicle' NOT NULL,
 	"fuel_cost" numeric(12, 2) DEFAULT '0',
@@ -939,7 +1324,7 @@ CREATE TABLE "order_items" (
 --> statement-breakpoint
 CREATE TABLE "orders" (
 	"id" text PRIMARY KEY NOT NULL,
-	"bill_number" serial NOT NULL,
+	"bill_number" integer NOT NULL,
 	"order_booker_id" text NOT NULL,
 	"shopkeeper_name" text NOT NULL,
 	"shopkeeper_mobile" text,
@@ -951,7 +1336,8 @@ CREATE TABLE "orders" (
 	"fulfilled_amount" numeric(12, 2),
 	"notes" text,
 	"created_at" timestamp DEFAULT now() NOT NULL,
-	"updated_at" timestamp DEFAULT now() NOT NULL
+	"updated_at" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "uq_orders_order_booker_bill_number" UNIQUE("order_booker_id","bill_number")
 );
 --> statement-breakpoint
 CREATE TABLE "payments" (
@@ -959,14 +1345,52 @@ CREATE TABLE "payments" (
 	"customer_id" text NOT NULL,
 	"invoice_id" text NOT NULL,
 	"amount" numeric(12, 2) NOT NULL,
-	"method" text DEFAULT 'cash' NOT NULL,
+	"method" text NOT NULL,
+	"status" text NOT NULL,
+	"wallet_id" text,
 	"reference" text,
+	"cheque_number" text,
+	"cheque_bank" text,
+	"cheque_date" timestamp with time zone,
 	"expense_type" text,
 	"recorded_by_id" text NOT NULL,
-	"payment_date" timestamp DEFAULT now() NOT NULL,
+	"payment_date" timestamp with time zone NOT NULL,
+	"effective_date" timestamp with time zone,
+	"source" text NOT NULL,
+	"source_record_id" text,
+	"allocation_group_id" text,
+	"confirmed_by_id" text,
+	"confirmed_at" timestamp with time zone,
+	"resolved_by_id" text,
+	"resolved_at" timestamp with time zone,
+	"resolution_reason" text,
 	"notes" text,
 	"created_at" timestamp DEFAULT now() NOT NULL,
-	"updated_at" timestamp DEFAULT now() NOT NULL
+	"updated_at" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "payments_amount_positive_check" CHECK ("payments"."amount" > 0),
+	CONSTRAINT "payments_method_status_check" CHECK ((
+        ("payments"."method" in ('cash', 'expense_offset') and "payments"."status" in ('confirmed', 'reversed')) or
+        ("payments"."method" = 'bank_transfer' and "payments"."status" in ('pending', 'confirmed', 'cancelled', 'reversed')) or
+        ("payments"."method" = 'cheque' and "payments"."status" in ('pending', 'confirmed', 'returned', 'cancelled', 'reversed'))
+      )),
+	CONSTRAINT "payments_method_details_check" CHECK ((
+        ("payments"."method" = 'expense_offset' or "payments"."wallet_id" is not null) and
+        ("payments"."method" <> 'bank_transfer' or nullif(btrim("payments"."reference"), '') is not null) and
+        ("payments"."method" <> 'cheque' or (
+          nullif(btrim("payments"."cheque_number"), '') is not null and
+          nullif(btrim("payments"."cheque_bank"), '') is not null and
+          "payments"."cheque_date" is not null
+        ))
+      )),
+	CONSTRAINT "payments_confirmation_check" CHECK ((
+        ("payments"."status" in ('confirmed', 'reversed') and "payments"."effective_date" is not null and "payments"."confirmed_by_id" is not null and "payments"."confirmed_at" is not null) or
+        ("payments"."status" in ('pending', 'returned', 'cancelled') and "payments"."effective_date" is null and "payments"."confirmed_by_id" is null and "payments"."confirmed_at" is null)
+      )),
+	CONSTRAINT "payments_resolution_check" CHECK ((
+        ("payments"."status" in ('returned', 'cancelled', 'reversed') and "payments"."resolved_by_id" is not null and "payments"."resolved_at" is not null and nullif(btrim("payments"."resolution_reason"), '') is not null) or
+        ("payments"."status" in ('pending', 'confirmed') and "payments"."resolved_by_id" is null and "payments"."resolved_at" is null and "payments"."resolution_reason" is null)
+      )),
+	CONSTRAINT "payments_source_check" CHECK ("payments"."source" in ('invoice_creation', 'recovery', 'offline_import', 'adjustment'))
 );
 --> statement-breakpoint
 CREATE TABLE "price_change_log" (
@@ -1081,8 +1505,10 @@ CREATE TABLE "slip_records" (
 	"invoice_id" text NOT NULL,
 	"customer_id" text NOT NULL,
 	"salesman_id" text,
-	"amount_due" numeric(12, 2) DEFAULT '0' NOT NULL,
-	"amount_recovered" numeric(12, 2) DEFAULT '0' NOT NULL,
+	"invoice_amount" numeric(12, 2) DEFAULT '0' NOT NULL,
+	"paid_amount" numeric(12, 2) DEFAULT '0' NOT NULL,
+	"returned_amount" numeric(12, 2) DEFAULT '0' NOT NULL,
+	"outstanding_amount" numeric(12, 2) DEFAULT '0' NOT NULL,
 	"status" text DEFAULT 'open' NOT NULL,
 	"recovery_status" text,
 	"recovery_assigned_to_id" text,
@@ -1093,7 +1519,8 @@ CREATE TABLE "slip_records" (
 	"reconciled_at" timestamp,
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	"updated_at" timestamp DEFAULT now() NOT NULL,
-	CONSTRAINT "slip_records_slip_number_unique" UNIQUE("slip_number")
+	CONSTRAINT "slip_records_slip_number_unique" UNIQUE("slip_number"),
+	CONSTRAINT "slip_records_settlement_amounts_check" CHECK ("slip_records"."invoice_amount" >= 0 and "slip_records"."paid_amount" >= 0 and "slip_records"."returned_amount" >= 0 and "slip_records"."outstanding_amount" >= 0 and "slip_records"."paid_amount" + "slip_records"."returned_amount" + "slip_records"."outstanding_amount" = "slip_records"."invoice_amount")
 );
 --> statement-breakpoint
 CREATE TABLE "customers" (
@@ -1107,8 +1534,8 @@ CREATE TABLE "customers" (
 	"bank_account" text,
 	"mobile_number" text,
 	"total_sale" numeric(12, 2) DEFAULT '0',
-	"payment" numeric(12, 2) DEFAULT '0',
-	"credit" numeric(12, 2) DEFAULT '0',
+	"total_paid_amount" numeric(12, 2) DEFAULT '0' NOT NULL,
+	"outstanding_amount" numeric(12, 2) DEFAULT '0' NOT NULL,
 	"weight_sale_kg" numeric(12, 3) DEFAULT '0',
 	"expenses" numeric(12, 2) DEFAULT '0',
 	"average_per_kg" numeric(12, 2) DEFAULT '0',
@@ -1141,6 +1568,10 @@ CREATE TABLE "invoice_items" (
 	"tp_price" numeric(12, 2),
 	"margin_percent" numeric(12, 2),
 	"actual_pack_size" integer DEFAULT 0,
+	"charged_units" integer DEFAULT 0 NOT NULL,
+	"dispatched_units" integer DEFAULT 0 NOT NULL,
+	"fill_amount_snapshot" numeric(12, 3) DEFAULT '0' NOT NULL,
+	"fill_unit_snapshot" text,
 	"discount_rule_id" text,
 	"free_cartons" integer DEFAULT 0,
 	"is_price_override" boolean DEFAULT false,
@@ -1150,29 +1581,47 @@ CREATE TABLE "invoice_items" (
 	"updated_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
+CREATE TABLE "invoice_number_counters" (
+	"kind" text PRIMARY KEY NOT NULL,
+	"next_value" integer DEFAULT 1 NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "invoice_number_counters_next_value_check" CHECK ("invoice_number_counters"."next_value" > 0),
+	CONSTRAINT "invoice_number_counters_kind_check" CHECK ("invoice_number_counters"."kind" in ('online', 'offline'))
+);
+--> statement-breakpoint
 CREATE TABLE "invoices" (
 	"id" text PRIMARY KEY NOT NULL,
 	"s_no" serial NOT NULL,
 	"date" timestamp DEFAULT now() NOT NULL,
 	"customer_id" text NOT NULL,
-	"account" text,
-	"cash" numeric(12, 2) DEFAULT '0',
-	"credit" numeric(12, 2) DEFAULT '0',
-	"credit_return_date" timestamp,
+	"invoice_number" text NOT NULL,
+	"source" text DEFAULT 'online' NOT NULL,
+	"paid_amount" numeric(12, 2) DEFAULT '0' NOT NULL,
+	"returned_amount" numeric(12, 2) DEFAULT '0' NOT NULL,
+	"outstanding_amount" numeric(12, 2) DEFAULT '0' NOT NULL,
+	"payment_due_date" timestamp with time zone,
+	"payment_status" text DEFAULT 'unpaid' NOT NULL,
 	"expenses" numeric(12, 2) DEFAULT '0',
 	"expenses_description" text,
 	"invoice_discount" numeric(12, 2) DEFAULT '0',
 	"invoice_discount_description" text,
 	"amount" numeric(12, 2) DEFAULT '0' NOT NULL,
 	"total_price" numeric(12, 2) DEFAULT '0' NOT NULL,
-	"slip_number" text,
 	"remarks" text,
 	"warehouse_id" text NOT NULL,
+	"stock_warehouse_id" text,
 	"performed_by_id" text NOT NULL,
 	"status" text DEFAULT 'saved' NOT NULL,
 	"salesman_id" text,
+	"order_id" text,
+	"order_booker_id" text,
+	"offline_sales_slot_id" text,
 	"created_at" timestamp DEFAULT now() NOT NULL,
-	"updated_at" timestamp DEFAULT now() NOT NULL
+	"updated_at" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "invoices_settlement_amounts_check" CHECK ("invoices"."paid_amount" >= 0 and "invoices"."returned_amount" >= 0 and "invoices"."outstanding_amount" >= 0 and "invoices"."paid_amount" + "invoices"."returned_amount" + "invoices"."outstanding_amount" = "invoices"."total_price"),
+	CONSTRAINT "invoices_source_check" CHECK ("invoices"."source" in ('online', 'offline_import')),
+	CONSTRAINT "invoices_payment_status_check" CHECK ("invoices"."payment_status" in ('unpaid', 'partially_paid', 'paid')),
+	CONSTRAINT "invoices_lifecycle_status_check" CHECK ("invoices"."status" in ('saved', 'voided'))
 );
 --> statement-breakpoint
 CREATE TABLE "purchase_records" (
@@ -1213,6 +1662,21 @@ CREATE TABLE "supplier_payments" (
 	"updated_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
+CREATE TABLE "suppliers" (
+	"id" text PRIMARY KEY NOT NULL,
+	"supplier_name" text NOT NULL,
+	"supplier_shop_name" text,
+	"email" text,
+	"phone" text,
+	"national_id" text,
+	"address" text,
+	"city" text,
+	"state" text,
+	"notes" text,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
 ALTER TABLE "account" ADD CONSTRAINT "account_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "session" ADD CONSTRAINT "session_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "two_factor" ADD CONSTRAINT "two_factor_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
@@ -1225,10 +1689,15 @@ ALTER TABLE "expenses" ADD CONSTRAINT "expenses_category_id_expense_categories_i
 ALTER TABLE "expenses" ADD CONSTRAINT "expenses_wallet_id_wallets_id_fk" FOREIGN KEY ("wallet_id") REFERENCES "public"."wallets"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "expenses" ADD CONSTRAINT "expenses_performed_by_id_user_id_fk" FOREIGN KEY ("performed_by_id") REFERENCES "public"."user"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "transactions" ADD CONSTRAINT "transactions_wallet_id_wallets_id_fk" FOREIGN KEY ("wallet_id") REFERENCES "public"."wallets"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "transactions" ADD CONSTRAINT "transactions_reversal_of_transaction_id_transactions_id_fk" FOREIGN KEY ("reversal_of_transaction_id") REFERENCES "public"."transactions"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "transactions" ADD CONSTRAINT "transactions_performed_by_id_user_id_fk" FOREIGN KEY ("performed_by_id") REFERENCES "public"."user"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "advance_installments" ADD CONSTRAINT "advance_installments_advance_id_salary_advances_id_fk" FOREIGN KEY ("advance_id") REFERENCES "public"."salary_advances"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "advance_installments" ADD CONSTRAINT "advance_installments_payslip_id_payslips_id_fk" FOREIGN KEY ("payslip_id") REFERENCES "public"."payslips"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "attendance" ADD CONSTRAINT "attendance_employee_id_employees_id_fk" FOREIGN KEY ("employee_id") REFERENCES "public"."employees"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "attendance_punches" ADD CONSTRAINT "attendance_punches_employee_id_employees_id_fk" FOREIGN KEY ("employee_id") REFERENCES "public"."employees"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "attendance_punches" ADD CONSTRAINT "attendance_punches_terminal_user_id_user_id_fk" FOREIGN KEY ("terminal_user_id") REFERENCES "public"."user"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "attendance_scan_attempts" ADD CONSTRAINT "attendance_scan_attempts_employee_id_employees_id_fk" FOREIGN KEY ("employee_id") REFERENCES "public"."employees"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "attendance_scan_attempts" ADD CONSTRAINT "attendance_scan_attempts_terminal_user_id_user_id_fk" FOREIGN KEY ("terminal_user_id") REFERENCES "public"."user"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "bradford_audit_log" ADD CONSTRAINT "bradford_audit_log_payslip_id_payslips_id_fk" FOREIGN KEY ("payslip_id") REFERENCES "public"."payslips"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "bradford_audit_log" ADD CONSTRAINT "bradford_audit_log_employee_id_employees_id_fk" FOREIGN KEY ("employee_id") REFERENCES "public"."employees"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "bradford_audit_log" ADD CONSTRAINT "bradford_audit_log_performed_by_user_id_fk" FOREIGN KEY ("performed_by") REFERENCES "public"."user"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
@@ -1236,6 +1705,7 @@ ALTER TABLE "bradford_snapshots" ADD CONSTRAINT "bradford_snapshots_employee_id_
 ALTER TABLE "bradford_snapshots" ADD CONSTRAINT "bradford_snapshots_payroll_id_payrolls_id_fk" FOREIGN KEY ("payroll_id") REFERENCES "public"."payrolls"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "bradford_snapshots" ADD CONSTRAINT "bradford_snapshots_payslip_id_payslips_id_fk" FOREIGN KEY ("payslip_id") REFERENCES "public"."payslips"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "employees" ADD CONSTRAINT "employees_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "hr_payroll_settings" ADD CONSTRAINT "hr_payroll_settings_updated_by_user_id_fk" FOREIGN KEY ("updated_by") REFERENCES "public"."user"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "night_shift_rates" ADD CONSTRAINT "night_shift_rates_set_by_user_id_fk" FOREIGN KEY ("set_by") REFERENCES "public"."user"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "payrolls" ADD CONSTRAINT "payrolls_processed_by_user_id_fk" FOREIGN KEY ("processed_by") REFERENCES "public"."user"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "payslips" ADD CONSTRAINT "payslips_payroll_id_payrolls_id_fk" FOREIGN KEY ("payroll_id") REFERENCES "public"."payrolls"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
@@ -1254,6 +1724,11 @@ ALTER TABLE "travel_logs" ADD CONSTRAINT "travel_logs_paid_in_payslip_id_payslip
 ALTER TABLE "chemical_lab_reports" ADD CONSTRAINT "chemical_lab_reports_chemical_id_chemicals_id_fk" FOREIGN KEY ("chemical_id") REFERENCES "public"."chemicals"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "chemical_lab_reports" ADD CONSTRAINT "chemical_lab_reports_created_by_id_user_id_fk" FOREIGN KEY ("created_by_id") REFERENCES "public"."user"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "chemicals" ADD CONSTRAINT "chemicals_last_supplier_id_suppliers_id_fk" FOREIGN KEY ("last_supplier_id") REFERENCES "public"."suppliers"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "failed_production_chemical_recoveries" ADD CONSTRAINT "failed_production_chemical_recoveries_production_run_id_production_runs_id_fk" FOREIGN KEY ("production_run_id") REFERENCES "public"."production_runs"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "failed_production_chemical_recoveries" ADD CONSTRAINT "failed_production_chemical_recoveries_production_material_used_id_production_materials_used_id_fk" FOREIGN KEY ("production_material_used_id") REFERENCES "public"."production_materials_used"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "failed_production_chemical_recoveries" ADD CONSTRAINT "failed_production_chemical_recoveries_warehouse_id_warehouses_id_fk" FOREIGN KEY ("warehouse_id") REFERENCES "public"."warehouses"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "failed_production_chemical_recoveries" ADD CONSTRAINT "failed_production_chemical_recoveries_chemical_id_chemicals_id_fk" FOREIGN KEY ("chemical_id") REFERENCES "public"."chemicals"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "failed_production_chemical_recoveries" ADD CONSTRAINT "failed_production_chemical_recoveries_settled_by_id_user_id_fk" FOREIGN KEY ("settled_by_id") REFERENCES "public"."user"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "finished_goods_stock" ADD CONSTRAINT "finished_goods_stock_warehouse_id_warehouses_id_fk" FOREIGN KEY ("warehouse_id") REFERENCES "public"."warehouses"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "finished_goods_stock" ADD CONSTRAINT "finished_goods_stock_recipe_id_recipes_id_fk" FOREIGN KEY ("recipe_id") REFERENCES "public"."recipes"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "inventory_audit_log" ADD CONSTRAINT "inventory_audit_log_warehouse_id_warehouses_id_fk" FOREIGN KEY ("warehouse_id") REFERENCES "public"."warehouses"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
@@ -1264,6 +1739,10 @@ ALTER TABLE "material_stock" ADD CONSTRAINT "material_stock_packaging_material_i
 ALTER TABLE "packaging_materials" ADD CONSTRAINT "packaging_materials_associated_sticker_id_packaging_materials_id_fk" FOREIGN KEY ("associated_sticker_id") REFERENCES "public"."packaging_materials"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "packaging_materials" ADD CONSTRAINT "packaging_materials_last_supplier_id_suppliers_id_fk" FOREIGN KEY ("last_supplier_id") REFERENCES "public"."suppliers"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "production_materials_used" ADD CONSTRAINT "production_materials_used_production_run_id_production_runs_id_fk" FOREIGN KEY ("production_run_id") REFERENCES "public"."production_runs"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "production_materials_used" ADD CONSTRAINT "production_materials_used_progress_log_id_production_progress_logs_id_fk" FOREIGN KEY ("progress_log_id") REFERENCES "public"."production_progress_logs"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "production_progress_logs" ADD CONSTRAINT "production_progress_logs_production_run_id_production_runs_id_fk" FOREIGN KEY ("production_run_id") REFERENCES "public"."production_runs"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "production_progress_logs" ADD CONSTRAINT "production_progress_logs_created_by_id_user_id_fk" FOREIGN KEY ("created_by_id") REFERENCES "public"."user"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "production_progress_logs" ADD CONSTRAINT "production_progress_logs_edited_by_id_user_id_fk" FOREIGN KEY ("edited_by_id") REFERENCES "public"."user"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "production_run_lab_reports" ADD CONSTRAINT "production_run_lab_reports_production_run_id_production_runs_id_fk" FOREIGN KEY ("production_run_id") REFERENCES "public"."production_runs"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "production_run_lab_reports" ADD CONSTRAINT "production_run_lab_reports_created_by_id_user_id_fk" FOREIGN KEY ("created_by_id") REFERENCES "public"."user"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "production_runs" ADD CONSTRAINT "production_runs_recipe_id_recipes_id_fk" FOREIGN KEY ("recipe_id") REFERENCES "public"."recipes"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
@@ -1312,6 +1791,52 @@ ALTER TABLE "stock_count_lines" ADD CONSTRAINT "stock_count_lines_approved_by_us
 ALTER TABLE "stock_count_sessions" ADD CONSTRAINT "stock_count_sessions_batch_id_production_runs_id_fk" FOREIGN KEY ("batch_id") REFERENCES "public"."production_runs"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "stock_count_sessions" ADD CONSTRAINT "stock_count_sessions_started_by_user_id_fk" FOREIGN KEY ("started_by") REFERENCES "public"."user"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "stock_count_sessions" ADD CONSTRAINT "stock_count_sessions_approved_by_user_id_fk" FOREIGN KEY ("approved_by") REFERENCES "public"."user"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "attendance_import_batches" ADD CONSTRAINT "attendance_import_batches_workbook_id_attendance_offline_workbooks_id_fk" FOREIGN KEY ("workbook_id") REFERENCES "public"."attendance_offline_workbooks"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "attendance_import_batches" ADD CONSTRAINT "attendance_import_batches_outage_window_id_attendance_outage_windows_id_fk" FOREIGN KEY ("outage_window_id") REFERENCES "public"."attendance_outage_windows"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "attendance_import_batches" ADD CONSTRAINT "attendance_import_batches_uploaded_by_user_id_user_id_fk" FOREIGN KEY ("uploaded_by_user_id") REFERENCES "public"."user"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "attendance_import_batches" ADD CONSTRAINT "attendance_import_batches_reviewed_by_user_id_user_id_fk" FOREIGN KEY ("reviewed_by_user_id") REFERENCES "public"."user"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "attendance_import_rows" ADD CONSTRAINT "attendance_import_rows_batch_id_attendance_import_batches_id_fk" FOREIGN KEY ("batch_id") REFERENCES "public"."attendance_import_batches"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "attendance_import_rows" ADD CONSTRAINT "attendance_import_rows_workbook_id_attendance_offline_workbooks_id_fk" FOREIGN KEY ("workbook_id") REFERENCES "public"."attendance_offline_workbooks"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "attendance_import_rows" ADD CONSTRAINT "attendance_import_rows_employee_id_employees_id_fk" FOREIGN KEY ("employee_id") REFERENCES "public"."employees"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "attendance_import_rows" ADD CONSTRAINT "attendance_import_rows_punch_id_attendance_punches_id_fk" FOREIGN KEY ("punch_id") REFERENCES "public"."attendance_punches"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "attendance_offline_workbooks" ADD CONSTRAINT "attendance_offline_workbooks_assigned_operator_user_id_user_id_fk" FOREIGN KEY ("assigned_operator_user_id") REFERENCES "public"."user"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "attendance_offline_workbooks" ADD CONSTRAINT "attendance_offline_workbooks_issued_by_user_id_user_id_fk" FOREIGN KEY ("issued_by_user_id") REFERENCES "public"."user"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "attendance_offline_workbooks" ADD CONSTRAINT "attendance_offline_workbooks_replaced_by_workbook_id_attendance_offline_workbooks_id_fk" FOREIGN KEY ("replaced_by_workbook_id") REFERENCES "public"."attendance_offline_workbooks"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "attendance_offline_workbooks" ADD CONSTRAINT "attendance_offline_workbooks_retired_by_user_id_user_id_fk" FOREIGN KEY ("retired_by_user_id") REFERENCES "public"."user"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "attendance_outage_windows" ADD CONSTRAINT "attendance_outage_windows_workbook_id_attendance_offline_workbooks_id_fk" FOREIGN KEY ("workbook_id") REFERENCES "public"."attendance_offline_workbooks"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "attendance_outage_windows" ADD CONSTRAINT "attendance_outage_windows_declared_by_user_id_user_id_fk" FOREIGN KEY ("declared_by_user_id") REFERENCES "public"."user"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "attendance_outage_windows" ADD CONSTRAINT "attendance_outage_windows_confirmed_by_user_id_user_id_fk" FOREIGN KEY ("confirmed_by_user_id") REFERENCES "public"."user"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "attendance_punch_correction_audit" ADD CONSTRAINT "attendance_punch_correction_audit_original_import_row_id_attendance_import_rows_id_fk" FOREIGN KEY ("original_import_row_id") REFERENCES "public"."attendance_import_rows"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "attendance_punch_correction_audit" ADD CONSTRAINT "attendance_punch_correction_audit_changed_by_user_id_user_id_fk" FOREIGN KEY ("changed_by_user_id") REFERENCES "public"."user"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "attendance_terminal_heartbeats" ADD CONSTRAINT "attendance_terminal_heartbeats_terminal_user_id_user_id_fk" FOREIGN KEY ("terminal_user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "payroll_attendance_invalidations" ADD CONSTRAINT "payroll_attendance_invalidations_payroll_id_payrolls_id_fk" FOREIGN KEY ("payroll_id") REFERENCES "public"."payrolls"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "payroll_attendance_invalidations" ADD CONSTRAINT "payroll_attendance_invalidations_import_batch_id_attendance_import_batches_id_fk" FOREIGN KEY ("import_batch_id") REFERENCES "public"."attendance_import_batches"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "payroll_attendance_invalidations" ADD CONSTRAINT "payroll_attendance_invalidations_resolved_by_user_id_user_id_fk" FOREIGN KEY ("resolved_by_user_id") REFERENCES "public"."user"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "offline_sales_import_batches" ADD CONSTRAINT "offline_sales_import_batches_workbook_id_offline_sales_workbooks_id_fk" FOREIGN KEY ("workbook_id") REFERENCES "public"."offline_sales_workbooks"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "offline_sales_import_batches" ADD CONSTRAINT "offline_sales_import_batches_uploaded_by_user_id_user_id_fk" FOREIGN KEY ("uploaded_by_user_id") REFERENCES "public"."user"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "offline_sales_import_batches" ADD CONSTRAINT "offline_sales_import_batches_reviewed_by_user_id_user_id_fk" FOREIGN KEY ("reviewed_by_user_id") REFERENCES "public"."user"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "offline_sales_invoice_slots" ADD CONSTRAINT "offline_sales_invoice_slots_workbook_id_offline_sales_workbooks_id_fk" FOREIGN KEY ("workbook_id") REFERENCES "public"."offline_sales_workbooks"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "offline_sales_invoice_slots" ADD CONSTRAINT "offline_sales_invoice_slots_staged_invoice_id_offline_sales_staged_invoices_id_fk" FOREIGN KEY ("staged_invoice_id") REFERENCES "public"."offline_sales_staged_invoices"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "offline_sales_invoice_slots" ADD CONSTRAINT "offline_sales_invoice_slots_posted_invoice_id_invoices_id_fk" FOREIGN KEY ("posted_invoice_id") REFERENCES "public"."invoices"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "offline_sales_staged_invoices" ADD CONSTRAINT "offline_sales_staged_invoices_batch_id_offline_sales_import_batches_id_fk" FOREIGN KEY ("batch_id") REFERENCES "public"."offline_sales_import_batches"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "offline_sales_staged_invoices" ADD CONSTRAINT "offline_sales_staged_invoices_workbook_id_offline_sales_workbooks_id_fk" FOREIGN KEY ("workbook_id") REFERENCES "public"."offline_sales_workbooks"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "offline_sales_staged_invoices" ADD CONSTRAINT "offline_sales_staged_invoices_slot_id_offline_sales_invoice_slots_id_fk" FOREIGN KEY ("slot_id") REFERENCES "public"."offline_sales_invoice_slots"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "offline_sales_staged_invoices" ADD CONSTRAINT "offline_sales_staged_invoices_reviewed_by_user_id_user_id_fk" FOREIGN KEY ("reviewed_by_user_id") REFERENCES "public"."user"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "offline_sales_staged_invoices" ADD CONSTRAINT "offline_sales_staged_invoices_posted_invoice_id_invoices_id_fk" FOREIGN KEY ("posted_invoice_id") REFERENCES "public"."invoices"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "offline_sales_staged_items" ADD CONSTRAINT "offline_sales_staged_items_staged_invoice_id_offline_sales_staged_invoices_id_fk" FOREIGN KEY ("staged_invoice_id") REFERENCES "public"."offline_sales_staged_invoices"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "offline_sales_staged_items" ADD CONSTRAINT "offline_sales_staged_items_recipe_id_recipes_id_fk" FOREIGN KEY ("recipe_id") REFERENCES "public"."recipes"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "offline_sales_staged_payments" ADD CONSTRAINT "offline_sales_staged_payments_staged_invoice_id_offline_sales_staged_invoices_id_fk" FOREIGN KEY ("staged_invoice_id") REFERENCES "public"."offline_sales_staged_invoices"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "offline_sales_staged_payments" ADD CONSTRAINT "offline_sales_staged_payments_wallet_id_wallets_id_fk" FOREIGN KEY ("wallet_id") REFERENCES "public"."wallets"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "offline_sales_workbooks" ADD CONSTRAINT "offline_sales_workbooks_operator_user_id_user_id_fk" FOREIGN KEY ("operator_user_id") REFERENCES "public"."user"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "offline_sales_workbooks" ADD CONSTRAINT "offline_sales_workbooks_issued_by_user_id_user_id_fk" FOREIGN KEY ("issued_by_user_id") REFERENCES "public"."user"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "offline_sales_workbooks" ADD CONSTRAINT "offline_sales_workbooks_replacement_workbook_id_offline_sales_workbooks_id_fk" FOREIGN KEY ("replacement_workbook_id") REFERENCES "public"."offline_sales_workbooks"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "offline_sales_workbooks" ADD CONSTRAINT "offline_sales_workbooks_closed_by_user_id_user_id_fk" FOREIGN KEY ("closed_by_user_id") REFERENCES "public"."user"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "offline_sales_workbooks" ADD CONSTRAINT "offline_sales_workbooks_force_retired_by_user_id_user_id_fk" FOREIGN KEY ("force_retired_by_user_id") REFERENCES "public"."user"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "stock_reconciliation_issues" ADD CONSTRAINT "stock_reconciliation_issues_invoice_id_invoices_id_fk" FOREIGN KEY ("invoice_id") REFERENCES "public"."invoices"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "stock_reconciliation_issues" ADD CONSTRAINT "stock_reconciliation_issues_invoice_item_id_invoice_items_id_fk" FOREIGN KEY ("invoice_item_id") REFERENCES "public"."invoice_items"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "stock_reconciliation_issues" ADD CONSTRAINT "stock_reconciliation_issues_recipe_id_recipes_id_fk" FOREIGN KEY ("recipe_id") REFERENCES "public"."recipes"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "stock_reconciliation_issues" ADD CONSTRAINT "stock_reconciliation_issues_warehouse_id_warehouses_id_fk" FOREIGN KEY ("warehouse_id") REFERENCES "public"."warehouses"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "stock_reconciliation_issues" ADD CONSTRAINT "stock_reconciliation_issues_resolved_by_user_id_user_id_fk" FOREIGN KEY ("resolved_by_user_id") REFERENCES "public"."user"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "app_role_permissions" ADD CONSTRAINT "app_role_permissions_role_id_app_roles_id_fk" FOREIGN KEY ("role_id") REFERENCES "public"."app_roles"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "app_role_permissions" ADD CONSTRAINT "app_role_permissions_permission_id_app_permissions_id_fk" FOREIGN KEY ("permission_id") REFERENCES "public"."app_permissions"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "user_role_assignments" ADD CONSTRAINT "user_role_assignments_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
@@ -1324,6 +1849,8 @@ ALTER TABLE "credit_recovery_attempts" ADD CONSTRAINT "credit_recovery_attempts_
 ALTER TABLE "credit_recovery_attempts" ADD CONSTRAINT "credit_recovery_attempts_assigned_to_id_salesmen_id_fk" FOREIGN KEY ("assigned_to_id") REFERENCES "public"."salesmen"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "discount_rules" ADD CONSTRAINT "discount_rules_customer_id_customers_id_fk" FOREIGN KEY ("customer_id") REFERENCES "public"."customers"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "discount_rules" ADD CONSTRAINT "discount_rules_recipe_id_recipes_id_fk" FOREIGN KEY ("recipe_id") REFERENCES "public"."recipes"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "entity_recipe_rates" ADD CONSTRAINT "entity_recipe_rates_recipe_id_recipes_id_fk" FOREIGN KEY ("recipe_id") REFERENCES "public"."recipes"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "entity_recipe_rates" ADD CONSTRAINT "entity_recipe_rates_updated_by_id_user_id_fk" FOREIGN KEY ("updated_by_id") REFERENCES "public"."user"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "invoice_timeline_events" ADD CONSTRAINT "invoice_timeline_events_invoice_id_invoices_id_fk" FOREIGN KEY ("invoice_id") REFERENCES "public"."invoices"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "invoice_timeline_events" ADD CONSTRAINT "invoice_timeline_events_actor_id_user_id_fk" FOREIGN KEY ("actor_id") REFERENCES "public"."user"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "order_booker_trips" ADD CONSTRAINT "order_booker_trips_order_booker_id_order_bookers_id_fk" FOREIGN KEY ("order_booker_id") REFERENCES "public"."order_bookers"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
@@ -1335,7 +1862,10 @@ ALTER TABLE "orders" ADD CONSTRAINT "orders_order_booker_id_order_bookers_id_fk"
 ALTER TABLE "orders" ADD CONSTRAINT "orders_fulfilled_by_salesman_id_salesmen_id_fk" FOREIGN KEY ("fulfilled_by_salesman_id") REFERENCES "public"."salesmen"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "payments" ADD CONSTRAINT "payments_customer_id_customers_id_fk" FOREIGN KEY ("customer_id") REFERENCES "public"."customers"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "payments" ADD CONSTRAINT "payments_invoice_id_invoices_id_fk" FOREIGN KEY ("invoice_id") REFERENCES "public"."invoices"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "payments" ADD CONSTRAINT "payments_wallet_id_wallets_id_fk" FOREIGN KEY ("wallet_id") REFERENCES "public"."wallets"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "payments" ADD CONSTRAINT "payments_recorded_by_id_user_id_fk" FOREIGN KEY ("recorded_by_id") REFERENCES "public"."user"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "payments" ADD CONSTRAINT "payments_confirmed_by_id_user_id_fk" FOREIGN KEY ("confirmed_by_id") REFERENCES "public"."user"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "payments" ADD CONSTRAINT "payments_resolved_by_id_user_id_fk" FOREIGN KEY ("resolved_by_id") REFERENCES "public"."user"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "price_change_log" ADD CONSTRAINT "price_change_log_product_id_products_id_fk" FOREIGN KEY ("product_id") REFERENCES "public"."products"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "price_change_log" ADD CONSTRAINT "price_change_log_customer_id_customers_id_fk" FOREIGN KEY ("customer_id") REFERENCES "public"."customers"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "price_change_log" ADD CONSTRAINT "price_change_log_changed_by_id_user_id_fk" FOREIGN KEY ("changed_by_id") REFERENCES "public"."user"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
@@ -1365,8 +1895,11 @@ ALTER TABLE "invoice_items" ADD CONSTRAINT "invoice_items_recipe_id_recipes_id_f
 ALTER TABLE "invoice_items" ADD CONSTRAINT "invoice_items_discount_rule_id_discount_rules_id_fk" FOREIGN KEY ("discount_rule_id") REFERENCES "public"."discount_rules"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "invoices" ADD CONSTRAINT "invoices_customer_id_customers_id_fk" FOREIGN KEY ("customer_id") REFERENCES "public"."customers"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "invoices" ADD CONSTRAINT "invoices_warehouse_id_warehouses_id_fk" FOREIGN KEY ("warehouse_id") REFERENCES "public"."warehouses"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "invoices" ADD CONSTRAINT "invoices_stock_warehouse_id_warehouses_id_fk" FOREIGN KEY ("stock_warehouse_id") REFERENCES "public"."warehouses"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "invoices" ADD CONSTRAINT "invoices_performed_by_id_user_id_fk" FOREIGN KEY ("performed_by_id") REFERENCES "public"."user"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "invoices" ADD CONSTRAINT "invoices_salesman_id_salesmen_id_fk" FOREIGN KEY ("salesman_id") REFERENCES "public"."salesmen"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "invoices" ADD CONSTRAINT "invoices_order_id_orders_id_fk" FOREIGN KEY ("order_id") REFERENCES "public"."orders"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "invoices" ADD CONSTRAINT "invoices_order_booker_id_order_bookers_id_fk" FOREIGN KEY ("order_booker_id") REFERENCES "public"."order_bookers"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "purchase_records" ADD CONSTRAINT "purchase_records_supplier_id_suppliers_id_fk" FOREIGN KEY ("supplier_id") REFERENCES "public"."suppliers"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "purchase_records" ADD CONSTRAINT "purchase_records_warehouse_id_warehouses_id_fk" FOREIGN KEY ("warehouse_id") REFERENCES "public"."warehouses"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "purchase_records" ADD CONSTRAINT "purchase_records_chemical_id_chemicals_id_fk" FOREIGN KEY ("chemical_id") REFERENCES "public"."chemicals"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
@@ -1393,16 +1926,30 @@ CREATE INDEX "expense_field_values_field_option_idx" ON "expense_field_values" U
 CREATE INDEX "expenses_category_date_idx" ON "expenses" USING btree ("category_id","expense_date","id");--> statement-breakpoint
 CREATE INDEX "expenses_date_idx" ON "expenses" USING btree ("expense_date");--> statement-breakpoint
 CREATE INDEX "expenses_wallet_date_idx" ON "expenses" USING btree ("wallet_id","expense_date");--> statement-breakpoint
-CREATE INDEX "attendance_employee_date_idx" ON "attendance" USING btree ("employee_id","date");--> statement-breakpoint
+CREATE INDEX "transactions_effective_date_idx" ON "transactions" USING btree ("effective_date");--> statement-breakpoint
+CREATE UNIQUE INDEX "transactions_reversal_unique" ON "transactions" USING btree ("reversal_of_transaction_id") WHERE "transactions"."reversal_of_transaction_id" is not null;--> statement-breakpoint
+CREATE UNIQUE INDEX "attendance_employee_date_idx" ON "attendance" USING btree ("employee_id","date");--> statement-breakpoint
+CREATE INDEX "idx_attendance_punches_employee_date" ON "attendance_punches" USING btree ("employee_id","attendance_date");--> statement-breakpoint
+CREATE INDEX "idx_attendance_punches_date" ON "attendance_punches" USING btree ("attendance_date");--> statement-breakpoint
+CREATE INDEX "idx_attendance_punches_timestamp" ON "attendance_punches" USING btree ("timestamp");--> statement-breakpoint
+CREATE UNIQUE INDEX "attendance_punches_offline_identity_idx" ON "attendance_punches" USING btree ("offline_import_identity") WHERE "attendance_punches"."offline_import_identity" IS NOT NULL;--> statement-breakpoint
+CREATE INDEX "idx_attendance_scan_attempts_employee" ON "attendance_scan_attempts" USING btree ("employee_id");--> statement-breakpoint
+CREATE INDEX "idx_attendance_scan_attempts_timestamp" ON "attendance_scan_attempts" USING btree ("timestamp");--> statement-breakpoint
 CREATE INDEX "idx_bradford_snapshots_employee_month" ON "bradford_snapshots" USING btree ("employee_id","snapshot_year_month");--> statement-breakpoint
 CREATE INDEX "idx_bradford_snapshots_payroll" ON "bradford_snapshots" USING btree ("payroll_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "payrolls_month_idx" ON "payrolls" USING btree ("month");--> statement-breakpoint
+CREATE UNIQUE INDEX "payslips_payroll_employee_idx" ON "payslips" USING btree ("payroll_id","employee_id");--> statement-breakpoint
 CREATE INDEX "idx_salary_revisions_employee_date" ON "salary_revisions" USING btree ("employee_id","revision_date");--> statement-breakpoint
 CREATE INDEX "lab_report_chemical_idx" ON "chemical_lab_reports" USING btree ("chemical_id");--> statement-breakpoint
 CREATE INDEX "lab_report_date_idx" ON "chemical_lab_reports" USING btree ("report_date");--> statement-breakpoint
+CREATE UNIQUE INDEX "failed_prod_recovery_run_chemical_unique_idx" ON "failed_production_chemical_recoveries" USING btree ("production_run_id","chemical_id");--> statement-breakpoint
+CREATE INDEX "failed_prod_recovery_run_chemical_idx" ON "failed_production_chemical_recoveries" USING btree ("production_run_id","chemical_id");--> statement-breakpoint
+CREATE INDEX "failed_prod_recovery_created_at_idx" ON "failed_production_chemical_recoveries" USING btree ("created_at");--> statement-breakpoint
 CREATE INDEX "fg_warehouse_recipe_idx" ON "finished_goods_stock" USING btree ("warehouse_id","recipe_id");--> statement-breakpoint
 CREATE INDEX "audit_warehouse_idx" ON "inventory_audit_log" USING btree ("warehouse_id");--> statement-breakpoint
 CREATE INDEX "audit_date_idx" ON "inventory_audit_log" USING btree ("created_at");--> statement-breakpoint
 CREATE INDEX "stock_warehouse_idx" ON "material_stock" USING btree ("warehouse_id");--> statement-breakpoint
+CREATE INDEX "prod_progress_log_run_created_at_idx" ON "production_progress_logs" USING btree ("production_run_id","created_at");--> statement-breakpoint
 CREATE INDEX "lab_report_production_run_idx" ON "production_run_lab_reports" USING btree ("production_run_id");--> statement-breakpoint
 CREATE INDEX "prod_lab_report_date_idx" ON "production_run_lab_reports" USING btree ("report_date");--> statement-breakpoint
 CREATE INDEX "production_runs_updated_at_idx" ON "production_runs" USING btree ("updated_at");--> statement-breakpoint
@@ -1430,6 +1977,40 @@ CREATE INDEX "return_lines_carton_idx" ON "return_lines" USING btree ("carton_id
 CREATE INDEX "stock_count_session_idx" ON "stock_count_lines" USING btree ("session_id");--> statement-breakpoint
 CREATE INDEX "stock_count_carton_idx" ON "stock_count_lines" USING btree ("carton_id");--> statement-breakpoint
 CREATE INDEX "stock_count_session_status_idx" ON "stock_count_sessions" USING btree ("status");--> statement-breakpoint
+CREATE INDEX "attendance_import_batches_workbook_idx" ON "attendance_import_batches" USING btree ("workbook_id");--> statement-breakpoint
+CREATE INDEX "attendance_import_batches_outage_idx" ON "attendance_import_batches" USING btree ("outage_window_id");--> statement-breakpoint
+CREATE INDEX "attendance_import_batches_status_idx" ON "attendance_import_batches" USING btree ("status");--> statement-breakpoint
+CREATE INDEX "attendance_import_batches_file_hash_idx" ON "attendance_import_batches" USING btree ("file_sha256");--> statement-breakpoint
+CREATE UNIQUE INDEX "attendance_import_rows_batch_row_idx" ON "attendance_import_rows" USING btree ("batch_id","worksheet_row_number");--> statement-breakpoint
+CREATE UNIQUE INDEX "attendance_import_rows_imported_identity_idx" ON "attendance_import_rows" USING btree ("workbook_id","record_token") WHERE "attendance_import_rows"."status" = 'imported';--> statement-breakpoint
+CREATE INDEX "attendance_import_rows_batch_status_idx" ON "attendance_import_rows" USING btree ("batch_id","status");--> statement-breakpoint
+CREATE INDEX "attendance_import_rows_employee_date_idx" ON "attendance_import_rows" USING btree ("employee_id","attendance_date");--> statement-breakpoint
+CREATE UNIQUE INDEX "attendance_offline_workbooks_active_operator_idx" ON "attendance_offline_workbooks" USING btree ("assigned_operator_user_id") WHERE "attendance_offline_workbooks"."status" = 'active';--> statement-breakpoint
+CREATE INDEX "attendance_offline_workbooks_status_idx" ON "attendance_offline_workbooks" USING btree ("status");--> statement-breakpoint
+CREATE INDEX "attendance_outage_windows_workbook_status_idx" ON "attendance_outage_windows" USING btree ("workbook_id","status");--> statement-breakpoint
+CREATE INDEX "attendance_punch_correction_audit_punch_idx" ON "attendance_punch_correction_audit" USING btree ("original_punch_id");--> statement-breakpoint
+CREATE INDEX "attendance_punch_correction_audit_import_row_idx" ON "attendance_punch_correction_audit" USING btree ("original_import_row_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "attendance_terminal_heartbeats_terminal_minute_idx" ON "attendance_terminal_heartbeats" USING btree ("terminal_user_id","minute_bucket");--> statement-breakpoint
+CREATE INDEX "attendance_terminal_heartbeats_observed_idx" ON "attendance_terminal_heartbeats" USING btree ("observed_at");--> statement-breakpoint
+CREATE UNIQUE INDEX "payroll_attendance_invalidations_unresolved_idx" ON "payroll_attendance_invalidations" USING btree ("payroll_id","import_batch_id") WHERE "payroll_attendance_invalidations"."resolved_at" IS NULL;--> statement-breakpoint
+CREATE INDEX "payroll_attendance_invalidations_batch_idx" ON "payroll_attendance_invalidations" USING btree ("import_batch_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "offline_sales_batches_file_hash_idx" ON "offline_sales_import_batches" USING btree ("file_sha256");--> statement-breakpoint
+CREATE INDEX "offline_sales_batches_workbook_status_idx" ON "offline_sales_import_batches" USING btree ("workbook_id","status");--> statement-breakpoint
+CREATE UNIQUE INDEX "offline_sales_slots_token_idx" ON "offline_sales_invoice_slots" USING btree ("record_token");--> statement-breakpoint
+CREATE UNIQUE INDEX "offline_sales_slots_serial_idx" ON "offline_sales_invoice_slots" USING btree ("reserved_serial");--> statement-breakpoint
+CREATE UNIQUE INDEX "offline_sales_slots_workbook_slot_idx" ON "offline_sales_invoice_slots" USING btree ("workbook_id","slot_number");--> statement-breakpoint
+CREATE UNIQUE INDEX "offline_sales_slots_staged_invoice_idx" ON "offline_sales_invoice_slots" USING btree ("staged_invoice_id") WHERE "offline_sales_invoice_slots"."staged_invoice_id" is not null;--> statement-breakpoint
+CREATE UNIQUE INDEX "offline_sales_slots_posted_invoice_idx" ON "offline_sales_invoice_slots" USING btree ("posted_invoice_id") WHERE "offline_sales_invoice_slots"."posted_invoice_id" is not null;--> statement-breakpoint
+CREATE UNIQUE INDEX "offline_sales_staged_workbook_token_idx" ON "offline_sales_staged_invoices" USING btree ("workbook_id","record_token");--> statement-breakpoint
+CREATE UNIQUE INDEX "offline_sales_staged_invoice_number_idx" ON "offline_sales_staged_invoices" USING btree ("invoice_number");--> statement-breakpoint
+CREATE UNIQUE INDEX "offline_sales_staged_posted_invoice_idx" ON "offline_sales_staged_invoices" USING btree ("posted_invoice_id") WHERE "offline_sales_staged_invoices"."posted_invoice_id" is not null;--> statement-breakpoint
+CREATE INDEX "offline_sales_staged_batch_status_idx" ON "offline_sales_staged_invoices" USING btree ("batch_id","status");--> statement-breakpoint
+CREATE UNIQUE INDEX "offline_sales_staged_items_invoice_row_idx" ON "offline_sales_staged_items" USING btree ("staged_invoice_id","worksheet_row_number");--> statement-breakpoint
+CREATE UNIQUE INDEX "offline_sales_staged_payments_invoice_row_idx" ON "offline_sales_staged_payments" USING btree ("staged_invoice_id","worksheet_row_number");--> statement-breakpoint
+CREATE UNIQUE INDEX "offline_sales_workbooks_one_active_factory_idx" ON "offline_sales_workbooks" USING btree ("factory_code") WHERE "offline_sales_workbooks"."status" = 'active';--> statement-breakpoint
+CREATE INDEX "offline_sales_workbooks_operator_idx" ON "offline_sales_workbooks" USING btree ("operator_user_id");--> statement-breakpoint
+CREATE INDEX "stock_reconciliation_issues_status_idx" ON "stock_reconciliation_issues" USING btree ("status");--> statement-breakpoint
+CREATE INDEX "stock_reconciliation_issues_invoice_idx" ON "stock_reconciliation_issues" USING btree ("invoice_id");--> statement-breakpoint
 CREATE INDEX "app_permissions_key_idx" ON "app_permissions" USING btree ("key");--> statement-breakpoint
 CREATE INDEX "app_permissions_module_idx" ON "app_permissions" USING btree ("module_key");--> statement-breakpoint
 CREATE INDEX "app_role_permissions_role_idx" ON "app_role_permissions" USING btree ("role_id");--> statement-breakpoint
@@ -1442,6 +2023,7 @@ CREATE INDEX "idx_credit_recovery_attempts_slip_id" ON "credit_recovery_attempts
 CREATE INDEX "idx_discount_rules_customer_recipe" ON "discount_rules" USING btree ("customer_id","recipe_id");--> statement-breakpoint
 CREATE INDEX "idx_discount_rules_dates" ON "discount_rules" USING btree ("effective_from","effective_to");--> statement-breakpoint
 CREATE INDEX "idx_discount_rules_active" ON "discount_rules" USING btree ("is_active");--> statement-breakpoint
+CREATE INDEX "idx_entity_recipe_rates_entity" ON "entity_recipe_rates" USING btree ("entity_type","entity_id");--> statement-breakpoint
 CREATE INDEX "idx_invoice_timeline_invoice" ON "invoice_timeline_events" USING btree ("invoice_id");--> statement-breakpoint
 CREATE INDEX "idx_invoice_timeline_event_type" ON "invoice_timeline_events" USING btree ("event_type");--> statement-breakpoint
 CREATE INDEX "idx_invoice_timeline_event_date" ON "invoice_timeline_events" USING btree ("event_date");--> statement-breakpoint
@@ -1449,6 +2031,9 @@ CREATE INDEX "idx_ledger_audit_entity" ON "ledger_export_audit_log" USING btree 
 CREATE INDEX "idx_ledger_audit_user" ON "ledger_export_audit_log" USING btree ("user_id");--> statement-breakpoint
 CREATE INDEX "idx_ledger_audit_type" ON "ledger_export_audit_log" USING btree ("export_type");--> statement-breakpoint
 CREATE INDEX "idx_ledger_audit_created" ON "ledger_export_audit_log" USING btree ("created_at");--> statement-breakpoint
+CREATE UNIQUE INDEX "payments_source_record_unique" ON "payments" USING btree ("source","source_record_id") WHERE "payments"."source_record_id" is not null;--> statement-breakpoint
+CREATE INDEX "payments_invoice_status_idx" ON "payments" USING btree ("invoice_id","status");--> statement-breakpoint
+CREATE INDEX "payments_effective_date_idx" ON "payments" USING btree ("effective_date");--> statement-breakpoint
 CREATE INDEX "idx_perf_logs_employee_month" ON "sales_performance_logs" USING btree ("employee_id","year_month");--> statement-breakpoint
 CREATE INDEX "idx_perf_logs_year_month" ON "sales_performance_logs" USING btree ("year_month");--> statement-breakpoint
 CREATE INDEX "idx_sales_return_items_return" ON "sales_return_items" USING btree ("sales_return_id");--> statement-breakpoint
@@ -1465,9 +2050,14 @@ CREATE INDEX "idx_slip_records_status" ON "slip_records" USING btree ("status");
 CREATE INDEX "idx_slip_records_recovery_status" ON "slip_records" USING btree ("recovery_status");--> statement-breakpoint
 CREATE INDEX "idx_slip_records_recovery_assigned" ON "slip_records" USING btree ("recovery_assigned_to_id");--> statement-breakpoint
 CREATE INDEX "idx_slip_records_next_follow_up" ON "slip_records" USING btree ("next_follow_up_date");--> statement-breakpoint
+CREATE UNIQUE INDEX "slip_records_invoice_unique" ON "slip_records" USING btree ("invoice_id");--> statement-breakpoint
 CREATE INDEX "idx_invoice_items_discount_rule" ON "invoice_items" USING btree ("discount_rule_id");--> statement-breakpoint
 CREATE INDEX "idx_invoice_items_recipe_invoice" ON "invoice_items" USING btree ("recipe_id","invoice_id");--> statement-breakpoint
 CREATE INDEX "idx_invoices_status_date" ON "invoices" USING btree ("status","date");--> statement-breakpoint
+CREATE INDEX "idx_invoices_order_booker" ON "invoices" USING btree ("order_booker_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "invoices_invoice_number_unique" ON "invoices" USING btree ("invoice_number");--> statement-breakpoint
+CREATE UNIQUE INDEX "invoices_order_id_unique" ON "invoices" USING btree ("order_id") WHERE "invoices"."order_id" is not null;--> statement-breakpoint
+CREATE UNIQUE INDEX "invoices_offline_sales_slot_unique" ON "invoices" USING btree ("offline_sales_slot_id") WHERE "invoices"."offline_sales_slot_id" is not null;--> statement-breakpoint
 CREATE INDEX "purchase_supplier_idx" ON "purchase_records" USING btree ("supplier_id");--> statement-breakpoint
 CREATE INDEX "purchase_warehouse_idx" ON "purchase_records" USING btree ("warehouse_id");--> statement-breakpoint
 CREATE INDEX "purchase_date_idx" ON "purchase_records" USING btree ("purchase_date");--> statement-breakpoint
