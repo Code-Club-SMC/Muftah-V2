@@ -1,8 +1,7 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { getSupplierDetailsFn } from "@/server-functions/suppliers/get-supplier-details-fn";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { format } from "date-fns";
 import {
@@ -15,7 +14,6 @@ import {
   Banknote,
   ShoppingCart,
   CreditCard,
-  XIcon,
   User,
   Hash,
   CalendarDays,
@@ -24,6 +22,7 @@ import {
   TrendingUp,
   AlertCircle,
   CheckCircle2,
+  ArrowLeft,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -39,8 +38,6 @@ import { RecordPaymentDialog } from "@/components/suppliers/record-payment-dialo
 import { PurchaseDetailsDialog } from "@/components/suppliers/purchase-details-dialog";
 import { DeletePurchaseDialog } from "@/components/suppliers/delete-purchase-dialog";
 import { AddPackagingMaterialSheet } from "@/components/inventory/add-packaging-material-sheet";
-import { DatePickerWithRange } from "@/components/custom/date-range-picker";
-import { DateRange } from "react-day-picker";
 import { cn } from "@/lib/utils";
 import { AddStockDialog } from "@/components/inventory/add-stock-dialog";
 import { GenericLoader } from "@/components/custom/generic-loader";
@@ -183,14 +180,7 @@ function SupplierDetailsPage() {
   const [selectedItem, setSelectedItem] = useState<any>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
-
-  // Open the correct edit sheet based on materialType
-  const handleEditOpen = (item: any) => {
-    setSelectedItem(item);
-    setEditDialogOpen(true);
-  };
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
   const [paymentDefaults, setPaymentDefaults] = useState<{
     amount?: string;
     notes?: string;
@@ -230,16 +220,18 @@ function SupplierDetailsPage() {
     setRestockOpen(true);
   };
 
-  // Build location string
-  const locationParts = [supplier.city, supplier.state].filter(Boolean);
-  const fullLocation = [supplier.address, ...locationParts].filter(Boolean).join(", ");
-
   return (
     <div className="space-y-6 pb-8">
 
       {/* ── Header ── */}
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
         <div className="flex items-start gap-4">
+          <Button variant="outline" size="icon" asChild>
+            <Link to="/suppliers" aria-label="Back to suppliers">
+              <ArrowLeft className="size-4" />
+            </Link>
+          </Button>
+
           {/* Avatar */}
           <div className="size-14 shrink-0 rounded-2xl bg-gradient-to-br from-primary/20 to-primary/5 border border-primary/20 flex items-center justify-center ">
             <Building2 className="size-6 text-primary" />
@@ -440,11 +432,11 @@ function SupplierDetailsPage() {
                   <TabsList className="h-8">
                     <TabsTrigger value="purchases" className="text-[12.5px] h-6 px-3">
                       <TrendingUp className="size-3 mr-1.5" />
-                      Purchase History
+                      Recent Purchases
                     </TabsTrigger>
                     <TabsTrigger value="payments" className="text-[12.5px] h-6 px-3">
                       <Banknote className="size-3 mr-1.5" />
-                      Payment Records
+                      Recent Payments
                     </TabsTrigger>
                   </TabsList>
 
@@ -472,13 +464,11 @@ function SupplierDetailsPage() {
                     setDeleteDialogOpen={setDeleteDialogOpen}
                     onRecordPayment={handleRecordPayment}
                     onRestock={handleRestock}
-                    dateRange={dateRange}
                   />
                 </TabsContent>
                 <TabsContent value="payments" className="mt-0">
                   <PaymentRecordsTable
                     data={supplier.payments as any}
-                    dateRange={dateRange}
                   />
                 </TabsContent>
               </Tabs>

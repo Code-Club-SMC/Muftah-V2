@@ -10,7 +10,6 @@ export const useCreateEmployee = () => {
     onSuccess: () => {
       toast.success("Employee created successfully");
       queryClient.invalidateQueries({ queryKey: ["employees"] });
-      queryClient.invalidateQueries({ queryKey: ["next-employee-code"] });
     },
     onError: (error) => {
       toast.error(error.message);
