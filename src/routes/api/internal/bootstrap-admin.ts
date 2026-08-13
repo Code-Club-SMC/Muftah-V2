@@ -120,7 +120,7 @@ export const Route = createFileRoute("/api/internal/bootstrap-admin")({
 
         const existingSuperAdmins = await getSuperAdmins();
         if (existingSuperAdmins.length > 0) {
-          return Response.json(
+          return Responsepe.json(
             {
               error:
                 "Super admin already exists. Use PATCH on this endpoint to update it.",
