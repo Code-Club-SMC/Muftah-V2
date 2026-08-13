@@ -40,6 +40,20 @@ const timeInputSchema = z
     message: "Time must be in HH:MM or HH:MM:SS format",
   });
 
+const employeeCodeSchema = z
+  .string()
+  .transform((value) => value.trim())
+  .pipe(
+    z
+      .string()
+      .min(2, "Employee Code must be at least 2 characters")
+      .max(64, "Employee Code cannot exceed 64 characters")
+      .regex(
+        /^[A-Za-z0-9][A-Za-z0-9._-]*$/,
+        "Employee Code can only use letters, numbers, dot, dash, or underscore",
+      ),
+  );
+
 // ─────────────────────────────────────────────────────────────────────────────
 // EMPLOYEE SCHEMAS
 // ─────────────────────────────────────────────────────────────────────────────
@@ -47,9 +61,7 @@ const timeInputSchema = z
 export const createEmployeeSchema = z.object({
   firstName: z.string().min(1, "First Name is required"),
   lastName: z.string().min(1, "Last Name is required"),
-  // Auto-generated on the server as EMP-0001, EMP-0002, etc.
-  // Field is accepted but ignored server-side during creation.
-  employeeCode: z.string(),
+  employeeCode: employeeCodeSchema,
   designation: z.string().min(1, "Designation is required"),
   department: z.string().min(1, "Department is required"),
   joiningDate: z.string().min(1, "Joining Date is required"),
@@ -106,8 +118,7 @@ export const createEmployeeSchema = z.object({
 
 export const updateEmployeeSchema = createEmployeeSchema.extend({
   id: z.string().min(1, "Employee ID is required"),
-  // Employee code is always present when updating (read-only, assigned at creation)
-  employeeCode: z.string().min(1, "Employee Code is required"),
+  employeeCode: employeeCodeSchema,
 });
 
 export const deleteEmployeeSchema = z.object({
