@@ -74,6 +74,15 @@ export const PaymentRecordsTable = ({ data, dateRange, ...rest }: Props) => {
     return recordDate >= from && recordDate <= to;
   });
 
+  // Show only the most recent payments — full history lives on the
+  // dedicated details page. Newest first by createdAt desc.
+  const recentPayments = [...filteredData]
+    .sort(
+      (a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    )
+    .slice(0, 5);
+
   const columns: ColumnDef<SupplierPayment>[] = [
     {
       accessorKey: "createdAt",
@@ -156,10 +165,10 @@ export const PaymentRecordsTable = ({ data, dateRange, ...rest }: Props) => {
     <>
       <DataTable
         columns={columns}
-        data={filteredData}
+        data={recentPayments}
         searchKey="notes"
         searchPlaceholder="Search notes..."
-        pageSize={6}
+        showPagination={false}
         {...rest}
       />
       <PaymentDetailsDialog

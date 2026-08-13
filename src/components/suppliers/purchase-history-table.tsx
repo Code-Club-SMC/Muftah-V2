@@ -104,6 +104,15 @@ export const PurchaseHistoryTable = ({
     return recordDate >= from && recordDate <= to;
   });
 
+  // Show only the most recent records — full history lives on the
+  // dedicated details page. Newest first by createdAt desc.
+  const recentPurchases = [...filteredData]
+    .sort(
+      (a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    )
+    .slice(0, 5);
+
   const columns: ColumnDef<PurchaseRecord>[] = [
     {
       accessorKey: "createdAt",
@@ -333,10 +342,10 @@ export const PurchaseHistoryTable = ({
   return (
     <DataTable
       columns={columns}
-      data={filteredData}
+      data={recentPurchases}
       searchKey="material"
       searchPlaceholder="Filter purchases..."
-      pageSize={5}
+      showPagination={false}
       {...rest}
     />
   );
