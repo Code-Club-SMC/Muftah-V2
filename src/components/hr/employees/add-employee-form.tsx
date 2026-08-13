@@ -18,7 +18,7 @@ import {
   FieldGroup,
 } from "@/components/ui/field";
 import type { AnyFieldApi } from "@tanstack/react-form";
-import { Loader2, UserPlus, Briefcase, Wallet, Plus, Hash } from "lucide-react";
+import { Loader2, UserPlus, Briefcase, Wallet, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
@@ -34,7 +34,6 @@ import {
 } from "@/components/hr/employees/allowance-card";
 import { cn } from "@/lib/utils";
 import { Checkbox } from "@/components/ui/checkbox";
-import { useNextEmployeeCode } from "@/hooks/hr/use-next-employee-code";
 import { BasicSalaryPolicyCard } from "@/components/hr/employees/basic-salary-policy-card";
 
 // ── Rest days config ────────────────────────────────────────────────────────
@@ -79,7 +78,6 @@ const newCustomAllowance = (): AllowanceConfig => ({
 
 export const AddEmployeeForm = ({ onSuccess }: Props) => {
   const mutate = useCreateEmployee();
-  const { data: nextCode, isLoading: codeLoading } = useNextEmployeeCode();
 
   const form = useForm({
     defaultValues: {
@@ -131,8 +129,12 @@ export const AddEmployeeForm = ({ onSuccess }: Props) => {
             onSuccess();
             // form.reset();
           },
-          onError: () => {
-            toast.error("Failed to register employee. Please try again.");
+          onError: (error) => {
+            toast.error(
+              error instanceof Error
+                ? error.message
+                : "Failed to register employee. Please try again.",
+            );
           },
         },
       );
@@ -190,31 +192,24 @@ export const AddEmployeeForm = ({ onSuccess }: Props) => {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Auto-generated employee code preview */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium leading-none">
-                Employee Code
-              </label>
-              <div className="flex items-center gap-2 h-9 px-3 rounded-md border border-dashed border-primary/30 bg-primary/5">
-                <Hash className="size-3.5 text-primary/60" />
-                <span className="font-mono text-sm font-bold text-primary tracking-wider">
-                  {codeLoading ? (
-                    <span className="flex items-center gap-1.5 text-muted-foreground">
-                      <Loader2 className="size-3 animate-spin" />
-                      Generating…
-                    </span>
-                  ) : (
-                    nextCode ?? "—"
-                  )}
-                </span>
-                <span className="ml-auto text-[10px] text-muted-foreground font-medium uppercase tracking-wide">
-                  Auto-assigned
-                </span>
-              </div>
-              <p className="text-[11px] text-muted-foreground/60">
-                A unique code is generated automatically on registration.
-              </p>
-            </div>
+            <form.Field name="employeeCode">
+              {(field: AnyFieldApi) => (
+                <Field>
+                  <FieldLabel>Employee Code</FieldLabel>
+                  <Input
+                    placeholder="e.g. EMP-0001"
+                    value={field.state.value as string}
+                    onBlur={field.handleBlur}
+                    onChange={(e) => field.handleChange(e.target.value)}
+                    className="font-mono font-bold"
+                  />
+                  <p className="text-[11px] text-muted-foreground/60">
+                    Used on employee cards and attendance barcode scans.
+                  </p>
+                  <FieldError errors={field.state.meta.errors} />
+                </Field>
+              )}
+            </form.Field>
             <form.Field name="cnic">
               {(field: AnyFieldApi) => (
                 <Field>

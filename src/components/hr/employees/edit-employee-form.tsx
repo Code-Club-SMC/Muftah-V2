@@ -180,8 +180,12 @@ export const EditEmployeeForm = ({ employee, onSuccess }: Props) => {
           onSuccess: () => {
             onSuccess();
           },
-          onError: () => {
-            toast.error("Failed to update employee. Please try again.");
+          onError: (error) => {
+            toast.error(
+              error instanceof Error
+                ? error.message
+                : "Failed to update employee. Please try again.",
+            );
           },
         },
       );
@@ -242,18 +246,17 @@ export const EditEmployeeForm = ({ employee, onSuccess }: Props) => {
             <form.Field name="employeeCode">
               {(field: AnyFieldApi) => (
                 <Field>
-                  <FieldLabel className="flex items-center gap-1.5">
-                    Employee Code
-                    <span className="text-[10px] font-normal text-muted-foreground uppercase tracking-wide">
-                      (Auto-assigned)
-                    </span>
-                  </FieldLabel>
+                  <FieldLabel>Employee Code</FieldLabel>
                   <Input
+                    placeholder="e.g. EMP-0001"
                     value={field.state.value as string}
-                    readOnly
-                    disabled
-                    className="font-mono font-bold bg-muted/40 cursor-not-allowed"
+                    onBlur={field.handleBlur}
+                    onChange={(e) => field.handleChange(e.target.value)}
+                    className="font-mono font-bold"
                   />
+                  <p className="text-[11px] text-muted-foreground/60">
+                    Changing this updates future employee cards and attendance scans.
+                  </p>
                   <FieldError errors={field.state.meta.errors} />
                 </Field>
               )}

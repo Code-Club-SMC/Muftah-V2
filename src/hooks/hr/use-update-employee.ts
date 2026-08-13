@@ -14,7 +14,7 @@ export const useUpdateEmployee = () => {
     },
     onError: (error) => {
       console.error(error);
-      toast.error("Failed to update employee");
+      toast.error(error.message || "Failed to update employee");
     },
   });
 };
