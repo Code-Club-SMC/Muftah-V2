@@ -50,6 +50,7 @@ export const generateEmployeePayslipFn = createServerFn()
           arrearsFromMonths: z.array(z.string()),
         })
         .optional(),
+      remarks: z.string().optional(),
     }),
   )
   .handler(async ({ data, context }) => {

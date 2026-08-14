@@ -22,6 +22,7 @@ type SavePayslipInput = {
   };
   earlyCutoffDate?: string;
   ignorePastUnmarkedDays?: boolean;
+  remarks?: string;
 };
 
 export function useSavePayslip(onSuccess?: () => void) {

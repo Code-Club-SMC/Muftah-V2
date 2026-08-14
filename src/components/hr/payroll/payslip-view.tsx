@@ -28,6 +28,8 @@ export type PayslipData = {
     bradfordFactorScore: string | null;
     bradfordFactorOverride: string | null;
     bradfordFactorPeriod: string | null;
+    /** Annual Bradford score (Jan 1 – Dec 31 of payroll year); null on legacy payslips */
+    yearlyBradfordScore?: string | null;
     /** Remaining vacation/leave days at year-end */
     vacationBalance?: number | null;
     basicSalary: string;
@@ -143,16 +145,31 @@ export const PayslipView = ({
     const printRef = useRef<HTMLDivElement>(null);
 
     // ── Bradford Factor ──────────────────────────────────────────────────────
+    // Prefer the annual (yearly) Bradford score for display; fall back to the
+    // legacy cycle-window score for payslips generated before the annual
+    // column existed. Override (manual or via dialog) wins over both.
+    const annualCandidate = toN(payslip.yearlyBradfordScore);
+    const hasAnnualScore =
+        payslip.yearlyBradfordScore != null &&
+        payslip.yearlyBradfordScore !== "";
     const effectiveBradford =
         payslip.bradfordFactorOverride != null
             ? toN(payslip.bradfordFactorOverride)
-            : toN(payslip.bradfordFactorScore);
+            : hasAnnualScore
+                ? annualCandidate
+                : toN(payslip.bradfordFactorScore);
 
-    const bradfordPeriod =
-        payslip.bradfordFactorPeriod ||
-        (payroll.startDate && payroll.endDate
-            ? `${format(parseISO(payroll.startDate), "d MMM yyyy")} to ${format(parseISO(payroll.endDate), "d MMM yyyy")}`
-            : "—");
+    // Period label reflects the annual evaluation window of the payroll's
+    // calendar year (1 Jan – 31 Dec). Falls back to the stored period for
+    // legacy payslips lacking the yearly score.
+    const payrollYear = parseISO(payroll.month).getFullYear();
+    const annualPeriodLabel = `1 Jan ${payrollYear} to 31 Dec ${payrollYear}`;
+    const bradfordPeriod = hasAnnualScore
+        ? annualPeriodLabel
+        : payslip.bradfordFactorPeriod ||
+          (payroll.startDate && payroll.endDate
+              ? `${format(parseISO(payroll.startDate), "d MMM yyyy")} to ${format(parseISO(payroll.endDate), "d MMM yyyy")}`
+              : "—");
 
     const bradfordColor =
         effectiveBradford === 0
@@ -323,10 +340,7 @@ body { font-family: Arial, sans-serif; font-size:11px; color:#111; background:#f
 .net-n   { padding:4px 8px; font-size:13px; font-weight:800; background:${LIGHT_BLUE}; text-align:right; font-variant-numeric:tabular-nums; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
 
 /* ── Remarks box ── */
-.remarks { border:${OUTER_BORDER}; border-top:none; padding:8px 10px; min-height:54px; font-size:11px; }
-
-/* ── Footer ── */
-.footer { margin-top:18px; border-top:1px solid #e5e7eb; padding-top:8px; text-align:center; font-size:9px; color:#9ca3af; text-transform:uppercase; letter-spacing:2px; }
+.remarks { border:${OUTER_BORDER}; padding:8px 10px; min-height:54px; font-size:11px; margin-top:16px; }
 
 .bradford { font-weight:700; color:${bradfordColor}; }
 </style>
@@ -451,11 +465,7 @@ body { font-family: Arial, sans-serif; font-size:11px; color:#111; background:#f
   <!-- Remarks -->
   <div class="remarks">
     ${payslip.remarks || "Salaries are paid as per company policy."}
-    ${payslip.paymentSource ? `<br/><br/><strong>Paid From:</strong> ${payslip.paymentSource}` : ""}
   </div>
-
-  <!-- Footer -->
-  <div class="footer">System Generated Slip &bull; Muftah Chemical PVT LTD</div>
 
 </div><!-- /payslip -->
 </body>
@@ -688,32 +698,13 @@ body { font-family: Arial, sans-serif; font-size:11px; color:#111; background:#f
                 {/* Remarks */}
                 <div style={{
                     border: OUTER_BORDER,
-                    borderTop: "none",
                     padding: "8px 10px",
                     minHeight: 54,
+                    marginTop: 16,
                     marginBottom: 32,
                     fontSize: 11,
                 }}>
                     {payslip.remarks || "Salaries are paid as per company policy."}
-                    {payslip.paymentSource && (
-                        <div style={{ marginTop: 8 }}>
-                            <strong>Paid From:</strong> {payslip.paymentSource}
-                        </div>
-                    )}
-                </div>
-
-                {/* Footer */}
-                <div style={{
-                    marginTop: 20,
-                    borderTop: "1px solid #f3f4f6",
-                    paddingTop: 10,
-                    textAlign: "center",
-                    fontSize: 9,
-                    color: "#9ca3af",
-                    textTransform: "uppercase",
-                    letterSpacing: 2,
-                }}>
-                    System Generated Slip • Muftah Chemical PVT LTD
                 </div>
 
             </div>{/* /printRef */}
@@ -722,7 +713,7 @@ body { font-family: Arial, sans-serif; font-size:11px; color:#111; background:#f
                 open={overrideOpen}
                 onOpenChange={setOverrideOpen}
                 payslipId={payslip.id}
-                currentScore={payslip.bradfordFactorOverride || payslip.bradfordFactorScore}
+                currentScore={payslip.bradfordFactorOverride ?? (payslip.yearlyBradfordScore ?? payslip.bradfordFactorScore)}
             />
         </div>
     );

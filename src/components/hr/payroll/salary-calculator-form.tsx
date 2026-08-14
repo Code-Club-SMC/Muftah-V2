@@ -3,6 +3,7 @@ import { Loader2, Plus, Trash2, AlertCircle, Calculator, Info, CheckCircle2 } fr
 import { Button } from "@/components/ui/button";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { usePreviewPayslip } from "@/hooks/hr/use-preview-payslip";
 import { useSavePayslip } from "@/hooks/hr/use-save-payslip";
@@ -12,7 +13,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
-import React, { useState, type ChangeEvent } from "react";
+import React, { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { STANDARD_ALLOWANCES } from "@/lib/types/hr-types";
 import { Badge } from "@/components/ui/badge";
@@ -64,6 +65,7 @@ export const SalaryCalculatorForm = ({ employeeId, month, onSuccess, isOpen }: S
             advance: "",
             overtimeMultiplier: "1.0",
             manualDeductions: [] as { description: string; amount: string }[],
+            remarks: "",
         },
         onSubmit: async () => { },
     });
@@ -93,6 +95,28 @@ export const SalaryCalculatorForm = ({ employeeId, month, onSuccess, isOpen }: S
         } : undefined,
         earlyCutoffDate,
     }, isOpen);
+
+    // Pre-fill remarks with the standard OTL-exceptions note once the preview
+    // loads, but only if the user hasn't already typed something. Reset when
+    // the target month changes so a reopened sheet picks up the new period.
+    const defaultRemarksSetRef = useRef(false);
+    useEffect(() => {
+        defaultRemarksSetRef.current = false;
+    }, [month]);
+    useEffect(() => {
+        if (
+            !defaultRemarksSetRef.current &&
+            calculation &&
+            (!formValues.remarks || formValues.remarks === "")
+        ) {
+            const monthName = format(parseISO(`${month}-01`), "MMM");
+            const start = format(parseISO(calculation.startDate), "dd/MM/yyyy");
+            const end = format(parseISO(calculation.endDate), "dd/MM/yyyy");
+            const defaultRemarks = `${monthName} Salary includes OTL exceptions from ${start} to ${end}`;
+            form.setFieldValue("remarks", defaultRemarks);
+            defaultRemarksSetRef.current = true;
+        }
+    }, [calculation, form, formValues.remarks, month]);
 
     const handleToggleArrears = (monthKey: string) => {
         setSelectedArrearsKeys(prev => {
@@ -132,6 +156,7 @@ export const SalaryCalculatorForm = ({ employeeId, month, onSuccess, isOpen }: S
             } : undefined,
             earlyCutoffDate,
             ignorePastUnmarkedDays: customIgnore ?? ignorePastUnmarkedDays,
+            remarks: formValues.remarks,
         }, {
             onError: (err: Error) => {
                 if (err.message.includes("PAST_UNMARKED_DAYS")) {
@@ -413,36 +438,67 @@ export const SalaryCalculatorForm = ({ employeeId, month, onSuccess, isOpen }: S
                             <CardTitle className="text-xs font-bold uppercase text-muted-foreground tracking-wider flex items-center gap-2">
                                 <ShieldAlert className="size-3.5" />
                                 Bradford Factor
+                                {(() => {
+                                    const annualRaw = calculation.yearlyBradfordScore;
+                                    const hasAnnual = annualRaw != null;
+                                    return hasAnnual ? (
+                                        <Badge variant="outline" className="text-[9px] font-bold uppercase tracking-wide">
+                                            Annual
+                                        </Badge>
+                                    ) : null;
+                                })()}
                             </CardTitle>
                         </CardHeader>
                         <CardContent className="p-4">
                             <div className="flex items-center justify-between">
                                 <div className="space-y-1">
                                     <p className="text-xs text-muted-foreground">Absence pattern score (B = S² × D)</p>
-                                    <p className="text-xs text-muted-foreground">Period: {calculation.bradfordFactorPeriod}</p>
+                                    {(() => {
+                                        const annualRaw = calculation.yearlyBradfordScore;
+                                        const hasAnnual = annualRaw != null;
+                                        const periodYear = parseISO(`${month}-01`).getFullYear();
+                                        return (
+                                            <p className="text-xs text-muted-foreground">
+                                                Period: {hasAnnual
+                                                    ? `1 Jan ${periodYear} to 31 Dec ${periodYear}`
+                                                    : calculation.bradfordFactorPeriod}
+                                            </p>
+                                        );
+                                    })()}
                                 </div>
                                 <div className="text-right">
-                                    <p className={cn(
-                                        "text-3xl font-extrabold tracking-tight",
-                                        calculation.bradfordFactorScore === 0 && "text-emerald-600",
-                                        calculation.bradfordFactorScore > 0 && calculation.bradfordFactorScore < 50 && "text-amber-600",
-                                        calculation.bradfordFactorScore >= 50 && calculation.bradfordFactorScore < 250 && "text-orange-600",
-                                        calculation.bradfordFactorScore >= 250 && "text-rose-600",
-                                    )}>
-                                        {calculation.bradfordFactorScore}
-                                    </p>
-                                    <Badge
-                                        variant="outline"
-                                        className={cn(
-                                            "text-[10px] mt-1",
-                                            calculation.bradfordFactorScore === 0 && "border-emerald-200 text-emerald-700 bg-emerald-50",
-                                            calculation.bradfordFactorScore > 0 && calculation.bradfordFactorScore < 50 && "border-amber-200 text-amber-700 bg-amber-50",
-                                            calculation.bradfordFactorScore >= 50 && calculation.bradfordFactorScore < 250 && "border-orange-200 text-orange-700 bg-orange-50",
-                                            calculation.bradfordFactorScore >= 250 && "border-rose-200 text-rose-700 bg-rose-50",
-                                        )}
-                                    >
-                                        {calculation.bradfordFactorScore === 0 ? "Excellent" : calculation.bradfordFactorScore < 50 ? "Acceptable" : calculation.bradfordFactorScore < 250 ? "Concerning" : "Critical"}
-                                    </Badge>
+                                    {(() => {
+                                        // Prefer annual score whenever it is present; otherwise cycle score.
+                                        const annualRaw = calculation.yearlyBradfordScore;
+                                        const score = (annualRaw != null)
+                                            ? Number(annualRaw)
+                                            : calculation.bradfordFactorScore;
+                                        return (
+                                            <>
+                                                <p className={cn(
+                                                    "text-3xl font-extrabold tracking-tight",
+                                                    score === 0 && "text-emerald-600",
+                                                    score > 0 && score < 50 && "text-amber-600",
+                                                    score >= 50 && score < 250 && "text-orange-600",
+                                                    score >= 250 && "text-rose-600",
+                                                )}>
+                                                    {score}
+                                                </p>
+                                                <Badge
+                                                    variant="outline"
+                                                    className={cn(
+                                                        "text-[10px] mt-1",
+                                                        score === 0 && "border-emerald-200 text-emerald-700 bg-emerald-50",
+                                                        score > 0 && score < 50 && "border-amber-200 text-amber-700 bg-amber-50",
+                                                        score >= 50 && score < 250 && "border-orange-200 text-orange-700 bg-orange-50",
+                                                        score >= 250 && "border-rose-200 text-rose-700 bg-rose-50",
+                                                    )}
+                                                >
+                                                    {score === 0 ? "Excellent" : score < 50 ? "Acceptable" : score < 250 ? "Concerning" : "Critical"}
+                                                </Badge>
+                                            </>
+                                        );
+                                    })()}
                                 </div>
                             </div>
                             <div className="mt-3 pt-3 border-t text-[10px] text-muted-foreground space-y-0.5">
@@ -836,6 +892,23 @@ export const SalaryCalculatorForm = ({ employeeId, month, onSuccess, isOpen }: S
                     <p className="text-xs text-muted-foreground leading-relaxed">
                         Saving this slip only updates the draft payroll record. No wallet is debited here. Finance settlement is selected later when the payroll is marked as paid.
                     </p>
+
+                    <form.Field name="remarks">
+                        {(field: any) => (
+                            <div className="space-y-1.5">
+                                <FieldLabel className="text-[11px] font-black uppercase text-muted-foreground">
+                                    Payslip Remarks
+                                </FieldLabel>
+                                <Textarea
+                                    value={field.state.value}
+                                    onChange={(e) => field.handleChange(e.target.value)}
+                                    onBlur={field.handleBlur}
+                                    placeholder="e.g. Feb Salary includes OTL exceptions from 16/01/2026 to 15/02/2026"
+                                    className="min-h-[64px] text-xs resize-none"
+                                />
+                            </div>
+                        )}
+                    </form.Field>
                 </div>
 
                 {/* Action buttons */}
