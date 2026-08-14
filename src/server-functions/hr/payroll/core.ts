@@ -321,6 +321,8 @@ export type GeneratePayslipInput = {
   autoFetchTada?: boolean;
   earlyCutoffDate?: string;
   ignorePastUnmarkedDays?: boolean;
+  /** User-entered payslip remarks. If omitted, stored as empty string. */
+  remarks?: string;
 };
 
 export async function generateEmployeePayslipCore(
@@ -340,6 +342,7 @@ export async function generateEmployeePayslipCore(
     autoFetchTada = true,
     earlyCutoffDate,
     ignorePastUnmarkedDays = false,
+    remarks = "",
   } = input;
 
   // -- 0. Validate arrears (fail-fast before any DB work) --------------------
@@ -704,30 +707,7 @@ export async function generateEmployeePayslipCore(
         arrearsFromMonths: arrearsMonths.length > 0 ? arrearsMonths : [],
 
         paymentSource: null,
-        remarks: [
-          payslipCalc.remarks,
-          salaryRevision.id === "current"
-            ? `Basic Salary: PKR ${Math.round(parseFloat(salaryRevision.basicSalary as string)).toLocaleString()} (legacy, no revision record)`
-            : `Salary revision #${salaryRevision.id.substring(0, 8)} effective ${salaryRevision.revisionDate}: PKR ${Math.round(parseFloat(salaryRevision.basicSalary as string)).toLocaleString()}`,
-          `Allowances: ${(salaryRevision.allowanceConfig || []).map((a: any) => `${a.name} PKR ${Math.round(a.amount).toLocaleString()}`).join(", ") || "None"}`,
-          previousDeficit > 0
-            ? `Carried Forward Deficit from previous cycle: PKR ${Math.round(previousDeficit).toLocaleString()}`
-            : null,
-          carriedForwardDeficit > 0
-            ? `DEFICIT: PKR ${Math.round(carriedForwardDeficit).toLocaleString()} will be carried forward to next cycle`
-            : null,
-          payslipCalc.daysNotEmployed > 0 
-            ? `Prorated by PKR ${Math.round(payslipCalc.notEmployedDeduction).toLocaleString()} for ${payslipCalc.daysNotEmployed} pre-joining/cutoff day(s).` 
-            : null,
-          arrearsMonths.length > 0
-            ? `Includes arrears of PKR ${Math.round(arrearsAmt).toLocaleString()} for: ${arrearsMonths.join(", ")}.`
-            : null,
-          advanceIdsToProcess.length > 0
-            ? advanceIdsToProcess.map(a => 
-                `Advance Recovery (Inst. ${a.installmentNo}/${a.totalInstallments}) - Remaining: PKR ${Math.round(a.remainingBalance).toLocaleString()}`
-              ).join(" | ")
-            : null,
-        ].filter(Boolean).join(" | ") || null,
+        remarks: remarks || null,
       })
       .returning();
 

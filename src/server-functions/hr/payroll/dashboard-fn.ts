@@ -187,8 +187,14 @@ export const getMonthlyPayrollTableFn = createServerFn()
     );
 
     // ── KPI stats (whole dataset, not just page) ───────────────────────
+    // Total monthly payroll obligation = basic salary + sum of monthly
+    // allowance amounts (allowance_config is JSONB: [{ amount: number }, ...]).
+    // The per-row allowance sum is computed in SQL via jsonb_array_elements
+    // to avoid N+1 fetches and to keep the aggregate accurate.
     const totalStats = await db
-      .select({ totalBasic: sql<string>`sum(${employees.basicSalary})` })
+      .select({
+        totalBasic: sql<string>`sum(CAST(${employees.basicSalary} AS numeric) + COALESCE((SELECT SUM((elem->>'amount')::numeric) FROM jsonb_array_elements(${employees.allowanceConfig}) AS elem), 0))`,
+      })
       .from(employees)
       .where(eq(employees.status, "active"));
 
@@ -202,7 +208,7 @@ export const getMonthlyPayrollTableFn = createServerFn()
 
     const pendingGrossStats = await db
       .select({
-        totalPending: sql<string>`sum(CAST(${employees.basicSalary} AS numeric))`,
+        totalPending: sql<string>`sum(CAST(${employees.basicSalary} AS numeric) + COALESCE((SELECT SUM((elem->>'amount')::numeric) FROM jsonb_array_elements(${employees.allowanceConfig}) AS elem), 0))`,
       })
       .from(employees)
       .leftJoin(
@@ -406,10 +412,11 @@ export const saveEmployeePayslipFn = createServerFn()
         .optional(),
       earlyCutoffDate: z.string().optional(),
       ignorePastUnmarkedDays: z.boolean().optional(),
+      remarks: z.string().optional(),
     }),
   )
   .handler(async ({ data, context }) => {
-    const { employeeId, month, deductionConfig, additionalAmounts, arrears } = data;
+    const { employeeId, month, deductionConfig, additionalAmounts, arrears, remarks } = data;
     const payrollPeriod = getPayrollPeriodForMonthKey(month);
 
     let payroll = await db.query.payrolls.findFirst({
@@ -444,6 +451,7 @@ export const saveEmployeePayslipFn = createServerFn()
         arrears,
         earlyCutoffDate: data.earlyCutoffDate,
         ignorePastUnmarkedDays: data.ignorePastUnmarkedDays,
+        remarks,
       },
       context.session.user.id,
     );

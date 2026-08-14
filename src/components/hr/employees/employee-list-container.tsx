@@ -55,7 +55,18 @@ export const EmployeeListContainer = () => {
 
   const totalPayroll = employees
     .filter((e) => e.status === "active")
-    .reduce((acc, curr) => acc + parseFloat(curr.basicSalary || "0"), 0);
+    .reduce(
+      (acc, curr) => {
+        const allowances = Array.isArray(curr.allowanceConfig)
+          ? (curr.allowanceConfig as { amount?: number }[]).reduce(
+              (sum, a) => sum + (typeof a.amount === "number" ? a.amount : 0),
+              0,
+            )
+          : 0;
+        return acc + parseFloat(curr.basicSalary || "0") + allowances;
+      },
+      0,
+    );
 
   return (
     <motion.div variants={containerVariants} initial="hidden" animate="show" className="space-y-6 font-sans antialiased">
@@ -119,7 +130,7 @@ export const EmployeeListContainer = () => {
               <span>{totalPayroll.toLocaleString()}</span>
             </div>
           }
-          subtext="Active employees only"
+          subtext="Active employees · incl. allowances"
         />
       </motion.div>
 

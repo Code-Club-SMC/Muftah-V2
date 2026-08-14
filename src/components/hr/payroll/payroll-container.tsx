@@ -541,9 +541,9 @@ export function PayrollContainer() {
       {/* ── KPI Cards ──────────────────────────────────────────────────── */}
       <motion.div variants={itemVariants} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <SharpKPICard
-          label="Total Base Payroll"
+          label="Total Monthly Payroll"
           value={`PKR ${Math.round(parseFloat(data.totalSalaryBudget)).toLocaleString()}`}
-          subtext="Sum of all standard salaries"
+          subtext="Basic + monthly allowances (active)"
           icon={DollarSign}
           theme="blue"
         />
@@ -555,9 +555,9 @@ export function PayrollContainer() {
           theme="emerald"
         />
         <SharpKPICard
-          label="Pending Base Salaries"
+          label="Pending Salaries"
           value={`PKR ${Math.round(parseFloat(data.totalPendingGross)).toLocaleString()}`}
-          subtext={`${data.activeCount - data.payslipsGeneratedCount} remaining`}
+          subtext={`${data.activeCount - data.payslipsGeneratedCount} remaining · incl. allowances`}
           icon={Clock}
           theme="amber"
         />
