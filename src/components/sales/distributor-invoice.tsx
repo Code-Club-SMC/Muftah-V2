@@ -254,7 +254,6 @@ td{padding:3px 6px;font-size:11px;border:1px solid #ccc;vertical-align:middle;}
       <div style="font-size:11px;line-height:2;text-align:right;white-space:nowrap;padding-left:24px;">
         <div><strong>Freight</strong> :&nbsp; ${fmtD(invoice.freight)}</div>
         <div><strong>Invoice Amount</strong> :&nbsp; ${fmtD(invoiceAmt)}</div>
-        ${invoice.totalProfit !== undefined ? `<div><strong style="color:${invoice.totalProfit >= 0 ? '#059669' : '#dc2626'}">Total Profit</strong> :&nbsp; <span style="color:${invoice.totalProfit >= 0 ? '#059669' : '#dc2626'}">${fmtD(invoice.totalProfit)}</span></div>` : ''}
         <div><strong>Previous Balance</strong> :&nbsp; ${fmtD(invoice.previousBalance)}</div>
         <div style="font-weight:800;font-size:12px;border-top:1px solid #999;padding-top:2px;margin-top:2px;"><strong>Grand Total</strong> :&nbsp; ${fmtD(grandTotal)}</div>
       </div>
@@ -397,9 +396,6 @@ td{padding:3px 6px;font-size:11px;border:1px solid #ccc;vertical-align:middle;}
                     <div style={{ fontSize: FONT_SZ, lineHeight: 2, textAlign: "right", whiteSpace: "nowrap", paddingLeft: 24 }}>
                         <div><strong>Freight</strong> : &nbsp;{fmtD(invoice.freight)}</div>
                         <div><strong>Invoice Amount</strong> : &nbsp;{fmtD(invoiceAmt)}</div>
-                        {invoice.totalProfit !== undefined && (
-                            <div><strong style={{ color: invoice.totalProfit >= 0 ? "#059669" : "#dc2626" }}>Total Profit</strong> : &nbsp;<span style={{ color: invoice.totalProfit >= 0 ? "#059669" : "#dc2626" }}>{fmtD(invoice.totalProfit)}</span></div>
-                        )}
                         <div><strong>Previous Balance</strong> : &nbsp;{fmtD(invoice.previousBalance)}</div>
                         <div style={{
                             fontWeight: 800,

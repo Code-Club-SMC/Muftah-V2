@@ -108,18 +108,29 @@ describe("invoice settlement database contract", () => {
     );
   });
 
-  it("migrates existing records without destructive reset", () => {
-    const migrationPath = resolve(
+  it("defines invoice number counters in the squashed baseline migration", () => {
+    const baselinePath = resolve(
       process.cwd(),
-      "src/db/migrations/0009_invoice_settlement_redesign.sql",
+      "src/db/migrations/0000_overconfident_nocturne.sql",
     );
-    const migration = readFileSync(migrationPath, "utf8");
+    const baseline = readFileSync(baselinePath, "utf8");
 
-    expect(migration).toContain("invoice_number_counters");
-    expect(migration).toContain("INV-");
-    expect(migration).toContain("invoice_cash");
-    expect(migration).toContain("Initial payment on invoice creation");
-    expect(migration).not.toMatch(/\bTRUNCATE\b/i);
-    expect(migration).not.toMatch(/\bDROP\s+TABLE\b/i);
+    expect(baseline).toContain("invoice_number_counters");
+    expect(baseline).not.toMatch(/\bTRUNCATE\b/i);
+    expect(baseline).not.toMatch(/\bDROP\s+TABLE\b/i);
+  });
+
+  it("seeds invoice number counters idempotently", () => {
+    const seedPath = resolve(
+      process.cwd(),
+      "src/db/migrations/0001_seed_invoice_counters.sql",
+    );
+    const seed = readFileSync(seedPath, "utf8");
+
+    expect(seed).toContain('INSERT INTO "invoice_number_counters"');
+    expect(seed).toMatch(/ON CONFLICT.*DO NOTHING/i);
+    expect(seed).not.toMatch(/\bTRUNCATE\b/i);
+    expect(seed).not.toMatch(/\bDROP\s+TABLE\b/i);
+    expect(seed).not.toMatch(/\bALTER\s+TABLE\b/i);
   });
 });

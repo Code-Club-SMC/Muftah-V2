@@ -99,9 +99,14 @@ export function calculateInvoiceLinePricing(
   const chargedCartons = unitType === "carton" ? Math.max(0, orderedCartons - freeCartonsTotal) : 0;
   const chargedUnits =
     unitType === "carton" ? chargedCartons * containersPerCarton : orderedUnits;
+  // Discount model: free cartons are a billing discount only.
+  // Customer orders N cartons, pays for (N - free), but receives N.
+  // Warehouse ships N, not N + free. Adding free to dispatched was a bug
+  // that caused double-counting (customer paid for fewer AND warehouse
+  // shipped extra → negative profit on every discount-rule invoice).
   const dispatchedUnits =
     unitType === "carton"
-      ? (orderedCartons + freeCartonsTotal) * containersPerCarton
+      ? orderedCartons * containersPerCarton
       : orderedUnits;
 
   const grossAmount =

@@ -103,6 +103,7 @@ export const updateInvoiceSchema = z.object({
   invoiceDiscount: z.number().nonnegative().default(0),
   invoiceDiscountDescription: z.string().optional(),
   remarks: z.string().optional(),
+  newPayments: z.array(invoicePaymentInputSchema).optional().default([]),
   items: z.array(
     z.object({
       pack: z.string().min(1, "Pack is required"),

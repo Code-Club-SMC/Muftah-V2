@@ -86,7 +86,10 @@ function toPKTOffsetTimestamp(value: string) {
 }
 
 function defaultPunchDateTime(date: string) {
-  return `${date}T09:00`;
+  const now = new Date();
+  const pktNow = new Date(now.getTime() + 5 * 60 * 60 * 1000);
+  const timePart = pktNow.toISOString().slice(11, 16);
+  return `${date}T${timePart}`;
 }
 
 function sourceLabel(punch: PunchRow) {

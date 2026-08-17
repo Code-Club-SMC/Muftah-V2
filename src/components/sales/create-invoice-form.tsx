@@ -281,6 +281,7 @@ export const CreateInvoiceForm = ({ onSuccess, onCancel, onDirtyChange, initialD
                 pricingMode,
                 discountRuleMap,
                 pricingMode === "distributor" ? selectedCustomerDefaultMargin : 0,
+                recipePriceMapWithEntityRates,
             );
             const expenses = roundMoney(Number(value.expenses) || 0);
             const isRetailerInvoice = value.customerType === "retailer";
@@ -352,7 +353,14 @@ export const CreateInvoiceForm = ({ onSuccess, onCancel, onDirtyChange, initialD
                 };
 
                 if (initialData?.id) {
-                    await updateInvoice({ ...commonPayload, id: initialData.id } as never);
+                    const newPayments = normalizedPayments.filter(
+                        (_, idx) => !value.payments[idx]?.status,
+                    );
+                    await updateInvoice({
+                        ...commonPayload,
+                        id: initialData.id,
+                        newPayments: newPayments.length > 0 ? newPayments : undefined,
+                    } as never);
                 } else {
                     const payload = {
                     ...commonPayload,
@@ -401,6 +409,13 @@ export const CreateInvoiceForm = ({ onSuccess, onCancel, onDirtyChange, initialD
                     });
                     toast.error("Please fix the following:\n" + friendlyMessages.join("\n"));
                 } else {
+                    console.error("[invoice-settlement] client/server totalPayable divergence", {
+                        clientTotalPayable: totalPayable,
+                        clientTotalAmount: totalAmount,
+                        expenses,
+                        invoiceDiscount,
+                        payments: value.payments,
+                    });
                     toast.error((error instanceof Error ? error.message : "Something went wrong. Please try again."));
                 }
             }
@@ -458,13 +473,18 @@ export const CreateInvoiceForm = ({ onSuccess, onCancel, onDirtyChange, initialD
 
     // Overlay entity-specific configured carton rates into global recipe base rates.
     // Non-distributor priority: order booker -> general walk-in -> global recipe rate.
+    // IMPORTANT: perPack must be rounded to match the server's
+    // buildConfiguredRecipePriceMap → applyEntityRate, which stores
+    // roundMoney(pricePerCarton / containersPerCarton). Without rounding,
+    // multiplying back by containersPerCarton gives a different carton rate
+    // than the server, causing "Payments cannot exceed invoice total".
     const recipePriceMapWithEntityRates = useMemo(() => {
         const map = new Map(recipePriceMap);
         if (distributorRecipeRates && isDistributorContext) {
             for (const dr of distributorRecipeRates as any[]) {
                 const containersPerCarton = Number(dr.containersPerCarton ?? 0);
                 if (containersPerCarton <= 0) continue;
-                const perPack = Number(dr.pricePerCarton) / containersPerCarton;
+                const perPack = roundMoney(Number(dr.pricePerCarton) / containersPerCarton);
                 const existing = map.get(dr.recipeId);
                 map.set(dr.recipeId, {
                     invoicePricePerPack: perPack,
@@ -480,7 +500,7 @@ export const CreateInvoiceForm = ({ onSuccess, onCancel, onDirtyChange, initialD
             for (const gr of generalRecipeRates as any[]) {
                 const containersPerCarton = Number(gr.containersPerCarton ?? 0);
                 if (containersPerCarton <= 0) continue;
-                const perPack = Number(gr.pricePerCarton) / containersPerCarton;
+                const perPack = roundMoney(Number(gr.pricePerCarton) / containersPerCarton);
                 const existing = map.get(gr.recipeId);
                 map.set(gr.recipeId, {
                     invoicePricePerPack: perPack,
@@ -495,7 +515,7 @@ export const CreateInvoiceForm = ({ onSuccess, onCancel, onDirtyChange, initialD
             for (const obr of orderBookerRecipeRates as any[]) {
                 const containersPerCarton = Number(obr.containersPerCarton ?? 0);
                 if (containersPerCarton <= 0) continue;
-                const perPack = Number(obr.pricePerCarton) / containersPerCarton;
+                const perPack = roundMoney(Number(obr.pricePerCarton) / containersPerCarton);
                 const existing = map.get(obr.recipeId);
                 map.set(obr.recipeId, {
                     invoicePricePerPack: perPack,
@@ -727,6 +747,7 @@ export const CreateInvoiceForm = ({ onSuccess, onCancel, onDirtyChange, initialD
                             pricingMode,
                             discountRuleMap,
                             pricingMode === "distributor" ? selectedCustomerDefaultMargin : 0,
+                            recipePriceMapWithEntityRates,
                         );
                         const appliedDiscount = Math.min(invoiceDiscount, totalAmount);
                         const totalProfit = roundMoney(
@@ -906,11 +927,13 @@ function computeTotal(
     pricingMode: "retailer" | "distributor" = "retailer",
     discountRuleMap?: Map<string, any[]>,
     marginPercent = 0,
+    recipePriceMap?: Map<string, RecipePriceEntry>,
 ): number {
     return roundMoney(items.reduce((acc, item) => {
         const stock = findStock(availableStock, item.recipeId);
         const recipeDefault = stock?.recipe?.containersPerCarton || 1;
         const autoFreeCartons = getAutoDiscountCartons(item, discountRuleMap);
+        const configuredPricePerPack = recipePriceMap?.get(item.recipeId)?.invoicePricePerPack;
         return acc + getLinePricingBreakdown(
             item,
             recipeDefault,
@@ -918,6 +941,7 @@ function computeTotal(
             pricingMode,
             autoFreeCartons,
             marginPercent,
+            configuredPricePerPack,
         ).netAmount;
     }, 0));
 }
@@ -943,6 +967,7 @@ function computeProfit(
             pricingMode,
             autoFreeCartons,
             marginPercent,
+            recipePricing?.invoicePricePerPack,
         ).profit;
     }, 0));
 }

@@ -516,6 +516,65 @@ export async function createInitialPayments(
 	return created;
 }
 
+export type AddPaymentsToInvoiceInput = {
+	invoiceId: string;
+	actorId: string;
+	payments: InitialPaymentInput[];
+};
+
+export async function addPaymentsToInvoice(
+	tx: SalesTransaction,
+	input: AddPaymentsToInvoiceInput,
+): Promise<PaymentRecord[]> {
+	if (input.payments.length === 0) return [];
+
+	const invoice = await lockInvoice(tx, input.invoiceId);
+	const preparedPayments = input.payments.map((payment) => ({
+		...preparePayment(payment),
+		sourceRecordId: payment.sourceRecordId ?? `invoice-edit:${createId()}`,
+	}));
+	assertNoDuplicatePayments(preparedPayments);
+	await validatePreparedWallets(tx, preparedPayments);
+	await assertProposedSettlement(tx, invoice, preparedPayments);
+
+	const created: PaymentRecord[] = [];
+	for (const prepared of preparedPayments) {
+		const payment = await insertPayment(
+			tx,
+			invoice,
+			input.actorId,
+			"invoice_creation",
+			prepared,
+		);
+		if (payment.status === "confirmed") {
+			await creditWalletForPayment(tx, payment, input.actorId);
+		}
+		created.push(payment);
+
+		await recordInvoiceTimelineEvent(
+			{
+				invoiceId: invoice.id,
+				eventType: "payment",
+				title:
+					payment.status === "confirmed"
+						? `Paid Amount recorded: PKR ${payment.amount}`
+						: `Payment pending verification: PKR ${payment.amount}`,
+				metadata: {
+					paymentId: payment.id,
+					method: payment.method,
+					status: payment.status,
+				},
+				actorId: input.actorId,
+				eventDate: payment.paymentDate,
+			},
+			tx,
+		);
+	}
+
+	await recalculateInvoiceSettlement(tx, invoice.id);
+	return created;
+}
+
 export async function recordRecoveryPayment(
 	tx: SalesTransaction,
 	input: RecordRecoveryPaymentInput,

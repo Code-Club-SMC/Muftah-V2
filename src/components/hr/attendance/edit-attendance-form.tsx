@@ -873,7 +873,6 @@ import {
   FieldError,
   FieldGroup,
 } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -907,6 +906,7 @@ import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { ManualPunchTimeline } from "./manual-punch-timeline";
+import { OvertimeHoursInput } from "./overtime-hours-input";
 import type { RecomputeResult } from "@/lib/attendance/recompute";
 import type { AttendanceEntrySource } from "@/lib/attendance/order-booker-day-state";
 
@@ -1411,14 +1411,6 @@ export const EditAttendanceForm = ({
     },
   });
 
-  const handleOvertimeHoursChange = (
-    field: { handleChange: (value: string | null) => void },
-    nextValue: string | null,
-  ) => {
-    overtimeEditedRef.current = true;
-    field.handleChange(nextValue);
-  };
-
   const handlePunchSummaryChange = (
     summary: RecomputeResult,
     punchCount: number,
@@ -1807,57 +1799,20 @@ export const EditAttendanceForm = ({
                             <div className="grid grid-cols-1 gap-3">
                               <form.Field name="overtimeHours">
                                 {(field) => (
-                                  <Field className="space-y-1.5">
-                                    <FieldLabel className="text-[13px] font-bold text-foreground/90 tracking-wide">
-                                      Requested OT Hours
-                                    </FieldLabel>
-                                    <div className="relative">
-                                      <Input
-                                        type="number"
-                                        step="0.5"
-                                        min="0"
-                                        max={formatHours(
-                                          overtimeUi.summary.suggestedOvertimeHours,
-                                        )}
-                                        inputMode="decimal"
-                                        placeholder="0.00"
-                                        value={field.state.value || ""}
-                                        onChange={(e) =>
-                                          handleOvertimeHoursChange(
-                                            field,
-                                            e.target.value || null,
-                                          )
-                                        }
-                                        onWheel={(e) =>
-                                          (e.target as HTMLInputElement).blur()
-                                        }
-                                        aria-describedby="overtime-hours-hint"
-                                        aria-invalid={!!overtimeUi.inputError}
-                                        className={cn(
-                                          "h-11 text-[14px] font-medium transition-colors bg-background border-border/60 focus-visible:ring-2 focus-visible:ring-amber-500/30 rounded-lg pr-11 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none",
-                                          overtimeUi.inputError &&
-                                            "border-destructive focus-visible:ring-destructive/30",
-                                        )}
-                                      />
-                                      <span
-                                        aria-hidden="true"
-                                        className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-[12px] font-semibold text-muted-foreground"
-                                      >
-                                        hrs
-                                      </span>
-                                    </div>
-                                    <p
-                                      id="overtime-hours-hint"
-                                      className="text-[11.5px] text-muted-foreground/80 font-medium"
-                                    >
-                                      Decimal format — e.g. 1.5 = 1 hr 30 min. Requested OT cannot be more than the suggested OT.
-                                    </p>
-                                    {overtimeUi.inputError && (
-                                      <p className="text-[11px] text-destructive">
-                                        {overtimeUi.inputError}
-                                      </p>
-                                    )}
-                                  </Field>
+                                  <OvertimeHoursInput
+                                    value={field.state.value}
+                                    onChange={(nextValue) => {
+                                      overtimeEditedRef.current = true;
+                                      field.handleChange(nextValue);
+                                    }}
+                                    maxHours={
+                                      overtimeUi.summary.suggestedOvertimeHours
+                                    }
+                                    hint="Requested OT cannot be more than the suggested OT."
+                                    inputError={overtimeUi.inputError}
+                                    ariaDescribedBy="overtime-hours-hint"
+                                    disabled={overtimeStatus === "approved"}
+                                  />
                                 )}
                               </form.Field>
                             </div>

@@ -8,6 +8,13 @@
       "when": 1786521212808,
       "tag": "0000_overconfident_nocturne",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1786521212809,
+      "tag": "0001_seed_invoice_counters",
+      "breakpoints": true
     }
   ]
 }

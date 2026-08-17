@@ -71,6 +71,20 @@ export const SettlementSection = ({
 		]);
 	}
 
+	function addBalanceCashPayment() {
+		if (!cashWallet) return;
+		if (breakdown.payLaterAmount <= 0) return;
+		const currentPayments = form.getFieldValue("payments") as PaymentInput[];
+		form.setFieldValue("payments", [
+			...currentPayments,
+			{
+				...blankPayment("cash"),
+				amount: Number(breakdown.payLaterAmount.toFixed(2)),
+				walletId: cashWallet.id,
+			},
+		]);
+	}
+
 	return (
 		<div className="grid grid-cols-1 gap-5 lg:grid-cols-5">
 			<div className="lg:col-span-2">
@@ -238,25 +252,36 @@ export const SettlementSection = ({
 							<Separator />
 						</div>
 
-						{!isEditing && totalPayable > 0 && (
-							<div className="grid gap-2 sm:grid-cols-2">
-								<Button
-									type="button"
-									variant="outline"
-									onClick={setFullCashPayment}
-									disabled={!cashWallet}
-								>
-									<CheckCircle2 /> Paid in Full (Cash)
-								</Button>
-								<Button
-									type="button"
-									variant="outline"
-									onClick={() => form.setFieldValue("payments", [])}
-								>
-									<CreditCard /> Pay Later
-								</Button>
-							</div>
-						)}
+					{!isEditing && totalPayable > 0 && (
+						<div className="grid gap-2 sm:grid-cols-2">
+							<Button
+								type="button"
+								variant="outline"
+								onClick={setFullCashPayment}
+								disabled={!cashWallet}
+							>
+								<CheckCircle2 /> Paid in Full (Cash)
+							</Button>
+							<Button
+								type="button"
+								variant="outline"
+								onClick={() => form.setFieldValue("payments", [])}
+							>
+								<CreditCard /> Pay Later
+							</Button>
+						</div>
+					)}
+
+					{isEditing && breakdown.payLaterAmount > 0 && (
+						<Button
+							type="button"
+							variant="outline"
+							onClick={addBalanceCashPayment}
+							disabled={!cashWallet}
+						>
+							<CheckCircle2 /> Pay Balance (Cash) — {PKR(breakdown.payLaterAmount)}
+						</Button>
+					)}
 
 						<PaymentRowsField
 							form={form}

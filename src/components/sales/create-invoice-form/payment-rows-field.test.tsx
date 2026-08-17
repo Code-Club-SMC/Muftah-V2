@@ -84,7 +84,7 @@ describe("invoice payment rows", () => {
 		expect(source).toContain('payment.method === "cash" ? "cash" : "bank"');
 		expect(source).toContain("field.pushValue(blankPayment())");
 		expect(source).toContain("field.removeValue(index)");
-		expect(source).toContain("disabled={readOnly}");
+		expect(source).toContain("disabled={rowReadOnly}");
 		expect(settlement).toContain('name="paymentDueDate"');
 		expect(settlement).toContain("breakdown.payLaterAmount > 0");
 		expect(settlement).toContain("Pending Verification");

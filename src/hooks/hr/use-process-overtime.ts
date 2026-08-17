@@ -11,6 +11,7 @@ export const useProcessOvertime = () => {
         },
         onSuccess: (data) => {
             queryClient.invalidateQueries({ queryKey: ["attendance"] });
+            queryClient.invalidateQueries({ queryKey: ["daily-attendance"] });
             queryClient.invalidateQueries({ queryKey: ["pending-approvals"] });
             queryClient.invalidateQueries({ queryKey: ["overtime-approvals"] });
             toast.success(

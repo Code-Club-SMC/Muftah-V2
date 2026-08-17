@@ -353,7 +353,7 @@ describe("sales workflow regressions", () => {
     const orderBillNumberSource = readFileSync(SALES_ORDER_BILL_FN, "utf8");
     const migrationPath = resolve(
       SALES_MIGRATIONS_DIR,
-      "0006_order_booker_bill_numbers.sql",
+      "0000_overconfident_nocturne.sql",
     );
 
     expect(ordersFnSource).toContain("allocateNextBillNumberInTx");
@@ -368,9 +368,6 @@ describe("sales workflow regressions", () => {
     expect(existsSync(migrationPath)).toBe(true);
 
     const migrationSource = readFileSync(migrationPath, "utf8");
-    expect(migrationSource).toContain("DROP DEFAULT");
-    expect(migrationSource).toContain("row_number() OVER");
-    expect(migrationSource).toContain('PARTITION BY "order_booker_id"');
     expect(migrationSource).toContain("uq_orders_order_booker_bill_number");
   });
 

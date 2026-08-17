@@ -212,13 +212,13 @@ describe("invoice create/edit regressions", () => {
     expect(pricing.marginDeduction).toBe(4592.64);
     expect(pricing.schemeDeduction).toBe(4062.72);
     expect(pricing.netAmount).toBe(48752.64);
-    expect(pricing.dispatchedUnits).toBe(672);
-    expect(pricing.costOfGoodsSold).toBe(11370.24);
-    expect(pricing.profit).toBe(37382.4);
+    expect(pricing.dispatchedUnits).toBe(624);
+    expect(pricing.costOfGoodsSold).toBe(10558.08);
+    expect(pricing.profit).toBe(38194.56);
     expect(roundMoney(pricing.grossAmount - pricing.marginDeduction - pricing.schemeDeduction)).toBe(pricing.netAmount);
   });
 
-  it("treats scheme cartons as extra dispatched stock on top of ordered cartons", () => {
+  it("treats scheme cartons as a billing discount without adding extra stock to shipment", () => {
     const pricing = calculateInvoiceLinePricing({
       invoiceMode: "distributor",
       unitType: "carton",
@@ -234,9 +234,9 @@ describe("invoice create/edit regressions", () => {
 
     expect(pricing.grossAmount).toBe(50000);
     expect(pricing.netAmount).toBe(44100);
-    expect(pricing.dispatchedUnits).toBe(2448);
-    expect(pricing.costOfGoodsSold).toBe(41420.16);
-    expect(pricing.profit).toBe(2679.84);
+    expect(pricing.dispatchedUnits).toBe(2400);
+    expect(pricing.costOfGoodsSold).toBe(40608);
+    expect(pricing.profit).toBe(3492);
   });
 
   it("computes canonical general-invoice carton lines from the base carton rate", () => {
@@ -457,7 +457,8 @@ describe("invoice create/edit regressions", () => {
     expect(source).toContain("const totalPayable = roundMoney(grossPayable);");
     expect(source).not.toContain("computeProfit(items, availableStock) - expenses");
     expect(source).toContain("totalProfit={totalProfit}");
-    expect(utilsSource).toContain("baseCartonRate: item.perCartonPrice || 0");
+    expect(utilsSource).toContain("resolveClientBaseCartonRate(");
+    expect(utilsSource).toContain("configuredCartonRate");
   });
 
   it("lets settlement amount fields accept paisa values and keeps retailer discount UI separate", () => {

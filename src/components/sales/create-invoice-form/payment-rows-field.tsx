@@ -74,6 +74,9 @@ export function findDuplicatePaymentRows(payments: PaymentInput[]) {
 	const seen = new Map<string, number>();
 	const duplicates = new Set<number>();
 	payments.forEach((payment, index) => {
+		// Existing (already saved) payments have a status and are read-only.
+		// Only check NEW payments for duplicates against other new payments.
+		if (payment.status) return;
 		const key = normalizedDuplicateKey(payment);
 		const firstIndex = seen.get(key);
 		if (firstIndex === undefined) {
@@ -165,13 +168,14 @@ export function PaymentRowsField({
 						</div>
 					)}
 
-					{payments.map((payment, index) => {
-						const requiredWalletType =
-							payment.method === "cash" ? "cash" : "bank";
-						const availableWallets = wallets.filter(
-							(wallet) => wallet.type === requiredWalletType,
-						);
-						const duplicate = duplicateRows.has(index);
+				{payments.map((payment, index) => {
+					const requiredWalletType =
+						payment.method === "cash" ? "cash" : "bank";
+					const availableWallets = wallets.filter(
+						(wallet) => wallet.type === requiredWalletType,
+					);
+					const duplicate = duplicateRows.has(index);
+					const rowReadOnly = readOnly && Boolean(payment.status);
 
 						return (
 							<div
@@ -224,17 +228,17 @@ export function PaymentRowsField({
 										) : payment.method !== "cash" ? (
 											<Badge variant="secondary">Pending Verification</Badge>
 										) : null}
-										{!readOnly && (
-											<Button
-												type="button"
-												variant="ghost"
-												size="icon-sm"
-												onClick={() => field.removeValue(index)}
-												aria-label={`Remove payment ${index + 1}`}
-											>
-												<HugeiconsIcon icon={Delete02Icon} strokeWidth={2} />
-											</Button>
-										)}
+									{!rowReadOnly && (
+										<Button
+											type="button"
+											variant="ghost"
+											size="icon-sm"
+											onClick={() => field.removeValue(index)}
+											aria-label={`Remove payment ${index + 1}`}
+										>
+											<HugeiconsIcon icon={Delete02Icon} strokeWidth={2} />
+										</Button>
+									)}
 									</div>
 								</div>
 
@@ -248,7 +252,7 @@ export function PaymentRowsField({
 													onValueChange={(value) =>
 														setMethod(index, value as PaymentInput["method"])
 													}
-													disabled={readOnly}
+													disabled={rowReadOnly}
 												>
 													<SelectTrigger>
 														<SelectValue />
@@ -278,7 +282,7 @@ export function PaymentRowsField({
 													onChange={(event) =>
 														amountField.handleChange(Number(event.target.value))
 													}
-													disabled={readOnly}
+													disabled={rowReadOnly}
 												/>
 												{duplicate && (
 													<FieldError>
@@ -296,7 +300,7 @@ export function PaymentRowsField({
 												<Select
 													value={walletField.state.value}
 													onValueChange={walletField.handleChange}
-													disabled={readOnly}
+													disabled={rowReadOnly}
 												>
 													<SelectTrigger>
 														<SelectValue
@@ -330,7 +334,7 @@ export function PaymentRowsField({
 													onChange={(event) =>
 														dateField.handleChange(event.target.value)
 													}
-													disabled={readOnly}
+													disabled={rowReadOnly}
 												/>
 											</Field>
 										)}
@@ -348,7 +352,7 @@ export function PaymentRowsField({
 														referenceField.handleChange(event.target.value)
 													}
 													placeholder="Bank transaction ID"
-													disabled={readOnly}
+													disabled={rowReadOnly}
 												/>
 											</Field>
 										)}
@@ -366,7 +370,7 @@ export function PaymentRowsField({
 														onChange={(event) =>
 															chequeBankField.handleChange(event.target.value)
 														}
-														disabled={readOnly}
+														disabled={rowReadOnly}
 													/>
 												</Field>
 											)}
@@ -380,7 +384,7 @@ export function PaymentRowsField({
 														onChange={(event) =>
 															chequeNumberField.handleChange(event.target.value)
 														}
-														disabled={readOnly}
+														disabled={rowReadOnly}
 													/>
 												</Field>
 											)}
@@ -395,7 +399,7 @@ export function PaymentRowsField({
 														onChange={(event) =>
 															chequeDateField.handleChange(event.target.value)
 														}
-														disabled={readOnly}
+														disabled={rowReadOnly}
 													/>
 												</Field>
 											)}
@@ -406,17 +410,15 @@ export function PaymentRowsField({
 						);
 					})}
 
-					{!readOnly && (
-						<Button
-							type="button"
-							variant="outline"
-							onClick={() => field.pushValue(blankPayment())}
-							className="w-full border-dashed"
-						>
-							<HugeiconsIcon icon={Add01Icon} strokeWidth={2} />
-							Add Payment
-						</Button>
-					)}
+				<Button
+					type="button"
+					variant="outline"
+					onClick={() => field.pushValue(blankPayment())}
+					className="w-full border-dashed"
+				>
+					<HugeiconsIcon icon={Add01Icon} strokeWidth={2} />
+					Add Payment
+				</Button>
 				</div>
 			)}
 		</form.Field>

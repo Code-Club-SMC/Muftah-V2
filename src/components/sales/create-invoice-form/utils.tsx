@@ -129,6 +129,39 @@ export function getConfiguredBaseUnitRate(
     return configuredInvoicePrice > 0 ? configuredInvoicePrice : 0;
 }
 
+// Mirrors server resolveConfiguredBaseCartonRate (invoice-posting-service.ts).
+// Returns the carton rate the server will use for online invoices so the
+// client total matches the server total. When no entity rate is configured,
+// falls back to item.perCartonPrice (legacy / typed-in rate).
+export function resolveClientBaseCartonRate({
+    recipePricing,
+    itemPerCartonPrice,
+    containersPerCarton,
+    isPriceOverride = false,
+    preserveStoredDistributorRate = false,
+}: {
+    recipePricing?: RecipePriceEntry | null;
+    itemPerCartonPrice?: number | null;
+    containersPerCarton: number;
+    isPriceOverride?: boolean;
+    preserveStoredDistributorRate?: boolean;
+}): number {
+    const configuredPricePerPack = getConfiguredBaseUnitRate(recipePricing);
+    const configuredCartonRate =
+        configuredPricePerPack > 0
+            ? roundMoney(configuredPricePerPack * containersPerCarton)
+            : 0;
+
+    if (!isPriceOverride && !preserveStoredDistributorRate && configuredCartonRate > 0) {
+        return configuredCartonRate;
+    }
+
+    const itemRate = Number(itemPerCartonPrice ?? 0);
+    if (itemRate > 0) return roundMoney(itemRate);
+
+    return configuredCartonRate;
+}
+
 export function getLiveUnitCostPerPack(
     stock: StockItem | null,
     recipePricing?: RecipePriceEntry | null,
@@ -216,10 +249,24 @@ export function getLinePricingBreakdown(
     pricingMode: InvoicePricingMode = "retailer",
     freeCartons = 0,
     marginPercent = 0,
+    configuredPricePerPack?: number,
 ): InvoiceLinePricingBreakdown {
     const eCPP = safeEffectiveCPP(recipeContainersPerCarton);
     const preserveStoredDistributorRate =
         pricingMode === "distributor" && Boolean(item.preserveStoredDistributorRate);
+
+    const recipePricing: RecipePriceEntry | undefined =
+        configuredPricePerPack != null
+            ? { invoicePricePerPack: configuredPricePerPack, retailPricePerPack: 0 }
+            : undefined;
+
+    const baseCartonRate = resolveClientBaseCartonRate({
+        recipePricing,
+        itemPerCartonPrice: item.perCartonPrice,
+        containersPerCarton: eCPP,
+        isPriceOverride: Boolean(item.isPriceOverride),
+        preserveStoredDistributorRate,
+    });
 
     return calculateInvoiceLinePricing({
         invoiceMode: normalizeInvoicePricingMode(pricingMode),
@@ -228,10 +275,10 @@ export function getLinePricingBreakdown(
         numberOfUnits: item.numberOfUnits || 0,
         manualFreeCartons: item.discountCartons || 0,
         autoFreeCartons: freeCartons,
-        baseCartonRate: item.perCartonPrice || 0,
+        baseCartonRate,
         containersPerCarton: eCPP,
         defaultMarginPercent: preserveStoredDistributorRate ? 0 : marginPercent,
-        unitCostPerPack: unitCostPerPack ?? ((item.perCartonPrice || 0) / eCPP),
+        unitCostPerPack: unitCostPerPack ?? (baseCartonRate / eCPP),
     });
 }
 

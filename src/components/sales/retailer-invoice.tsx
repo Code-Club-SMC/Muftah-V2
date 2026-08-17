@@ -290,7 +290,6 @@ td{padding:3px 6px;font-size:11px;border:1px solid #ccc;vertical-align:middle;}
         <tr><td class="lbl">Gross Amount</td><td>${grossTotal > 0 ? fmtD(grossTotal) : "0"}</td></tr>
         <tr><td class="lbl">CGST</td><td>${cgstAmt > 0 ? fmtD(cgstAmt) : "0"}</td></tr>
         <tr><td class="lbl">SGST</td><td>${sgstAmt > 0 ? fmtD(sgstAmt) : "0"}</td></tr>
-        ${invoice.totalProfit !== undefined ? `<tr><td class="lbl">Total Profit</td><td>${fmtD(invoice.totalProfit)}</td></tr>` : ""}
         <tr><td class="lbl" style="font-weight:800">Grand Total</td><td style="font-weight:800">${grandTotal > 0 ? fmtD(grandTotal) : "0"}</td></tr>
       </tbody>
     </table>
@@ -523,12 +522,6 @@ td{padding:3px 6px;font-size:11px;border:1px solid #ccc;vertical-align:middle;}
                                 <td style={{ ...tdBase, fontWeight: 600 }}>SGST</td>
                                 <td style={tdR}>{sgstAmt > 0 ? fmtD(sgstAmt) : "0"}</td>
                             </tr>
-                            {invoice.totalProfit !== undefined && (
-                                <tr>
-                                    <td style={{ ...tdBase, fontWeight: 600 }}>Total Profit</td>
-                                    <td style={tdR}>{fmtD(invoice.totalProfit)}</td>
-                                </tr>
-                            )}
                             <tr>
                                 <td style={{ ...tdBase, fontWeight: 800 }}>Grand Total</td>
                                 <td style={{ ...tdR, fontWeight: 800 }}>{grandTotal > 0 ? fmtD(grandTotal) : "0"}</td>

@@ -20,6 +20,16 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { motion, Variants } from "framer-motion";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 // ── Animation Variants ─────────────────────────────────────────────────────
 
@@ -42,8 +52,17 @@ const itemVariants: Variants = {
 
 type FilterStatus = "pending" | "approved" | "rejected" | "all";
 
+type ConfirmAction = {
+  id: string;
+  status: "approved" | "rejected";
+  employeeName: string;
+  date: string;
+  hours: string;
+} | null;
+
 export function OvertimeApprovalsContainer() {
   const [status, setStatus] = useState<FilterStatus>("pending");
+  const [confirmAction, setConfirmAction] = useState<ConfirmAction>(null);
 
   const { data } = useSuspenseQuery({
     queryKey: ["overtime-approvals", status],
@@ -58,6 +77,12 @@ export function OvertimeApprovalsContainer() {
     newStatus: "approved" | "rejected" | "pending",
   ) => {
     mutateOT.mutate({ id, status: newStatus });
+  };
+
+  const confirmProcess = () => {
+    if (!confirmAction) return;
+    handleProcess(confirmAction.id, confirmAction.status);
+    setConfirmAction(null);
   };
 
   const columns = useMemo<ColumnDef<any>[]>(
@@ -211,7 +236,15 @@ export function OvertimeApprovalsContainer() {
                     size="sm"
                     variant="outline"
                     className="h-8 px-2.5 rounded-none shadow-none border-emerald-500/30 text-emerald-600 hover:bg-emerald-500/10 hover:text-emerald-700 dark:hover:text-emerald-400 bg-emerald-500/5 disabled:opacity-50 disabled:cursor-not-allowed"
-                    onClick={() => handleProcess(row.original.id, "approved")}
+                    onClick={() =>
+                      setConfirmAction({
+                        id: row.original.id,
+                        status: "approved",
+                        employeeName: `${row.original.firstName} ${row.original.lastName}`,
+                        date: row.original.date,
+                        hours: row.original.overtimeHours,
+                      })
+                    }
                     disabled={mutateOT.isPending || isStale}
                     title={isStale ? "Cannot approve stale OT request" : "Approve OT"}
                   >
@@ -221,7 +254,15 @@ export function OvertimeApprovalsContainer() {
                     size="sm"
                     variant="outline"
                     className="h-8 px-2.5 rounded-none shadow-none border-rose-500/30 text-rose-600 hover:bg-rose-500/10 hover:text-rose-700 dark:hover:text-rose-400 bg-rose-500/5"
-                    onClick={() => handleProcess(row.original.id, "rejected")}
+                    onClick={() =>
+                      setConfirmAction({
+                        id: row.original.id,
+                        status: "rejected",
+                        employeeName: `${row.original.firstName} ${row.original.lastName}`,
+                        date: row.original.date,
+                        hours: row.original.overtimeHours,
+                      })
+                    }
                     disabled={mutateOT.isPending}
                     title="Reject OT"
                   >
@@ -400,6 +441,43 @@ export function OvertimeApprovalsContainer() {
           </TabsContent>
         </Tabs>
       </motion.div>
+
+      <AlertDialog
+        open={!!confirmAction}
+        onOpenChange={(open) => !open && setConfirmAction(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {confirmAction?.status === "approved"
+                ? "Approve overtime?"
+                : "Reject overtime?"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirmAction &&
+                (confirmAction.status === "approved"
+                  ? `Approve ${confirmAction.hours}h overtime for ${confirmAction.employeeName} on ${format(parseISO(confirmAction.date), "dd MMM yyyy")}. This will lock the entry for payroll.`
+                  : `Reject ${confirmAction.hours}h overtime for ${confirmAction.employeeName} on ${format(parseISO(confirmAction.date), "dd MMM yyyy")}. The request can be resubmitted later.`)}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setConfirmAction(null)}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmProcess}
+              disabled={mutateOT.isPending}
+              className={
+                confirmAction?.status === "approved"
+                  ? "bg-emerald-600 hover:bg-emerald-700"
+                  : "bg-rose-600 hover:bg-rose-700"
+              }
+            >
+              {confirmAction?.status === "approved" ? "Approve" : "Reject"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </motion.div>
   );
 }

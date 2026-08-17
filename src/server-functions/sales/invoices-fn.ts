@@ -22,7 +22,7 @@ import {
 import { calculateTotalUnits, calculateTotalInventoryValue } from "@/lib/wac";
 import { postInvoice } from "./invoice-posting-service";
 import { recordInvoiceTimelineEvent } from "./invoice-timeline-log";
-import { recalculateInvoiceSettlement } from "./settlement-service";
+import { addPaymentsToInvoice, recalculateInvoiceSettlement } from "./settlement-service";
 import {
   assertSettlementDueDate,
   calculateSettlement,
@@ -1369,6 +1369,10 @@ export const updateInvoiceFn = createServerFn()
         netInvoiceAmount + Number(data.expenses ?? 0),
       );
 
+      const hasNewPayments = Boolean(
+        data.newPayments && data.newPayments.length > 0,
+      );
+
       const settlementPayments = await tx.query.payments.findMany({
         where: eq(payments.invoiceId, existing.id),
         columns: { amount: true, method: true, status: true },
@@ -1381,7 +1385,13 @@ export const updateInvoiceFn = createServerFn()
           status: payment.status,
         })),
       );
-      assertSettlementDueDate(settlementPreview, data.paymentDueDate);
+      // Skip due-date check here when new payments are being added —
+      // addPaymentsToInvoice will run the final check with ALL payments
+      // (existing + new). Checking here would see a false payLaterAmount
+      // because the new payment hasn't been inserted yet.
+      if (!hasNewPayments) {
+        assertSettlementDueDate(settlementPreview, data.paymentDueDate);
+      }
 
       const customerSettlement = await tx.query.customers.findFirst({
         where: eq(customers.id, customerId),
@@ -1560,13 +1570,40 @@ export const updateInvoiceFn = createServerFn()
           remarks: data.remarks,
           warehouseId: data.warehouseId,
           stockWarehouseId,
+          ...(hasNewPayments
+            ? {
+                totalPrice: totalPayable.toString(),
+                outstandingAmount: roundMoney(
+                  totalPayable - Number(existing.paidAmount),
+                ).toString(),
+                paymentDueDate: data.paymentDueDate ?? null,
+              }
+            : {}),
         })
         .where(eq(invoices.id, data.id));
 
-      await recalculateInvoiceSettlement(tx, existing.id, {
-        totalPrice: totalPayable,
-        paymentDueDate: data.paymentDueDate ?? null,
-      });
+      if (hasNewPayments) {
+        await addPaymentsToInvoice(tx, {
+          invoiceId: existing.id,
+          actorId: userId,
+          payments: data.newPayments!.map((p) => ({
+            method: p.method,
+            amount: p.amount,
+            walletId: p.walletId,
+            reference: p.reference,
+            chequeNumber: p.chequeNumber,
+            chequeBank: p.chequeBank,
+            chequeDate: p.chequeDate,
+            paymentDate: p.paymentDate,
+            sourceRecordId: p.sourceRecordId,
+          })),
+        });
+      } else {
+        await recalculateInvoiceSettlement(tx, existing.id, {
+          totalPrice: totalPayable,
+          paymentDueDate: data.paymentDueDate ?? null,
+        });
+      }
 
       // ── Insert NEW line items + deduct stock ──────────────────────────────
       const remainingUnitsByRecipe = new Map<string, number>();
