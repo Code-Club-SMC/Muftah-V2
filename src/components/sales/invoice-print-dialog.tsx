@@ -196,6 +196,14 @@ const buildDistributorData = (inv: any): DistributorInvoiceData => {
 
     const grossAmount = billedCartons * (Number(item.perCartonPrice) || 0);
     const discountAmount = discCartons * (Number(item.perCartonPrice) || 0);
+    const chargedAmount = Math.max(0, grossAmount - discountAmount);
+    const marginPercent =
+      Number(item.marginPercent) ||
+      Number(inv.customer?.defaultMarginPercent) ||
+      (Number(item.margin) < 50 ? Number(item.margin) : 0);
+    const marginAmount =
+      Number(item.marginDeduction) ||
+      (marginPercent > 0 ? (chargedAmount * marginPercent) / 100 : 0);
 
     return {
       serialNo: i + 1,
@@ -204,6 +212,8 @@ const buildDistributorData = (inv: any): DistributorInvoiceData => {
       cartonQty: cartonQtyLabel,
       schemeCarton: schemeLabel,
       cartonRate: Number(item.perCartonPrice) || 0,
+      margin: marginPercent,
+      marginAmount,
       grossAmount,
       discount: discountAmount,
       netAmount: Number(item.amount) || 0,

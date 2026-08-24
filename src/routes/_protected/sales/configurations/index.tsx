@@ -31,11 +31,11 @@ import {
 } from "@/components/ui/select";
 import {
   useCreateDiscountRule,
+  useUpdateDiscountRule,
   useDeleteDiscountRule,
+  useGetDiscountRules,
+  useGetDiscountRuleHistory,
 } from "@/hooks/sales/use-discount-rules";
-import {
-  getDiscountRulesFn,
-} from "@/server-functions/sales/discount-rules-fn";
 import {
   getCustomersByTypeFn,
   getRecipesFn,
@@ -60,7 +60,7 @@ import {
 } from "@/server-functions/hr/rates/tada-rates-fn";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { Trash2, Plus, Settings, Car, Pencil, Search, ChevronDown, Package, Check } from "lucide-react";
+import { Trash2, Plus, Settings, Car, Pencil, Search, ChevronDown, Package, Check, Archive, History, Clock, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 import { DatePicker } from "@/components/custom/date-picker";
 import {
@@ -138,17 +138,100 @@ function ConfigurationsContent() {
 
 // ── Discount Tab ──
 function DiscountTab() {
-  const { data: rules } = useQuery({
-    queryKey: ["discount-rules"],
-    queryFn: () => getDiscountRulesFn({ data: {} }),
-  });
+  const [selectedDistributorId, setSelectedDistributorId] = useState<string>("all");
+  const [showInactive, setShowInactive] = useState<boolean>(false);
+  const [editingRule, setEditingRule] = useState<any | null>(null);
+  const [historyTarget, setHistoryTarget] = useState<{
+    customerId: string;
+    recipeId?: string;
+    customerName?: string;
+    recipeName?: string;
+  } | null>(null);
+
+  const filters = useMemo(() => {
+    const f: { customerId?: string; includeInactive?: boolean } = {
+      includeInactive: showInactive,
+    };
+    if (selectedDistributorId && selectedDistributorId !== "all") {
+      f.customerId = selectedDistributorId;
+    }
+    return f;
+  }, [selectedDistributorId, showInactive]);
+
+  const { data: rules, isLoading } = useGetDiscountRules(filters);
   const deleteMutation = useDeleteDiscountRule();
+  const updateMutation = useUpdateDiscountRule();
+
+  const { data: distributors } = useQuery({
+    queryKey: ["distributors-for-discount-filter"],
+    queryFn: () => getCustomersByTypeFn({ data: { customerType: "distributor", page: 1, limit: 500 } }),
+  });
+
+  const handleArchive = (id: string) => {
+    deleteMutation.mutate(
+      { data: { id } },
+      {
+        onSuccess: () => toast.success("Discount rule archived"),
+        onError: (err: any) => toast.error(err.message || "Failed to archive rule"),
+      }
+    );
+  };
+
+  const handleReactivate = (id: string) => {
+    updateMutation.mutate(
+      { data: { id, isActive: true, effectiveTo: null } },
+      {
+        onSuccess: () => toast.success("Discount rule reactivated"),
+        onError: (err: any) => toast.error(err.message || "Failed to reactivate rule"),
+      }
+    );
+  };
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold">Discount Rules</h3>
-        <AddDiscountRuleDialog />
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <h3 className="text-lg font-semibold">Distributor Discount Rules</h3>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Configure free unit rules per distributor and item. Historical edits and archived rules are preserved in the timeline.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            variant={showInactive ? "secondary" : "outline"}
+            size="sm"
+            onClick={() => setShowInactive(!showInactive)}
+            className="text-xs h-8"
+          >
+            <History className="size-3.5 mr-1.5" />
+            {showInactive ? "Viewing All (Incl. Archived)" : "View Timeline & Archives"}
+          </Button>
+          <AddDiscountRuleDialog />
+        </div>
+      </div>
+
+      {/* Filter by Distributor */}
+      <div className="flex items-center gap-3">
+        <div className="w-64">
+          <Select value={selectedDistributorId} onValueChange={setSelectedDistributorId}>
+            <SelectTrigger className="h-8 text-xs">
+              <SelectValue placeholder="All Distributors" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Distributors</SelectItem>
+              {distributors?.data?.map((d: any) => (
+                <SelectItem key={d.id} value={d.id}>
+                  {d.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        {selectedDistributorId !== "all" && (
+          <Button variant="ghost" size="sm" onClick={() => setSelectedDistributorId("all")} className="h-8 text-xs">
+            Reset Filter
+          </Button>
+        )}
       </div>
 
       <div className="rounded-xl border border-border/60 bg-card overflow-hidden">
@@ -159,45 +242,235 @@ function DiscountTab() {
               <TableHead className="text-[11px]">Item / Recipe</TableHead>
               <TableHead className="text-[11px] text-right">Buy Qty</TableHead>
               <TableHead className="text-[11px] text-right">Free Units</TableHead>
-              <TableHead className="text-[11px]">Effective</TableHead>
-              <TableHead className="text-[11px] w-[50px]" />
+              <TableHead className="text-[11px]">Status</TableHead>
+              <TableHead className="text-[11px]">Timeline / Effective</TableHead>
+              <TableHead className="text-[11px] text-right w-[120px]">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {!rules?.length ? (
+            {isLoading ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center text-muted-foreground py-10 text-sm">
-                  No discount rules configured.
+                <TableCell colSpan={7} className="text-center text-muted-foreground py-10 text-sm">
+                  Loading discount rules...
+                </TableCell>
+              </TableRow>
+            ) : !rules?.length ? (
+              <TableRow>
+                <TableCell colSpan={7} className="text-center text-muted-foreground py-10 text-sm">
+                  No discount rules found.
                 </TableCell>
               </TableRow>
             ) : (
-              rules.map((r: any) => (
-                <TableRow key={r.id}>
-                  <TableCell className="text-sm font-medium">{r.customer?.name}</TableCell>
-                  <TableCell className="text-sm">{r.recipe?.name}</TableCell>
-                  <TableCell className="text-sm text-right tabular-nums">{r.quantityThreshold}</TableCell>
-                  <TableCell className="text-sm text-right tabular-nums">{r.freeUnits}</TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
-                    {format(new Date(r.effectiveFrom), "dd MMM yyyy")}
-                    {r.effectiveTo && ` → ${format(new Date(r.effectiveTo), "dd MMM yyyy")}`}
-                  </TableCell>
-                  <TableCell>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="size-8"
-                      onClick={() => deleteMutation.mutate({ data: { id: r.id } })}
-                    >
-                      <Trash2 className="size-4 text-destructive" />
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))
+              rules.map((r: any) => {
+                const now = new Date();
+                const isExpired = r.effectiveTo && new Date(r.effectiveTo) < now;
+                const isArchived = !r.isActive;
+
+                return (
+                  <TableRow key={r.id} className={isArchived ? "bg-muted/20 text-muted-foreground" : undefined}>
+                    <TableCell className="text-sm font-medium">{r.customer?.name || "N/A"}</TableCell>
+                    <TableCell className="text-sm">{r.recipe?.name || "All Items"}</TableCell>
+                    <TableCell className="text-sm text-right tabular-nums font-semibold">{r.quantityThreshold} cartons</TableCell>
+                    <TableCell className="text-sm text-right tabular-nums text-emerald-600 font-semibold">{r.freeUnits} units</TableCell>
+                    <TableCell>
+                      {isArchived ? (
+                        <Badge variant="outline" className="text-[10px] bg-muted/50 text-muted-foreground border-muted-foreground/30">
+                          Archived
+                        </Badge>
+                      ) : isExpired ? (
+                        <Badge variant="secondary" className="text-[10px] bg-amber-500/10 text-amber-600 border-amber-500/20">
+                          Expired
+                        </Badge>
+                      ) : (
+                        <Badge variant="default" className="text-[10px] bg-emerald-600">
+                          Active
+                        </Badge>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      <div className="flex items-center gap-1">
+                        <Clock className="size-3 text-muted-foreground/60" />
+                        <span>
+                          {format(new Date(r.effectiveFrom), "dd MMM yyyy")}
+                          {r.effectiveTo ? ` → ${format(new Date(r.effectiveTo), "dd MMM yyyy")}` : " → Present"}
+                        </span>
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-7 text-primary hover:text-primary"
+                          title="View Edit Timeline History"
+                          onClick={() => setHistoryTarget({
+                            customerId: r.customerId,
+                            recipeId: r.recipeId,
+                            customerName: r.customer?.name,
+                            recipeName: r.recipe?.name,
+                          })}
+                        >
+                          <History className="size-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-7"
+                          title="Edit Rule"
+                          onClick={() => setEditingRule(r)}
+                        >
+                          <Pencil className="size-3.5" />
+                        </Button>
+                        {r.isActive ? (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="size-7 text-muted-foreground hover:text-destructive"
+                            title="Archive Rule (Soft Delete)"
+                            onClick={() => handleArchive(r.id)}
+                            disabled={deleteMutation.isPending}
+                          >
+                            <Archive className="size-3.5" />
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="size-7 text-emerald-600 hover:text-emerald-700"
+                            title="Reactivate Rule"
+                            onClick={() => handleReactivate(r.id)}
+                            disabled={updateMutation.isPending}
+                          >
+                            <RotateCcw className="size-3.5" />
+                          </Button>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })
             )}
           </TableBody>
         </Table>
       </div>
+
+      {editingRule && (
+        <EditDiscountRuleDialog
+          rule={editingRule}
+          open={!!editingRule}
+          onOpenChange={(open) => { if (!open) setEditingRule(null); }}
+        />
+      )}
+
+      {historyTarget && (
+        <RuleHistoryDialog
+          customerId={historyTarget.customerId}
+          recipeId={historyTarget.recipeId}
+          customerName={historyTarget.customerName}
+          recipeName={historyTarget.recipeName}
+          open={!!historyTarget}
+          onOpenChange={(open) => { if (!open) setHistoryTarget(null); }}
+        />
+      )}
     </div>
+  );
+}
+
+function RuleHistoryDialog({
+  customerId,
+  recipeId,
+  customerName,
+  recipeName,
+  open,
+  onOpenChange,
+}: {
+  customerId: string;
+  recipeId?: string;
+  customerName?: string;
+  recipeName?: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const { data: history, isLoading } = useGetDiscountRuleHistory(customerId, recipeId, open);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <History className="size-4 text-primary" />
+            <span>Discount Rule Edit Timeline</span>
+          </DialogTitle>
+          <p className="text-xs text-muted-foreground mt-1">
+            Complete timeline history of rules and edits for <strong className="text-foreground">{customerName || "Distributor"}</strong> – {recipeName || "All Items"}.
+          </p>
+        </DialogHeader>
+
+        <div className="py-2 max-h-[420px] overflow-y-auto pr-1 space-y-4">
+          {isLoading ? (
+            <div className="text-center text-muted-foreground py-8 text-sm">Loading history timeline...</div>
+          ) : !history?.length ? (
+            <div className="text-center text-muted-foreground py-8 text-sm">No edit history recorded yet.</div>
+          ) : (
+            <div className="relative border-l-2 border-border/80 ml-3 pl-4 space-y-5">
+              {history.map((h: any, idx: number) => {
+                const now = new Date();
+                const isCurrent = h.isActive && (!h.effectiveTo || new Date(h.effectiveTo) >= now);
+                const isArchived = !h.isActive;
+
+                return (
+                  <div key={h.id} className="relative group">
+                    {/* Timeline dot */}
+                    <div
+                      className={`absolute -left-[23px] top-1 size-3.5 rounded-full border-2 bg-background ${
+                        isCurrent
+                          ? "border-emerald-500 bg-emerald-500/20"
+                          : "border-muted-foreground/40 bg-muted/40"
+                      }`}
+                    />
+
+                    <div className="space-y-1 bg-muted/30 p-3 rounded-lg border border-border/50">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-semibold text-foreground">
+                            {idx === 0 ? "Latest Version" : `Version ${history.length - idx}`}
+                          </span>
+                          {isCurrent ? (
+                            <Badge variant="default" className="text-[10px] bg-emerald-600">
+                              Active Current
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-[10px] bg-muted/50 text-muted-foreground">
+                              Archived / Past
+                            </Badge>
+                          )}
+                        </div>
+                        <span className="text-[11px] text-muted-foreground">
+                          {format(new Date(h.createdAt), "dd MMM yyyy HH:mm")}
+                        </span>
+                      </div>
+
+                      <div className="text-sm font-medium pt-1">
+                        Buy <span className="font-bold text-foreground">{h.quantityThreshold} cartons</span> → Get{" "}
+                        <span className="font-bold text-emerald-600">{h.freeUnits} free units</span>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground pt-1">
+                        <Clock className="size-3 text-muted-foreground/70" />
+                        <span>
+                          Effective: {format(new Date(h.effectiveFrom), "dd MMM yyyy")}
+                          {h.effectiveTo ? ` → ${format(new Date(h.effectiveTo), "dd MMM yyyy HH:mm")}` : " → Present"}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -304,6 +577,183 @@ function AddDiscountRuleDialog() {
           </div>
           <Button className="w-full" onClick={handleSubmit} disabled={createMutation.isPending}>
             Create Rule
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function EditDiscountRuleDialog({
+  rule,
+  open,
+  onOpenChange,
+}: {
+  rule: any;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const updateMutation = useUpdateDiscountRule();
+  const [form, setForm] = useState({
+    customerId: rule?.customerId || "",
+    recipeId: rule?.recipeId || "",
+    quantityThreshold: String(rule?.quantityThreshold ?? ""),
+    freeUnits: String(rule?.freeUnits ?? ""),
+    effectiveFrom: rule?.effectiveFrom ? new Date(rule.effectiveFrom) : new Date(),
+    effectiveTo: rule?.effectiveTo ? new Date(rule.effectiveTo) : (null as Date | null),
+    isActive: rule?.isActive ?? true,
+  });
+
+  useEffect(() => {
+    if (rule) {
+      setForm({
+        customerId: rule.customerId || "",
+        recipeId: rule.recipeId || "",
+        quantityThreshold: String(rule.quantityThreshold ?? ""),
+        freeUnits: String(rule.freeUnits ?? ""),
+        effectiveFrom: rule.effectiveFrom ? new Date(rule.effectiveFrom) : new Date(),
+        effectiveTo: rule.effectiveTo ? new Date(rule.effectiveTo) : null,
+        isActive: rule.isActive ?? true,
+      });
+    }
+  }, [rule]);
+
+  const { data: distributors } = useQuery({
+    queryKey: ["distributors-for-discount"],
+    queryFn: () => getCustomersByTypeFn({ data: { customerType: "distributor", page: 1, limit: 200 } }),
+  });
+
+  const { data: recipesList } = useQuery({
+    queryKey: ["all-recipes"],
+    queryFn: () => getRecipesFn(),
+  });
+
+  const handleSubmit = () => {
+    if (!form.customerId || !form.recipeId || !form.quantityThreshold || !form.freeUnits) {
+      toast.error("Distributor, recipe, buy qty and free units are required");
+      return;
+    }
+
+    updateMutation.mutate(
+      {
+        data: {
+          id: rule.id,
+          customerId: form.customerId,
+          recipeId: form.recipeId,
+          quantityThreshold: Number(form.quantityThreshold),
+          freeUnits: Number(form.freeUnits),
+          effectiveFrom: format(form.effectiveFrom, "yyyy-MM-dd"),
+          effectiveTo: form.effectiveTo ? format(form.effectiveTo, "yyyy-MM-dd") : null,
+          isActive: form.isActive,
+        },
+      },
+      {
+        onSuccess: () => {
+          onOpenChange(false);
+          toast.success("Discount rule updated");
+        },
+        onError: (error: any) => {
+          toast.error(error.message || "Failed to update discount rule");
+        },
+      },
+    );
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Edit Discount Rule</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 pt-2">
+          <div className="space-y-1.5">
+            <Label>Distributor</Label>
+            <Select value={form.customerId} onValueChange={(v) => setForm((f) => ({ ...f, customerId: v }))}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select distributor" />
+              </SelectTrigger>
+              <SelectContent>
+                {distributors?.data?.map((d: any) => (
+                  <SelectItem key={d.id} value={d.id}>
+                    {d.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Item / Recipe</Label>
+            <Select value={form.recipeId} onValueChange={(v) => setForm((f) => ({ ...f, recipeId: v }))}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select item" />
+              </SelectTrigger>
+              <SelectContent>
+                {recipesList?.map((r: any) => (
+                  <SelectItem key={r.id} value={r.id}>
+                    {r.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label>Buy Qty (cartons)</Label>
+              <Input
+                type="number"
+                value={form.quantityThreshold}
+                onChange={(e) => setForm((f) => ({ ...f, quantityThreshold: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Free Units</Label>
+              <Input
+                type="number"
+                value={form.freeUnits}
+                onChange={(e) => setForm((f) => ({ ...f, freeUnits: e.target.value }))}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label>Effective From</Label>
+              <DatePicker
+                date={form.effectiveFrom}
+                onChange={(d) => d && setForm((f) => ({ ...f, effectiveFrom: d }))}
+                className="w-full"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Effective To (Optional)</Label>
+              <DatePicker
+                date={form.effectiveTo ?? undefined}
+                onChange={(d) => setForm((f) => ({ ...f, effectiveTo: d ?? null }))}
+                className="w-full"
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between pt-1">
+            <Label className="text-xs">Rule Status</Label>
+            <Select
+              value={form.isActive ? "active" : "archived"}
+              onValueChange={(v) => setForm((f) => ({ ...f, isActive: v === "active" }))}
+            >
+              <SelectTrigger className="w-32 h-8 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="active">Active</SelectItem>
+                <SelectItem value="archived">Archived</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <Button className="w-full" onClick={handleSubmit} disabled={updateMutation.isPending}>
+            Update Rule
           </Button>
         </div>
       </DialogContent>

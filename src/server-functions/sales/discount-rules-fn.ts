@@ -60,18 +60,21 @@ export const createDiscountRuleFn = createServerFn()
   });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// UPDATE DISCOUNT RULE
+// UPDATE DISCOUNT RULE (Archives previous version on logic edits to keep timeline)
 // ═══════════════════════════════════════════════════════════════════════════
 export const updateDiscountRuleFn = createServerFn()
   .middleware([requireSalesManageMiddleware])
   .inputValidator((input: any) =>
     z.object({
       id: z.string().min(1),
+      customerId: z.string().optional(),
+      recipeId: z.string().optional(),
       quantityThreshold: z.number().int().positive().optional(),
       freeUnits: z.number().int().positive().optional(),
       effectiveFrom: z.string().optional(),
-      effectiveTo: z.string().optional(),
+      effectiveTo: z.string().nullable().optional(),
       isActive: z.boolean().optional(),
+      archivePreviousVersion: z.boolean().default(true),
     }).parse(input),
   )
   .handler(async ({ data }) => {
@@ -80,7 +83,48 @@ export const updateDiscountRuleFn = createServerFn()
     });
     if (!existing) throw new Error("Discount rule not found");
 
+    // Check if key rule logic parameters changed (threshold, free units, recipe, customer)
+    const isLogicChange =
+      (data.quantityThreshold !== undefined && data.quantityThreshold !== existing.quantityThreshold) ||
+      (data.freeUnits !== undefined && data.freeUnits !== existing.freeUnits) ||
+      (data.recipeId !== undefined && data.recipeId !== existing.recipeId) ||
+      (data.customerId !== undefined && data.customerId !== existing.customerId);
+
+    if (data.archivePreviousVersion && isLogicChange && existing.isActive) {
+      // Timeline preservation: soft-delete/archive the previous version & create a new active rule version
+      const now = new Date();
+      await db
+        .update(discountRules)
+        .set({
+          isActive: false,
+          effectiveTo: now,
+          updatedAt: now,
+        })
+        .where(eq(discountRules.id, data.id));
+
+      const [newVersion] = await db
+        .insert(discountRules)
+        .values({
+          customerId: data.customerId ?? existing.customerId,
+          recipeId: data.recipeId ?? existing.recipeId,
+          ruleType: "free_units",
+          quantityThreshold: data.quantityThreshold ?? existing.quantityThreshold,
+          freeUnits: data.freeUnits ?? existing.freeUnits,
+          discountCartons: 0,
+          discountPercent: "0",
+          effectiveFrom: data.effectiveFrom ? new Date(data.effectiveFrom) : now,
+          effectiveTo: data.effectiveTo ? new Date(data.effectiveTo) : null,
+          isActive: data.isActive !== undefined ? data.isActive : true,
+        })
+        .returning();
+
+      return newVersion;
+    }
+
+    // Direct in-place update if only dates/status changed or archiving is disabled
     const updateData: any = {};
+    if (data.customerId !== undefined) updateData.customerId = data.customerId;
+    if (data.recipeId !== undefined) updateData.recipeId = data.recipeId;
     if (data.quantityThreshold !== undefined) updateData.quantityThreshold = data.quantityThreshold;
     if (data.freeUnits !== undefined) updateData.freeUnits = data.freeUnits;
     if (data.effectiveFrom !== undefined) updateData.effectiveFrom = new Date(data.effectiveFrom);
@@ -98,14 +142,55 @@ export const updateDiscountRuleFn = createServerFn()
   });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// DELETE DISCOUNT RULE
+// GET DISCOUNT RULE HISTORY (Timeline of all versions for customer + recipe)
+// ═══════════════════════════════════════════════════════════════════════════
+export const getDiscountRuleHistoryFn = createServerFn()
+  .middleware([requireSalesViewMiddleware])
+  .inputValidator((input: any) =>
+    z.object({
+      customerId: z.string().min(1),
+      recipeId: z.string().optional(),
+    }).parse(input),
+  )
+  .handler(async ({ data }) => {
+    const conditions: any[] = [eq(discountRules.customerId, data.customerId)];
+    if (data.recipeId) {
+      conditions.push(eq(discountRules.recipeId, data.recipeId));
+    }
+
+    return await db.query.discountRules.findMany({
+      where: and(...conditions),
+      with: {
+        customer: { columns: { id: true, name: true, customerType: true } },
+        recipe: { columns: { id: true, name: true } },
+      },
+      orderBy: [desc(discountRules.createdAt), desc(discountRules.effectiveFrom)],
+    });
+  });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// DELETE / ARCHIVE DISCOUNT RULE (Soft-deletes / Archives, never permanently deletes)
 // ═══════════════════════════════════════════════════════════════════════════
 export const deleteDiscountRuleFn = createServerFn()
   .middleware([requireSalesManageMiddleware])
   .inputValidator((input: any) => z.object({ id: z.string() }).parse(input))
   .handler(async ({ data }) => {
-    await db.delete(discountRules).where(eq(discountRules.id, data.id));
-    return { success: true };
+    const existing = await db.query.discountRules.findFirst({
+      where: eq(discountRules.id, data.id),
+    });
+    if (!existing) throw new Error("Discount rule not found");
+
+    const [archived] = await db
+      .update(discountRules)
+      .set({
+        isActive: false,
+        effectiveTo: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(discountRules.id, data.id))
+      .returning();
+
+    return { success: true, archived };
   });
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -158,7 +243,7 @@ export const getDiscountRulesFn = createServerFn()
         customer: { columns: { id: true, name: true, customerType: true } },
         recipe: { columns: { id: true, name: true } },
       },
-      orderBy: [desc(discountRules.quantityThreshold)],
+      orderBy: [desc(discountRules.updatedAt), desc(discountRules.createdAt), desc(discountRules.quantityThreshold)],
     });
   });
 

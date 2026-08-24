@@ -13,6 +13,8 @@ export type DistributorInvoiceItem = {
     /** e.g. "4-0" */
     schemeCarton: string;
     cartonRate: number;
+    margin?: number;
+    marginAmount?: number;
     grossAmount: number;
     discount: number;
     netAmount: number;
@@ -120,6 +122,10 @@ export const DistributorInvoiceView = ({
     const totalGross = invoice.items.reduce((s, it) => s + it.grossAmount, 0);
     const totalDisc = invoice.items.reduce((s, it) => s + it.discount, 0);
     const totalNet = invoice.items.reduce((s, it) => s + it.netAmount, 0);
+    const totalMarginAmount = invoice.items.reduce(
+        (s, it) => s + (it.marginAmount || (it.grossAmount * ((it.margin || 0) / 100))),
+        0,
+    );
     const schemeTotals = sumQtyPart(invoice.items, "schemeCarton");
 
     // Extract carton count from labels like "20 Cartons (480 Packs)" or legacy "20 - 0"
@@ -133,7 +139,7 @@ export const DistributorInvoiceView = ({
 
     const orderCartons = invoice.items.reduce((a, it) => a + parseCartonCount(it.cartonQty), 0);
     const schemeCartons = invoice.items.reduce((a, it) => a + parseCartonCount(it.schemeCarton), 0);
-    const netCartons = orderCartons + schemeCartons;
+    const netCartons = Math.max(0, orderCartons - schemeCartons);
     const invoiceAmt = invoice.invoiceAmount ?? totalNet;
     const grandTotal = invoiceAmt + invoice.previousBalance;
 
@@ -142,18 +148,26 @@ export const DistributorInvoiceView = ({
         const pw = window.open("", "_blank");
         if (!pw) { window.print(); return; }
 
-        const rows = invoice.items.map((it) => `
+        const rows = invoice.items.map((it) => {
+            const mPct = it.margin ? `${fmtN(it.margin)}%` : "";
+            const mAmt = it.marginAmount ? `(PKR ${fmtD(it.marginAmount)})` : "";
+            const marginHtml = mPct && mAmt
+                ? `<div style="font-weight:700;">${mPct}</div><div style="font-size:9.5px;color:#555;">${mAmt}</div>`
+                : (mPct || mAmt);
+
+            return `
             <tr>
                 <td class="tc">${it.serialNo}</td>
                 <td>${it.itemDescription}</td>
                 <td class="tc">${it.cartonQty}</td>
                 <td class="tc">${it.schemeCarton}</td>
-                <td class="tr">${fmtN(it.cartonRate)}</td>
-                <td class="tr">${fmtN(it.grossAmount)}</td>
-                <td class="tr">${fmtN(it.discount)}</td>
+                <td class="tr">${fmtD(it.cartonRate)}</td>
+                <td class="tr">${marginHtml}</td>
+                <td class="tr">${fmtD(it.grossAmount)}</td>
+                <td class="tr">${fmtD(it.discount)}</td>
                 <td class="tr">${fmtD(it.netAmount)}</td>
-            </tr>`
-        ).join("");
+            </tr>`;
+        }).join("");
 
         pw.document.write(`
 <!DOCTYPE html>
@@ -217,23 +231,26 @@ td{padding:3px 6px;font-size:11px;border:1px solid #ccc;vertical-align:middle;}
     <thead>
       <tr>
         <th style="width:4%">Serial No.</th>
-        <th style="width:36%">Item Description</th>
+        <th style="width:32%">Item Description</th>
         <th style="width:10%">Carton Qty</th>
         <th style="width:8%">Scheme Carton</th>
         <th style="width:8%">Carton Rate</th>
-        <th style="width:12%">Gross Amount</th>
-        <th style="width:8%">Disc.</th>
+        <th style="width:8%">Margin (%)</th>
+        <th style="width:11%">Gross Amount</th>
+        <th style="width:7%">Disc.</th>
         <th style="width:12%">Net Amount</th>
       </tr>
     </thead>
     <tbody>
       ${rows}
       <tr>
-        <td class="tot-td" colspan="3"></td>
-        <td class="tot-td">${schemeTotals}</td>
+        <td class="tot-td" colspan="2"></td>
+        <td class="tot-td tc">${fmtN(orderCartons)} - 0</td>
+        <td class="tot-td tc">${schemeTotals}</td>
         <td class="tot-td"></td>
-        <td class="tot-td">${fmtN(totalGross)}</td>
-        <td class="tot-td">${fmtN(totalDisc)}</td>
+        <td class="tot-td" style="font-size:10px;">${totalMarginAmount > 0 ? `PKR ${fmtD(totalMarginAmount)}` : ''}</td>
+        <td class="tot-td">${fmtD(totalGross)}</td>
+        <td class="tot-td">${fmtD(totalDisc)}</td>
         <td class="tot-td">${fmtD(totalNet)}</td>
       </tr>
     </tbody>
@@ -325,12 +342,13 @@ td{padding:3px 6px;font-size:11px;border:1px solid #ccc;vertical-align:middle;}
                 <table style={{ width: "100%", borderCollapse: "collapse" }}>
                     <colgroup>
                         <col style={{ width: "4%" }} />
-                        <col style={{ width: "36%" }} />
+                        <col style={{ width: "32%" }} />
                         <col style={{ width: "10%" }} />
                         <col style={{ width: "8%" }} />
                         <col style={{ width: "8%" }} />
-                        <col style={{ width: "12%" }} />
                         <col style={{ width: "8%" }} />
+                        <col style={{ width: "11%" }} />
+                        <col style={{ width: "7%" }} />
                         <col style={{ width: "12%" }} />
                     </colgroup>
                     <thead>
@@ -340,6 +358,7 @@ td{padding:3px 6px;font-size:11px;border:1px solid #ccc;vertical-align:middle;}
                             <th style={th}>Carton<br />Qty</th>
                             <th style={th}>Scheme<br />Carton</th>
                             <th style={th}>Carton<br />Rate</th>
+                            <th style={th}>Margin (%)</th>
                             <th style={th}>Gross<br />Amount</th>
                             <th style={th}>Disc.</th>
                             <th style={th}>Net<br />Amount</th>
@@ -352,9 +371,23 @@ td{padding:3px 6px;font-size:11px;border:1px solid #ccc;vertical-align:middle;}
                                 <td style={td}>{it.itemDescription}</td>
                                 <td style={tdC}>{it.cartonQty}</td>
                                 <td style={tdC}>{it.schemeCarton}</td>
-                                <td style={tdR}>{fmtN(it.cartonRate)}</td>
-                                <td style={tdR}>{fmtN(it.grossAmount)}</td>
-                                <td style={tdR}>{fmtN(it.discount)}</td>
+                                <td style={tdR}>{fmtD(it.cartonRate)}</td>
+                                <td style={tdR}>
+                                    {it.margin ? (
+                                        <div>
+                                            <div style={{ fontWeight: 700 }}>{fmtN(it.margin)}%</div>
+                                            {it.marginAmount ? (
+                                                <div style={{ fontSize: 9.5, color: "#555" }}>
+                                                    (PKR {fmtD(it.marginAmount)})
+                                                </div>
+                                            ) : null}
+                                        </div>
+                                    ) : (
+                                        ""
+                                    )}
+                                </td>
+                                <td style={tdR}>{fmtD(it.grossAmount)}</td>
+                                <td style={tdR}>{fmtD(it.discount)}</td>
                                 <td style={tdR}>{fmtD(it.netAmount)}</td>
                             </tr>
                         ))}
@@ -362,11 +395,14 @@ td{padding:3px 6px;font-size:11px;border:1px solid #ccc;vertical-align:middle;}
                         {/* Totals row */}
                         <tr>
                             <td style={totTd} colSpan={2}></td>
-                            <td style={totTd}>{fmtN(orderCartons)}</td>
-                            <td style={totTd}>{schemeTotals}</td>
+                            <td style={{ ...totTd, textAlign: "center" }}>{fmtN(orderCartons)} - 0</td>
+                            <td style={{ ...totTd, textAlign: "center" }}>{schemeTotals}</td>
                             <td style={totTd}></td>
-                            <td style={totTd}>{fmtN(totalGross)}</td>
-                            <td style={totTd}>{fmtN(totalDisc)}</td>
+                            <td style={{ ...totTd, fontSize: 10 }}>
+                                {totalMarginAmount > 0 ? `PKR ${fmtD(totalMarginAmount)}` : ""}
+                            </td>
+                            <td style={totTd}>{fmtD(totalGross)}</td>
+                            <td style={totTd}>{fmtD(totalDisc)}</td>
                             <td style={totTd}>{fmtD(totalNet)}</td>
                         </tr>
                     </tbody>

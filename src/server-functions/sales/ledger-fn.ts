@@ -114,6 +114,12 @@ function customerCondition(
     : inArray(column, customerIds);
 }
 
+function startOfDayTime(d: Date): number {
+  const date = new Date(d);
+  date.setHours(0, 0, 0, 0);
+  return date.getTime();
+}
+
 function filterAndSortEntries(entries: LedgerEntry[], query: LedgerQuery) {
   let result = [...entries];
   if (query.typeFilter && query.typeFilter !== "all") {
@@ -148,11 +154,16 @@ function filterAndSortEntries(entries: LedgerEntry[], query: LedgerQuery) {
     });
   }
 
-  // Ledger must stay chronological or the running balance becomes misleading.
+  // Ledger must stay chronological by calendar date, with Invoices preceding Payments on the same day.
   const order = query.sortOrder === "desc" ? -1 : 1;
+  const kindRank = { invoice: 0, return: 1, payment: 2 } as const;
   result.sort((a, b) => {
-    const dateDifference = a.date.getTime() - b.date.getTime();
-    if (dateDifference !== 0) return dateDifference * order;
+    const dayDiff = startOfDayTime(a.date) - startOfDayTime(b.date);
+    if (dayDiff !== 0) return dayDiff * order;
+    const kindDiff = kindRank[a.type] - kindRank[b.type];
+    if (kindDiff !== 0) return kindDiff * order;
+    const timeDiff = a.date.getTime() - b.date.getTime();
+    if (timeDiff !== 0) return timeDiff * order;
     return a.id.localeCompare(b.id) * order;
   });
   return result;
@@ -338,10 +349,12 @@ async function buildLedger(customerIds: string[], query: LedgerQuery) {
   );
   const kindRank = { invoice: 0, return: 1, payment: 2 } as const;
   timeline.sort((left, right) => {
-    const dateDifference = left.date.getTime() - right.date.getTime();
-    if (dateDifference !== 0) return dateDifference;
-    const kindDifference = kindRank[left.kind] - kindRank[right.kind];
-    if (kindDifference !== 0) return kindDifference;
+    const dayDiff = startOfDayTime(left.date) - startOfDayTime(right.date);
+    if (dayDiff !== 0) return dayDiff;
+    const kindDiff = kindRank[left.kind] - kindRank[right.kind];
+    if (kindDiff !== 0) return kindDiff;
+    const timeDiff = left.date.getTime() - right.date.getTime();
+    if (timeDiff !== 0) return timeDiff;
     return left.id.localeCompare(right.id);
   });
 

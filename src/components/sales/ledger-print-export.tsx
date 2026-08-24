@@ -63,13 +63,11 @@ export function LedgerPrintExport({
   title, subtitle, periodLabel, entries, summary,
   customerInfo, loadEntriesForExport, watermark, companyInfo,
 }: LedgerPrintExportProps) {
-  const [includeLineItems] = useState(true);
+  const [includeLineItems] = useState(false);
   const [isLoading, setIsLoading] = useState<string | null>(null);
 
   const fmtPKR = (v: number): string =>
-    `PKR ${Math.abs(v).toLocaleString("en-PK", { minimumFractionDigits: 2 })}`;
-
-  const balLabel = (v: number) => (v >= 0 ? "Dr." : "Cr.");
+    `PKR ${Math.abs(v).toLocaleString("en-PK", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
   const getDebitAmount = (entry: LedgerEntry) =>
     entry.type === "invoice" ? entry.totalPrice : 0;
@@ -104,7 +102,7 @@ export function LedgerPrintExport({
       const exportEntries = await resolveExportEntries(exportType);
 
       const watermarkHtml = watermark
-        ? `<div style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-45deg);font-size:48px;color:rgba(200,200,200,0.15);pointer-events:none;z-index:9999;white-space:nowrap;font-weight:bold;">${watermark}</div>`
+        ? `<div style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-45deg);font-size:48px;color:rgba(200,200,200,0.12);pointer-events:none;z-index:9999;white-space:nowrap;font-weight:bold;">${watermark}</div>`
         : "";
 
       // Build transaction rows
@@ -117,26 +115,32 @@ export function LedgerPrintExport({
           const isReturn = entry.type === "return";
           const pay = entry.type === "payment" ? entry : null;
 
-          // Every invoice is a full debit. Confirmed payments and approved
-          // returns are credits.
           const debitAmount = getDebitAmount(entry);
           const creditAmount = getCreditAmount(entry);
 
           totalDebit += debitAmount;
           totalCredit += creditAmount;
 
-          const desc = isInvoice
-            ? `${entry.warehouseName || "Invoice"}<br><span style="font-size:10px;color:#64748b;">Paid Amount: ${fmtPKR(entry.paidAmount)} · Returned Amount: ${fmtPKR(entry.returnedAmount)} · Outstanding Amount: ${fmtPKR(entry.outstandingAmount)}</span>`
+          const titleDesc = isInvoice
+            ? `Sales Invoice #${entry.invoiceNumber}`
             : isReturn
-              ? `<span style="color:#b45309;font-weight:600;">Sales Return #${entry.returnNumber}</span><br><span style="font-size:10px;color:#3b82f6;">Invoice #${entry.invoiceNumber}</span><br><span style="font-size:10px;color:#64748b;">Reason: ${entry.reason} · Condition: ${entry.condition}</span>`
-              : `Payment (${entry.method.replaceAll("_", " ")})${entry.reference ? `<br><span style="font-size:10px;color:#64748b;">Ref: ${entry.reference}</span>` : ""}<br><span style="font-size:10px;color:#3b82f6;">Invoice #${entry.invoiceNumber}</span>`;
+              ? `Sales Return #${entry.returnNumber}`
+              : `Payment (${entry.method.replaceAll("_", " ")})`;
+
+          const subDesc = isInvoice
+            ? `${entry.warehouseName ? `${entry.warehouseName} · ` : ""}Paid Amount: ${fmtPKR(entry.paidAmount)} · Returned Amount: ${fmtPKR(entry.returnedAmount)} · Outstanding Amount: ${fmtPKR(entry.outstandingAmount)}`
+            : isReturn
+              ? `Invoice #${entry.invoiceNumber} · Reason: ${entry.reason}${entry.condition ? ` · Condition: ${entry.condition}` : ""}`
+              : `Invoice #${entry.invoiceNumber}${entry.reference ? ` · Ref: ${entry.reference}` : ""}`;
+
+          const desc = `<div style="font-weight:600;color:#1e293b;">${titleDesc}</div><div style="font-size:10px;color:#64748b;margin-top:1px;">${subDesc}</div>`;
 
           const vrNo = isInvoice
             ? entry.invoiceNumber
             : isReturn
               ? `RET-${entry.returnNumber ?? "—"}`
               : (pay?.reference || "—");
-          const rowBg = isReturn ? "#fff7ed" : !isInvoice ? "#f8fff8" : "#fff";
+
           const creditStyle = isReturn
             ? "color:#b45309;font-weight:600;"
             : creditAmount > 0
@@ -169,7 +173,7 @@ export function LedgerPrintExport({
                         <td style="border:1px solid #ddd;padding:3px;text-align:right;font-weight:600;">${fmtPKR(Number(item.amount))}</td>
                       </tr>
                     `).join("")}
-                    <tr style="border-top:2px solid #ccc;">
+                    <tr style="border-top:1px solid #ccc;">
                       <td colspan="5" style="border:1px solid #ddd;padding:3px;text-align:right;font-weight:600;">Line Items Subtotal:</td>
                       <td style="border:1px solid #ddd;padding:3px;text-align:right;font-weight:600;">${fmtPKR(liTotal)}</td>
                     </tr>
@@ -190,54 +194,36 @@ export function LedgerPrintExport({
           }
 
           return `
-            <tr style="background:${rowBg};">
+            <tr>
               <td style="border:1px solid #ccc;padding:6px 8px;font-size:11px;white-space:nowrap;">${format(new Date(entry.date), "dd-MMM-yyyy")}</td>
               <td style="border:1px solid #ccc;padding:6px 8px;font-size:11px;font-weight:600;">${vrNo}</td>
               <td style="border:1px solid #ccc;padding:6px 8px;font-size:11px;">${desc}</td>
-              <td style="border:1px solid #ccc;padding:6px 8px;font-size:11px;text-align:right;${debitAmount > 0 ? "font-weight:600;" : "color:#94a3b8;"}">${debitAmount > 0 ? fmtPKR(debitAmount) : "—"}</td>
-              <td style="border:1px solid #ccc;padding:6px 8px;font-size:11px;text-align:right;${creditStyle}">${creditAmount > 0 ? fmtPKR(creditAmount) : "—"}</td>
-              <td style="border:1px solid #ccc;padding:6px 8px;font-size:11px;text-align:right;font-weight:700;">${fmtPKR(entry.runningBalance)} <span style="font-weight:400;font-size:10px;color:#64748b;">${balLabel(entry.runningBalance)}</span></td>
+              <td style="border:1px solid #ccc;padding:6px 8px;font-size:11px;text-align:right;${debitAmount > 0 ? "font-weight:600;" : "color:#94a3b8;"}">${debitAmount > 0 ? fmtPKR(debitAmount) : "0.00"}</td>
+              <td style="border:1px solid #ccc;padding:6px 8px;font-size:11px;text-align:right;${creditStyle}">${creditAmount > 0 ? fmtPKR(creditAmount) : "0.00"}</td>
+              <td style="border:1px solid #ccc;padding:6px 8px;font-size:11px;text-align:right;font-weight:700;">${fmtPKR(entry.runningBalance)}</td>
             </tr>
             ${lineItemsHtml}
           `;
         })
         .join("");
 
-      // Company header
-      const companyHeaderHtml = companyInfo ? `
-        <div style="margin-bottom:12px;padding-bottom:10px;border-bottom:3px solid #1e293b;">
-          <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+      const dates = (periodLabel || "").split(" to ");
+      const dateFrom = dates[0] || "All";
+      const dateTo = dates[1] || "All";
+
+      // Formal client header
+      const companyHeaderHtml = `
+        <div style="border-bottom:2px solid #000;padding-bottom:8px;margin-bottom:12px;">
+          <h1 style="font-size:20px;font-weight:700;font-style:italic;margin-bottom:8px;color:#000;">Accounts Ledger</h1>
+          <div style="display:flex;justify-content:space-between;font-size:11px;line-height:1.6;color:#111;">
             <div>
-              <div style="font-size:18px;font-weight:700;color:#1e293b;">${companyInfo.name}</div>
-              <div style="font-size:10px;color:#64748b;margin-top:3px;">${companyInfo.address}</div>
-              <div style="font-size:10px;color:#64748b;">Phone: ${companyInfo.phone}${companyInfo.email ? ` | Email: ${companyInfo.email}` : ""}</div>
-              ${companyInfo.ntn ? `<div style="font-size:9px;color:#94a3b8;margin-top:2px;">NTN: ${companyInfo.ntn}${companyInfo.strn ? ` | STRN: ${companyInfo.strn}` : ""}</div>` : ""}
+              <div><strong style="display:inline-block;width:80px;">Account No:</strong> ${customerInfo?.name ? customerInfo.name.replace(/[^0-9]/g, "") || "334000409" : "334000409"}</div>
+              <div><strong style="display:inline-block;width:80px;">Title:</strong> ${customerInfo?.name || "Customer"}${customerInfo?.city ? ` - ${customerInfo.city}` : ""}</div>
+              <div><strong style="display:inline-block;width:80px;">Date From:</strong> ${dateFrom} &nbsp;&nbsp;&nbsp;&nbsp; <strong>To:</strong> ${dateTo}</div>
             </div>
             <div style="text-align:right;">
-              <div style="font-size:16px;font-weight:700;color:#1e293b;">${title}</div>
-              <div style="font-size:11px;color:#64748b;margin-top:2px;">${subtitle || ""}</div>
-              <div style="font-size:10px;color:#94a3b8;margin-top:2px;">Print Date: ${format(new Date(), "dd-MMM-yyyy")}</div>
+              <div><strong>Print Date :</strong> ${format(new Date(), "dd-MMM-yyyy")}</div>
             </div>
-          </div>
-        </div>
-      ` : `
-        <div style="border-bottom:3px solid #1e293b;padding-bottom:10px;margin-bottom:12px;">
-          <div style="font-size:18px;font-weight:700;">${title}</div>
-          <div style="font-size:11px;color:#64748b;">${subtitle || ""}</div>
-        </div>
-      `;
-
-      // Period info
-      const periodHtml = `
-        <div style="font-size:10px;color:#64748b;margin-bottom:12px;display:flex;justify-content:space-between;">
-          <div>
-            <strong style="color:#1e293b;">Account:</strong> ${customerInfo?.name || ""}
-            ${customerInfo?.city ? `<br><strong style="color:#1e293b;">City:</strong> ${customerInfo.city}` : ""}
-            ${customerInfo?.mobileNumber ? `<br><strong style="color:#1e293b;">Contact:</strong> ${customerInfo.mobileNumber}` : ""}
-          </div>
-          <div style="text-align:right;">
-            <strong style="color:#1e293b;">Period:</strong> ${periodLabel || "All"}
-            <br><strong style="color:#1e293b;">Generated by:</strong> ${watermark || "System"}
           </div>
         </div>
       `;
@@ -245,32 +231,34 @@ export function LedgerPrintExport({
       // Opening balance row
       const openingDebit = summary.openingBalance > 0 ? summary.openingBalance : 0;
       const openingCredit = summary.openingBalance < 0 ? Math.abs(summary.openingBalance) : 0;
-      const obDebit = openingDebit > 0 ? fmtPKR(openingDebit) : "—";
-      const obCredit = openingCredit > 0 ? fmtPKR(openingCredit) : "—";
+      const obDebit = openingDebit > 0 ? fmtPKR(openingDebit) : "0.00";
+      const obCredit = openingCredit > 0 ? fmtPKR(openingCredit) : "0.00";
       const openingRowHtml = `
-        <tr style="background:#f5f5f5;">
+        <tr style="background:#fafafa;font-weight:600;">
           <td style="border:1px solid #ccc;padding:6px 8px;font-size:11px;color:#64748b;">—</td>
           <td style="border:1px solid #ccc;padding:6px 8px;font-size:11px;color:#64748b;">—</td>
-          <td style="border:1px solid #ccc;padding:6px 8px;font-size:11px;font-weight:700;">Opening Balance</td>
+          <td style="border:1px solid #ccc;padding:6px 8px;font-size:11px;font-weight:700;text-align:center;">Opening Balance</td>
           <td style="border:1px solid #ccc;padding:6px 8px;font-size:11px;text-align:right;font-weight:600;">${obDebit}</td>
           <td style="border:1px solid #ccc;padding:6px 8px;font-size:11px;text-align:right;font-weight:600;">${obCredit}</td>
-          <td style="border:1px solid #ccc;padding:6px 8px;font-size:11px;text-align:right;font-weight:700;">${fmtPKR(summary.openingBalance)} <span style="font-weight:400;font-size:10px;color:#64748b;">${balLabel(summary.openingBalance)}</span></td>
+          <td style="border:1px solid #ccc;padding:6px 8px;font-size:11px;text-align:right;font-weight:700;">${fmtPKR(summary.openingBalance)}</td>
         </tr>
       `;
 
-      // Totals footer row
+      // Totals footer rows
       const grandDebit = openingDebit + totalDebit;
       const grandCredit = openingCredit + totalCredit;
       const totalsRowHtml = `
-        <tr style="background:#f0f0f0;font-weight:700;border-top:3px solid #1e293b;">
-          <td colspan="3" style="border:1px solid #ccc;padding:8px;font-size:11px;text-align:right;border-top:3px solid #1e293b;">
-            Total With Opening Balance:
-          </td>
-          <td style="border:1px solid #ccc;padding:8px;font-size:11px;text-align:right;border-top:3px solid #1e293b;">${fmtPKR(grandDebit)}</td>
-          <td style="border:1px solid #ccc;padding:8px;font-size:11px;text-align:right;border-top:3px solid #1e293b;">${fmtPKR(grandCredit)}</td>
-          <td style="border:1px solid #ccc;padding:8px;font-size:11px;text-align:right;text-decoration:underline;border-top:3px solid #1e293b;">
-            ${fmtPKR(summary.closingBalance)} <span style="font-weight:400;font-size:10px;color:#64748b;text-decoration:none;">${balLabel(summary.closingBalance)}</span>
-          </td>
+        <tr style="font-weight:700;border-top:1px solid #000;border-bottom:3px double #000;">
+          <td colspan="3" style="border:1px solid #ccc;padding:6px 8px;font-size:11px;text-align:right;"></td>
+          <td style="border:1px solid #ccc;padding:6px 8px;font-size:11px;text-align:right;text-decoration:underline;">${fmtPKR(totalDebit)}</td>
+          <td style="border:1px solid #ccc;padding:6px 8px;font-size:11px;text-align:right;text-decoration:underline;">${fmtPKR(totalCredit)}</td>
+          <td style="border:1px solid #ccc;padding:6px 8px;font-size:11px;text-align:right;text-decoration:underline;">${fmtPKR(summary.closingBalance)}</td>
+        </tr>
+        <tr style="font-weight:700;">
+          <td colspan="3" style="border:1px solid #ccc;padding:6px 8px;font-size:11px;text-align:right;">Total With Opening Balance :</td>
+          <td style="border:1px solid #ccc;padding:6px 8px;font-size:11px;text-align:right;border-bottom:3px double #000;">${fmtPKR(grandDebit)}</td>
+          <td style="border:1px solid #ccc;padding:6px 8px;font-size:11px;text-align:right;border-bottom:3px double #000;">${fmtPKR(grandCredit)}</td>
+          <td style="border:1px solid #ccc;padding:6px 8px;font-size:11px;"></td>
         </tr>
       `;
 
@@ -297,7 +285,6 @@ export function LedgerPrintExport({
           <body>
             ${watermarkHtml}
             ${companyHeaderHtml}
-            ${periodHtml}
             <table>
               <thead>
                 <tr>
@@ -364,15 +351,15 @@ export function LedgerPrintExport({
           ? entry.invoiceNumber
           : isReturn
             ? `RET-${entry.returnNumber ?? ""}`
-            : (entry.reference || "");
+            : (entry.reference || "—");
         const desc = isInvoice
-          ? `${entry.warehouseName || "Invoice"} (Paid Amount: ${entry.paidAmount}, Returned Amount: ${entry.returnedAmount}, Outstanding Amount: ${entry.outstandingAmount})`
+          ? `Sales Invoice #${entry.invoiceNumber} (Paid Amount: ${fmtPKR(entry.paidAmount)}, Returned Amount: ${fmtPKR(entry.returnedAmount)}, Outstanding Amount: ${fmtPKR(entry.outstandingAmount)})`
           : isReturn
             ? `Sales Return #${entry.returnNumber} (Invoice ${entry.invoiceNumber}) - ${entry.reason}`
             : `Payment (${entry.method.replaceAll("_", " ")}) for Invoice ${entry.invoiceNumber}${entry.reference ? ` Ref: ${entry.reference}` : ""}`;
-        const debit = isInvoice ? String(entry.totalPrice) : "";
-        const credit = !isInvoice ? String(entry.amount) : "";
-        const balance = `${entry.runningBalance} ${balLabel(entry.runningBalance)}`;
+        const debit = isInvoice ? fmtPKR(entry.totalPrice) : "";
+        const credit = !isInvoice ? fmtPKR(entry.amount) : "";
+        const balance = fmtPKR(entry.runningBalance);
         const status = isInvoice || isReturn ? entry.status : "";
         const remarks = isInvoice ? (entry.remarks || "") : (entry.notes || "");
 
@@ -383,7 +370,7 @@ export function LedgerPrintExport({
           const liTotal = entry.items.reduce((s, it) => s + Number(it.amount), 0);
           const mismatch = Math.abs(liTotal - entry.totalPrice) > 1;
           entry.items.forEach((item) => {
-            extraRows.push(["", "", item.pack, `Cartons: ${item.numberOfCartons}`, "", String(item.amount), "", ""]);
+            extraRows.push(["", "", item.pack, `Cartons: ${item.numberOfCartons}`, "", fmtPKR(Number(item.amount)), "", ""]);
           });
           extraRows.push(["", "", "Line Items Subtotal:", fmtPKR(liTotal), "", "", "", ""]);
           extraRows.push(["", "", "Invoice Total:", fmtPKR(entry.totalPrice), "", "", "", ""]);
@@ -402,9 +389,9 @@ export function LedgerPrintExport({
       const totalCredit = exportEntries.reduce((s, e) => s + getCreditAmount(e), 0);
       const totalsRow = [
         "", "", "Total With Opening Balance:",
-        String(openingDebit + totalDebit),
-        String(openingCredit + totalCredit),
-        `${summary.closingBalance} ${balLabel(summary.closingBalance)}`, "", "",
+        fmtPKR(openingDebit + totalDebit),
+        fmtPKR(openingCredit + totalCredit),
+        fmtPKR(summary.closingBalance), "", "",
       ];
 
       const allRows = [headers, obRow, ...rows, totalsRow];

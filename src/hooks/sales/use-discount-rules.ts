@@ -2,19 +2,23 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   getDiscountRulesFn,
   createDiscountRuleFn,
+  updateDiscountRuleFn,
   deleteDiscountRuleFn,
   getApplicableDiscountFn,
   getDistributorDiscountRulesFn,
+  getDiscountRuleHistoryFn,
 } from "@/server-functions/sales/discount-rules-fn";
 
 export const discountKeys = {
   all: ["discount-rules"] as const,
-  list: (filters?: { customerId?: string; recipeId?: string }) =>
+  list: (filters?: { customerId?: string; recipeId?: string; includeInactive?: boolean }) =>
     [...discountKeys.all, "list", filters] as const,
   applicable: (customerId: string, recipeId: string, quantity: number) =>
     [...discountKeys.all, "applicable", customerId, recipeId, quantity] as const,
   distributor: (customerId: string) =>
     [...discountKeys.all, "distributor", customerId] as const,
+  history: (customerId: string, recipeId?: string) =>
+    [...discountKeys.all, "history", customerId, recipeId] as const,
 };
 
 export function useGetDiscountRules(filters?: { customerId?: string; recipeId?: string; includeInactive?: boolean }) {
@@ -28,6 +32,16 @@ export function useCreateDiscountRule() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: createDiscountRuleFn,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: discountKeys.all });
+    },
+  });
+}
+
+export function useUpdateDiscountRule() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: updateDiscountRuleFn,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: discountKeys.all });
     },
@@ -56,6 +70,14 @@ export function useGetDistributorDiscountRules(customerId: string, enabled = tru
   return useQuery({
     queryKey: discountKeys.distributor(customerId),
     queryFn: () => getDistributorDiscountRulesFn({ data: { customerId } }),
+    enabled: enabled && !!customerId,
+  });
+}
+
+export function useGetDiscountRuleHistory(customerId: string, recipeId?: string, enabled = true) {
+  return useQuery({
+    queryKey: discountKeys.history(customerId, recipeId),
+    queryFn: () => getDiscountRuleHistoryFn({ data: { customerId, recipeId } }),
     enabled: enabled && !!customerId,
   });
 }
