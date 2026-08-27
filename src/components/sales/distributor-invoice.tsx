@@ -148,6 +148,7 @@ export const DistributorInvoiceView = ({
             return `
             <tr>
                 <td class="tc">${it.serialNo}</td>
+                <td class="tc">${it.itemCode}</td>
                 <td>${it.itemDescription}</td>
                 <td class="tc">${it.cartonQty}</td>
                 <td class="tc">${it.schemeCarton}</td>
@@ -220,7 +221,8 @@ td{padding:3px 6px;font-size:11px;border:1px solid #ccc;vertical-align:middle;}
     <thead>
       <tr>
         <th style="width:4%">Serial No.</th>
-        <th style="width:38%">Item Description</th>
+        <th style="width:8%">Item Code</th>
+        <th style="width:30%">Item Description</th>
         <th style="width:10%">Carton Qty</th>
         <th style="width:8%">Scheme Carton</th>
         <th style="width:8%">Carton Rate</th>
@@ -232,7 +234,7 @@ td{padding:3px 6px;font-size:11px;border:1px solid #ccc;vertical-align:middle;}
     <tbody>
       ${rows}
       <tr>
-        <td class="tot-td" colspan="2"></td>
+        <td class="tot-td" colspan="3"></td>
         <td class="tot-td tc">${fmtN(orderCartons)} - 0</td>
         <td class="tot-td tc">${schemeTotals}</td>
         <td class="tot-td"></td>
@@ -328,7 +330,8 @@ td{padding:3px 6px;font-size:11px;border:1px solid #ccc;vertical-align:middle;}
                 <table style={{ width: "100%", borderCollapse: "collapse" }}>
                     <colgroup>
                         <col style={{ width: "4%" }} />
-                        <col style={{ width: "38%" }} />
+                        <col style={{ width: "8%" }} />
+                        <col style={{ width: "30%" }} />
                         <col style={{ width: "10%" }} />
                         <col style={{ width: "8%" }} />
                         <col style={{ width: "8%" }} />
@@ -339,6 +342,7 @@ td{padding:3px 6px;font-size:11px;border:1px solid #ccc;vertical-align:middle;}
                     <thead>
                         <tr style={{ background: "#f5f5f5" }}>
                             <th style={th}>Serial<br />No.</th>
+                            <th style={th}>Item<br />Code</th>
                             <th style={th}>Item<br />Description</th>
                             <th style={th}>Carton<br />Qty</th>
                             <th style={th}>Scheme<br />Carton</th>
@@ -352,6 +356,7 @@ td{padding:3px 6px;font-size:11px;border:1px solid #ccc;vertical-align:middle;}
                         {invoice.items.map((it) => (
                             <tr key={it.serialNo}>
                                 <td style={tdC}>{it.serialNo}</td>
+                                <td style={tdC}>{it.itemCode}</td>
                                 <td style={td}>{it.itemDescription}</td>
                                 <td style={tdC}>{it.cartonQty}</td>
                                 <td style={tdC}>{it.schemeCarton}</td>
@@ -364,7 +369,7 @@ td{padding:3px 6px;font-size:11px;border:1px solid #ccc;vertical-align:middle;}
 
                         {/* Totals row */}
                         <tr>
-                            <td style={totTd} colSpan={2}></td>
+                            <td style={totTd} colSpan={3}></td>
                             <td style={{ ...totTd, textAlign: "center" }}>{fmtN(orderCartons)} - 0</td>
                             <td style={{ ...totTd, textAlign: "center" }}>{schemeTotals}</td>
                             <td style={totTd}></td>

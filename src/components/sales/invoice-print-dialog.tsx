@@ -202,7 +202,7 @@ const buildDistributorData = (inv: any): DistributorInvoiceData => {
 
     return {
       serialNo: i + 1,
-      itemCode: "",
+      itemCode: item.hsnCode || "",
       itemDescription: item.pack,
       cartonQty: cartonQtyLabel,
       schemeCarton: schemeLabel,
@@ -234,7 +234,7 @@ const buildDistributorData = (inv: any): DistributorInvoiceData => {
     mBillNo: inv.invoiceNumber ?? "—",
     transporter: inv.warehouse?.name ?? "—",
     biltyNo: "—",
-    dispDate: "—",
+    dispDate: `disp ${format(new Date(inv.date), "dd-MM-yyyy")}`,
     items,
     freight: Number(inv.expenses) || 0,
     previousBalance: 0,
