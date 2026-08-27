@@ -181,29 +181,29 @@ const buildDistributorData = (inv: any): DistributorInvoiceData => {
   const items = (inv.items ?? []).map((item: any, i: number) => {
     const billedCartons = Number(item.numberOfCartons) || 0;
     const discCartons = (Number(item.discountCartons) || 0) + (Number(item.freeCartons) || 0);
+    const totalPhysicalCartons = billedCartons + discCartons;
     const packsPerCarton = Number(item.actualPackSize || item.packsPerCarton) || 0;
 
-    // Carton qty label: "N Cartons (M Packs)" when packsPerCarton is known
-    const totalPacks = packsPerCarton > 0 ? billedCartons * packsPerCarton : 0;
+    // Total physical cartons shipped: "N Cartons (M Packs)" when packsPerCarton is known
+    const totalPacks = packsPerCarton > 0 ? totalPhysicalCartons * packsPerCarton : 0;
     const cartonQtyLabel = totalPacks > 0
-      ? `${billedCartons} Cartons (${totalPacks} Packs)`
-      : fmtCartonQty(billedCartons);
+      ? `${totalPhysicalCartons} Cartons (${totalPacks} Packs)`
+      : fmtCartonQty(totalPhysicalCartons);
 
     const schemeTotal = packsPerCarton > 0 ? discCartons * packsPerCarton : 0;
     const schemeLabel = discCartons > 0
       ? (schemeTotal > 0 ? `${discCartons} Cartons (${schemeTotal} Packs)` : fmtCartonQty(discCartons))
       : "0 - 0";
 
-    const grossAmount = billedCartons * (Number(item.perCartonPrice) || 0);
+    const grossAmount = totalPhysicalCartons * (Number(item.perCartonPrice) || 0);
     const discountAmount = discCartons * (Number(item.perCartonPrice) || 0);
-    const chargedAmount = Math.max(0, grossAmount - discountAmount);
     const marginPercent =
       Number(item.marginPercent) ||
       Number(inv.customer?.defaultMarginPercent) ||
       (Number(item.margin) < 50 ? Number(item.margin) : 0);
     const marginAmount =
       Number(item.marginDeduction) ||
-      (marginPercent > 0 ? (chargedAmount * marginPercent) / 100 : 0);
+      (marginPercent > 0 ? (grossAmount * marginPercent) / 100 : 0);
 
     return {
       serialNo: i + 1,

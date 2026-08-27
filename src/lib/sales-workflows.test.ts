@@ -217,7 +217,7 @@ describe("sales workflow regressions", () => {
 
     expect(ledgerSource).toContain("lte(dateField, endOfDay(toDate))");
     expect(ledgerSource).toContain("Ledger must stay chronological");
-    expect(ledgerSource).toContain("const dateDifference = a.date.getTime() - b.date.getTime()");
+    expect(ledgerSource).toContain("const timeDiff = a.date.getTime() - b.date.getTime()");
     expect(ledgerSource).toContain("return a.id.localeCompare(b.id) * order");
     expect(ledgerSource).toContain("lineProfit - safeNumber(invoice.invoiceDiscount)");
   });

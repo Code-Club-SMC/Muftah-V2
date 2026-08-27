@@ -67,7 +67,7 @@ export function getApplicableDistributorFreeCartons<
   rules,
   recipeId,
   numberOfCartons,
-  manualFreeCartons = 0,
+  manualFreeCartons: _manualFreeCartons = 0,
   now,
 }: {
   rules: T[];
@@ -91,16 +91,10 @@ export function getApplicableDistributorFreeCartons<
   const freeUnits = toPositiveNumber(applicableRule.freeUnits);
   const rawAutoFreeCartons =
     Math.floor(numberOfCartons / threshold) * freeUnits;
-  const cappedAutoFreeCartons = Math.max(
-    0,
-    Math.min(
-      rawAutoFreeCartons,
-      Math.max(0, numberOfCartons - Math.max(0, manualFreeCartons)),
-    ),
-  );
+  const autoFreeCartons = Math.max(0, rawAutoFreeCartons);
 
   return {
-    freeCartons: cappedAutoFreeCartons,
+    freeCartons: autoFreeCartons,
     ruleId: applicableRule.id ?? null,
   };
 }
