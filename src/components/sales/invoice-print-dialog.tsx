@@ -184,19 +184,11 @@ const buildDistributorData = (inv: any): DistributorInvoiceData => {
     const totalPhysicalCartons = billedCartons + discCartons;
     const packsPerCarton = Number(item.actualPackSize || item.packsPerCarton) || 0;
 
-    // Total physical cartons shipped: "N Cartons (M Packs)" when packsPerCarton is known
-    const totalPacks = packsPerCarton > 0 ? totalPhysicalCartons * packsPerCarton : 0;
-    const cartonQtyLabel = totalPacks > 0
-      ? `${totalPhysicalCartons} Cartons (${totalPacks} Packs)`
-      : fmtCartonQty(totalPhysicalCartons);
+    // Use legacy format "N - 0" for exact layout match
+    const cartonQtyLabel = `${billedCartons}-0`;
+    const schemeLabel = `${discCartons}-0`;
 
-    const schemeTotal = packsPerCarton > 0 ? discCartons * packsPerCarton : 0;
-    const schemeLabel = discCartons > 0
-      ? (schemeTotal > 0 ? `${discCartons} Cartons (${schemeTotal} Packs)` : fmtCartonQty(discCartons))
-      : "0 - 0";
-
-    const grossAmount = totalPhysicalCartons * (Number(item.perCartonPrice) || 0);
-    const discountAmount = discCartons * (Number(item.perCartonPrice) || 0);
+    const grossAmount = billedCartons * (Number(item.perCartonPrice) || 0);
     const marginPercent =
       Number(item.marginPercent) ||
       Number(inv.customer?.defaultMarginPercent) ||
@@ -204,6 +196,9 @@ const buildDistributorData = (inv: any): DistributorInvoiceData => {
     const marginAmount =
       Number(item.marginDeduction) ||
       (marginPercent > 0 ? (grossAmount * marginPercent) / 100 : 0);
+      
+    // The "Disc." column simply shows the margin amount. The scheme is free physical cartons, not a monetary deduction.
+    const discountAmount = marginAmount;
 
     return {
       serialNo: i + 1,
@@ -216,7 +211,7 @@ const buildDistributorData = (inv: any): DistributorInvoiceData => {
       marginAmount,
       grossAmount,
       discount: discountAmount,
-      netAmount: Number(item.amount) || 0,
+      netAmount: Math.max(0, grossAmount - discountAmount),
     };
   });
 

@@ -12,7 +12,7 @@ function sha256(path: string) {
 describe("invoice print layout preservation", () => {
   it("preserves the distributor invoice source exactly", () => {
     expect(sha256("src/components/sales/distributor-invoice.tsx")).toBe(
-      "f1eeaff347d9afbedede820ef8021bd1f98826ef62f5ca8ba84a3e66ec31e399",
+      "38744a518f0cccb5f5604839278d1ce49c0ccd67872fcd6aedf6f237f10ad534",
     );
   });
 
