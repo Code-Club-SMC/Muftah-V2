@@ -193,6 +193,31 @@ describe("invoice create/edit regressions", () => {
     ).toBe(446.69);
   });
 
+  it("calculates additive distributor scheme pricing (N paid + M free = N+M dispatched)", () => {
+    const pricing = calculateInvoiceLinePricing({
+      invoiceMode: "distributor",
+      unitType: "carton",
+      numberOfCartons: 10,
+      numberOfUnits: 0,
+      manualFreeCartons: 0,
+      autoFreeCartons: 1,
+      baseCartonRate: 1000,
+      containersPerCarton: 24,
+      defaultMarginPercent: 8,
+      unitCostPerPack: 30,
+    });
+
+    expect(pricing.chargedCartons).toBe(10);
+    expect(pricing.effectiveCartonRate).toBe(920);
+    expect(pricing.dispatchedUnits).toBe(11 * 24); // 264 packs
+    expect(pricing.grossAmount).toBe(11000); // 11 * 1000
+    expect(pricing.schemeDeduction).toBe(920); // 1 * 920
+    expect(pricing.marginDeduction).toBe(880); // 11 * 80
+    expect(pricing.netAmount).toBe(9200); // 10 * 920
+    expect(pricing.costOfGoodsSold).toBe(7920); // 264 * 30
+    expect(pricing.profit).toBe(1280); // 9200 - 7920
+  });
+
   it("computes canonical distributor gross, deductions, net, and profit from base carton rate", () => {
     const pricing = calculateInvoiceLinePricing({
       invoiceMode: "distributor",
@@ -208,17 +233,17 @@ describe("invoice create/edit regressions", () => {
     });
 
     expect(pricing.effectiveCartonRate).toBe(2031.36);
-    expect(pricing.grossAmount).toBe(57408);
-    expect(pricing.marginDeduction).toBe(4592.64);
+    expect(pricing.grossAmount).toBe(61824);
+    expect(pricing.marginDeduction).toBe(4945.92);
     expect(pricing.schemeDeduction).toBe(4062.72);
-    expect(pricing.netAmount).toBe(48752.64);
-    expect(pricing.dispatchedUnits).toBe(624);
-    expect(pricing.costOfGoodsSold).toBe(10558.08);
-    expect(pricing.profit).toBe(38194.56);
+    expect(pricing.netAmount).toBe(52815.36);
+    expect(pricing.dispatchedUnits).toBe(672);
+    expect(pricing.costOfGoodsSold).toBe(11370.24);
+    expect(pricing.profit).toBe(41445.12);
     expect(roundMoney(pricing.grossAmount - pricing.marginDeduction - pricing.schemeDeduction)).toBe(pricing.netAmount);
   });
 
-  it("treats scheme cartons as a billing discount without adding extra stock to shipment", () => {
+  it("dispatches ordered plus scheme cartons while billing only for ordered cartons", () => {
     const pricing = calculateInvoiceLinePricing({
       invoiceMode: "distributor",
       unitType: "carton",
@@ -232,11 +257,11 @@ describe("invoice create/edit regressions", () => {
       unitCostPerPack: 16.92,
     });
 
-    expect(pricing.grossAmount).toBe(50000);
-    expect(pricing.netAmount).toBe(44100);
-    expect(pricing.dispatchedUnits).toBe(2400);
-    expect(pricing.costOfGoodsSold).toBe(40608);
-    expect(pricing.profit).toBe(3492);
+    expect(pricing.grossAmount).toBe(51000);
+    expect(pricing.netAmount).toBe(45000);
+    expect(pricing.dispatchedUnits).toBe(2448);
+    expect(pricing.costOfGoodsSold).toBe(41420.16);
+    expect(pricing.profit).toBe(3579.84);
   });
 
   it("computes canonical general-invoice carton lines from the base carton rate", () => {
@@ -328,7 +353,7 @@ describe("invoice create/edit regressions", () => {
     ).toBeCloseTo(10156.8, 2);
   });
 
-  it("subtracts distributor scheme cartons from the billed carton count", () => {
+  it("charges distributor for ordered cartons without subtracting free cartons", () => {
     expect(
       calculateLineAmount({
         unitType: "carton",
@@ -341,7 +366,7 @@ describe("invoice create/edit regressions", () => {
         containersPerCarton: 24,
         pricingMode: "distributor",
       }),
-    ).toBe(48752.64);
+    ).toBe(52815.36);
   });
 
   it("keeps distributor profit cost on live stock cost even when carton rate is manually overridden", () => {

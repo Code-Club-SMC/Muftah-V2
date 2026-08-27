@@ -96,14 +96,56 @@ export function calculateInvoiceLinePricing(
   const freeCartonsTotal =
     unitType === "carton" ? manualFreeCartons + autoFreeCartons : 0;
 
+  if (invoiceMode === "distributor" && unitType === "carton") {
+    // Additive model for distributor carton lines:
+    // Customer orders N cartons and receives M free cartons.
+    // Warehouse ships N + M cartons (dispatchedCartons = orderedCartons + freeCartonsTotal).
+    // Customer is billed for N cartons (chargedCartons = orderedCartons).
+    // Gross billing = (N + M) * baseCartonRate
+    // Margin deduction = (N + M) * (baseCartonRate - effectiveCartonRate)
+    // Scheme deduction = M * effectiveCartonRate
+    // Net amount = N * effectiveCartonRate
+    const chargedCartons = orderedCartons;
+    const chargedUnits = chargedCartons * containersPerCarton;
+    const dispatchedCartons = orderedCartons + freeCartonsTotal;
+    const dispatchedUnits = dispatchedCartons * containersPerCarton;
+    const grossCartonsForBilling = dispatchedCartons;
+    const grossAmount = roundMoney(grossCartonsForBilling * baseCartonRate);
+    const postMarginAmount = roundMoney(grossCartonsForBilling * effectiveCartonRate);
+    const marginDeduction = roundMoney(Math.max(0, grossAmount - postMarginAmount));
+    const schemeDeduction = roundMoney(freeCartonsTotal * effectiveCartonRate);
+    const netAmount = roundMoney(chargedCartons * effectiveCartonRate);
+
+    const unitCostPerPack = Math.max(0, Number(input.unitCostPerPack || 0));
+    const costOfGoodsSold = roundMoney(dispatchedUnits * unitCostPerPack);
+    const profit = roundMoney(netAmount - costOfGoodsSold);
+
+    return {
+      invoiceMode,
+      unitType,
+      containersPerCarton,
+      baseCartonRate,
+      effectiveCartonRate,
+      baseUnitRate,
+      effectiveUnitRate,
+      orderedCartons,
+      orderedUnits,
+      freeCartonsTotal,
+      chargedCartons,
+      chargedUnits,
+      dispatchedUnits,
+      grossAmount,
+      marginDeduction,
+      schemeDeduction,
+      netAmount,
+      costOfGoodsSold,
+      profit,
+    };
+  }
+
   const chargedCartons = unitType === "carton" ? Math.max(0, orderedCartons - freeCartonsTotal) : 0;
   const chargedUnits =
     unitType === "carton" ? chargedCartons * containersPerCarton : orderedUnits;
-  // Discount model: free cartons are a billing discount only.
-  // Customer orders N cartons, pays for (N - free), but receives N.
-  // Warehouse ships N, not N + free. Adding free to dispatched was a bug
-  // that caused double-counting (customer paid for fewer AND warehouse
-  // shipped extra → negative profit on every discount-rule invoice).
   const dispatchedUnits =
     unitType === "carton"
       ? orderedCartons * containersPerCarton
