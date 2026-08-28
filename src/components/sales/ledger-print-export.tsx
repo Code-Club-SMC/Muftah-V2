@@ -61,7 +61,7 @@ interface LedgerPrintExportProps {
 
 export function LedgerPrintExport({
   title, subtitle, periodLabel, entries, summary,
-  customerInfo, loadEntriesForExport, watermark, companyInfo,
+  customerInfo, loadEntriesForExport, watermark,
 }: LedgerPrintExportProps) {
   const [includeLineItems] = useState(false);
   const [isLoading, setIsLoading] = useState<string | null>(null);
