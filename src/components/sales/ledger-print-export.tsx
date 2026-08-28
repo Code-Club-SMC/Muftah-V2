@@ -69,10 +69,13 @@ export function LedgerPrintExport({
   const fmtPKR = (v: number): string =>
     `PKR ${Math.abs(v).toLocaleString("en-PK", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-  const getDebitAmount = (entry: LedgerEntry) =>
-    entry.type === "invoice" ? entry.totalPrice : 0;
+  const formatBalance = (v: number): string => {
+    if (v === 0) return "0.00";
+    // Positive balance = they owe us (Invoice). Since Invoice is now Credit, it's a Cr balance.
+    return `${fmtPKR(Math.abs(v))} ${v > 0 ? "Cr" : "Dr"}`;
+  };
 
-  const getCreditAmount = (entry: LedgerEntry) => {
+  const getDebitAmount = (entry: LedgerEntry) => {
     if (entry.type === "return") {
       return entry.amount;
     }
@@ -81,6 +84,9 @@ export function LedgerPrintExport({
     }
     return 0;
   };
+
+  const getCreditAmount = (entry: LedgerEntry) =>
+    entry.type === "invoice" ? entry.totalPrice : 0;
 
   const resolveExportEntries = async (exportType: ExportMode) => {
     if (!loadEntriesForExport) {
@@ -200,7 +206,7 @@ export function LedgerPrintExport({
               <td style="border:1px solid #ccc;padding:6px 8px;font-size:11px;">${desc}</td>
               <td style="border:1px solid #ccc;padding:6px 8px;font-size:11px;text-align:right;${debitAmount > 0 ? "font-weight:600;" : "color:#94a3b8;"}">${debitAmount > 0 ? fmtPKR(debitAmount) : "0.00"}</td>
               <td style="border:1px solid #ccc;padding:6px 8px;font-size:11px;text-align:right;${creditStyle}">${creditAmount > 0 ? fmtPKR(creditAmount) : "0.00"}</td>
-              <td style="border:1px solid #ccc;padding:6px 8px;font-size:11px;text-align:right;font-weight:700;">${fmtPKR(entry.runningBalance)}</td>
+              <td style="border:1px solid #ccc;padding:6px 8px;font-size:11px;text-align:right;font-weight:700;">${formatBalance(entry.runningBalance)}</td>
             </tr>
             ${lineItemsHtml}
           `;
@@ -229,8 +235,9 @@ export function LedgerPrintExport({
       `;
 
       // Opening balance row
-      const openingDebit = summary.openingBalance > 0 ? summary.openingBalance : 0;
-      const openingCredit = summary.openingBalance < 0 ? Math.abs(summary.openingBalance) : 0;
+      // Since Invoices (what they owe) are now Credits, a positive balance is a Credit.
+      const openingCredit = summary.openingBalance > 0 ? summary.openingBalance : 0;
+      const openingDebit = summary.openingBalance < 0 ? Math.abs(summary.openingBalance) : 0;
       const obDebit = openingDebit > 0 ? fmtPKR(openingDebit) : "0.00";
       const obCredit = openingCredit > 0 ? fmtPKR(openingCredit) : "0.00";
       const openingRowHtml = `
@@ -240,7 +247,7 @@ export function LedgerPrintExport({
           <td style="border:1px solid #ccc;padding:6px 8px;font-size:11px;font-weight:700;text-align:center;">Opening Balance</td>
           <td style="border:1px solid #ccc;padding:6px 8px;font-size:11px;text-align:right;font-weight:600;">${obDebit}</td>
           <td style="border:1px solid #ccc;padding:6px 8px;font-size:11px;text-align:right;font-weight:600;">${obCredit}</td>
-          <td style="border:1px solid #ccc;padding:6px 8px;font-size:11px;text-align:right;font-weight:700;">${fmtPKR(summary.openingBalance)}</td>
+          <td style="border:1px solid #ccc;padding:6px 8px;font-size:11px;text-align:right;font-weight:700;">${formatBalance(summary.openingBalance)}</td>
         </tr>
       `;
 
@@ -252,13 +259,13 @@ export function LedgerPrintExport({
           <td colspan="3" style="border:1px solid #ccc;padding:6px 8px;font-size:11px;text-align:right;"></td>
           <td style="border:1px solid #ccc;padding:6px 8px;font-size:11px;text-align:right;text-decoration:underline;">${fmtPKR(totalDebit)}</td>
           <td style="border:1px solid #ccc;padding:6px 8px;font-size:11px;text-align:right;text-decoration:underline;">${fmtPKR(totalCredit)}</td>
-          <td style="border:1px solid #ccc;padding:6px 8px;font-size:11px;text-align:right;text-decoration:underline;">${fmtPKR(summary.closingBalance)}</td>
+          <td style="border:1px solid #ccc;padding:6px 8px;font-size:11px;text-align:right;text-decoration:underline;">${formatBalance(summary.closingBalance)}</td>
         </tr>
         <tr style="font-weight:700;">
           <td colspan="3" style="border:1px solid #ccc;padding:6px 8px;font-size:11px;text-align:right;">Total With Opening Balance :</td>
           <td style="border:1px solid #ccc;padding:6px 8px;font-size:11px;text-align:right;border-bottom:3px double #000;">${fmtPKR(grandDebit)}</td>
           <td style="border:1px solid #ccc;padding:6px 8px;font-size:11px;text-align:right;border-bottom:3px double #000;">${fmtPKR(grandCredit)}</td>
-          <td style="border:1px solid #ccc;padding:6px 8px;font-size:11px;"></td>
+          <td style="border:1px solid #ccc;padding:6px 8px;font-size:11px;text-align:right;border-bottom:3px double #000;">${formatBalance(summary.closingBalance)}</td>
         </tr>
       `;
 
@@ -336,11 +343,14 @@ export function LedgerPrintExport({
       const headers = ["Date", "Vr. No", "Account Description", "Debit", "Credit", "Balance", "Status", "Remarks"];
 
       // Opening balance row
+      // Positive balance (they owe us) = Credit
+      const openingCredit = summary.openingBalance > 0 ? summary.openingBalance : 0;
+      const openingDebit = summary.openingBalance < 0 ? Math.abs(summary.openingBalance) : 0;
       const obRow = [
         "Opening Balance", "—", "Opening Balance",
-        summary.openingBalance > 0 ? String(summary.openingBalance) : "",
-        summary.openingBalance < 0 ? String(Math.abs(summary.openingBalance)) : "",
-        String(summary.openingBalance), "", "",
+        openingDebit > 0 ? String(openingDebit) : "",
+        openingCredit > 0 ? String(openingCredit) : "",
+        formatBalance(summary.openingBalance), "", "",
       ];
 
       const rows = exportEntries.map((entry) => {
@@ -357,9 +367,9 @@ export function LedgerPrintExport({
           : isReturn
             ? `Sales Return #${entry.returnNumber} (Invoice ${entry.invoiceNumber}) - ${entry.reason}`
             : `Payment (${entry.method.replaceAll("_", " ")}) for Invoice ${entry.invoiceNumber}${entry.reference ? ` Ref: ${entry.reference}` : ""}`;
-        const debit = isInvoice ? fmtPKR(entry.totalPrice) : "";
-        const credit = !isInvoice ? fmtPKR(entry.amount) : "";
-        const balance = fmtPKR(entry.runningBalance);
+        const debit = getDebitAmount(entry) > 0 ? String(getDebitAmount(entry)) : "";
+        const credit = getCreditAmount(entry) > 0 ? String(getCreditAmount(entry)) : "";
+        const balance = formatBalance(entry.runningBalance);
         const status = isInvoice || isReturn ? entry.status : "";
         const remarks = isInvoice ? (entry.remarks || "") : (entry.notes || "");
 
@@ -383,15 +393,13 @@ export function LedgerPrintExport({
       }).flat();
 
       // Totals row
-      const openingDebit = summary.openingBalance > 0 ? summary.openingBalance : 0;
-      const openingCredit = summary.openingBalance < 0 ? Math.abs(summary.openingBalance) : 0;
       const totalDebit = exportEntries.reduce((s, e) => s + getDebitAmount(e), 0);
       const totalCredit = exportEntries.reduce((s, e) => s + getCreditAmount(e), 0);
       const totalsRow = [
         "", "", "Total With Opening Balance:",
         fmtPKR(openingDebit + totalDebit),
         fmtPKR(openingCredit + totalCredit),
-        fmtPKR(summary.closingBalance), "", "",
+        formatBalance(summary.closingBalance), "", "",
       ];
 
       const allRows = [headers, obRow, ...rows, totalsRow];
