@@ -24,6 +24,7 @@ import {
   desc,
   inArray,
 } from "drizzle-orm";
+import { logActivityQuiet } from "@/lib/activity-logger.server";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // GET DUE TODAY SLIPS
@@ -235,7 +236,7 @@ export const assignRecoveryPersonFn = createServerFn()
       recoveryAssignedToId: z.string().min(1).optional(),
     }).parse(input),
   )
-  .handler(async ({ data }) => {
+  .handler(async ({ data, context }) => {
     const [updated] = await db
       .update(slipRecords)
       .set({
@@ -246,6 +247,17 @@ export const assignRecoveryPersonFn = createServerFn()
       .returning();
 
     if (!updated) throw new Error("Slip not found");
+
+    logActivityQuiet({
+      module: "sales",
+      action: "assigned",
+      entityType: "credit_recovery",
+      entityId: updated.id,
+      actorId: context.authContext.session.user.id,
+      actorName: context.authContext.session.user.name,
+      description: `Assigned recovery person to slip`,
+    });
+
     return updated;
   });
 

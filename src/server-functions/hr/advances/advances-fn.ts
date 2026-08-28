@@ -9,6 +9,7 @@ import {
 import { z } from "zod";
 import { and, eq, gte, sql } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
+import { logActivityQuiet } from "@/lib/activity-logger.server";
 
 /**
  * List all salary advances, with pagination
@@ -144,6 +145,15 @@ export const approveSalaryAdvanceFn = createServerFn()
         source: "Advance Payment",
         referenceId: data.advanceId,
         performedById: context.session.user.id,
+      });
+
+      logActivityQuiet({
+        module: "hr",
+        action: "approved",
+        entityType: "salary_advance",
+        actorId: context.session.user.id,
+        actorName: context.session.user.name,
+        description: `Approved salary advance for employee ID ${advance.employeeId}`,
       });
 
       return advance;

@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { logActivityQuiet } from "@/lib/activity-logger.server";
 import { db } from "@/db";
 import {
   materialStock,
@@ -87,6 +88,16 @@ export const adjustStockFn = createServerFn()
         amount: Math.abs(data.adjustment).toString(),
         reason: `[MANUAL ADJUSTMENT] ${data.reason} | Material: ${materialName}`,
         performedById: context.session.user.id,
+      });
+
+      logActivityQuiet({
+        module: "inventory",
+        action: "updated",
+        entityType: "stock",
+        entityLabel: materialName,
+        actorId: context.authContext.session.user.id,
+        actorName: context.authContext.session.user.name,
+        description: `Adjusted stock for ${materialName} by ${data.adjustment}`,
       });
 
       return {

@@ -30,6 +30,7 @@ export type ModuleKey = (typeof MODULE_KEYS)[number];
 
 export const PERMISSION_KEYS = [
   "dashboard.view",
+  "dashboard.activity-timeline",
   "manufacturing.view",
   "manufacturing.manage",
   "manufacturing.run.read",
@@ -122,6 +123,14 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
     description: "Open the operational dashboard.",
     kind: "route",
     routePattern: "/dashboard",
+  },
+  {
+    key: "dashboard.activity-timeline",
+    moduleKey: "dashboard",
+    label: "View activity timeline",
+    description: "Access the system-wide activity timeline for auditing all mutations.",
+    kind: "route",
+    routePattern: "/dashboard/activity-timeline",
   },
   {
     key: "manufacturing.view",

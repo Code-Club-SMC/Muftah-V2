@@ -18,11 +18,11 @@ import {
 import { snapshotBradfordForPayroll } from "./bradford-snapshot-fn";
 import { rebuildSalesPerformanceLog } from "./sales-performance-fn";
 import { createId } from "@paralleldrive/cuid2";
-import { getPayrollPeriodFromMonthInput } from "@/lib/payroll-cycle";
 import {
   assertPayrollAttendanceCurrent,
   resolvePayrollAttendanceInvalidations,
 } from "@/lib/attendance/offline/payroll-invalidation.server";
+import { logActivityQuiet } from "@/lib/activity-logger.server";
 
 // ── Status Workflow Validation ────────────────────────────────────────────────
 type PayrollStatus = "draft" | "approved" | "paid";
@@ -188,8 +188,7 @@ const createPayrollSchema = z.object({
 export const createPayrollFn = createServerFn()
   .middleware([requireHrManageMiddleware])
   .inputValidator(createPayrollSchema)
-  .handler(async ({ data }) => {
-    const { processedBy } = data;
+  .handler(async ({ data, context }) => {
     const payrollPeriod = getPayrollPeriodFromMonthInput(data.month);
     const monthDate = parseISO(payrollPeriod.month);
 
@@ -213,6 +212,15 @@ export const createPayrollFn = createServerFn()
         processedBy,
       })
       .returning();
+
+    logActivityQuiet({
+      module: "hr",
+      action: "created",
+      entityType: "payroll_cycle",
+      actorId: context.session.user.id,
+      actorName: context.session.user.name,
+      description: `Created payroll for ${format(monthDate, "MMMM yyyy")}`,
+    });
 
     return {
       payroll,
@@ -408,7 +416,7 @@ export const listPayrollsFn = createServerFn()
 export const approvePayrollFn = createServerFn()
   .middleware([requireHrManageMiddleware])
   .inputValidator(z.object({ payrollId: z.string() }))
-  .handler(async ({ data }) => {
+  .handler(async ({ data, context }) => {
     return await db.transaction(async (tx) => {
       const current = await tx.query.payrolls.findFirst({
         where: eq(payrolls.id, data.payrollId),
@@ -488,6 +496,15 @@ export const approvePayrollFn = createServerFn()
         .returning();
 
       await snapshotBradfordForPayroll(data.payrollId, tx);
+
+      logActivityQuiet({
+        module: "hr",
+        action: "approved",
+        entityType: "payroll_cycle",
+        actorId: context.session.user.id,
+        actorName: context.session.user.name,
+        description: `Approved payroll for cycle ${updated.month}`,
+      });
 
       return updated;
     });
@@ -623,6 +640,15 @@ export const markPayrollAsPaidFn = createServerFn()
           paymentSource: walletName,
         })
         .where(eq(payslips.payrollId, data.payrollId));
+
+      logActivityQuiet({
+        module: "hr",
+        action: "paid",
+        entityType: "payroll_cycle",
+        actorId: context.session.user.id,
+        actorName: context.session.user.name,
+        description: `Marked payroll as paid for cycle ${claimedPayroll.month}`,
+      });
 
       return claimedPayroll;
     });

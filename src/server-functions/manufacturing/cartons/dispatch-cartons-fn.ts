@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { requireAuthMiddleware } from "@/lib/middlewares";
 import { dispatchSchema } from "@/lib/cartons/carton.schema";
 import * as extService from "@/lib/cartons/carton-extended.service";
+import { logActivityQuiet } from "@/lib/activity-logger.server";
 
 export const dispatchCartonsFn = createServerFn()
   .middleware([requireAuthMiddleware])
@@ -16,5 +17,16 @@ export const dispatchCartonsFn = createServerFn()
       throw new Error("You do not have permission to dispatch cartons.");
     }
 
-    return extService.dispatchCartons(data.lines, data.orderId, context.session.user.id);
+    const result = await extService.dispatchCartons(data.lines, data.orderId, context.session.user.id);
+
+    logActivityQuiet({
+      module: "manufacturing",
+      action: "updated",
+      entityType: "carton",
+      actorId: context.authContext.session.user.id,
+      actorName: context.authContext.session.user.name,
+      description: `Dispatched cartons for order ${data.orderId}`,
+    });
+
+    return result;
   });

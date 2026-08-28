@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { logActivityQuiet } from "@/lib/activity-logger.server";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import {
   db,
@@ -382,6 +383,16 @@ export const transferStockFn = createServerFn()
           referenceId: transfer.id,
         },
       ]);
+
+      logActivityQuiet({
+        module: "inventory",
+        action: "transferred",
+        entityType: "stock",
+        entityLabel: data.materialId,
+        actorId: context.authContext.session.user.id,
+        actorName: context.authContext.session.user.name,
+        description: `Transferred ${data.quantity} units of ${data.materialType} from ${data.fromWarehouseId} to ${data.toWarehouseId}`,
+      });
 
       return transfer;
     });

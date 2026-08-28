@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { db } from "@/db";
+import { logActivityQuiet } from "@/lib/activity-logger.server";
 import {
   categoryFieldOptions,
   categoryFields,
@@ -304,6 +305,15 @@ export const createWalletFn = createServerFn()
       });
     }
 
+    logActivityQuiet({
+      module: "finance",
+      action: "created",
+      entityType: "wallet",
+      actorId: context.authContext.session.user.id,
+      actorName: context.authContext.session.user.name,
+      description: `Created wallet ${data.name} with initial balance ${data.initialBalance}`,
+    });
+
     return wallet;
   });
 
@@ -426,6 +436,15 @@ export const depositToWalletFn = createServerFn()
           performedById: context.session.user.id,
         })
         .returning();
+
+      logActivityQuiet({
+        module: "finance",
+        action: "created",
+        entityType: "transaction",
+        actorId: context.authContext.session.user.id,
+        actorName: context.authContext.session.user.name,
+        description: `Deposited ${data.amount} to wallet ${data.walletId}`,
+      });
 
       return txn;
     });
@@ -695,6 +714,15 @@ export const createExpenseFn = createServerFn()
         source: "Expense",
         referenceId: expenseId,
         performedById: context.session.user.id,
+      });
+
+      logActivityQuiet({
+        module: "finance",
+        action: "created",
+        entityType: "expense",
+        actorId: context.authContext.session.user.id,
+        actorName: context.authContext.session.user.name,
+        description: `Recorded expense of ${data.amount} for ${data.description}`,
       });
 
       return expense;
@@ -1010,6 +1038,15 @@ export const debitWalletFn = createServerFn()
           performedById: context.session.user.id,
         })
         .returning();
+
+      logActivityQuiet({
+        module: "finance",
+        action: "created",
+        entityType: "transaction",
+        actorId: context.authContext.session.user.id,
+        actorName: context.authContext.session.user.name,
+        description: `Debited ${data.amount} from wallet ${data.walletId} for ${data.source}`,
+      });
 
       return {
         transaction: txn,

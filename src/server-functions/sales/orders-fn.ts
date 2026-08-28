@@ -21,6 +21,8 @@ import {
   resolveOrderBookerTripEligibility,
 } from "./order-booker-trip-day-state";
 import { syncOrderBookerAttendanceForDate } from "./order-booker-trip-sync";
+import { logActivityQuiet } from "@/lib/activity-logger.server";
+
 
 // ═══════════════════════════════════════════════════════════════════════════
 // ORDERS
@@ -192,6 +194,17 @@ export const createOrderFn = createServerFn()
             })),
           );
 
+          logActivityQuiet({
+            module: "sales",
+            action: "created",
+            entityType: "order",
+            entityId: order.id,
+            entityLabel: String(order.billNumber),
+            actorId: context.authContext.session.user.id,
+            actorName: context.authContext.session.user.name,
+            description: `Created order ${order.billNumber} for ${order.shopkeeperName}`,
+          });
+
           return order;
         });
       } catch (error) {
@@ -265,7 +278,7 @@ export const fulfillOrderFn = createServerFn()
       })
       .parse(input),
   )
-  .handler(async ({ data }) => {
+  .handler(async ({ data, context }) => {
     const order = await db.query.orders.findFirst({
       where: eq(orders.id, data.id),
       with: { items: true },
@@ -299,6 +312,17 @@ export const fulfillOrderFn = createServerFn()
         order.id,
         data.fulfilledAmount,
       );
+
+      logActivityQuiet({
+        module: "sales",
+        action: "fulfilled",
+        entityType: "order",
+        entityId: updated.id,
+        entityLabel: String(updated.billNumber),
+        actorId: context.authContext.session.user.id,
+        actorName: context.authContext.session.user.name,
+        description: `Fulfilled order ${updated.billNumber}`,
+      });
 
       return updated;
     });

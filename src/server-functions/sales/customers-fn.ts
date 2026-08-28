@@ -6,6 +6,7 @@ import { z } from "zod";
 import { count, like, or, SQL, sql, eq, gt, lt, and, sum as drizzleSum, desc as drizzleDesc, asc as drizzleAsc, gte, lte, isNotNull } from "drizzle-orm";
 import { parseISO, isValid } from "date-fns";
 import { createId } from "@paralleldrive/cuid2";
+import { logActivityQuiet } from "@/lib/activity-logger.server";
 
 // ── Shared sort config ─────────────────────────────────────────────────────
 const customerSortFields = {
@@ -55,7 +56,7 @@ export const createCustomerFn = createServerFn()
       creditHold: z.boolean().optional(),
     }).parse(input),
   )
-  .handler(async ({ data }) => {
+  .handler(async ({ data, context }) => {
     const [inserted] = await db
       .insert(customers)
       .values({
@@ -73,6 +74,17 @@ export const createCustomerFn = createServerFn()
         creditHold: data.creditHold ?? false,
       })
       .returning();
+
+    logActivityQuiet({
+      module: "sales",
+      action: "created",
+      entityType: "customer",
+      entityId: inserted.id,
+      entityLabel: inserted.name,
+      actorId: context.authContext.session.user.id,
+      actorName: context.authContext.session.user.name,
+      description: `Created customer ${inserted.name}`,
+    });
 
     return inserted;
   });

@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { logActivityQuiet } from "@/lib/activity-logger.server";
 import {
   db,
   materialStock,
@@ -291,6 +292,15 @@ export const addRawMaterialFn = createServerFn()
           });
         }
       }
+      logActivityQuiet({
+        module: "inventory",
+        action: "created",
+        entityType: "chemical",
+        entityLabel: finalMaterial.name,
+        actorId: context.authContext.session.user.id,
+        actorName: context.authContext.session.user.name,
+        description: `Added raw material ${finalMaterial.name} to inventory`,
+      });
 
       return finalMaterial;
     });

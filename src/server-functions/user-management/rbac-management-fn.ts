@@ -18,6 +18,7 @@ import {
   syncUserRoleAssignment,
 } from "@/lib/authz.server";
 import { auth } from "@/lib/auth";
+import { logActivityQuiet } from "@/lib/activity-logger.server";
 import {
   canAccessPath,
   getFirstAccessiblePath,
@@ -290,7 +291,7 @@ export const getUserManagementOverviewFn = createServerFn()
 export const createRoleFn = createServerFn()
   .middleware([requireUserManagementRolesManageMiddleware])
   .inputValidator(roleFormSchema.omit({ roleId: true }))
-  .handler(async ({ data }) => {
+  .handler(async ({ data, context }) => {
     await ensureRbacSeeded();
 
     const slug = slugifyRoleName(data.slug || data.name);
@@ -318,6 +319,17 @@ export const createRoleFn = createServerFn()
       .returning();
 
     await replaceRolePermissions(role.id, data.permissionKeys);
+
+    void logActivityQuiet({
+      module: "user-management",
+      action: "created",
+      entityType: "role",
+      entityLabel: role.name,
+      actorId: context.session.user.id,
+      actorName: context.session.user.name,
+      description: `Created new role ${role.name}`,
+      severity: "info",
+    });
 
     return role;
   });
@@ -444,6 +456,17 @@ export const assignUserRoleFn = createServerFn()
 
     await syncUserRoleAssignment(data.userId, role.slug, context.session.user.id);
 
+    void logActivityQuiet({
+      module: "user-management",
+      action: "updated",
+      entityType: "user-role",
+      entityLabel: data.userId,
+      actorId: context.session.user.id,
+      actorName: context.session.user.name,
+      description: `Assigned role ${role.slug} to user`,
+      severity: "info",
+    });
+
     return { success: true };
   });
 
@@ -536,6 +559,17 @@ export const createManagedUserFn = createServerFn()
         .where(eq(orderBookers.id, pendingOrderBooker.id));
     }
 
+    void logActivityQuiet({
+      module: "user-management",
+      action: "created",
+      entityType: "user",
+      entityLabel: data.name,
+      actorId: context.session.user.id,
+      actorName: context.session.user.name,
+      description: `Created new user ${data.name}`,
+      severity: "info",
+    });
+
     return { success: true };
   });
 
@@ -577,7 +611,7 @@ export const setManagedUserPasswordFn = createServerFn()
 export const banManagedUserFn = createServerFn()
   .middleware([requireUserManagementUsersManageMiddleware])
   .inputValidator(banUserSchema)
-  .handler(async ({ data }) => {
+  .handler(async ({ data, context }) => {
     const banUser = getAdminMethod("banUser");
     const revokeUserSessions = getAdminMethod("revokeUserSessions");
     await banUser({
@@ -593,6 +627,17 @@ export const banManagedUserFn = createServerFn()
       body: {
         userId: data.userId,
       },
+    });
+
+    void logActivityQuiet({
+      module: "user-management",
+      action: "updated",
+      entityType: "user",
+      entityLabel: data.userId,
+      actorId: context.session.user.id,
+      actorName: context.session.user.name,
+      description: `Banned user ${data.userId}`,
+      severity: "warning",
     });
 
     return { success: true };
@@ -644,13 +689,24 @@ export const managedListUserSessionsFn = createServerFn()
 export const revokeManagedUserSessionFn = createServerFn()
   .middleware([requireUserManagementUsersManageMiddleware])
   .inputValidator(revokeSessionSchema)
-  .handler(async ({ data }) => {
+  .handler(async ({ data, context }) => {
     const revokeUserSession = getAdminMethod("revokeUserSession");
     await revokeUserSession({
       headers: getRequestHeaders(),
       body: {
         sessionToken: data.sessionToken,
       },
+    });
+
+    void logActivityQuiet({
+      module: "user-management",
+      action: "deleted",
+      entityType: "session",
+      entityLabel: data.sessionToken,
+      actorId: context.session.user.id,
+      actorName: context.session.user.name,
+      description: `Revoked a user session`,
+      severity: "warning",
     });
 
     return { success: true };

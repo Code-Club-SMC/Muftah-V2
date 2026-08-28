@@ -5,6 +5,7 @@ import { salesmen, orderBookers } from "@/db/schemas/sales-erp-schema";
 import { createEmployeeSchema } from "@/lib/validators/hr-validators";
 import { requireHrManageMiddleware } from "@/lib/middlewares";
 import { eq } from "drizzle-orm";
+import { logActivityQuiet } from "@/lib/activity-logger.server";
 
 function isEmployeeCodeUniqueViolation(error: unknown): boolean {
   return (
@@ -100,6 +101,15 @@ export const createEmployeeFn = createServerFn()
             employeeId: newEmployee.id,
           });
         }
+
+        logActivityQuiet({
+          module: "hr",
+          action: "created",
+          entityType: "employee",
+          actorId: context.session.user.id,
+          actorName: context.session.user.name,
+          description: `Created employee ${newEmployee.firstName} ${newEmployee.lastName} (${newEmployee.employeeCode})`,
+        });
 
         return newEmployee;
       });

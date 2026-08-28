@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { logActivityQuiet } from "@/lib/activity-logger.server";
 import { desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
@@ -118,6 +119,16 @@ export const createProductionRunFn = createServerFn()
 					notes: data.notes,
 				})
 				.returning();
+
+			logActivityQuiet({
+				module: "manufacturing",
+				action: "created",
+				entityType: "production_run",
+				entityLabel: batchId,
+				actorId: context.authContext.session.user.id,
+				actorName: context.authContext.session.user.name,
+				description: `Created production run ${batchId} for ${recipe.name}`,
+			});
 
 			return productionRun;
 		});

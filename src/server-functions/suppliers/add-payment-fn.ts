@@ -5,6 +5,7 @@ import { z } from "zod";
 import { eq, sql } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
 import { expenseCategories } from "@/db/schemas/finance-schema";
+import { logActivityQuiet } from "@/lib/activity-logger.server";
 
 type FinanceWriter = Pick<typeof db, "query" | "select" | "insert" | "update">;
 
@@ -54,7 +55,7 @@ export const addPaymentFn = createServerFn()
   .middleware([requireSuppliersManageMiddleware])
   .inputValidator(addPaymentSchema)
   .handler(async ({ data, context }) => {
-    return await db.transaction(async (tx) => {
+    const result = await db.transaction(async (tx) => {
       const [payment] = await tx
         .insert(supplierPayments)
         .values({
@@ -152,4 +153,17 @@ export const addPaymentFn = createServerFn()
 
       return payment;
     });
+
+    void logActivityQuiet({
+      module: "suppliers",
+      action: "created",
+      entityType: "payment",
+      entityLabel: data.amount.toString(),
+      actorId: context.session.user.id,
+      actorName: context.session.user.name,
+      description: `Added payment of ${data.amount} for supplier ${data.supplierName || data.supplierId}`,
+      severity: "info",
+    });
+
+    return result;
   });

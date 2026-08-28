@@ -4,6 +4,7 @@ import { requireAuthMiddleware } from "@/lib/middlewares";
 import { createStockCountSchema, updateStockCountLineSchema, submitStockCountSchema } from "@/lib/cartons/carton.schema";
 import * as extService from "@/lib/cartons/carton-extended.service";
 import * as repo from "@/lib/cartons/carton.repository";
+import { logActivityQuiet } from "@/lib/activity-logger.server";
 
 export const createStockCountFn = createServerFn()
   .middleware([requireAuthMiddleware])
@@ -67,9 +68,20 @@ export const approveStockCountFn = createServerFn()
       throw new Error("Only managers can approve stock counts.");
     }
 
-    return extService.approveStockCountSession(
+    const result = await extService.approveStockCountSession(
       data.sessionId,
       data.approvedLines,
       context.session.user.id,
     );
+
+    logActivityQuiet({
+      module: "manufacturing",
+      action: "updated",
+      entityType: "stockCount",
+      actorId: context.authContext.session.user.id,
+      actorName: context.authContext.session.user.name,
+      description: `Approved stock count session ${data.sessionId}`,
+    });
+
+    return result;
   });

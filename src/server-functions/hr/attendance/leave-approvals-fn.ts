@@ -7,6 +7,7 @@ import {
 } from "@/lib/middlewares";
 import { eq, and, desc, gte, lte, ne } from "drizzle-orm";
 import { z } from "zod";
+import { logActivityQuiet } from "@/lib/activity-logger.server";
 
 /**
  * Fetch leave records that need admin approval
@@ -82,7 +83,7 @@ export const processLeaveApprovalFn = createServerFn()
             status: z.enum(["approved", "rejected", "pending"]),
         })
     )
-    .handler(async ({ data: { id, status } }) => {
+    .handler(async ({ data: { id, status }, context }) => {
         return await db.transaction(async (tx) => {
             const leave = await tx.query.attendance.findFirst({
                 where: eq(attendance.id, id),
@@ -160,6 +161,15 @@ export const processLeaveApprovalFn = createServerFn()
                     })
                     .where(eq(employees.id, leave.employeeId));
             }
+
+            logActivityQuiet({
+                module: "hr",
+                action: status === "approved" ? "approved" : status === "rejected" ? "rejected" : "updated",
+                entityType: "leave_request",
+                actorId: context.session.user.id,
+                actorName: context.session.user.name,
+                description: `${status.charAt(0).toUpperCase() + status.slice(1)} leave request for ${employee.firstName} ${employee.lastName} on ${leave.date}`,
+            });
 
             return updated;
         });

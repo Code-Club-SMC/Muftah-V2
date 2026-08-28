@@ -47,6 +47,19 @@ export const navigations: NavigationItem[] = [
     title: "Dashboard",
     url: "/dashboard",
     icon: DashboardIcon,
+    items: [
+      {
+        title: "Command Center",
+        url: "/dashboard",
+        icon: DashboardIcon,
+        exact: true,
+      },
+      {
+        title: "Activity Timeline",
+        url: "/dashboard/activity-timeline",
+        icon: ReportsIcon,
+      },
+    ],
   },
   {
     title: "Manufacturing",

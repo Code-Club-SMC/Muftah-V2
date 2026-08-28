@@ -12,6 +12,7 @@ import {
 	reverseConfirmedPayment,
 	type SalesTransaction,
 } from "./settlement-service";
+import { logActivityQuiet } from "@/lib/activity-logger.server";
 
 const confirmSchema = z.object({
 	paymentId: z.string().min(1),
@@ -120,13 +121,25 @@ export const confirmBankTransferFn = createServerFn()
 	.inputValidator((input: unknown) => confirmSchema.parse(input))
 	.handler(async ({ data, context }) => {
 		const { db } = await import("@/db");
-		return db.transaction(async (tx) => {
+		const result = await db.transaction(async (tx) => {
 			await requirePaymentMethod(tx, data.paymentId, "bank_transfer");
 			return confirmPendingPayment(tx, {
 				...data,
 				actorId: context.session.user.id,
 			});
 		});
+
+		logActivityQuiet({
+			module: "sales",
+			action: "confirmed",
+			entityType: "payment",
+			entityId: data.paymentId,
+			actorId: context.authContext.session.user.id,
+			actorName: context.authContext.session.user.name,
+			description: `Confirmed bank transfer payment`,
+		});
+
+		return result;
 	});
 
 export const clearChequeFn = createServerFn()
@@ -134,13 +147,25 @@ export const clearChequeFn = createServerFn()
 	.inputValidator((input: unknown) => confirmSchema.parse(input))
 	.handler(async ({ data, context }) => {
 		const { db } = await import("@/db");
-		return db.transaction(async (tx) => {
+		const result = await db.transaction(async (tx) => {
 			await requirePaymentMethod(tx, data.paymentId, "cheque");
 			return confirmPendingPayment(tx, {
 				...data,
 				actorId: context.session.user.id,
 			});
 		});
+
+		logActivityQuiet({
+			module: "sales",
+			action: "cleared",
+			entityType: "payment",
+			entityId: data.paymentId,
+			actorId: context.authContext.session.user.id,
+			actorName: context.authContext.session.user.name,
+			description: `Cleared cheque payment`,
+		});
+
+		return result;
 	});
 
 export const returnChequeFn = createServerFn()
@@ -178,10 +203,22 @@ export const reversePaymentFn = createServerFn()
 	.inputValidator((input: unknown) => reverseSchema.parse(input))
 	.handler(async ({ data, context }) => {
 		const { db } = await import("@/db");
-		return db.transaction((tx) =>
+		const result = await db.transaction((tx) =>
 			reverseConfirmedPayment(tx, {
 				...data,
 				actorId: context.session.user.id,
 			}),
 		);
+
+		logActivityQuiet({
+			module: "sales",
+			action: "reversed",
+			entityType: "payment",
+			entityId: data.paymentId,
+			actorId: context.authContext.session.user.id,
+			actorName: context.authContext.session.user.name,
+			description: `Reversed payment`,
+		});
+
+		return result;
 	});

@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { logActivityQuiet } from "@/lib/activity-logger.server";
 import { db } from "@/db";
 import {
   productionRuns,
@@ -182,6 +183,16 @@ export const startProductionFn = createServerFn()
           costPerContainer: costPerContainer.toFixed(4),
         })
         .where(eq(productionRuns.id, productionRun.id));
+
+      logActivityQuiet({
+        module: "manufacturing",
+        action: "updated",
+        entityType: "production_run",
+        entityLabel: productionRun.batchId,
+        actorId: context.authContext.session.user.id,
+        actorName: context.authContext.session.user.name,
+        description: `Started production run ${productionRun.batchId} for ${recipe.name}`,
+      });
 
       return {
         success: true,

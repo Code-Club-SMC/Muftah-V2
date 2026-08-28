@@ -64,6 +64,7 @@ import {
   isValid,
   endOfDay,
 } from "date-fns";
+import { logActivityQuiet } from "@/lib/activity-logger.server";
 
 // ── Shared sort config ─────────────────────────────────────────────────────
 const sortFields = {
@@ -757,7 +758,7 @@ export const createInvoiceFn = createServerFn()
   .handler(async ({ data, context }) => {
     const { db } = await import("@/db");
 
-    return db.transaction((tx) =>
+    const invoice = await db.transaction((tx) =>
       postInvoice(tx, {
         ...data,
         performedById: context.session.user.id,
@@ -768,6 +769,19 @@ export const createInvoiceFn = createServerFn()
         pricingPolicy: "live",
       }),
     );
+
+    logActivityQuiet({
+      module: "sales",
+      action: "created",
+      entityType: "invoice",
+      entityId: invoice.id,
+      entityLabel: invoice.invoiceNumber,
+      actorId: context.authContext.session.user.id,
+      actorName: context.authContext.session.user.name,
+      description: `Created invoice ${invoice.invoiceNumber}`,
+    });
+
+    return invoice;
   });
 
 // ═══════════════════════════════════════════════════════════════════════════

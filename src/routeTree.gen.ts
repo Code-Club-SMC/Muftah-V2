@@ -64,6 +64,7 @@ import { Route as ProtectedHrApprovalsIndexRouteImport } from './routes/_protect
 import { Route as ProtectedFinanceLedgerIndexRouteImport } from './routes/_protected/finance/ledger/index'
 import { Route as ProtectedFinanceExpensesIndexRouteImport } from './routes/_protected/finance/expenses/index'
 import { Route as ProtectedFinanceAccountsIndexRouteImport } from './routes/_protected/finance/accounts/index'
+import { Route as ProtectedDashboardActivityTimelineIndexRouteImport } from './routes/_protected/dashboard/activity-timeline/index'
 import { Route as ProtectedSuppliersSupplierIdDetailsRouteImport } from './routes/_protected/suppliers/$supplierId_.details'
 import { Route as ProtectedManufacturingRecipesRecipeIdRouteImport } from './routes/_protected/manufacturing/recipes/$recipeId'
 import { Route as ProtectedHrOrderBookerDetailsEmployeeIdRouteImport } from './routes/_protected/hr/order-booker-details/$employeeId'
@@ -402,6 +403,12 @@ const ProtectedFinanceAccountsIndexRoute =
     path: '/finance/accounts/',
     getParentRoute: () => ProtectedRouteRoute,
   } as any)
+const ProtectedDashboardActivityTimelineIndexRoute =
+  ProtectedDashboardActivityTimelineIndexRouteImport.update({
+    id: '/dashboard/activity-timeline/',
+    path: '/dashboard/activity-timeline/',
+    getParentRoute: () => ProtectedRouteRoute,
+  } as any)
 const ProtectedSuppliersSupplierIdDetailsRoute =
   ProtectedSuppliersSupplierIdDetailsRouteImport.update({
     id: '/suppliers/$supplierId_/details',
@@ -595,6 +602,7 @@ export interface FileRoutesByFullPath {
   '/hr/order-booker-details/$employeeId': typeof ProtectedHrOrderBookerDetailsEmployeeIdRoute
   '/manufacturing/recipes/$recipeId': typeof ProtectedManufacturingRecipesRecipeIdRoute
   '/suppliers/$supplierId/details': typeof ProtectedSuppliersSupplierIdDetailsRoute
+  '/dashboard/activity-timeline/': typeof ProtectedDashboardActivityTimelineIndexRoute
   '/finance/accounts/': typeof ProtectedFinanceAccountsIndexRoute
   '/finance/expenses/': typeof ProtectedFinanceExpensesIndexRoute
   '/finance/ledger/': typeof ProtectedFinanceLedgerIndexRoute
@@ -675,6 +683,7 @@ export interface FileRoutesByTo {
   '/hr/order-booker-details/$employeeId': typeof ProtectedHrOrderBookerDetailsEmployeeIdRoute
   '/manufacturing/recipes/$recipeId': typeof ProtectedManufacturingRecipesRecipeIdRoute
   '/suppliers/$supplierId/details': typeof ProtectedSuppliersSupplierIdDetailsRoute
+  '/dashboard/activity-timeline': typeof ProtectedDashboardActivityTimelineIndexRoute
   '/finance/accounts': typeof ProtectedFinanceAccountsIndexRoute
   '/finance/expenses': typeof ProtectedFinanceExpensesIndexRoute
   '/finance/ledger': typeof ProtectedFinanceLedgerIndexRoute
@@ -760,6 +769,7 @@ export interface FileRoutesById {
   '/_protected/hr/order-booker-details/$employeeId': typeof ProtectedHrOrderBookerDetailsEmployeeIdRoute
   '/_protected/manufacturing/recipes/$recipeId': typeof ProtectedManufacturingRecipesRecipeIdRoute
   '/_protected/suppliers/$supplierId_/details': typeof ProtectedSuppliersSupplierIdDetailsRoute
+  '/_protected/dashboard/activity-timeline/': typeof ProtectedDashboardActivityTimelineIndexRoute
   '/_protected/finance/accounts/': typeof ProtectedFinanceAccountsIndexRoute
   '/_protected/finance/expenses/': typeof ProtectedFinanceExpensesIndexRoute
   '/_protected/finance/ledger/': typeof ProtectedFinanceLedgerIndexRoute
@@ -844,6 +854,7 @@ export interface FileRouteTypes {
     | '/hr/order-booker-details/$employeeId'
     | '/manufacturing/recipes/$recipeId'
     | '/suppliers/$supplierId/details'
+    | '/dashboard/activity-timeline/'
     | '/finance/accounts/'
     | '/finance/expenses/'
     | '/finance/ledger/'
@@ -924,6 +935,7 @@ export interface FileRouteTypes {
     | '/hr/order-booker-details/$employeeId'
     | '/manufacturing/recipes/$recipeId'
     | '/suppliers/$supplierId/details'
+    | '/dashboard/activity-timeline'
     | '/finance/accounts'
     | '/finance/expenses'
     | '/finance/ledger'
@@ -1008,6 +1020,7 @@ export interface FileRouteTypes {
     | '/_protected/hr/order-booker-details/$employeeId'
     | '/_protected/manufacturing/recipes/$recipeId'
     | '/_protected/suppliers/$supplierId_/details'
+    | '/_protected/dashboard/activity-timeline/'
     | '/_protected/finance/accounts/'
     | '/_protected/finance/expenses/'
     | '/_protected/finance/ledger/'
@@ -1458,6 +1471,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProtectedFinanceAccountsIndexRouteImport
       parentRoute: typeof ProtectedRouteRoute
     }
+    '/_protected/dashboard/activity-timeline/': {
+      id: '/_protected/dashboard/activity-timeline/'
+      path: '/dashboard/activity-timeline'
+      fullPath: '/dashboard/activity-timeline/'
+      preLoaderRoute: typeof ProtectedDashboardActivityTimelineIndexRouteImport
+      parentRoute: typeof ProtectedRouteRoute
+    }
     '/_protected/suppliers/$supplierId_/details': {
       id: '/_protected/suppliers/$supplierId_/details'
       path: '/suppliers/$supplierId/details'
@@ -1740,6 +1760,7 @@ interface ProtectedRouteRouteChildren {
   ProtectedHrOrderBookerDetailsEmployeeIdRoute: typeof ProtectedHrOrderBookerDetailsEmployeeIdRoute
   ProtectedManufacturingRecipesRecipeIdRoute: typeof ProtectedManufacturingRecipesRecipeIdRoute
   ProtectedSuppliersSupplierIdDetailsRoute: typeof ProtectedSuppliersSupplierIdDetailsRoute
+  ProtectedDashboardActivityTimelineIndexRoute: typeof ProtectedDashboardActivityTimelineIndexRoute
   ProtectedFinanceAccountsIndexRoute: typeof ProtectedFinanceAccountsIndexRoute
   ProtectedFinanceExpensesIndexRoute: typeof ProtectedFinanceExpensesIndexRoute
   ProtectedFinanceLedgerIndexRoute: typeof ProtectedFinanceLedgerIndexRoute
@@ -1806,6 +1827,8 @@ const ProtectedRouteRouteChildren: ProtectedRouteRouteChildren = {
     ProtectedManufacturingRecipesRecipeIdRoute,
   ProtectedSuppliersSupplierIdDetailsRoute:
     ProtectedSuppliersSupplierIdDetailsRoute,
+  ProtectedDashboardActivityTimelineIndexRoute:
+    ProtectedDashboardActivityTimelineIndexRoute,
   ProtectedFinanceAccountsIndexRoute: ProtectedFinanceAccountsIndexRoute,
   ProtectedFinanceExpensesIndexRoute: ProtectedFinanceExpensesIndexRoute,
   ProtectedFinanceLedgerIndexRoute: ProtectedFinanceLedgerIndexRoute,

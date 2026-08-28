@@ -1,5 +1,6 @@
 import { createId } from "@paralleldrive/cuid2";
 import { createServerFn } from "@tanstack/react-start";
+import { logActivityQuiet } from "@/lib/activity-logger.server";
 import { and, eq, sql } from "drizzle-orm";
 import {
 	chemicals,
@@ -283,6 +284,31 @@ export const addStockFn = createServerFn()
 				amount: data.quantity,
 				reason: `Purchase from Supplier (ID: ${data.supplierId})`,
 				performedById: context.session.user.id,
+			});
+
+			let loggedMaterialName = "Unknown Material";
+			if (data.materialType === "chemical") {
+				const [chem] = await tx
+					.select()
+					.from(chemicals)
+					.where(eq(chemicals.id, data.materialId));
+				loggedMaterialName = chem?.name ?? loggedMaterialName;
+			} else {
+				const [pkg] = await tx
+					.select()
+					.from(packagingMaterials)
+					.where(eq(packagingMaterials.id, data.materialId));
+				loggedMaterialName = pkg?.name ?? loggedMaterialName;
+			}
+
+			logActivityQuiet({
+				module: "inventory",
+				action: "updated",
+				entityType: "stock",
+				entityLabel: loggedMaterialName,
+				actorId: context.authContext.session.user.id,
+				actorName: context.authContext.session.user.name,
+				description: `Added stock for ${loggedMaterialName}`,
 			});
 
 			return result;

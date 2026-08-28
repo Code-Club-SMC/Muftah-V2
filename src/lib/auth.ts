@@ -1,3 +1,4 @@
+import { logActivityQuiet } from "./activity-logger.server";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { admin as adminPlugin } from "better-auth/plugins/admin";
@@ -76,6 +77,39 @@ export const auth = betterAuth({
       });
     },
   },
+  
+  databaseHooks: {
+    session: {
+      create: {
+        after: async (session: any) => {
+          // Fetch user name since session only has userId
+          const u = await db.query.user.findFirst({ where: (u, { eq }) => eq(u.id, session.userId) });
+          logActivityQuiet({
+            module: "auth",
+            action: "login",
+            entityType: "session",
+            actorId: session.userId,
+            actorName: u?.name || "Unknown User",
+            description: `User ${u?.name || session.userId} logged in`,
+          });
+        }
+      },
+      delete: {
+        before: async (session: any) => {
+          const u = await db.query.user.findFirst({ where: (u, { eq }) => eq(u.id, session.userId) });
+          logActivityQuiet({
+            module: "auth",
+            action: "logout",
+            entityType: "session",
+            actorId: session.userId,
+            actorName: u?.name || "Unknown User",
+            description: `User ${u?.name || session.userId} logged out`,
+          });
+        }
+      }
+    }
+  },
+
   trustedOrigins,
   advanced: {
     useSecureCookies: process.env.NODE_ENV === "production",
