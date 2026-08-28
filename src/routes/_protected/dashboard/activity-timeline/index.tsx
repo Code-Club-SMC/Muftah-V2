@@ -1,10 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Suspense } from "react";
 import { GenericLoader } from "@/components/custom/generic-loader";
-import { Badge } from "@/components/ui/badge";
-import { Activity } from "lucide-react";
 import { ActivityTimelineContainer } from "@/components/dashboard/activity-timeline-container";
-import { motion } from "framer-motion";
 
 export const Route = createFileRoute("/_protected/dashboard/activity-timeline/")({
   component: ActivityTimelinePage,
@@ -12,57 +9,36 @@ export const Route = createFileRoute("/_protected/dashboard/activity-timeline/")
 
 function ActivityTimelinePage() {
   return (
-    <div className="space-y-6 font-sans antialiased bg-background min-h-screen pb-10">
-      {/* ── Sharp Technical Header ─────────────────────────────────────── */}
-      <motion.div
-        initial={{ opacity: 0, y: -10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, ease: "easeOut" }}
-        className="relative flex items-center justify-between p-6 border border-border bg-card shadow-none overflow-hidden"
-      >
-        {/* Technical Grid Pattern */}
-        <div
-          className="absolute inset-0 opacity-[0.02] dark:opacity-[0.04] pointer-events-none"
-          style={{ backgroundImage: `linear-gradient(currentColor 1px, transparent 1px), linear-gradient(90deg, currentColor 1px, transparent 1px)`, backgroundSize: "8px 8px" }}
-        />
-
-        <div className="relative z-10 flex items-center gap-4">
-          <div className="p-2.5 bg-primary/10 border border-primary/20">
-            <Activity className="size-5 text-primary" />
-          </div>
-          <div>
-            <div className="flex items-center gap-3">
-              <h2 className="text-xl font-black uppercase leading-none text-foreground">
-                Activity Timeline
-              </h2>
-              <Badge
-                variant="outline"
-                className="text-[9px] font-bold uppercase bg-blue-500/10 text-blue-600 border-blue-500/20 dark:text-blue-400 rounded-none px-2 py-0 h-5 gap-1.5"
-              >
-                System Audit
-              </Badge>
-            </div>
-            <p className="text-[10px] font-bold text-muted-foreground uppercase mt-2">
-              System-wide immutable audit log of all mutations and critical events
+    <div className="w-full min-h-screen bg-background/50">
+      {/* ── Page Header ────────────────────────────────────────────── */}
+      <header className="sticky top-0 z-40 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+        <div className="flex h-16 items-center px-6 max-w-7xl mx-auto w-full">
+          <div className="flex flex-col gap-1">
+            <h1 className="text-lg font-semibold tracking-tight text-foreground">
+              Activity Timeline
+            </h1>
+            <p className="text-xs text-muted-foreground font-medium">
+              System-wide immutable audit log of all mutations and critical events.
             </p>
           </div>
         </div>
-      </motion.div>
+      </header>
 
-      <Suspense
-        fallback={
-          <div className="p-12 border border-border bg-card">
-            <GenericLoader
-              title="Initializing Timeline"
-              description="Loading system activity events..."
-            />
-          </div>
-        }
-      >
-        <div className="px-6">
+      {/* ── Main Content ────────────────────────────────────────────── */}
+      <main className="max-w-7xl mx-auto w-full px-6 py-8">
+        <Suspense
+          fallback={
+            <div className="flex min-h-[400px] flex-col items-center justify-center rounded-xl border border-border/40 bg-card/20 shadow-sm">
+              <GenericLoader
+                title="Loading Timeline..."
+                description="Fetching system activity events from the database."
+              />
+            </div>
+          }
+        >
           <ActivityTimelineContainer />
-        </div>
-      </Suspense>
+        </Suspense>
+      </main>
     </div>
   );
 }

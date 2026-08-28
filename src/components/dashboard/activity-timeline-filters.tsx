@@ -8,11 +8,9 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { DatePickerWithRange } from "@/components/custom/date-range-picker";
-import { Download, RotateCcw, Search } from "lucide-react";
+import { Download, RotateCcw, Search, Filter } from "lucide-react";
 import { type DateRange } from "react-day-picker";
 import { MODULE_CONFIG } from "./activity-event-card";
-
-// ── TYPES ──────────────────────────────────────────────────────────────────
 
 export interface ActivityFilters {
   module?: string;
@@ -40,8 +38,6 @@ interface ActivityTimelineFiltersProps {
   onExport?: () => void;
   isExporting?: boolean;
 }
-
-// ── COMPONENT ──────────────────────────────────────────────────────────────
 
 export function ActivityTimelineFilters({
   filters,
@@ -77,78 +73,77 @@ export function ActivityTimelineFilters({
       : undefined;
 
   return (
-    <div className="space-y-3">
-      {/* Row 1: Search + Date Range + Actions */}
-      <div className="flex items-center gap-2">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground pointer-events-none" />
+    <div className="flex flex-col gap-4 rounded-xl border border-border/40 bg-card p-4 shadow-sm transition-all">
+      {/* Top Search Bar Row */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="relative w-full max-w-md">
+          <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+            <Search className="size-4 text-muted-foreground/70" />
+          </div>
           <Input
-            placeholder="Search events..."
+            placeholder="Search events, labels, actors..."
             value={filters.search ?? ""}
             onChange={(e) => updateFilter("search", e.target.value)}
-            className="pl-9 h-9 text-sm bg-background/50 border-border/60"
+            className="h-9 w-full bg-background/50 pl-9 border-border/40 shadow-none focus-visible:ring-1 focus-visible:border-border transition-colors text-sm"
           />
         </div>
+        
+        <div className="flex items-center gap-2">
+          <DatePickerWithRange
+            date={dateRange}
+            onDateChange={handleDateChange}
+            className="w-[260px]"
+          />
+          
+          {hasActiveFilters && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleReset}
+              className="h-9 px-3 text-muted-foreground hover:text-foreground"
+            >
+              <RotateCcw className="mr-2 size-3.5" />
+              Reset
+            </Button>
+          )}
 
-        <DatePickerWithRange
-          date={dateRange}
-          onDateChange={handleDateChange}
-          className="w-auto"
-        />
-
-        {hasActiveFilters && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleReset}
-            className="h-9 px-3 text-muted-foreground hover:text-foreground gap-1.5"
-          >
-            <RotateCcw className="size-3.5" />
-            Reset
-          </Button>
-        )}
-
-        {onExport && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onExport}
-            disabled={isExporting}
-            className="h-9 px-3 gap-1.5 border-dashed"
-          >
-            <Download className="size-3.5" />
-            Export CSV
-          </Button>
-        )}
+          {onExport && (
+            <Button
+              variant="default"
+              size="sm"
+              onClick={onExport}
+              disabled={isExporting}
+              className="h-9 px-4 font-medium shadow-sm"
+            >
+              <Download className="mr-2 size-3.5" />
+              Export
+            </Button>
+          )}
+        </div>
       </div>
 
-      {/* Row 2: Dropdown filters */}
-      <div className="flex items-center gap-2 flex-wrap">
-        {/* Module */}
-        <Select
-          value={filters.module ?? "all"}
-          onValueChange={(v) => updateFilter("module", v === "all" ? undefined : v)}
-        >
-          <SelectTrigger className="w-[160px] h-8 text-xs bg-background/50 border-border/60">
-            <SelectValue placeholder="All Modules" />
+      {/* Select Dropdowns Row */}
+      <div className="flex flex-wrap items-center gap-3 border-t border-border/40 pt-4">
+        <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground/70 uppercase tracking-wider mr-2">
+          <Filter className="size-3.5" />
+          Filters
+        </div>
+
+        <Select value={filters.module ?? "all"} onValueChange={(v) => updateFilter("module", v === "all" ? undefined : v)}>
+          <SelectTrigger className="h-8 w-[140px] border-border/40 bg-background/30 text-xs shadow-none">
+            <SelectValue placeholder="Module" />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Modules</SelectItem>
             {(filterOptions?.modules ?? Object.keys(MODULE_CONFIG)).map((m) => (
-              <SelectItem key={m} value={m}>
-                {MODULE_CONFIG[m]?.label ?? m}
-              </SelectItem>
+              <SelectItem key={m} value={m}>{MODULE_CONFIG[m]?.label ?? m}</SelectItem>
             ))}
           </SelectContent>
         </Select>
 
-        {/* Action */}
-        <Select
-          value={filters.action ?? "all"}
-          onValueChange={(v) => updateFilter("action", v === "all" ? undefined : v)}
-        >
-          <SelectTrigger className="w-[140px] h-8 text-xs bg-background/50 border-border/60">
-            <SelectValue placeholder="All Actions" />
+        <Select value={filters.action ?? "all"} onValueChange={(v) => updateFilter("action", v === "all" ? undefined : v)}>
+          <SelectTrigger className="h-8 w-[140px] border-border/40 bg-background/30 text-xs shadow-none">
+            <SelectValue placeholder="Action" />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Actions</SelectItem>
@@ -160,13 +155,9 @@ export function ActivityTimelineFilters({
           </SelectContent>
         </Select>
 
-        {/* Entity Type */}
-        <Select
-          value={filters.entityType ?? "all"}
-          onValueChange={(v) => updateFilter("entityType", v === "all" ? undefined : v)}
-        >
-          <SelectTrigger className="w-[150px] h-8 text-xs bg-background/50 border-border/60">
-            <SelectValue placeholder="All Entities" />
+        <Select value={filters.entityType ?? "all"} onValueChange={(v) => updateFilter("entityType", v === "all" ? undefined : v)}>
+          <SelectTrigger className="h-8 w-[150px] border-border/40 bg-background/30 text-xs shadow-none">
+            <SelectValue placeholder="Entity Type" />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Entities</SelectItem>
@@ -178,13 +169,9 @@ export function ActivityTimelineFilters({
           </SelectContent>
         </Select>
 
-        {/* Severity */}
-        <Select
-          value={filters.severity ?? "all"}
-          onValueChange={(v) => updateFilter("severity", v === "all" ? undefined : v)}
-        >
-          <SelectTrigger className="w-[120px] h-8 text-xs bg-background/50 border-border/60">
-            <SelectValue placeholder="All Severity" />
+        <Select value={filters.severity ?? "all"} onValueChange={(v) => updateFilter("severity", v === "all" ? undefined : v)}>
+          <SelectTrigger className="h-8 w-[120px] border-border/40 bg-background/30 text-xs shadow-none">
+            <SelectValue placeholder="Severity" />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Severity</SelectItem>
@@ -194,21 +181,15 @@ export function ActivityTimelineFilters({
           </SelectContent>
         </Select>
 
-        {/* Actor */}
         {filterOptions?.actors && filterOptions.actors.length > 0 && (
-          <Select
-            value={filters.actorId ?? "all"}
-            onValueChange={(v) => updateFilter("actorId", v === "all" ? undefined : v)}
-          >
-            <SelectTrigger className="w-[160px] h-8 text-xs bg-background/50 border-border/60">
-              <SelectValue placeholder="All Users" />
+          <Select value={filters.actorId ?? "all"} onValueChange={(v) => updateFilter("actorId", v === "all" ? undefined : v)}>
+            <SelectTrigger className="h-8 w-[150px] border-border/40 bg-background/30 text-xs shadow-none">
+              <SelectValue placeholder="User" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Users</SelectItem>
               {filterOptions.actors.map((a) => (
-                <SelectItem key={a.id} value={a.id}>
-                  {a.name}
-                </SelectItem>
+                <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
               ))}
             </SelectContent>
           </Select>
