@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { Suspense } from "react";
 import { GenericLoader } from "@/components/custom/generic-loader";
 import { ActivityTimelineContainer } from "@/components/dashboard/activity-timeline-container";
+import { Activity } from "lucide-react";
 
 export const Route = createFileRoute("/_protected/dashboard/activity-timeline/")({
   component: ActivityTimelinePage,
@@ -9,36 +10,43 @@ export const Route = createFileRoute("/_protected/dashboard/activity-timeline/")
 
 function ActivityTimelinePage() {
   return (
-    <div className="w-full min-h-screen bg-background/50">
+    <div className="space-y-6 font-sans antialiased min-h-screen pb-16 px-6 pt-6 max-w-6xl mx-auto">
       {/* ── Page Header ────────────────────────────────────────────── */}
-      <header className="sticky top-0 z-40 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="flex h-16 items-center px-6 max-w-7xl mx-auto w-full">
-          <div className="flex flex-col gap-1">
-            <h1 className="text-lg font-semibold tracking-tight text-foreground">
-              Activity Timeline
-            </h1>
-            <p className="text-xs text-muted-foreground font-medium">
-              System-wide immutable audit log of all mutations and critical events.
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-slate-200/80 dark:border-slate-800">
+        <div className="flex items-start gap-3.5">
+          <div className="p-2.5 rounded-xl bg-primary/10 text-primary border border-primary/20 shrink-0 mt-0.5">
+            <Activity className="size-5" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2.5">
+              <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-foreground">
+                Activity Timeline
+              </h1>
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-800/40">
+                <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                Live Sync
+              </span>
+            </div>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+              Real-time audit log of actions, approvals, financial entries, and operational movements across all departments.
             </p>
           </div>
         </div>
-      </header>
+      </div>
 
-      {/* ── Main Content ────────────────────────────────────────────── */}
-      <main className="max-w-7xl mx-auto w-full px-6 py-8">
-        <Suspense
-          fallback={
-            <div className="flex min-h-[400px] flex-col items-center justify-center rounded-xl border border-border/40 bg-card/20 shadow-sm">
-              <GenericLoader
-                title="Loading Timeline..."
-                description="Fetching system activity events from the database."
-              />
-            </div>
-          }
-        >
-          <ActivityTimelineContainer />
-        </Suspense>
-      </main>
+      {/* ── Timeline Stream ─────────────────────────────────────────── */}
+      <Suspense
+        fallback={
+          <div className="p-12 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-card">
+            <GenericLoader
+              title="Initializing Timeline"
+              description="Loading audit events..."
+            />
+          </div>
+        }
+      >
+        <ActivityTimelineContainer />
+      </Suspense>
     </div>
   );
 }
