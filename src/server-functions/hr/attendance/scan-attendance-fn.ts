@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, asc, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import {
@@ -210,6 +210,36 @@ export const scanAttendanceFn = createServerFn()
           : null,
         { overnightOutBeforeHour: OVERNIGHT_OUT_BEFORE_HOUR },
       );
+
+      if (resolved.migratedFromDate) {
+        const oldPunches = await tx.query.attendancePunches.findMany({
+          where: and(
+            eq(attendancePunches.employeeId, employee.id),
+            eq(attendancePunches.attendanceDate, resolved.migratedFromDate),
+          ),
+          orderBy: [asc(attendancePunches.timestamp)],
+        });
+
+        let lastOutIndex = -1;
+        for (let i = 0; i < oldPunches.length; i++) {
+          if (oldPunches[i].direction === "out") lastOutIndex = i;
+        }
+
+        const punchesToMigrate = oldPunches.slice(lastOutIndex + 1);
+        if (punchesToMigrate.length > 0) {
+          await tx
+            .update(attendancePunches)
+            .set({ attendanceDate: resolved.attendanceDate })
+            .where(
+              inArray(
+                attendancePunches.id,
+                punchesToMigrate.map((p) => p.id),
+              ),
+            );
+
+          await recomputeAttendanceRow(tx, employee.id, resolved.migratedFromDate);
+        }
+      }
 
       const existingAttendance = await tx.query.attendance.findFirst({
         where: and(

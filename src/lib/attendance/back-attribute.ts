@@ -15,6 +15,7 @@ export type ResolveAttendanceDateResult = {
   attendanceDate: string;
   direction: "in" | "out";
   isOvernightCheckout: boolean;
+  migratedFromDate?: string;
 };
 
 function isPreviousDate(date: string, nextDate: string): boolean {
@@ -50,9 +51,10 @@ export function resolveAttendanceDate(
     incomingHour < opts.overnightOutBeforeHour
   ) {
     return {
-      attendanceDate: lastPunch.attendanceDate,
+      attendanceDate: today,
       direction: "out",
       isOvernightCheckout: true,
+      migratedFromDate: lastPunch.attendanceDate,
     };
   }
 
