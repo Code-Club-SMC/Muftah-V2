@@ -475,10 +475,10 @@ export function useBatchCartons(productionRunId: string) {
   });
 }
 
-export function useRecipeCartons(recipeId: string, page = 1, limit = 100, warehouseId?: string, status?: string) {
+export function useRecipeCartons(recipeId: string, page = 1, limit = 100, warehouseId?: string, status?: string, sku?: string, batchId?: string) {
   return useQuery({
-    queryKey: ["cartons", "recipe", recipeId, warehouseId, status, { page, limit }],
-    queryFn: () => getCartonsByRecipeFn({ data: { recipeId, warehouseId, status, page, limit } }),
+    queryKey: ["cartons", "recipe", recipeId, warehouseId, status, sku, batchId, { page, limit }],
+    queryFn: () => getCartonsByRecipeFn({ data: { recipeId, warehouseId, status, sku, batchId, page, limit } }),
     enabled: !!recipeId,
   });
 }

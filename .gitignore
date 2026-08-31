@@ -23,6 +23,14 @@ scripts/*
 !scripts/nuke-db.sh
 !scripts/super-admin-bootstrap.sh
 .codex
+.opencode
+.claude
+.antigravity
+scratch
+docs
+audits
+.tmp
+.agents
 prompt.txt
 graphify-out
 graphify-out/graph.html

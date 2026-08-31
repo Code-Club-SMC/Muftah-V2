@@ -14,7 +14,7 @@ import {
   warehouses,
 } from "@/db/schemas/inventory-schema";
 import { stockReconciliationIssues } from "@/db/schemas/offline-sales-schema";
-import { cartons } from "@/db/schemas/manufacturing-schema";
+import { cartons, adjustmentLog } from "@/db/schemas/manufacturing-schema";
 import type { CreateInvoiceInput } from "@/db/zod_schemas";
 import { GENERAL_RECIPE_RATE_ENTITY_ID } from "@/lib/sales/entity-recipe-rate-config";
 import { getApplicableDistributorFreeCartons } from "@/lib/sales/distributor-discount-rules";
@@ -1173,6 +1173,97 @@ export async function postInvoice(
             eq(finishedGoodsStock.recipeId, r.item.recipeId),
           ),
         );
+    }
+
+    // ── Dispatch Cartons (if sold by carton) ────────────────────────────
+    if (hasCartons && r.item.unitType === "carton" && r.totalDispatchedUnits > 0) {
+      const cartonsToDispatch = Math.floor(r.totalDispatchedUnits / r.containersPerCarton);
+      
+      if (cartonsToDispatch > 0) {
+        // Fetch COMPLETE cartons (and then PARTIAL if needed)
+        const availableCartons = await tx.query.cartons.findMany({
+          where: and(
+            eq(cartons.warehouseId, stockWarehouseId),
+            eq(cartons.recipeId, r.item.recipeId),
+            inArray(cartons.status, ["COMPLETE", "SEALED", "PARTIAL"])
+          ),
+          orderBy: (cartons, { asc }) => [asc(cartons.createdAt)],
+        });
+
+        // Filter and sort to prefer COMPLETE/SEALED over PARTIAL
+        const sortedCartons = [
+          ...availableCartons.filter(c => c.status === "COMPLETE" || c.status === "SEALED"),
+          ...availableCartons.filter(c => c.status === "PARTIAL")
+        ];
+
+        let dispatchedCount = 0;
+        let unitsToFulfill = r.totalDispatchedUnits;
+
+        for (const carton of sortedCartons) {
+          if (dispatchedCount >= cartonsToDispatch && unitsToFulfill <= 0) break;
+          
+          const packsToTake = Math.min(carton.currentPacks, unitsToFulfill);
+          if (packsToTake <= 0) continue;
+
+          const isFullDispatch = packsToTake === carton.currentPacks;
+          const newStatus = isFullDispatch ? "DISPATCHED" : "PARTIAL";
+          const dispatchType = isFullDispatch ? "DISPATCH_FULL" : "DISPATCH_PARTIAL";
+          
+          const setFields: Partial<typeof cartons.$inferInsert> = {
+            currentPacks: carton.currentPacks - packsToTake,
+            status: newStatus,
+            updatedAt: new Date(),
+          };
+
+          if (isFullDispatch) {
+            setFields.dispatchedAt = new Date();
+            setFields.dispatchOrderId = invoice.id;
+          }
+
+          if (carton.status === "SEALED" && !isFullDispatch) {
+             // unseal log
+             await tx.insert(adjustmentLog).values({
+               id: createId(),
+               cartonId: carton.id,
+               batchId: carton.productionRunId,
+               sku: carton.sku,
+               type: "UNSEALED",
+               packsBefore: carton.currentPacks,
+               delta: 0,
+               packsAfter: carton.currentPacks,
+               reason: "Unsealed for partial dispatch",
+               performedBy: userId,
+               performedAt: new Date(),
+             });
+          }
+
+          await tx.update(cartons).set(setFields).where(eq(cartons.id, carton.id));
+
+          await tx.insert(adjustmentLog).values({
+            id: createId(),
+            cartonId: carton.id,
+            batchId: carton.productionRunId,
+            sku: carton.sku,
+            type: dispatchType,
+            packsBefore: carton.currentPacks,
+            delta: -packsToTake,
+            packsAfter: carton.currentPacks - packsToTake,
+            reason: isFullDispatch ? "Full dispatch" : `Partial dispatch: ${packsToTake} of ${carton.currentPacks}`,
+            dispatchOrderId: invoice.id,
+            performedBy: userId,
+            performedAt: new Date(),
+          });
+
+          if (isFullDispatch) {
+            dispatchedCount++;
+          }
+          unitsToFulfill -= packsToTake;
+        }
+
+        if (unitsToFulfill > 0) {
+          throw new Error(`Not enough pack inventory in cartons to dispatch ${r.totalDispatchedUnits} units for "${r.item.pack}".`);
+        }
+      }
     }
 
     const [savedItem] = await tx

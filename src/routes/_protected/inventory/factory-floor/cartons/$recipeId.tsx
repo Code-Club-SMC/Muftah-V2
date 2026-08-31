@@ -3,9 +3,11 @@ import { Suspense, useState, useCallback } from "react";
 import { z } from "zod";
 import { ArrowLeft, Boxes, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { GenericLoader } from "@/components/custom/generic-loader";
 import { CartonGrid, BatchKpiCards } from "@/features/manufacturing/cartons/components";
-import { useRecipeCartons, useRecipeKpis } from "@/features/manufacturing/cartons/hooks/use-carton-mutations";
+import { useRecipeCartons, useRecipeKpis, useProductionRunsByRecipe } from "@/features/manufacturing/cartons/hooks/use-carton-mutations";
 import {
   TopUpSheet,
   RemovePacksSheet,
@@ -26,6 +28,8 @@ export const Route = createFileRoute(
   validateSearch: (search) =>
     z.object({
       page: z.coerce.number().int().min(1).default(1),
+      sku: z.string().optional(),
+      batchId: z.string().optional(),
     }).parse(search),
   component: RecipeCartonRoute,
 });
@@ -46,18 +50,21 @@ type SheetName =
 
 function RecipeCartonRoute() {
   const { recipeId } = Route.useParams();
-  const { page } = Route.useSearch();
+  const { page, sku, batchId } = Route.useSearch();
   const navigate = Route.useNavigate();
 
   const [selectedStatus, setSelectedStatus] = useState<CartonStatus | "ALL">("ALL");
+  const [skuSearch, setSkuSearch] = useState(sku || "");
 
   const handleSelectStatus = useCallback((status: CartonStatus | "ALL") => {
     setSelectedStatus(status);
     navigate({ search: (prev) => ({ ...prev, page: 1 }) });
   }, [navigate]);
 
-  const { data: response, isLoading, error, refetch } = useRecipeCartons(recipeId, page, 100, undefined, selectedStatus);
+  const { data: response, isLoading, error, refetch } = useRecipeCartons(recipeId, page, 100, undefined, selectedStatus, sku, batchId);
   const { data: kpis } = useRecipeKpis(recipeId);
+  const { data: productionRunsData } = useProductionRunsByRecipe(recipeId);
+  const productionRuns = productionRunsData?.data || [];
   const cartons = (response?.data || []).map(c => ({
     ...c,
     status: c.status as CartonStatus
@@ -126,6 +133,50 @@ function RecipeCartonRoute() {
             onSelectStatus={handleSelectStatus}
           />
         )}
+
+        <div className="flex flex-col sm:flex-row gap-4 my-6">
+          <div className="relative flex-1 max-w-xs">
+            <Input
+              placeholder="Search by SKU..."
+              value={skuSearch}
+              onChange={(e) => setSkuSearch(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  navigate({ search: (prev) => ({ ...prev, page: 1, sku: skuSearch || undefined }) });
+                }
+              }}
+            />
+          </div>
+          <div className="w-full sm:w-64">
+            <Select 
+              value={batchId || "all"} 
+              onValueChange={(val) => navigate({ search: (prev) => ({ ...prev, page: 1, batchId: val === "all" ? undefined : val }) })}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Filter by Production Run" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Production Runs</SelectItem>
+                {productionRuns.map((run: any) => (
+                  <SelectItem key={run.id} value={run.id}>
+                    Batch {run.batchId} ({new Date(run.createdAt).toLocaleDateString()})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {(sku || batchId) && (
+            <Button 
+              variant="ghost" 
+              onClick={() => {
+                setSkuSearch("");
+                navigate({ search: (prev) => ({ ...prev, page: 1, sku: undefined, batchId: undefined }) });
+              }}
+            >
+              Clear Filters
+            </Button>
+          )}
+        </div>
 
         <Suspense fallback={<GenericLoader title="Loading cartons..." />}>
           <CartonGrid

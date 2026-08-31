@@ -144,6 +144,8 @@ export const getCartonsByRecipeFn = createServerFn()
       recipeId: z.string().min(1),
       warehouseId: z.string().optional(),
       status: z.string().optional(),
+      sku: z.string().optional(),
+      batchId: z.string().optional(),
       page: z.coerce.number().int().min(1).default(1),
       limit: z.coerce.number().int().min(1).max(100).default(100),
     }),
@@ -160,6 +162,13 @@ export const getCartonsByRecipeFn = createServerFn()
     }
     if (data.status && data.status !== "ALL") {
       conditions.push(eq(cartons.status, data.status));
+    }
+    if (data.sku) {
+      const { ilike } = await import("drizzle-orm");
+      conditions.push(ilike(cartons.sku, `%${data.sku}%`));
+    }
+    if (data.batchId) {
+      conditions.push(eq(cartons.productionRunId, data.batchId));
     }
 
     // Get total count for pagination
