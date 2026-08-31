@@ -63,8 +63,7 @@ function RecipeCartonRoute() {
 
   const { data: response, isLoading, error, refetch } = useRecipeCartons(recipeId, page, 100, undefined, selectedStatus, sku, batchId);
   const { data: kpis } = useRecipeKpis(recipeId);
-  const { data: productionRunsData } = useProductionRunsByRecipe(recipeId);
-  const productionRuns = productionRunsData?.data || [];
+  const { data: productionRuns = [] } = useProductionRunsByRecipe(recipeId);
   const cartons = (response?.data || []).map(c => ({
     ...c,
     status: c.status as CartonStatus
@@ -157,7 +156,7 @@ function RecipeCartonRoute() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Production Runs</SelectItem>
-                {productionRuns.map((run: any) => (
+                {productionRuns.map((run) => (
                   <SelectItem key={run.id} value={run.id}>
                     Batch {run.batchId} ({new Date(run.createdAt).toLocaleDateString()})
                   </SelectItem>

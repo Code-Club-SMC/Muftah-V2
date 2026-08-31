@@ -308,6 +308,7 @@ export const getProductionRunsByRecipeFn = createServerFn()
         status: productionRuns.status,
         warehouseId: productionRuns.warehouseId,
         recipeId: productionRuns.recipeId,
+        createdAt: productionRuns.createdAt,
       })
       .from(productionRuns)
       .where(and(...conditions))
@@ -373,6 +374,7 @@ export const getProductionRunsByRecipeFn = createServerFn()
         currentCartons,
         shortfall,
         canAddCartons,
+        createdAt: run.createdAt,
       };
     });
 
