@@ -287,7 +287,7 @@ function CardFront({
 				style={{ background: BRAND.navy }}
 			>
 				<p className="text-[25px] font-black uppercase tracking-[0.09em] text-white">
-					Employee Card
+					Service Card
 				</p>
 			</div>
 
@@ -316,7 +316,7 @@ function CardFront({
 					If found, please return to
 				</p>
 				<p className="mt-1 text-[13px] font-black uppercase tracking-[0.08em] text-white">
-					Muftah Chemical Pvt Limited
+					Muftah Chemical Pvt LTD
 				</p>
 				<p className="mt-1 text-[12px] font-bold tracking-[0.08em] text-white">
 					03009040816
@@ -378,7 +378,7 @@ function CardBack() {
 					Muftah Chemical
 				</p>
 				<p className="mt-2 text-[25px] font-black uppercase leading-tight tracking-[0.08em] text-white">
-					Pvt Limited
+					Pvt LTD
 				</p>
 
 				<div className="my-8 flex w-[176px] items-center">
@@ -397,7 +397,7 @@ function CardBack() {
 				</div>
 
 				<p className="text-[14px] font-semibold tracking-[0.06em] text-white/90">
-					www.muftahchemical.com
+					www.muftah.pk
 				</p>
 			</div>
 		</CardShell>
@@ -497,7 +497,7 @@ function buildPrintHTML(
 	return `<!DOCTYPE html>
 <html>
 <head>
-  <title>Employee Card - ${safeFullName}</title>
+  <title>Service Card - ${safeFullName}</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     @page { size: 122mm 92mm; margin: 0; }
@@ -696,7 +696,7 @@ function buildPrintHTML(
 </head>
 <body>
   <div class="card front">
-    <div class="header"><h1>Employee Card</h1></div>
+    <div class="header"><h1>Service Card</h1></div>
     <div class="fields">
       <div class="field"><span class="field-label">Employee Code</span><span class="field-colon">:</span><span class="field-value">${safeEmployeeCode}</span></div>
       <div class="field"><span class="field-label">Employee Name</span><span class="field-colon">:</span><span class="field-value">${safeFullName}</span></div>
@@ -707,7 +707,7 @@ function buildPrintHTML(
     </div>
     <div class="footer">
       <p class="small">If found, please return to</p>
-      <p class="company">Muftah Chemical Pvt Limited</p>
+      <p class="company">Muftah Chemical Pvt LTD</p>
       <p class="phone">03009040816</p>
     </div>
   </div>
@@ -718,9 +718,9 @@ function buildPrintHTML(
     </svg>
     <div class="back-inner">
       <div class="back-logo"><img src="/company-logo.svg" alt="Muftah Chemical"/></div>
-      <div class="back-name">Muftah Chemical<br/>Pvt Limited</div>
+      <div class="back-name">Muftah Chemical<br/>Pvt LTD</div>
       <div class="yellow-divider"><div class="line"></div><div class="dot"></div><div class="line"></div></div>
-      <p class="url">www.muftahchemical.com</p>
+      <p class="url">www.muftah.pk</p>
     </div>
   </div>
 </body>
