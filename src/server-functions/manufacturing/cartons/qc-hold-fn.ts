@@ -3,6 +3,7 @@ import { requireAuthMiddleware } from "@/lib/middlewares";
 import { holdSchema, releaseHoldSchema } from "@/lib/cartons/carton.schema";
 import * as service from "@/lib/cartons/carton.service";
 import { logActivityQuiet } from "@/lib/activity-logger.server";
+import { db } from "@/db";
 
 export const applyQcHoldFn = createServerFn()
   .middleware([requireAuthMiddleware])
@@ -20,13 +21,21 @@ export const applyQcHoldFn = createServerFn()
     const expiresAt = data.expiresAt ? new Date(data.expiresAt) : undefined;
     const result = await service.applyQcHold(data.cartonId, data.reason, context.session.user.id, expiresAt);
 
+    const carton = await db.query.cartons.findFirst({
+      where: (c, { eq }) => eq(c.id, data.cartonId),
+      columns: { sku: true },
+    });
+    const shortId = data.cartonId.slice(-6).toUpperCase();
+    const cartonLabel = carton?.sku ? `${carton.sku} (${shortId})` : shortId;
+
     logActivityQuiet({
       module: "manufacturing",
       action: "updated",
       entityType: "carton",
+      entityLabel: cartonLabel,
       actorId: context.authContext.session.user.id,
       actorName: context.authContext.session.user.name,
-      description: `Applied QC hold on carton ${data.cartonId} for reason: ${data.reason}`,
+      description: `Applied QC hold on carton ${cartonLabel} for reason: ${data.reason}`,
     });
 
     return result;
@@ -52,13 +61,21 @@ export const releaseQcHoldFn = createServerFn()
       isManager,
     );
 
+    const carton = await db.query.cartons.findFirst({
+      where: (c, { eq }) => eq(c.id, data.cartonId),
+      columns: { sku: true },
+    });
+    const shortId = data.cartonId.slice(-6).toUpperCase();
+    const cartonLabel = carton?.sku ? `${carton.sku} (${shortId})` : shortId;
+
     logActivityQuiet({
       module: "manufacturing",
       action: "updated",
       entityType: "carton",
+      entityLabel: cartonLabel,
       actorId: context.authContext.session.user.id,
       actorName: context.authContext.session.user.name,
-      description: `Released QC hold on carton ${data.cartonId} with outcome: ${data.outcome}`,
+      description: `Released QC hold on carton ${cartonLabel} with outcome: ${data.outcome}`,
     });
 
     return result;

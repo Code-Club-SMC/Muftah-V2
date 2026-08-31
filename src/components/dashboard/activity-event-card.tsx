@@ -208,13 +208,15 @@ export function ActivityEventCard({ event, isLast, onSelect }: ActivityEventCard
         {/* Top Header: Actor, Action, Entity, Department & Timestamp */}
         <div className="flex items-start justify-between gap-3">
           <div className="flex-1 min-w-0">
-            <p className="text-[13px] leading-snug text-slate-800 dark:text-slate-200">
+            <p className="text-[13px] leading-snug text-slate-800 dark:text-slate-200 break-words">
               <span className="font-semibold text-slate-900 dark:text-foreground">
                 {event.actorName}
               </span>
+              {" "}
               <span className="text-slate-500 dark:text-slate-400 mx-1.5 font-normal">
                 {formatActionText(event.action)}
               </span>
+              {" "}
               {event.entityLabel ? (
                 <span className="font-semibold text-slate-900 dark:text-foreground font-mono">
                   {event.entityLabel}

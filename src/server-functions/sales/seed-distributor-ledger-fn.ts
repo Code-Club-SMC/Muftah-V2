@@ -46,8 +46,8 @@ export const clearDistributorLedgerSeedFn = createServerFn()
       .update(customers)
       .set({
         totalSale: "0",
-        payment: "0",
-        credit: "0",
+        totalPaidAmount: "0",
+        outstandingAmount: "0",
       })
       .where(eq(customers.id, distributor.id));
 

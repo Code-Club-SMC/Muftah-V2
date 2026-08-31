@@ -28,12 +28,18 @@ export const transferStockFn = createServerFn()
     }
 
     return await db.transaction(async (tx) => {
-      // Validate Destination Warehouse Type
-      const toWarehouse = await tx.query.warehouses.findFirst({
-        where: eq(warehouses.id, data.toWarehouseId),
-      });
+      // Validate Destination Warehouse Type and fetch both warehouses for logging
+      const [fromWarehouse, toWarehouse] = await Promise.all([
+        tx.query.warehouses.findFirst({
+          where: eq(warehouses.id, data.fromWarehouseId),
+        }),
+        tx.query.warehouses.findFirst({
+          where: eq(warehouses.id, data.toWarehouseId),
+        })
+      ]);
 
       if (!toWarehouse) throw new Error("Destination warehouse not found");
+      if (!fromWarehouse) throw new Error("Source warehouse not found");
 
       if (
         data.materialType === "chemical" ||
@@ -44,6 +50,28 @@ export const transferStockFn = createServerFn()
             "Raw materials (chemicals/packaging) can only be transferred to a Factory Floor facility.",
           );
         }
+      }
+
+      // Pre-fetch material name for logging
+      let resolvedMaterialName = data.materialId;
+      if (data.materialType === "finished") {
+        const recipe = await tx.query.recipes.findFirst({
+          where: (r, { eq }) => eq(r.id, data.materialId),
+          columns: { name: true }
+        });
+        if (recipe) resolvedMaterialName = recipe.name;
+      } else if (data.materialType === "chemical") {
+        const material = await tx.query.chemicals.findFirst({
+          where: (m, { eq }) => eq(m.id, data.materialId),
+          columns: { name: true }
+        });
+        if (material) resolvedMaterialName = material.name;
+      } else if (data.materialType === "packaging") {
+        const material = await tx.query.packagingMaterials.findFirst({
+          where: (m, { eq }) => eq(m.id, data.materialId),
+          columns: { name: true }
+        });
+        if (material) resolvedMaterialName = material.name;
       }
 
       const qty = parseFloat(data.quantity) || 0;
@@ -388,10 +416,10 @@ export const transferStockFn = createServerFn()
         module: "inventory",
         action: "transferred",
         entityType: "stock",
-        entityLabel: data.materialId,
+        entityLabel: resolvedMaterialName,
         actorId: context.authContext.session.user.id,
         actorName: context.authContext.session.user.name,
-        description: `Transferred ${data.quantity} units of ${data.materialType} from ${data.fromWarehouseId} to ${data.toWarehouseId}`,
+        description: `Transferred ${data.quantity} units of ${resolvedMaterialName} from ${fromWarehouse.name} to ${toWarehouse.name}`,
       });
 
       return transfer;

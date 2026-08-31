@@ -17,7 +17,7 @@ export const getProductSalesKpisFn = createServerFn()
   )
   .handler(async ({ data }) => {
     const conditions = [
-      inArray(invoices.status, ["paid", "partially_paid"]),
+      inArray(invoices.paymentStatus, ["paid", "partially_paid"]),
       sql`${invoiceItems.recipeId} IS NOT NULL`,
     ];
 

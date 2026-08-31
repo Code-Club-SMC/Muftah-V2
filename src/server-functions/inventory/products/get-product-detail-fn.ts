@@ -62,7 +62,7 @@ export const getProductDetailFn = createServerFn()
             .innerJoin(invoices, eq(invoiceItems.invoiceId, invoices.id))
             .where(
               and(
-                inArray(invoices.status, ["saved", "paid", "partially_paid"]),
+                inArray(invoices.paymentStatus, ["paid", "partially_paid", "unpaid"]),
                 inArray(invoiceItems.recipeId, recipeIds),
                 gte(invoices.date, twelveMonthsAgo),
               ),
@@ -156,5 +156,5 @@ export const getProductDetailFn = createServerFn()
       orders: productOrders,
       promos: [],
       discountRules: [],
-    };
+    } as any;
   });

@@ -417,12 +417,13 @@ export const depositToWalletFn = createServerFn()
   .handler(async ({ data, context }) => {
     return await db.transaction(async (tx) => {
       // Update wallet balance
-      await tx
+      const [updatedWallet] = await tx
         .update(wallets)
         .set({
           balance: sql`${wallets.balance} + ${data.amount}`,
         })
-        .where(eq(wallets.id, data.walletId));
+        .where(eq(wallets.id, data.walletId))
+        .returning();
 
       // Create transaction record
       const [txn] = await tx
@@ -443,7 +444,7 @@ export const depositToWalletFn = createServerFn()
         entityType: "transaction",
         actorId: context.authContext.session.user.id,
         actorName: context.authContext.session.user.name,
-        description: `Deposited ${data.amount} to wallet ${data.walletId}`,
+        description: `Deposited ${data.amount} to wallet ${updatedWallet?.name || data.walletId}`,
       });
 
       return txn;
@@ -1045,7 +1046,7 @@ export const debitWalletFn = createServerFn()
         entityType: "transaction",
         actorId: context.authContext.session.user.id,
         actorName: context.authContext.session.user.name,
-        description: `Debited ${data.amount} from wallet ${data.walletId} for ${data.source}`,
+        description: `Debited ${data.amount} from wallet ${wallet.name} for ${data.source}`,
       });
 
       return {

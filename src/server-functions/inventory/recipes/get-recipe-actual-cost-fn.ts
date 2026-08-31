@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { db } from "@/db";
-import { finishedGoodsStock, recipes, warehouses } from "@/db/schemas/inventory-schema";
+import { finishedGoodsStock, recipes } from "@/db/schemas/inventory-schema";
 import { eq, and } from "drizzle-orm";
 import { z } from "zod";
 import { requireSalesViewMiddleware } from "@/lib/middlewares";

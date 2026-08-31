@@ -9,6 +9,7 @@ import {
   employees,
   orderBookers,
   userRoleAssignments,
+  user,
 } from "@/db";
 import {
   ensureRbacSeeded,
@@ -629,14 +630,20 @@ export const banManagedUserFn = createServerFn()
       },
     });
 
+    const targetUser = await db.query.user.findFirst({
+      where: eq(user.id, data.userId),
+      columns: { name: true },
+    });
+    const userName = targetUser?.name || data.userId;
+
     void logActivityQuiet({
       module: "user-management",
       action: "updated",
       entityType: "user",
-      entityLabel: data.userId,
+      entityLabel: userName,
       actorId: context.session.user.id,
       actorName: context.session.user.name,
-      description: `Banned user ${data.userId}`,
+      description: `Banned user ${userName}`,
       severity: "warning",
     });
 

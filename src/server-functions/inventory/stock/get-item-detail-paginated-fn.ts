@@ -24,7 +24,7 @@ export const getItemDetailPaginatedFn = createServerFn()
     const offset = (data.page - 1) * data.limit;
 
     // --- Fetch item metadata based on type ---
-    let item: Record<string, unknown> = {};
+    let item: Record<string, any> = {};
 
     if (data.itemType === "chemical") {
       const result = await db.query.chemicals.findFirst({

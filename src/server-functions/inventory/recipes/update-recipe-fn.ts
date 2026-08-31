@@ -44,7 +44,7 @@ export const updateRecipeFn = createServerFn()
           : [];
 
       // 3. Calculate costs
-      const batchSize = parseFloat(data.batchSize);
+      
       const targetUnits = data.targetUnitsPerBatch || 0;
 
       // Calculate ingredients cost

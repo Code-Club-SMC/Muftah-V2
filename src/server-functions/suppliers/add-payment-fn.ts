@@ -55,7 +55,14 @@ export const addPaymentFn = createServerFn()
   .middleware([requireSuppliersManageMiddleware])
   .inputValidator(addPaymentSchema)
   .handler(async ({ data, context }) => {
+    const supplier = await db.query.suppliers.findFirst({
+      where: (s, { eq }) => eq(s.id, data.supplierId),
+      columns: { supplierName: true }
+    });
+    const resolvedSupplierName = supplier?.supplierName || data.supplierName || data.supplierId;
+
     const result = await db.transaction(async (tx) => {
+
       const [payment] = await tx
         .insert(supplierPayments)
         .values({
@@ -161,7 +168,7 @@ export const addPaymentFn = createServerFn()
       entityLabel: data.amount.toString(),
       actorId: context.session.user.id,
       actorName: context.session.user.name,
-      description: `Added payment of ${data.amount} for supplier ${data.supplierName || data.supplierId}`,
+      description: `Added payment of ${data.amount} for supplier ${resolvedSupplierName}`,
       severity: "info",
     });
 

@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
-import { and, desc, eq, or } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
-import { db, stockTransfers, warehouses, user } from "@/db";
+import { db, stockTransfers } from "@/db";
 import { requireInventoryViewMiddleware } from "@/lib/middlewares";
 
 const getTransferHistorySchema = z.object({

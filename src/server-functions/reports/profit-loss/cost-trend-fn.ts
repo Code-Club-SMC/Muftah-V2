@@ -45,7 +45,7 @@ export const getPnlCostTrendFn = createServerFn()
       .where(
         and(
           eq(invoiceItems.recipeId, recipeId),
-          inArray(invoices.status, ["paid", "partially_paid"]),
+          inArray(invoices.paymentStatus, ["paid", "partially_paid"]),
           gte(invoices.date, startDate),
           lte(invoices.date, endDate),
         ),

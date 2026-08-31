@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { db } from "@/db";
-import { customerDiscountRules } from "@/db/schemas/sales-erp-schema";
+import { discountRules as customerDiscountRules } from "@/db/schemas/sales-erp-schema";
 import { customers } from "@/db/schemas/sales-schema";
 import { products } from "@/db/schemas/inventory-schema";
 import { requireSalesViewMiddleware, requireSalesManageMiddleware } from "@/lib/middlewares";
@@ -34,11 +34,11 @@ export const createCustomerDiscountRuleFn = createServerFn()
     }
 
     // Check for duplicate rule (same customer, product, and volume threshold)
-    const existingRule = await db.query.customerDiscountRules.findFirst({
+    const existingRule = await db.query.discountRules.findFirst({
       where: and(
         eq(customerDiscountRules.customerId, data.customerId),
-        eq(customerDiscountRules.productId, data.productId),
-        eq(customerDiscountRules.volumeThreshold, data.volumeThreshold),
+        eq(customerDiscountRules.recipeId, data.productId),
+        eq(customerDiscountRules.quantityThreshold, data.volumeThreshold),
       ),
     });
 
@@ -51,11 +51,11 @@ export const createCustomerDiscountRuleFn = createServerFn()
       .insert(customerDiscountRules)
       .values({
         customerId: data.customerId,
-        productId: data.productId,
-        volumeThreshold: data.volumeThreshold,
-        discountType: data.discountType,
-        discountValue: data.discountValue.toString(),
-        eligibleCustomerType: data.eligibleCustomerType,
+        recipeId: data.productId,
+        quantityThreshold: data.volumeThreshold,
+        ruleType: data.discountType as any,
+        discountPercent: data.discountValue.toString(),
+        // eligibleCustomerType removed
         effectiveFrom: data.effectiveFrom ?? new Date(),
         effectiveTo: data.effectiveTo ?? null,
       })
@@ -74,7 +74,7 @@ export const updateCustomerDiscountRuleFn = createServerFn()
     const { id, ...updates } = data;
 
     // Check if rule exists
-    const existingRule = await db.query.customerDiscountRules.findFirst({
+    const existingRule = await db.query.discountRules.findFirst({
       where: eq(customerDiscountRules.id, id),
     });
 
@@ -107,14 +107,14 @@ export const updateCustomerDiscountRuleFn = createServerFn()
     // Check for duplicate if updating key fields
     if (updates.customerId || updates.productId || updates.volumeThreshold) {
       const checkCustomerId = updates.customerId ?? existingRule.customerId;
-      const checkProductId = updates.productId ?? existingRule.productId;
-      const checkVolumeThreshold = updates.volumeThreshold ?? existingRule.volumeThreshold;
+      const checkProductId = updates.productId ?? existingRule.recipeId;
+      const checkVolumeThreshold = updates.volumeThreshold ?? existingRule.quantityThreshold;
 
-      const duplicateRule = await db.query.customerDiscountRules.findFirst({
+      const duplicateRule = await db.query.discountRules.findFirst({
         where: and(
           eq(customerDiscountRules.customerId, checkCustomerId),
-          eq(customerDiscountRules.productId, checkProductId),
-          eq(customerDiscountRules.volumeThreshold, checkVolumeThreshold),
+          checkProductId ? eq(customerDiscountRules.recipeId, checkProductId) : isNull(customerDiscountRules.recipeId),
+          eq(customerDiscountRules.quantityThreshold, checkVolumeThreshold),
         ),
       });
 
@@ -126,11 +126,11 @@ export const updateCustomerDiscountRuleFn = createServerFn()
     // Prepare update values
     const updateValues: any = {};
     if (updates.customerId !== undefined) updateValues.customerId = updates.customerId;
-    if (updates.productId !== undefined) updateValues.productId = updates.productId;
-    if (updates.volumeThreshold !== undefined) updateValues.volumeThreshold = updates.volumeThreshold;
-    if (updates.discountType !== undefined) updateValues.discountType = updates.discountType;
-    if (updates.discountValue !== undefined) updateValues.discountValue = updates.discountValue.toString();
-    if (updates.eligibleCustomerType !== undefined) updateValues.eligibleCustomerType = updates.eligibleCustomerType;
+    if (updates.productId !== undefined) updateValues.recipeId = updates.productId;
+    if (updates.volumeThreshold !== undefined) updateValues.quantityThreshold = updates.volumeThreshold;
+    if (updates.discountType !== undefined) updateValues.ruleType = updates.discountType;
+    if (updates.discountValue !== undefined) updateValues.discountPercent = updates.discountValue.toString();
+    // no eligibleCustomerType
     if (updates.effectiveFrom !== undefined) updateValues.effectiveFrom = updates.effectiveFrom;
     if (updates.effectiveTo !== undefined) updateValues.effectiveTo = updates.effectiveTo;
 
@@ -152,7 +152,7 @@ export const deactivateCustomerDiscountRuleFn = createServerFn()
   .inputValidator((input: any) => z.object({ id: z.string() }).parse(input))
   .handler(async ({ data }) => {
     // Check if rule exists
-    const existingRule = await db.query.customerDiscountRules.findFirst({
+    const existingRule = await db.query.discountRules.findFirst({
       where: eq(customerDiscountRules.id, data.id),
     });
 
@@ -178,7 +178,7 @@ export const getCustomerDiscountRulesFn = createServerFn()
   .inputValidator((input: any) =>
     z.object({
       customerId: z.string().optional(),
-      productId: z.string().optional(),
+      recipeId: z.string().optional(),
       includeInactive: z.boolean().default(false),
     }).parse(input),
   )
@@ -191,8 +191,8 @@ export const getCustomerDiscountRulesFn = createServerFn()
     }
 
     // Filter by product if provided
-    if (data.productId) {
-      conditions.push(eq(customerDiscountRules.productId, data.productId));
+    if (data.recipeId) {
+      conditions.push(eq(customerDiscountRules.recipeId, data.recipeId));
     }
 
     // Filter out inactive rules unless includeInactive is true
@@ -212,7 +212,7 @@ export const getCustomerDiscountRulesFn = createServerFn()
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
     // Query rules with related customer and product data
-    const rules = await db.query.customerDiscountRules.findMany({
+    const rules = await db.query.discountRules.findMany({
       where: whereClause,
       with: {
         customer: {
@@ -229,7 +229,7 @@ export const getCustomerDiscountRulesFn = createServerFn()
           },
         },
       },
-      orderBy: [desc(customerDiscountRules.volumeThreshold)],
+      orderBy: [desc(customerDiscountRules.quantityThreshold)],
     });
 
     return rules;
@@ -243,7 +243,7 @@ export const getApplicableDiscountRulesFn = createServerFn()
   .inputValidator((input: any) =>
     z.object({
       customerId: z.string(),
-      productId: z.string(),
+      recipeId: z.string(),
     }).parse(input),
   )
   .handler(async ({ data }) => {
@@ -259,21 +259,21 @@ export const getApplicableDiscountRulesFn = createServerFn()
     const now = new Date();
 
     // Query active rules for this customer and product
-    const rules = await db.query.customerDiscountRules.findMany({
+    const rules = await db.query.discountRules.findMany({
       where: and(
         eq(customerDiscountRules.customerId, data.customerId),
-        eq(customerDiscountRules.productId, data.productId),
+        eq(customerDiscountRules.recipeId, data.recipeId),
         lte(customerDiscountRules.effectiveFrom, now),
         or(
           isNull(customerDiscountRules.effectiveTo),
           gte(customerDiscountRules.effectiveTo, now),
         ),
         or(
-          eq(customerDiscountRules.eligibleCustomerType, "all"),
-          eq(customerDiscountRules.eligibleCustomerType, customer.customerType),
+          eq(customerDiscountRules.ruleType, "all"),
+          eq(customerDiscountRules.ruleType, customer.customerType),
         ),
       ),
-      orderBy: [desc(customerDiscountRules.volumeThreshold)],
+      orderBy: [desc(customerDiscountRules.quantityThreshold)],
     });
 
     return rules;

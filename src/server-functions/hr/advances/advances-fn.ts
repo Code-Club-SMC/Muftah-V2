@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { db } from "@/db";
-import { salaryAdvances } from "@/db/schemas/hr-schema";
+import { employees, salaryAdvances } from "@/db/schemas/hr-schema";
 import { wallets, transactions } from "@/db/schemas/finance-schema";
 import {
   requireHrManageMiddleware,
@@ -147,13 +147,19 @@ export const approveSalaryAdvanceFn = createServerFn()
         performedById: context.session.user.id,
       });
 
+      const employee = await tx.query.employees.findFirst({
+        where: eq(employees.id, advance.employeeId),
+        columns: { firstName: true, lastName: true },
+      });
+      const employeeName = employee ? `${employee.firstName} ${employee.lastName}`.trim() : advance.employeeId;
+
       logActivityQuiet({
         module: "hr",
         action: "approved",
         entityType: "salary_advance",
         actorId: context.session.user.id,
         actorName: context.session.user.name,
-        description: `Approved salary advance for employee ID ${advance.employeeId}`,
+        description: `Approved salary advance for employee ${employeeName}`,
       });
 
       return advance;

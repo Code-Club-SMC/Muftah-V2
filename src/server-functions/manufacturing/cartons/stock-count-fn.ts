@@ -74,13 +74,15 @@ export const approveStockCountFn = createServerFn()
       context.session.user.id,
     );
 
+    const shortId = data.sessionId.slice(-6).toUpperCase();
     logActivityQuiet({
       module: "manufacturing",
       action: "updated",
       entityType: "stockCount",
+      entityLabel: shortId,
       actorId: context.authContext.session.user.id,
       actorName: context.authContext.session.user.name,
-      description: `Approved stock count session ${data.sessionId}`,
+      description: `Approved stock count session ${shortId}`,
     });
 
     return result;
