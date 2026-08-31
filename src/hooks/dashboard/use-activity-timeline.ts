@@ -1,4 +1,4 @@
-import { useQuery, keepPreviousData } from "@tanstack/react-query";
+import { useQuery, keepPreviousData, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   getActivityTimelineFn,
   getActivityFilterOptionsFn,
@@ -74,5 +74,26 @@ export function useActivityExport(
         },
       }),
     enabled,
+  });
+}
+
+// ── HOOK: CREATE MANUAL EVENT ──────────────────────────────────────────────
+
+import { createManualActivityEventFn } from "@/server-functions/dashboard/activity-timeline-fn";
+
+export function useCreateManualActivityEvent() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: (data: {
+      module: string;
+      action: string;
+      entityType: string;
+      severity: "info" | "warning" | "critical";
+      description: string;
+    }) => createManualActivityEventFn({ data }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: activityTimelineKeys.all });
+    },
   });
 }

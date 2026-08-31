@@ -2,7 +2,8 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { desc, eq, and, gte, lte, ilike, or, count } from "drizzle-orm";
 import { db, systemActivityLog } from "@/db";
-import { requireSuperAdminMiddleware } from "@/lib/middlewares";
+import { requireSuperAdminMiddleware, requireActivityTimelineManageMiddleware } from "@/lib/middlewares";
+import { logActivity } from "@/lib/activity-logger.server";
 
 // ── INPUT SCHEMA ───────────────────────────────────────────────────────────
 
@@ -172,4 +173,35 @@ export const exportActivityTimelineFn = createServerFn({ method: "GET" })
       .limit(5000);
 
     return { events };
+  });
+
+// ── COMMAND: CREATE MANUAL EVENT ───────────────────────────────────────────
+
+const createManualActivityEventInput = z.object({
+  module: z.string().min(1, "Module is required"),
+  action: z.string().min(1, "Action is required"),
+  entityType: z.string().min(1, "Entity Type is required"),
+  severity: z.enum(["info", "warning", "critical"]).default("info"),
+  description: z.string().min(1, "Description is required"),
+});
+
+export const createManualActivityEventFn = createServerFn({ method: "POST" })
+  .middleware([requireActivityTimelineManageMiddleware])
+  .inputValidator((d: unknown) => createManualActivityEventInput.parse(d))
+  .handler(async ({ data, context }) => {
+    const { module, action, entityType, severity, description } = data;
+    const actorId = context.session.user.id;
+    const actorName = context.session.user.name;
+
+    await logActivity({
+      module: module as any, // Cast to any since we are allowing free-text
+      action,
+      entityType,
+      severity,
+      description,
+      actorId,
+      actorName,
+    });
+
+    return { success: true };
   });

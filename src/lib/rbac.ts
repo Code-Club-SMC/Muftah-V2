@@ -31,6 +31,7 @@ export type ModuleKey = (typeof MODULE_KEYS)[number];
 export const PERMISSION_KEYS = [
   "dashboard.view",
   "dashboard.activity-timeline",
+  "dashboard.activity-timeline.manage",
   "manufacturing.view",
   "manufacturing.manage",
   "manufacturing.run.read",
@@ -131,6 +132,13 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
     description: "Access the system-wide activity timeline for auditing all mutations.",
     kind: "route",
     routePattern: "/dashboard/activity-timeline",
+  },
+  {
+    key: "dashboard.activity-timeline.manage",
+    moduleKey: "dashboard",
+    label: "Manage activity timeline",
+    description: "Log manual events to the system-wide activity timeline.",
+    kind: "action",
   },
   {
     key: "manufacturing.view",
@@ -691,6 +699,8 @@ export const SYSTEM_ROLE_SEEDS: AppRoleSeed[] = [
     defaultLandingPath: "/dashboard",
     permissionKeys: [
       "dashboard.view",
+      "dashboard.activity-timeline",
+      "dashboard.activity-timeline.manage",
       "manufacturing.view",
       "manufacturing.manage",
       "manufacturing.run.read",

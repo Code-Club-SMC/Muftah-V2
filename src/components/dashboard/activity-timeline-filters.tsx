@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   Select,
   SelectContent,
@@ -8,11 +9,12 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { DatePickerWithRange } from "@/components/custom/date-range-picker";
-import { Download, Search, X } from "lucide-react";
+import { Download, Search, X, Plus } from "lucide-react";
 import { type DateRange } from "react-day-picker";
 import { startOfDay, endOfDay, subDays, isSameDay } from "date-fns";
 import { MODULE_CONFIG } from "./activity-event-card";
 import { cn } from "@/lib/utils";
+import { ManualActivityEventDialog } from "./manual-activity-event-dialog";
 
 export interface ActivityFilters {
   module?: string;
@@ -59,6 +61,8 @@ export function ActivityTimelineFilters({
   onExport,
   isExporting,
 }: ActivityTimelineFiltersProps) {
+  const [isManualDialogOpen, setIsManualDialogOpen] = useState(false);
+
   const updateFilter = (key: keyof ActivityFilters, value: string | undefined) => {
     onFiltersChange({ ...filters, [key]: value || undefined });
   };
@@ -169,7 +173,7 @@ export function ActivityTimelineFilters({
       </div>
 
       {/* ── Secondary Controls Toolbar ───────────────────────────────── */}
-      <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-2.5 p-2 rounded-xl bg-slate-100/70 dark:bg-muted/30 border border-slate-200/80 dark:border-border/60">
+      <div className="flex flex-col 2xl:flex-row items-stretch 2xl:items-center justify-between gap-3 p-2 rounded-xl bg-slate-100/70 dark:bg-muted/30 border border-slate-200/80 dark:border-border/60">
         {/* Left Side: Search + Dropdowns */}
         <div className="flex flex-1 flex-wrap items-center gap-2">
           {/* Search Input */}
@@ -320,8 +324,22 @@ export function ActivityTimelineFilters({
               <span className="hidden xl:inline">Export CSV</span>
             </Button>
           )}
+
+          <Button
+            size="sm"
+            onClick={() => setIsManualDialogOpen(true)}
+            className="h-8.5 px-3 text-xs font-medium rounded-lg shadow-xs gap-1.5 shrink-0"
+          >
+            <Plus className="size-3.5" />
+            <span className="hidden xl:inline">Log Event</span>
+          </Button>
         </div>
       </div>
+
+      <ManualActivityEventDialog 
+        open={isManualDialogOpen} 
+        onOpenChange={setIsManualDialogOpen} 
+      />
     </div>
   );
 }

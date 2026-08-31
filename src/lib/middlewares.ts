@@ -132,6 +132,9 @@ export const requireSuperAdminMiddleware = createMiddleware()
 export const requireDashboardViewMiddleware = createPermissionMiddleware(
   "dashboard.view",
 );
+export const requireActivityTimelineManageMiddleware = createPermissionMiddleware(
+  "dashboard.activity-timeline.manage",
+);
 export const requireManufacturingViewMiddleware = createPermissionMiddleware(
   "manufacturing.view",
 );
