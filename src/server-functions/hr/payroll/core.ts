@@ -415,6 +415,8 @@ export async function generateEmployeePayslipCore(
     isApprovedLeave: r.isApprovedLeave ?? false,
     leaveType: r.leaveType ?? null,
     overtimeStatus: r.overtimeStatus ?? "pending",
+    overtimeCompensationMethod: r.overtimeCompensationMethod as "payout" | "comp_off" | undefined,
+    compensatoryHoursUsed: r.compensatoryHoursUsed,
     isLate: r.isLate ?? false,
     earlyDepartureStatus: r.earlyDepartureStatus ?? "none",
   }));
@@ -588,6 +590,8 @@ export async function generateEmployeePayslipCore(
     isApprovedLeave: r.isApprovedLeave ?? false,
     leaveType: r.leaveType ?? null,
     overtimeStatus: r.overtimeStatus ?? "pending",
+    overtimeCompensationMethod: r.overtimeCompensationMethod as "payout" | "comp_off" | undefined,
+    compensatoryHoursUsed: r.compensatoryHoursUsed,
     isLate: r.isLate ?? false,
     earlyDepartureStatus: r.earlyDepartureStatus ?? "none",
   }));
@@ -915,6 +919,8 @@ export async function simulateEmployeePayslipCore(
     isApprovedLeave: r.isApprovedLeave ?? false,
     leaveType: r.leaveType ?? null,
     overtimeStatus: r.overtimeStatus ?? "pending",
+    overtimeCompensationMethod: r.overtimeCompensationMethod as "payout" | "comp_off" | undefined,
+    compensatoryHoursUsed: r.compensatoryHoursUsed,
     isLate: r.isLate ?? false,
     earlyDepartureStatus: r.earlyDepartureStatus ?? "none",
   }));
@@ -1080,6 +1086,8 @@ export async function simulateEmployeePayslipCore(
     isApprovedLeave: r.isApprovedLeave ?? false,
     leaveType: r.leaveType ?? null,
     overtimeStatus: r.overtimeStatus ?? "pending",
+    overtimeCompensationMethod: r.overtimeCompensationMethod as "payout" | "comp_off" | undefined,
+    compensatoryHoursUsed: r.compensatoryHoursUsed,
     isLate: r.isLate ?? false,
     earlyDepartureStatus: r.earlyDepartureStatus ?? "none",
   }));

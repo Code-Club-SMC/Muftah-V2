@@ -1,3 +1,12 @@
+function isRestDay(date: string, restDays: unknown) {
+  const configuredRestDays = Array.isArray(restDays)
+    ? restDays.filter((day): day is number => Number.isInteger(day))
+    : [0];
+  const [year, month, day] = date.split("-").map(Number);
+  const dayOfWeek = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
+  return configuredRestDays.includes(dayOfWeek);
+}
+
 import { and, asc, eq } from "drizzle-orm";
 import {
   attendance,
@@ -6,6 +15,7 @@ import {
 } from "@/db/schemas/hr-schema";
 import type { db } from "@/db";
 import { revalidateOvertimeRequest } from "./overtime-request";
+import { calculateTotalShiftHours } from "./time";
 import { computeAttendanceFromPunches } from "./recompute";
 
 export type AttendanceTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -102,9 +112,14 @@ export async function recomputeAttendanceRow(
       forceNightShift: options.forceNightShift,
     },
   );
+  const isOffDay = isRestDay(attendanceDate, employee.restDays);
+  const shiftHours = calculateTotalShiftHours(employee.shifts);
+  const standardHours = shiftHours > 0 ? shiftHours : (employee.standardDutyHours || 8);
+  const effectiveStandardHours = isOffDay ? 0 : standardHours;
+
   const overtimeRevalidation = revalidateOvertimeRequest({
     dutyHours: computed.dutyHours,
-    standardDutyHours: employee.standardDutyHours,
+    standardDutyHours: effectiveStandardHours,
     requestedOvertimeHours: existingAttendance?.overtimeHours,
     currentOvertimeStatus: existingAttendance?.overtimeStatus,
   });
@@ -133,9 +148,9 @@ export async function recomputeAttendanceRow(
         : appendUniqueNote(existingAttendance?.notes ?? null, options.appendNote),
     ...(manualFieldStrategy === "reset"
       ? {
-          overtimeHours: "0.00",
+          overtimeHours: isOffDay && parseFloat(computed.dutyHours) > 0 ? computed.dutyHours : "0.00",
           overtimeStatus: "pending",
-          overtimeRemarks: null,
+          overtimeRemarks: isOffDay && parseFloat(computed.dutyHours) > 0 ? "Worked on rest day" : null,
           checkOutReason: null,
           isApprovedLeave: false,
           leaveType: null,
@@ -143,14 +158,41 @@ export async function recomputeAttendanceRow(
         }
       : existingAttendance
         ? {
-            overtimeHours: existingAttendance.overtimeHours ?? "0.00",
+            overtimeHours: isOffDay && (!existingAttendance.overtimeHours || parseFloat(existingAttendance.overtimeHours) === 0) && parseFloat(computed.dutyHours) > 0
+              ? computed.dutyHours
+              : existingAttendance.overtimeHours ?? "0.00",
             overtimeStatus: overtimeRevalidation.nextOvertimeStatus,
-            overtimeRemarks: existingAttendance.overtimeRemarks ?? null,
+            overtimeRemarks: existingAttendance.overtimeRemarks ?? (isOffDay && parseFloat(computed.dutyHours) > 0 ? "Worked on rest day" : null),
           }
-        : {}
+        : {
+            overtimeHours: isOffDay && parseFloat(computed.dutyHours) > 0 ? computed.dutyHours : "0.00",
+            overtimeStatus: "pending",
+            overtimeRemarks: isOffDay && parseFloat(computed.dutyHours) > 0 ? "Worked on rest day" : null,
+          }
     ),
     updatedAt: new Date(),
   };
+
+  // Compensatory balance adjustment
+  if (existingAttendance?.leaveType === "compensatory") {
+      const previousCompUsed = parseFloat(existingAttendance.compensatoryHoursUsed || "0");
+      const newCompUsed = (updateData as any).leaveType === "compensatory" ? parseFloat((updateData as any).compensatoryHoursUsed || "0") : 0;
+      const compHoursDiff = newCompUsed - previousCompUsed;
+
+      if (compHoursDiff !== 0) {
+          const emp = await tx.query.employees.findFirst({
+              where: eq(employees.id, employeeId),
+              columns: { compensatoryHoursBalance: true }
+          });
+          if (emp) {
+              const currentBalance = parseFloat(emp.compensatoryHoursBalance || "0");
+              const newBalance = currentBalance - compHoursDiff;
+              await tx.update(employees)
+                  .set({ compensatoryHoursBalance: newBalance.toString() })
+                  .where(eq(employees.id, employeeId));
+          }
+      }
+  }
 
   const [upserted] = await tx
     .insert(attendance)

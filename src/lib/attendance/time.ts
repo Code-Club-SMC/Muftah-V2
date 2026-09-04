@@ -36,3 +36,20 @@ export function toPKTTime(value: string | Date): string {
 export function nowPKTDate(): string {
   return toPKTDate(new Date());
 }
+
+export function calculateTotalShiftHours(
+  shifts?: { start: string; end: string }[] | null,
+): number {
+  if (!shifts || shifts.length === 0) return 0;
+  let totalMinutes = 0;
+  for (const s of shifts) {
+    if (!s.start || !s.end) continue;
+    const [sh, sm] = s.start.split(":").map(Number);
+    const [eh, em] = s.end.split(":").map(Number);
+    if (isNaN(sh) || isNaN(sm) || isNaN(eh) || isNaN(em)) continue;
+    let diff = eh * 60 + em - (sh * 60 + sm);
+    if (diff < 0) diff += 24 * 60; // Handle overnight shift
+    totalMinutes += diff;
+  }
+  return Math.round((totalMinutes / 60) * 100) / 100;
+}

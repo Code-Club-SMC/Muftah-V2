@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
-import { db, warehouses } from "@/db";
+import { db } from "@/db";
 import { requireInventoryViewMiddleware } from "@/lib/middlewares";
-import { eq } from "drizzle-orm";
+
 
 export const getInventoryFn = createServerFn()
   .middleware([requireInventoryViewMiddleware])

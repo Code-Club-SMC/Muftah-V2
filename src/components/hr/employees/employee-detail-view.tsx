@@ -536,6 +536,22 @@ export const EmployeeDetailView = () => {
                       <span className="font-medium text-sm text-muted-foreground">{tenure}</span>
                     }
                   />
+                  <SidebarRow
+                    label="Annual Leave (Days)"
+                    value={
+                      <span className="font-mono font-bold text-sm">
+                        {employee.annualLeaveAllowance ?? 14}
+                      </span>
+                    }
+                  />
+                  <SidebarRow
+                    label="Compensatory Leave (Hours)"
+                    value={
+                      <span className="font-mono font-bold text-sm text-indigo-600 dark:text-indigo-400">
+                        {employee.compensatoryHoursBalance ?? 0}
+                      </span>
+                    }
+                  />
                 </CardContent>
               </Card>
 

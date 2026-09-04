@@ -112,6 +112,9 @@ export const createEmployeeSchema = z.object({
     .number()
     .int("Annual leave allowance must be a whole number")
     .min(0, "Annual leave allowance cannot be negative"),
+  compensatoryHoursBalance: z
+    .number()
+    .min(0, "Compensatory hours cannot be negative"),
   basicSalaryDeductionPolicyOverrideEnabled: z.boolean(),
   basicSalaryDeductionPolicyOverride: basicSalaryDeductionPolicySchema,
 });
@@ -137,7 +140,7 @@ export const upsertAttendanceSchema = z
 
     // casual and unpaid removed — use annual or special instead
     leaveType: z
-      .enum(["sick", "annual", "special"])
+      .enum(["sick", "annual", "special", "compensatory"])
       .nullable()
       .optional(),
 
@@ -157,6 +160,7 @@ export const upsertAttendanceSchema = z
       .default("none"),
 
     overtimeRemarks: z.string().nullable(),
+    compensatoryHoursUsed: z.string().nullable().optional(),
     overtimeStatus: z.enum(["pending", "approved", "rejected"]).nullable(),
 
     earlyDepartureStatus: z

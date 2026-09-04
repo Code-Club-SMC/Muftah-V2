@@ -1,3 +1,4 @@
+import { getPayrollPeriodFromMonthInput } from "@/lib/payroll-cycle";
 import { createServerFn } from "@tanstack/react-start";
 import { db } from "@/db";
 import { payrolls, employees, payslips, attendance } from "@/db/schemas/hr-schema";
@@ -209,7 +210,7 @@ export const createPayrollFn = createServerFn()
         endDate: payrollPeriod.endDate,
         status: "draft",
         totalAmount: "0",
-        processedBy,
+        processedBy: context.authContext.session.user.id,
       })
       .returning();
 

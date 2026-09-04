@@ -168,6 +168,7 @@ export const upsertAttendanceFn = createServerFn()
             : "none",
           earlyDepartureStatus: "none",
           overtimeRemarks: null,
+          compensatoryHoursUsed: isLeave && rest.leaveType === "compensatory" ? (rest.compensatoryHoursUsed ?? "0") : "0",
           overtimeStatus: "pending" as const,
           entrySource: hasTrips ? ORDER_BOOKER_TRIP_ENTRY_SOURCE : "manual",
           notes: trimmedNotes,
@@ -245,6 +246,7 @@ export const upsertAttendanceFn = createServerFn()
           leaveType: null,
           leaveApprovalStatus: "none" as const,
           earlyDepartureStatus: punchDrivenEarlyLeave,
+          compensatoryHoursUsed: "0",
           overtimeRemarks: hasRequestedPunchDrivenOvertime
             ? trimmedOvertimeRemarks
             : null,
@@ -284,6 +286,7 @@ export const upsertAttendanceFn = createServerFn()
       earlyDepartureStatus: isPresent
         ? (rest.earlyDepartureStatus ?? "none")
         : "none",
+      compensatoryHoursUsed: isLeave && rest.leaveType === "compensatory" ? (rest.compensatoryHoursUsed ?? "0") : "0",
       overtimeRemarks: hasOvertime ? trimmedOvertimeRemarks : null,
       overtimeStatus: hasOvertime ? (rest.overtimeStatus || "pending") : "pending",
       entrySource: rest.entrySource || "manual",
@@ -292,13 +295,47 @@ export const upsertAttendanceFn = createServerFn()
       updatedAt: new Date(),
     };
 
-    const [upserted] = await db
-      .insert(attendance)
-      .values({ employeeId, date, ...updateData })
-      .onConflictDoUpdate({
-        target: [attendance.employeeId, attendance.date],
-        set: updateData,
-      })
-      .returning();
-    return upserted;
+    return await db.transaction(async (tx) => {
+      // 1. Fetch existing attendance and employee to manage compensatory balance
+      const existingAttendance = await tx.query.attendance.findFirst({
+        where: and(eq(attendance.employeeId, employeeId), eq(attendance.date, date))
+      });
+      const emp = await tx.query.employees.findFirst({
+        where: eq(employees.id, employeeId),
+        columns: { compensatoryHoursBalance: true }
+      });
+
+      if (emp) {
+        const previousCompUsed = existingAttendance?.leaveType === "compensatory" 
+          ? parseFloat(existingAttendance.compensatoryHoursUsed || "0") 
+          : 0;
+        const newCompUsed = updateData.leaveType === "compensatory" 
+          ? parseFloat(updateData.compensatoryHoursUsed || "0") 
+          : 0;
+        const compHoursDiff = newCompUsed - previousCompUsed;
+
+        if (compHoursDiff !== 0) {
+          const currentBalance = parseFloat(emp.compensatoryHoursBalance || "0");
+          const newBalance = currentBalance - compHoursDiff;
+
+          if (newBalance < 0) {
+            throw new Error(`Insufficient compensatory leave balance. Available: ${currentBalance}h, trying to use: ${newCompUsed}h`);
+          }
+
+          await tx.update(employees)
+            .set({ compensatoryHoursBalance: newBalance.toString() })
+            .where(eq(employees.id, employeeId));
+        }
+      }
+
+      const [upserted] = await tx
+        .insert(attendance)
+        .values({ employeeId, date, ...updateData })
+        .onConflictDoUpdate({
+          target: [attendance.employeeId, attendance.date],
+          set: updateData,
+        })
+        .returning();
+      return upserted;
+    });
   });

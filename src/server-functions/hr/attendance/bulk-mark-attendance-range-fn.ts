@@ -61,7 +61,7 @@ const bulkAttendanceSchema = z.object({
 
     template: z.object({
         status: z.enum(["present", "absent", "leave", "holiday"]),
-        leaveType: z.enum(["sick", "annual", "special"]).nullable().optional(),
+        leaveType: z.enum(["sick", "annual", "special", "compensatory"]).nullable().optional(),
         notes: z.string().nullable().optional(),
         entrySource: z.enum(["biometric", "manual", "qr_terminal"]).default("manual"),
     }),

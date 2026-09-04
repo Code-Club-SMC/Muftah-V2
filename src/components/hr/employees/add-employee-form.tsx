@@ -35,6 +35,7 @@ import {
 import { cn } from "@/lib/utils";
 import { Checkbox } from "@/components/ui/checkbox";
 import { BasicSalaryPolicyCard } from "@/components/hr/employees/basic-salary-policy-card";
+import { calculateTotalShiftHours } from "@/lib/attendance/time";
 
 // ── Rest days config ────────────────────────────────────────────────────────
 
@@ -102,6 +103,7 @@ export const AddEmployeeForm = ({ onSuccess }: Props) => {
       shifts: [] as { start: string; end: string }[],
       basicSalary: "",
       annualLeaveAllowance: 14,
+      compensatoryHoursBalance: 0,
       basicSalaryDeductionPolicyOverrideEnabled: false,
       basicSalaryDeductionPolicyOverride: DEFAULT_BASIC_SALARY_DEDUCTION_POLICY,
       isOrderBooker: false,
@@ -376,7 +378,19 @@ export const AddEmployeeForm = ({ onSuccess }: Props) => {
             <form.Field name="standardDutyHours">
               {(field: AnyFieldApi) => (
                 <Field>
-                  <FieldLabel>Daily Duty Hours</FieldLabel>
+                  <FieldLabel className="flex items-center justify-between">
+                    <span>Daily Duty Hours</span>
+                    <form.Subscribe selector={(s: any) => s.values.shifts}>
+                      {(shifts: any) => {
+                        const total = calculateTotalShiftHours(shifts);
+                        return total > 0 ? (
+                          <span className="text-[11px] font-semibold text-primary">
+                            Auto: {total}h ({shifts.length} shift{shifts.length > 1 ? "s" : ""})
+                          </span>
+                        ) : null;
+                      }}
+                    </form.Subscribe>
+                  </FieldLabel>
                   <Input
                     type="number"
                     placeholder="e.g. 8"
@@ -428,6 +442,8 @@ export const AddEmployeeForm = ({ onSuccess }: Props) => {
                             const next = [...shifts];
                             next[index] = { ...next[index], start: e.target.value };
                             field.handleChange(next);
+                            const total = calculateTotalShiftHours(next);
+                            if (total > 0) form.setFieldValue("standardDutyHours", Math.round(total));
                           }}
                           className="flex-1"
                         />
@@ -439,6 +455,8 @@ export const AddEmployeeForm = ({ onSuccess }: Props) => {
                             const next = [...shifts];
                             next[index] = { ...next[index], end: e.target.value };
                             field.handleChange(next);
+                            const total = calculateTotalShiftHours(next);
+                            if (total > 0) form.setFieldValue("standardDutyHours", Math.round(total));
                           }}
                           className="flex-1"
                         />
@@ -450,6 +468,8 @@ export const AddEmployeeForm = ({ onSuccess }: Props) => {
                           onClick={() => {
                             const next = shifts.filter((_, i) => i !== index);
                             field.handleChange(next);
+                            const total = calculateTotalShiftHours(next);
+                            if (total > 0) form.setFieldValue("standardDutyHours", Math.round(total));
                           }}
                         >
                           ×

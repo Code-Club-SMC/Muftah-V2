@@ -81,6 +81,7 @@ export const updateEmployeeFn = createServerFn()
             isSalesman: updateData.isSalesman ?? false,
             allowanceConfig: updateData.allowanceConfig,
             annualLeaveAllowance: updateData.annualLeaveAllowance ?? 14,
+            compensatoryHoursBalance: updateData.compensatoryHoursBalance !== undefined ? updateData.compensatoryHoursBalance.toString() : "0",
             basicSalaryDeductionPolicyOverrideEnabled:
               updateData.basicSalaryDeductionPolicyOverrideEnabled ?? false,
             basicSalaryDeductionPolicyOverride:

@@ -26,6 +26,7 @@ function buildEmployeeInput() {
     restDays: [0],
     allowanceConfig: [],
     annualLeaveAllowance: 14,
+    compensatoryHoursBalance: 0,
     basicSalaryDeductionPolicyOverrideEnabled: false,
     basicSalaryDeductionPolicyOverride: {
       absent: true,

@@ -71,6 +71,7 @@ export const leaveTypeEnum = pgEnum("leave_type", [
   "sick",
   "annual",
   "special",
+  "compensatory",
 ]);
 
 // --- EMPLOYEES ---
@@ -150,6 +151,7 @@ export const employees = pgTable("employees", {
   annualLeaveAllowance: integer("annual_leave_allowance").default(14), // total yearly entitlement cap
   leaveYearStart: date("leave_year_start"), // tracks which year current leave balance belongs to
   sickLeaveBalance: integer("sick_leave_balance").default(10),
+  compensatoryHoursBalance: decimal("compensatory_hours_balance", { precision: 6, scale: 2 }).default("0"),
 
   // Sales roles
   isOrderBooker: boolean("is_order_booker").default(false).notNull(),
@@ -208,6 +210,8 @@ export const attendance = pgTable(
     // Overtime Approval
     overtimeStatus: text("overtime_status").default("pending"),
     overtimeRemarks: text("overtime_remarks"),
+    overtimeCompensationMethod: text("overtime_compensation_method", { enum: ["payout", "comp_off"] }).default("payout"),
+    compensatoryHoursUsed: decimal("compensatory_hours_used", { precision: 5, scale: 2 }).default("0"),
 
     // Early Departure
     earlyDepartureStatus: text("early_departure_status").default("none"),

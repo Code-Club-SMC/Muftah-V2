@@ -1,3 +1,5 @@
+import { parseISO } from "date-fns";
+import { calculateTotalShiftHours } from "@/lib/attendance/time";
 // import { useEffect, useRef, useState } from "react";
 // import { useForm } from "@tanstack/react-form";
 // import { Button } from "@/components/ui/button";
@@ -37,6 +39,7 @@
 // import { Separator } from "@/components/ui/separator";
 // import { cn } from "@/lib/utils";
 // import { Badge } from "@/components/ui/badge";
+//import { Input } from "@/components/ui/input";
 // import { ManualPunchTimeline } from "./manual-punch-timeline";
 // import type { RecomputeResult } from "@/lib/attendance/recompute";
 
@@ -46,8 +49,9 @@
 //   checkIn?: string | null;
 //   checkOut?: string | null;
 //   overtimeHours?: string | null;
+//  compensatoryHoursUsed?: string | null;
 //   dutyHours?: string | null;
-//   leaveType?: "sick" | "annual" | "special" | null;
+//   leaveType?: "sick" | "annual" | "special" | "compensatory" | null;
 //   status: "present" | "absent" | "leave" | "holiday";
 //   isLate?: boolean | null;
 //   isNightShift?: boolean | null;
@@ -264,7 +268,7 @@
 //   onSuccess,
 // }: Props) => {
 //   const mutate = useUpsertAttendance();
-//   const std = employee.standardDutyHours || 8;
+//   const std = isRest ? 0 : baseStd;
 //   const [presentPunchCount, setPresentPunchCount] = useState<number | null>(
 //     null,
 //   );
@@ -289,6 +293,7 @@
 //       checkIn: attendance?.checkIn ?? null,
 //       checkOut: attendance?.checkOut ?? null,
 //       overtimeHours: attendance?.overtimeHours ?? null,
+//      compensatoryHoursUsed: attendance?.compensatoryHoursUsed ?? null,
 //       isLate: attendance?.isLate ?? false,
 //       isNightShift: attendance?.isNightShift ?? false,
 //       isApprovedLeave: attendance?.isApprovedLeave ?? false,
@@ -905,6 +910,7 @@ import { upsertAttendanceSchema } from "@/lib/validators/hr-validators";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { ManualPunchTimeline } from "./manual-punch-timeline";
 import { OvertimeHoursInput } from "./overtime-hours-input";
 import type { RecomputeResult } from "@/lib/attendance/recompute";
@@ -916,8 +922,9 @@ interface AttendanceData {
   checkIn?: string | null;
   checkOut?: string | null;
   overtimeHours?: string | null;
+  compensatoryHoursUsed?: string | null;
   dutyHours?: string | null;
-  leaveType?: "sick" | "annual" | "special" | null;
+  leaveType?: "sick" | "annual" | "special" | "compensatory" | null;
   status: "present" | "absent" | "leave" | "holiday";
   isLate?: boolean | null;
   isNightShift?: boolean | null;
@@ -945,6 +952,8 @@ interface Props {
     shiftStartTime?: string | null;
     shiftEndTime?: string | null;
     shifts?: { start: string; end: string }[] | null;
+    compensatoryHoursBalance?: string | null;
+    restDays?: number[] | null;
   };
   attendance?: AttendanceData | null;
   date: string;
@@ -1289,7 +1298,10 @@ export const EditAttendanceForm = ({
 }: Props) => {
   const mutate = useUpsertAttendance();
   const clearOverride = useClearOrderBookerManualOverride();
-  const std = employee.standardDutyHours || 8;
+  const isRest = ((employee as any).restDays ?? [0]).includes(parseISO(date).getDay());
+  const shiftHours = calculateTotalShiftHours((employee as any).shifts);
+  const baseStd = shiftHours > 0 ? shiftHours : (employee.standardDutyHours || 8);
+  const std = isRest ? 0 : baseStd;
   const isOrderBooker = Boolean(employee.isOrderBooker);
   const isTripDrivenOrderBookerDay =
     isOrderBooker && attendance?.entrySource === "order_booker_trip";
@@ -1323,10 +1335,12 @@ export const EditAttendanceForm = ({
         | "sick"
         | "annual"
         | "special"
+        | "compensatory"
         | null,
       checkIn: attendance?.checkIn ?? null,
       checkOut: attendance?.checkOut ?? null,
       overtimeHours: attendance?.overtimeHours ?? null,
+      compensatoryHoursUsed: attendance?.compensatoryHoursUsed ?? null,
       isLate: attendance?.isLate ?? false,
       isNightShift: attendance?.isNightShift ?? false,
       isApprovedLeave: attendance?.isApprovedLeave ?? false,
@@ -1602,12 +1616,55 @@ export const EditAttendanceForm = ({
                             <SelectOption value="special">
                               Special Leave
                             </SelectOption>
+                            <SelectOption value="compensatory" disabled={!employee.compensatoryHoursBalance || Number(employee.compensatoryHoursBalance) <= 0}>
+                              Compensatory (Comp Off)
+                            </SelectOption>
                           </SelectContent>
                         </Select>
                         <FieldError
                           errors={field.state.meta.errors}
                           className="text-[11px]"
                         />
+                        {field.state.value === "compensatory" && (
+                          <div className="mt-3 space-y-4">
+                            <form.Field name="compensatoryHoursUsed">
+                              {(compField) => (
+                                <Field className="space-y-1.5">
+                                  <FieldLabel className="text-[13px] font-bold text-foreground/90 tracking-wide">
+                                    Hours to Use <span className="text-destructive">*</span>
+                                  </FieldLabel>
+                                  <Input
+                                    type="number"
+                                    min="0"
+                                    step="0.5"
+                                    max={employee.compensatoryHoursBalance || 0}
+                                    disabled={!employee.compensatoryHoursBalance || Number(employee.compensatoryHoursBalance) <= 0}
+                                    placeholder={`e.g. ${employee.standardDutyHours || 8} for full day`}
+                                    value={compField.state.value || ""}
+                                    onChange={(e: any) => compField.handleChange(e.target.value)}
+                                    onBlur={compField.handleBlur}
+                                    className="h-11 font-mono text-[14px]"
+                                  />
+                                  <FieldError errors={compField.state.meta.errors} className="text-[11px]" />
+                                </Field>
+                              )}
+                            </form.Field>
+
+                            <div className="p-3 bg-indigo-50/50 border border-indigo-100 rounded-md flex items-start gap-2 dark:bg-indigo-950/20 dark:border-indigo-900/50">
+                            <Info className="size-4 text-indigo-500 mt-0.5 shrink-0" />
+                            <div className="flex-1 space-y-1">
+                              <p className="text-xs font-medium text-indigo-900 dark:text-indigo-200">
+                                Compensatory Leave Selected
+                              </p>
+                              <p className="text-[11px] text-indigo-700/80 dark:text-indigo-300/80 leading-relaxed">
+                                {Number(employee.compensatoryHoursBalance) > 0 
+                                  ? `Employee has ${Number(employee.compensatoryHoursBalance)} banked overtime hours available. This will be deducted automatically based on the shift length.`
+                                  : `Empty State: The employee does not have any banked compensatory hours available. Please select another leave type.`}
+                              </p>
+                            </div>
+                          </div>
+                          </div>
+                        )}
                       </Field>
                     )}
                   </form.Field>
@@ -1800,6 +1857,7 @@ export const EditAttendanceForm = ({
                               <form.Field name="overtimeHours">
                                 {(field) => (
                                   <OvertimeHoursInput
+                                    label="Requested OT Hours"
                                     value={field.state.value}
                                     onChange={(nextValue) => {
                                       overtimeEditedRef.current = true;

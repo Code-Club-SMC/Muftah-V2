@@ -12,6 +12,8 @@ interface Props {
     lastName: string;
     shiftStartTime?: string | null;
     shiftEndTime?: string | null;
+    restDays?: number[] | null;
+    [key: string]: any;
   };
   attendance?: {
     checkIn?: string | null;
@@ -19,7 +21,7 @@ interface Props {
     dutyHours?: string | null;
     overtimeHours?: string | null;
     // FIX: leaveType was missing — it's now threaded through correctly
-    leaveType?: "sick" | "annual" | "special" | null;
+    leaveType?: "sick" | "annual" | "special" | "compensatory" | null;
     status: "present" | "absent" | "leave" | "holiday";
     isLate?: boolean | null;
     isNightShift?: boolean | null;
@@ -27,7 +29,7 @@ interface Props {
     earlyDepartureStatus?: "none" | "pending" | "approved" | "rejected" | null;
     overtimeStatus?: "pending" | "approved" | "rejected" | null;
     overtimeRemarks?: string | null;
-    entrySource?: "biometric" | "manual" | "qr_terminal" | null;
+    entrySource?: string | null;
     notes?: string | null;
 
     // Order Booker
@@ -63,7 +65,7 @@ export const EditAttendanceSheet = ({
     >
       <EditAttendanceForm
         employee={employee}
-        attendance={attendance}
+        attendance={attendance as any}
         date={date}
         onSuccess={() => onOpenChange(false)}
       />

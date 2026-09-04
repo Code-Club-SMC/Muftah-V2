@@ -14,6 +14,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { useProcessOvertime } from "@/hooks/hr/use-process-overtime";
+import { useConvertOvertimeToCompOff } from "@/hooks/hr/use-convert-overtime";
 import { format, parseISO } from "date-fns";
 import { DataTable } from "@/components/custom/data-table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -54,7 +55,7 @@ type FilterStatus = "pending" | "approved" | "rejected" | "all";
 
 type ConfirmAction = {
   id: string;
-  status: "approved" | "rejected";
+  status: "approved" | "rejected" | "comp_off";
   employeeName: string;
   date: string;
   hours: string;
@@ -71,12 +72,17 @@ export function OvertimeApprovalsContainer() {
 
   const { records, stats } = data;
   const mutateOT = useProcessOvertime();
+  const convertOT = useConvertOvertimeToCompOff();
 
   const handleProcess = (
     id: string,
-    newStatus: "approved" | "rejected" | "pending",
+    newStatus: "approved" | "rejected" | "pending" | "comp_off",
   ) => {
-    mutateOT.mutate({ id, status: newStatus });
+    if (newStatus === "comp_off") {
+      convertOT.mutate({ employeeId: records.find(r => r.id === id)?.employeeId || "", attendanceIds: [id] });
+    } else {
+      mutateOT.mutate({ id, status: newStatus });
+    }
   };
 
   const confirmProcess = () => {
@@ -268,6 +274,24 @@ export function OvertimeApprovalsContainer() {
                   >
                     <X className="size-4" />
                   </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8 px-2.5 rounded-none shadow-none border-indigo-500/30 text-indigo-600 hover:bg-indigo-500/10 hover:text-indigo-700 dark:hover:text-indigo-400 bg-indigo-500/5"
+                    onClick={() =>
+                      setConfirmAction({
+                        id: row.original.id,
+                        status: "comp_off",
+                        employeeName: `${row.original.firstName} ${row.original.lastName}`,
+                        date: row.original.date,
+                        hours: row.original.overtimeHours,
+                      })
+                    }
+                    disabled={mutateOT.isPending || convertOT.isPending || isStale}
+                    title={isStale ? "Cannot convert stale OT request" : "Convert to Comp Off"}
+                  >
+                    <FileClock className="size-4" />
+                  </Button>
                 </>
               ) : (
                 <Button
@@ -451,13 +475,17 @@ export function OvertimeApprovalsContainer() {
             <AlertDialogTitle>
               {confirmAction?.status === "approved"
                 ? "Approve overtime?"
-                : "Reject overtime?"}
+                : confirmAction?.status === "comp_off"
+                  ? "Convert to Comp Off?"
+                  : "Reject overtime?"}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {confirmAction &&
                 (confirmAction.status === "approved"
                   ? `Approve ${confirmAction.hours}h overtime for ${confirmAction.employeeName} on ${format(parseISO(confirmAction.date), "dd MMM yyyy")}. This will lock the entry for payroll.`
-                  : `Reject ${confirmAction.hours}h overtime for ${confirmAction.employeeName} on ${format(parseISO(confirmAction.date), "dd MMM yyyy")}. The request can be resubmitted later.`)}
+                  : confirmAction.status === "comp_off"
+                    ? `Convert ${confirmAction.hours}h overtime for ${confirmAction.employeeName} into Compensatory Leave. They can use this later for Shift Offs or Full Leaves.`
+                    : `Reject ${confirmAction.hours}h overtime for ${confirmAction.employeeName} on ${format(parseISO(confirmAction.date), "dd MMM yyyy")}. The request can be resubmitted later.`)}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -466,14 +494,16 @@ export function OvertimeApprovalsContainer() {
             </AlertDialogCancel>
             <AlertDialogAction
               onClick={confirmProcess}
-              disabled={mutateOT.isPending}
+              disabled={mutateOT.isPending || convertOT.isPending}
               className={
                 confirmAction?.status === "approved"
                   ? "bg-emerald-600 hover:bg-emerald-700"
-                  : "bg-rose-600 hover:bg-rose-700"
+                  : confirmAction?.status === "comp_off"
+                    ? "bg-indigo-600 hover:bg-indigo-700"
+                    : "bg-rose-600 hover:bg-rose-700"
               }
             >
-              {confirmAction?.status === "approved" ? "Approve" : "Reject"}
+              {confirmAction?.status === "approved" ? "Approve" : confirmAction?.status === "comp_off" ? "Convert" : "Reject"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

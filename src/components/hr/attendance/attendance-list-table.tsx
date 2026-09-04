@@ -29,6 +29,7 @@ interface AttendanceRecord {
   isNightShift: boolean | null;
   isApprovedLeave: boolean | null;
   earlyDepartureStatus?: "none" | "pending" | "approved" | "rejected" | null;
+  leaveType?: "sick" | "annual" | "special" | "compensatory" | null;
   overtimeStatus: "pending" | "approved" | "rejected" | null;
   overtimeRemarks: string | null;
   entrySource: AttendanceEntrySource | null;
@@ -108,8 +109,10 @@ function formatScheduledShift(
 
 const StatusBadge = ({
   status,
+  leaveType,
 }: {
   status: AttendanceRecord["status"] | undefined;
+  leaveType?: AttendanceRecord["leaveType"] | null;
 }) => {
   if (!status)
     return (
@@ -137,7 +140,7 @@ const StatusBadge = ({
         variants[status],
       )}
     >
-      {status.replace("_", " ")}
+      {status.replace("_", " ")} {status === "leave" && leaveType ? `(${leaveType === "compensatory" ? "Comp Off" : leaveType})` : ""}
     </Badge>
   );
 };
@@ -225,7 +228,7 @@ export const AttendanceListTable = ({ data, date }: Props) => {
         }
         return (
           <div className="flex items-center gap-2">
-            <StatusBadge status={record?.status} />
+            <StatusBadge status={record?.status} leaveType={record?.leaveType} />
             {isRestDay(date, row.original.restDays) && <RestDayBadge />}
           </div>
         );
@@ -423,7 +426,7 @@ export const AttendanceListTable = ({ data, date }: Props) => {
         if (isRestDay(date, row.original.restDays)) return <RestDayBadge />;
         const record = row.original.attendance[0];
         if (!record) return <PendingReviewBadge />;
-        return <StatusBadge status={record.status} />;
+        return <StatusBadge status={record.status} leaveType={record.leaveType} />;
       },
     },
     {

@@ -119,19 +119,19 @@ export const EmployeeAttendanceLog = ({
     end: parseISO(endDate),
   });
 
-  // ── Stats — exclude rest days from all computations ────────────────────
-  const workingRecords = records.filter(
-    (r: any) => !checkIsRestDay(r.date, restDays),
+  // ── Stats — include worked duty and overtime from rest days, but exempt undertime ──────
+  const activeRecords = records.filter(
+    (r: any) => !checkIsRestDay(r.date, restDays) || r.status === "present",
   );
 
   const stats = {
-    totalDuty: workingRecords
+    totalDuty: activeRecords
       .reduce(
         (acc: number, r: any) => acc + (parseFloat(r.dutyHours || "0") || 0),
         0,
       )
       .toFixed(1),
-    totalOvertime: workingRecords
+    totalOvertime: records
       .reduce((acc: number, r: any) => {
         if (r.overtimeStatus === "approved") {
           return acc + (parseFloat(r.overtimeHours || "0") || 0);
@@ -139,8 +139,9 @@ export const EmployeeAttendanceLog = ({
         return acc;
       }, 0)
       .toFixed(1),
-    totalUndertime: workingRecords
+    totalUndertime: records
       .reduce((acc: number, r: any) => {
+        if (checkIsRestDay(r.date, restDays)) return acc; // Never penalize rest days
         const duty = parseFloat(r.dutyHours || "0");
         const standard = employee.standardDutyHours || 8;
         if (r.status === "present" && duty < standard) {
@@ -149,8 +150,7 @@ export const EmployeeAttendanceLog = ({
         return acc;
       }, 0)
       .toFixed(1),
-    daysPresent: workingRecords.filter((r: any) => r.status === "present")
-      .length,
+    daysPresent: records.filter((r: any) => r.status === "present").length,
   };
 
   // ── Table rows ─────────────────────────────────────────────────────────
@@ -224,7 +224,7 @@ export const EmployeeAttendanceLog = ({
       id: "punchSpan",
       header: "Punch Timeline",
       cell: ({ row }) => {
-        if (row.original.isRestDay)
+        if (row.original.isRestDay && !row.original.record && row.original.punches.length === 0)
           return <span className="text-muted-foreground/40 text-xs">—</span>;
         return (
           <PunchTimelinePreview
@@ -240,12 +240,12 @@ export const EmployeeAttendanceLog = ({
       id: "duty",
       header: "Worked (h)",
       cell: ({ row }) => {
-        if (row.original.isRestDay)
+        if (row.original.isRestDay && !row.original.record)
           return <span className="text-muted-foreground/40 text-xs">—</span>;
         const record = row.original.record;
         const duty = parseFloat(record?.dutyHours || "0");
         const standard = row.original.standardDutyHours;
-        const isUnder = duty < standard && record?.status === "present";
+        const isUnder = !row.original.isRestDay && duty < standard && record?.status === "present";
         return (
           <div className="flex flex-col">
             <span className="font-semibold text-xs tabular-nums">
@@ -264,7 +264,7 @@ export const EmployeeAttendanceLog = ({
       id: "overtime",
       header: "OT Review",
       cell: ({ row }) => {
-        if (row.original.isRestDay)
+        if (row.original.isRestDay && !row.original.record)
           return <span className="text-muted-foreground/40 text-xs">—</span>;
         const record = row.original.record;
         if (!record)
@@ -315,8 +315,8 @@ export const EmployeeAttendanceLog = ({
       cell: ({ row }) => {
         const { record, isRestDay } = row.original;
 
-        // ── Rest day — highest priority, overrides any logged record ──────
-        if (isRestDay) {
+        // ── Rest day with no record ──────
+        if (isRestDay && !record) {
           return (
             <div className="flex items-center gap-1.5">
               <MoonStar className="size-3 text-slate-400" />
@@ -341,15 +341,25 @@ export const EmployeeAttendanceLog = ({
               "bg-slate-50  border-slate-200 dark:bg-slate-950/30 dark:text-slate-400",
           };
           return (
-            <Badge
-              variant="outline"
-              className={cn(
-                "text-[10px] font-bold uppercase px-2 py-0",
-                statusColors[record.status] || "",
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <Badge
+                variant="outline"
+                className={cn(
+                  "text-[10px] font-bold uppercase px-2 py-0",
+                  statusColors[record.status] || "",
+                )}
+              >
+                {record.status.replace("_", " ")} {record.status === "leave" && record.leaveType ? `(${record.leaveType === "compensatory" ? "Comp Off" : record.leaveType})` : ""}
+              </Badge>
+              {isRestDay && (
+                <Badge
+                  variant="outline"
+                  className="text-[10px] font-bold uppercase px-1.5 py-0 bg-slate-100 text-slate-600 border-slate-300 dark:bg-slate-900 dark:text-slate-400"
+                >
+                  Rest Day
+                </Badge>
               )}
-            >
-              {record.status.replace("_", " ")}
-            </Badge>
+            </div>
           );
         }
 
@@ -367,7 +377,7 @@ export const EmployeeAttendanceLog = ({
       id: "notes",
       header: "Notes",
       cell: ({ row }) => {
-        if (row.original.isRestDay) return null;
+        if (row.original.isRestDay && !row.original.record) return null;
         return (
           <span className="text-xs italic text-muted-foreground">
             {row.original.record?.notes || ""}
@@ -479,7 +489,7 @@ export const EmployeeAttendanceLog = ({
         data={tableRows}
         showSearch={false}
         showViewOptions={false}
-        pageSize={7}
+        pageSize={31}
       />
     </div>
   );

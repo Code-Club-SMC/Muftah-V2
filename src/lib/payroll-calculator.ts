@@ -1,3 +1,4 @@
+import { calculateTotalShiftHours } from "./attendance/time";
 import { parseISO, eachDayOfInterval, format } from "date-fns";
 import {
   DEFAULT_BASIC_SALARY_DEDUCTION_POLICY,
@@ -15,6 +16,8 @@ export type AttendanceRecord = {
   dutyHours: string | null;
   overtimeHours: string | null;
   isNightShift: boolean;
+  overtimeCompensationMethod?: "payout" | "comp_off";
+  compensatoryHoursUsed?: string | null;
   /**
    * true  → approved paid leave (no deduction)
    * false → unpaid / unapproved leave (conveyance deducted per existing rule)
@@ -47,6 +50,7 @@ export type EmployeeData = {
   basicSalary: string;
   allowanceConfig: AllowanceConfig[];
   standardDutyHours?: number; // fallback to 8 if absent
+  shifts?: { start: string; end: string }[] | null;
   /**
    * Days of the week treated as non-working rest days.
    * 0 = Sunday, 1 = Monday, ..., 6 = Saturday
@@ -248,7 +252,8 @@ export function calculateAbsentDeductions(
   totalUndertimeHours: number;
   adjustedAllowances: Record<string, number>;
 } {
-  const standardDutyHours = employee.standardDutyHours || 8;
+  const shiftHours = calculateTotalShiftHours(employee.shifts);
+  const standardDutyHours = shiftHours > 0 ? shiftHours : (employee.standardDutyHours || 8);
   const config = employee.allowanceConfig || [];
   const basicPolicy = {
     ...DEFAULT_BASIC_SALARY_DEDUCTION_POLICY,
@@ -340,7 +345,9 @@ export function calculateAbsentDeductions(
     // Completely skip deductions for rest days to ensure no false penalisation
     if (isRestDay) continue;
 
-    const dutyHours = parseFloat(record.dutyHours || "0");
+    const baseDutyHours = parseFloat(record.dutyHours || "0");
+    const compHoursUsed = parseFloat(record.compensatoryHoursUsed || "0");
+    const dutyHours = baseDutyHours + compHoursUsed;
 
     if (record.status === "absent") {
       applyOccasionDeduction(1, "absent", "absent");
@@ -409,9 +416,11 @@ export function calculateAbsentDeductions(
 export function sumApprovedOvertimeHours(records: AttendanceRecord[]): number {
   return records.reduce((sum, r) => {
     if (r.overtimeStatus !== "approved") return sum;
+    if (r.overtimeCompensationMethod === "comp_off") return sum;
     return sum + parseFloat(r.overtimeHours || "0");
   }, 0);
 }
+
 
 export function calculateOvertimePay(
   basicSalary: number,
