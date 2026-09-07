@@ -9,7 +9,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { DatePickerWithRange } from "@/components/custom/date-range-picker";
-import { Download, Search, X, Plus } from "lucide-react";
+import { Download, Search, X, Plus, Printer, Loader2 } from "lucide-react";
 import { type DateRange } from "react-day-picker";
 import { startOfDay, endOfDay, subDays, isSameDay } from "date-fns";
 import { MODULE_CONFIG } from "./activity-event-card";
@@ -41,6 +41,8 @@ interface ActivityTimelineFiltersProps {
   isLoading?: boolean;
   onExport?: () => void;
   isExporting?: boolean;
+  onPrint?: () => void;
+  isPrinting?: boolean;
 }
 
 const TOP_MODULES = [
@@ -60,6 +62,8 @@ export function ActivityTimelineFilters({
   filterOptions,
   onExport,
   isExporting,
+  onPrint,
+  isPrinting,
 }: ActivityTimelineFiltersProps) {
   const [isManualDialogOpen, setIsManualDialogOpen] = useState(false);
 
@@ -311,6 +315,23 @@ export function ActivityTimelineFilters({
             onDateChange={handleDateChange}
             className="w-auto"
           />
+
+          {onPrint && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onPrint}
+              disabled={isPrinting}
+              className="h-8.5 px-3 text-xs font-medium bg-white dark:bg-card border-slate-200/80 dark:border-border rounded-lg shadow-xs hover:bg-slate-50 dark:hover:bg-muted gap-1.5 shrink-0 cursor-pointer"
+            >
+              {isPrinting ? (
+                <Loader2 className="size-3.5 text-muted-foreground animate-spin" />
+              ) : (
+                <Printer className="size-3.5 text-muted-foreground" />
+              )}
+              <span className="hidden xl:inline">{isPrinting ? "Preparing..." : "Print Report"}</span>
+            </Button>
+          )}
 
           {onExport && (
             <Button

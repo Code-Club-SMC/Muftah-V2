@@ -18,6 +18,8 @@ import {
 import { ActivityEventCard, type ActivityEvent } from "./activity-event-card";
 import { ActivityDetailSheet } from "./activity-detail-sheet";
 import { exportActivityTimelineFn } from "@/server-functions/dashboard/activity-timeline-fn";
+import { printActivityTimeline } from "./activity-timeline-print";
+import { authClient } from "@/lib/auth-client";
 import { toast } from "sonner";
 
 // ── CSV EXPORT UTILITY ─────────────────────────────────────────────────────
@@ -100,7 +102,9 @@ export function ActivityTimelineContainer() {
   });
 
   const [page, setPage] = useState(1);
+  const { data: session } = authClient.useSession();
   const [isExporting, setIsExporting] = useState(false);
+  const [isPrinting, setIsPrinting] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<ActivityEvent | null>(null);
 
   const { data, isLoading, isFetching } = useActivityTimeline({
@@ -119,6 +123,49 @@ export function ActivityTimelineContainer() {
   const handleRefresh = () => {
     queryClient.invalidateQueries({ queryKey: activityTimelineKeys.all });
     toast.info("Timeline synchronized with server");
+  };
+
+  const handlePrint = async () => {
+    setIsPrinting(true);
+    try {
+      const result = await exportActivityTimelineFn({
+        data: {
+          module: filters.module,
+          action: filters.action,
+          actorId: filters.actorId,
+          entityType: filters.entityType,
+          severity: filters.severity,
+          dateFrom: filters.dateFrom,
+          dateTo: filters.dateTo,
+          search: filters.search,
+        },
+      });
+
+      const printed = printActivityTimeline({
+        events: (result.events ?? []) as ActivityEvent[],
+        filters,
+        printedBy:
+          session?.user?.name ||
+          session?.user?.email ||
+          "System Administrator",
+      });
+
+      if (printed) {
+        toast.success("Print Preview Ready", {
+          description: `Prepared ${result.events.length} records for printing.`,
+        });
+      } else {
+        toast.error("Print Failed", {
+          description: "Could not open print window. Please allow popups.",
+        });
+      }
+    } catch {
+      toast.error("Print Failed", {
+        description: "Could not prepare print document. Try again.",
+      });
+    } finally {
+      setIsPrinting(false);
+    }
   };
 
   const handleExport = async () => {
@@ -179,6 +226,8 @@ export function ActivityTimelineContainer() {
         isLoading={isLoading}
         onExport={handleExport}
         isExporting={isExporting}
+        onPrint={handlePrint}
+        isPrinting={isPrinting}
       />
 
       {/* ── Sub-header: Feed Stats & Sync Status ────────────────────── */}
