@@ -591,7 +591,7 @@ export const AddEmployeeForm = ({ onSuccess }: Props) => {
                       Is this employee a Salesman?
                     </p>
                     <p className="text-[12px] text-muted-foreground">
-                      Creates a linked salesman record. Excluded from attendance.
+                      Creates a linked salesman record. Attendance is tracked from deliveries and recoveries.
                     </p>
                   </div>
                 </label>

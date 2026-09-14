@@ -18,7 +18,7 @@ const attendanceTableSource = readFileSync(
 describe("order-booker trip attendance phase 4 semantics", () => {
   it("includes order bookers in the daily attendance dataset", () => {
     expect(dailyAttendanceSource).not.toContain("eq(employees.isOrderBooker, false)");
-    expect(dailyAttendanceSource).toContain("eq(employees.isSalesman, false)");
+    expect(dailyAttendanceSource).not.toContain("eq(employees.isSalesman, false)");
     expect(dailyAttendanceSource).toContain(
       "inArray(employees.status, [\"active\", \"on_leave\"])",
     );
@@ -28,17 +28,16 @@ describe("order-booker trip attendance phase 4 semantics", () => {
   it("fetches punch timelines only for standard punch-driven employees", () => {
     expect(dailyAttendanceSource).toContain("const punchDrivenEmployeeIds");
     expect(dailyAttendanceSource).toContain(
-      ".filter((employee) => !employee.isOrderBooker)",
+      ".filter((employee) => !employee.isOrderBooker && !employee.isSalesman)",
     );
     expect(dailyAttendanceSource).toContain(
       "inArray(attendancePunches.employeeId, punchDrivenEmployeeIds)",
     );
   });
 
-  it("blocks missing attendance for order bookers but still skips salesmen", () => {
+  it("blocks missing attendance for order bookers and salesmen", () => {
     expect(payrollCoreSource).toContain("function shouldBlockMissingAttendance");
-    expect(payrollCoreSource).toContain("if (employee.isOrderBooker) return true;");
-    expect(payrollCoreSource).toContain("return !employee.isSalesman;");
+    expect(payrollCoreSource).not.toContain("return !employee.isSalesman;");
     expect(payrollCoreSource).not.toContain("const isSalesOrOB");
   });
 

@@ -25,6 +25,8 @@ import {
   inArray,
 } from "drizzle-orm";
 import { logActivityQuiet } from "@/lib/activity-logger.server";
+import { syncSalesmanAttendanceForDate } from "./salesman-attendance-sync";
+import { toPKTDate } from "@/lib/attendance/time";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // GET DUE TODAY SLIPS
@@ -460,6 +462,14 @@ export const createRecoveryAttemptFn = createServerFn()
           updatedAt: new Date(),
         })
         .where(eq(slipRecords.id, data.slipId));
+
+      if (data.assignedToId) {
+        await syncSalesmanAttendanceForDate({
+          tx: tx as any,
+          salesmanId: data.assignedToId,
+          businessDate: toPKTDate(attempt[0].attemptedAt),
+        });
+      }
 
       // Record timeline event on the linked invoice
       if (slip.invoice?.id) {

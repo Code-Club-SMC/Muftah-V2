@@ -9,7 +9,7 @@ import {
   type PunchTimelineItem,
 } from "./punch-timeline-preview";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Zap, Users } from "lucide-react";
+import { Zap, Users, Truck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { parseISO } from "date-fns";
@@ -53,6 +53,11 @@ interface EmployeeWithAttendance {
   designation: string;
   status?: string;
   isOrderBooker: boolean;
+  isSalesman: boolean;
+  salesmanActivity?: {
+    deliveriesCount: number;
+    recoveryCount: number;
+  };
   standardDutyHours: number | null;
   shiftStartTime?: string | null;
   shiftEndTime?: string | null;
@@ -193,7 +198,7 @@ const EmployeeCell = ({ row }: { row: EmployeeWithAttendance }) => (
         ) : null}
       </div>
       <span className="text-[12px] text-muted-foreground/80 leading-tight mt-0.5">
-        {row.designation}
+        {row.designation} · {row.employeeCode}
       </span>
     </div>
   </div>
@@ -625,8 +630,117 @@ export const AttendanceListTable = ({ data, date }: Props) => {
     },
   ];
 
-  const standardData = data.filter((e) => !e.isOrderBooker);
+  // ── Salesman Columns ──────────────────────────────────────────────────────
+  const salesmanColumns: ColumnDef<EmployeeWithAttendance>[] = [
+    {
+      header: "Employee",
+      cell: ({ row }) => {
+        return <EmployeeCell row={row.original} />;
+      },
+    },
+    {
+      header: "Status",
+      cell: ({ row }) => {
+        const record = row.original.attendance[0];
+        if (record) {
+          if (record.entrySource === "salesman_activity") {
+            return (
+              <Badge
+                variant="secondary"
+                className="bg-emerald-50 text-emerald-700 border-emerald-200/60 dark:bg-emerald-950/40 dark:text-emerald-300 font-medium text-[11px] px-2 py-0.5 gap-1.5 inline-flex items-center"
+              >
+                <span className="size-1.5 rounded-full bg-emerald-500" />
+                Present (Field)
+              </Badge>
+            );
+          }
+          return <StatusBadge status={record.status} leaveType={record.leaveType} />;
+        }
+        if (isRestDay(date, row.original.restDays)) return <RestDayBadge />;
+        return <PendingReviewBadge />;
+      },
+    },
+    {
+      header: "Field Activity",
+      cell: ({ row }) => {
+        const salesmanActivity = row.original.salesmanActivity;
+        const total = (salesmanActivity?.deliveriesCount ?? 0) + (salesmanActivity?.recoveryCount ?? 0);
+        if (total === 0) {
+          if (isRestDay(date, row.original.restDays))
+            return <span className="text-muted-foreground/40 text-[13px]">—</span>;
+          return (
+            <span className="text-muted-foreground/60 text-[12px]">No Activity</span>
+          );
+        }
+        return (
+          <div className="flex items-center gap-2 text-[12px]">
+            {salesmanActivity?.deliveriesCount ? (
+              <Badge
+                variant="secondary"
+                className="bg-blue-50 text-blue-700 border-blue-200/60 dark:bg-blue-950/40 dark:text-blue-300 font-normal"
+              >
+                {salesmanActivity.deliveriesCount} {salesmanActivity.deliveriesCount === 1 ? "Delivery" : "Deliveries"}
+              </Badge>
+            ) : null}
+            {salesmanActivity?.recoveryCount ? (
+              <Badge
+                variant="secondary"
+                className="bg-emerald-50 text-emerald-700 border-emerald-200/60 dark:bg-emerald-950/40 dark:text-emerald-300 font-normal"
+              >
+                {salesmanActivity.recoveryCount} {salesmanActivity.recoveryCount === 1 ? "Recovery" : "Recoveries"}
+              </Badge>
+            ) : null}
+          </div>
+        );
+      },
+    },
+    {
+      header: "Duty Hours",
+      cell: ({ row }) => {
+        const record = row.original.attendance[0];
+        if (record?.dutyHours) {
+          return (
+            <div className="text-[13px] font-medium">
+              {record.dutyHours} hrs
+            </div>
+          );
+        }
+        if (isRestDay(date, row.original.restDays))
+          return <span className="text-muted-foreground/40 text-[13px]">—</span>;
+        return <span className="text-muted-foreground/40 text-[13px]">—</span>;
+      },
+    },
+    {
+      id: "actions",
+      header: () => <div className="text-right">Actions</div>,
+      cell: ({ row }) => {
+        const disabled = isRestDay(date, row.original.restDays) && !row.original.attendance[0];
+        return (
+          <div className="flex items-center justify-end gap-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              className={cn(
+                "size-7 rounded-md transition-colors",
+                disabled
+                  ? "text-muted-foreground/30 cursor-not-allowed pointer-events-none"
+                  : "text-blue-600 hover:text-primary hover:bg-primary/10",
+              )}
+              onClick={() => !disabled && handleEdit(row.original)}
+              disabled={disabled}
+              title={disabled ? "Cannot edit attendance on an unworked rest day" : "Edit / Mark Attendance"}
+            >
+              <Edit2 className="size-3.5" />
+            </Button>
+          </div>
+        );
+      },
+    },
+  ];
+
+  const standardData = data.filter((e) => !e.isOrderBooker && !e.isSalesman);
   const orderBookerData = data.filter((e) => e.isOrderBooker);
+  const salesmanData = data.filter((e) => e.isSalesman);
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
@@ -646,6 +760,13 @@ export const AttendanceListTable = ({ data, date }: Props) => {
             >
               <Zap className="size-3.5" />
               Order Bookers
+            </TabsTrigger>
+            <TabsTrigger
+              value="salesmen"
+              className="gap-2 px-4 text-[13px] rounded-md data-[state=active]:bg-background data-[state=active]:"
+            >
+              <Truck className="size-3.5" />
+              Salesmen
             </TabsTrigger>
           </TabsList>
         </div>
@@ -675,6 +796,20 @@ export const AttendanceListTable = ({ data, date }: Props) => {
             showSearch={false}
             showPagination={false}
             showFooter={true}
+          />
+        </TabsContent>
+
+        <TabsContent
+          value="salesmen"
+          className="mt-0 focus-visible:outline-none"
+        >
+          <DataTable
+            columns={salesmanColumns}
+            data={salesmanData}
+            pageSize={100}
+            showSearch={false}
+            showPagination={false}
+            showFooter={false}
           />
         </TabsContent>
       </Tabs>

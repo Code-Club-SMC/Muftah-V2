@@ -69,12 +69,11 @@ function resolveBasicSalaryDeductionPolicy(
 }
 
 function shouldBlockMissingAttendance(
-  employee: Pick<typeof employees.$inferSelect, "isSalesman" | "isOrderBooker">,
+  _employee: Pick<typeof employees.$inferSelect, "isSalesman" | "isOrderBooker">,
 ): boolean {
-  // Order bookers are trip-driven now, so missing working days mean Pending / Review.
-  // Salesmen still do not have an approved attendance source in this scope.
-  if (employee.isOrderBooker) return true;
-  return !employee.isSalesman;
+  // All employees (including Order Bookers and Salesmen) require all working days
+  // to be resolved (present, rest day, holiday, leave, or marked absent) before payroll finalizes.
+  return true;
 }
 
 /**

@@ -1,4 +1,5 @@
 export const ORDER_BOOKER_TRIP_ENTRY_SOURCE = "order_booker_trip" as const;
+export const SALESMAN_ACTIVITY_ENTRY_SOURCE = "salesman_activity" as const;
 
 export const ORDER_BOOKER_SHOP_TYPES = ["old", "new"] as const;
 
@@ -15,7 +16,8 @@ export type AttendanceEntrySource =
   | "biometric"
   | "manual"
   | "qr_terminal"
-  | typeof ORDER_BOOKER_TRIP_ENTRY_SOURCE;
+  | typeof ORDER_BOOKER_TRIP_ENTRY_SOURCE
+  | typeof SALESMAN_ACTIVITY_ENTRY_SOURCE;
 
 export type OrderBookerBlockingStatus =
   (typeof ORDER_BOOKER_BLOCKING_STATUSES)[number];

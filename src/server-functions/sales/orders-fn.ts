@@ -21,6 +21,8 @@ import {
   resolveOrderBookerTripEligibility,
 } from "./order-booker-trip-day-state";
 import { syncOrderBookerAttendanceForDate } from "./order-booker-trip-sync";
+import { syncSalesmanAttendanceForDate } from "./salesman-attendance-sync";
+import { toPKTDate } from "@/lib/attendance/time";
 import { logActivityQuiet } from "@/lib/activity-logger.server";
 
 
@@ -260,9 +262,28 @@ export const deleteOrderFn = createServerFn()
   .inputValidator((input: any) => z.object({ id: z.string() }).parse(input))
   .handler(async ({ data }) => {
     await db.transaction(async (tx) => {
+      const order = await tx.query.orders.findFirst({
+        where: eq(orders.id, data.id),
+        columns: {
+          id: true,
+          fulfilledBySalesmanId: true,
+          fulfilledAt: true,
+          createdAt: true,
+          status: true,
+        },
+      });
+
       await tx.delete(commissionRecords).where(eq(commissionRecords.orderId, data.id));
       await tx.delete(orderItems).where(eq(orderItems.orderId, data.id));
       await tx.delete(orders).where(eq(orders.id, data.id));
+
+      if (order?.fulfilledBySalesmanId && order.status === "delivered") {
+        await syncSalesmanAttendanceForDate({
+          tx: tx as any,
+          salesmanId: order.fulfilledBySalesmanId,
+          businessDate: toPKTDate(order.fulfilledAt ?? order.createdAt),
+        });
+      }
     });
     return { success: true };
   });
@@ -312,6 +333,12 @@ export const fulfillOrderFn = createServerFn()
         order.id,
         data.fulfilledAmount,
       );
+
+      await syncSalesmanAttendanceForDate({
+        tx: tx as any,
+        salesmanId: data.fulfilledBySalesmanId,
+        businessDate: toPKTDate(new Date()),
+      });
 
       logActivityQuiet({
         module: "sales",

@@ -55,10 +55,9 @@ describe("order-booker trip-driven attendance regressions", () => {
     expect(ordersFn).toContain("await syncOrderBookerAttendanceForDate({");
   });
 
-  it("does not skip unresolved order-booker attendance in payroll", () => {
+  it("does not skip unresolved attendance in payroll", () => {
     expect(payrollCore).toContain("function shouldBlockMissingAttendance(");
-    expect(payrollCore).toContain("if (employee.isOrderBooker) return true;");
-    expect(payrollCore).toContain("return !employee.isSalesman;");
+    expect(payrollCore).not.toContain("return !employee.isSalesman;");
   });
 
   it("uses trips and orders, not attendance marketing snapshots, for order-booker logs", () => {
