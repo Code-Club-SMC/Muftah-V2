@@ -166,6 +166,7 @@ export const EditEmployeeForm = ({ employee, onSuccess }: Props) => {
         DEFAULT_BASIC_SALARY_DEDUCTION_POLICY,
       isOrderBooker: (employee as any).isOrderBooker ?? false,
       isSalesman: (employee as any).isSalesman ?? false,
+      isDriver: (employee as any).isDriver ?? false,
       /**
        * Migrate from DB — existing employees without restDays get [0] (Sunday off).
        * Once saved once through this form the value is persisted properly.
@@ -641,8 +642,8 @@ export const EditEmployeeForm = ({ employee, onSuccess }: Props) => {
             </form.Field>
           </div>
 
-          {/* ── Sales Role Toggles ──────────────────────────────────────── */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+          {/* ── Field Role Toggles ──────────────────────────────────────── */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
             <form.Field name="isSalesman">
               {(field: AnyFieldApi) => (
                 <label
@@ -690,7 +691,34 @@ export const EditEmployeeForm = ({ employee, onSuccess }: Props) => {
                       Is this employee an Order Booker?
                     </p>
                     <p className="text-[12px] text-muted-foreground">
-                      Creates a linked order booker record. Excluded from attendance.
+                      Creates a linked order booker record. Attendance is tracked from booking trips.
+                    </p>
+                  </div>
+                </label>
+              )}
+            </form.Field>
+
+            <form.Field name="isDriver">
+              {(field: AnyFieldApi) => (
+                <label
+                  className={cn(
+                    "flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all duration-200 select-none",
+                    field.state.value
+                      ? "bg-amber-50/50 border-amber-200 dark:bg-amber-950/20 dark:border-amber-900/60"
+                      : "bg-background border-border/60 hover:bg-muted/30",
+                  )}
+                >
+                  <Checkbox
+                    checked={field.state.value}
+                    onCheckedChange={(c) => field.handleChange(!!c)}
+                    className="data-[state=checked]:bg-amber-600 data-[state=checked]:border-amber-600"
+                  />
+                  <div className="space-y-0.5">
+                    <p className={cn("text-[13px] font-medium", field.state.value ? "text-amber-700 dark:text-amber-400" : "text-foreground")}>
+                      Is this employee a Driver?
+                    </p>
+                    <p className="text-[12px] text-muted-foreground">
+                      Creates a linked driver record. Attendance and TA/DA are tracked from delivery trips.
                     </p>
                   </div>
                 </label>

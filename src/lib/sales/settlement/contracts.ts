@@ -40,6 +40,8 @@ export type PaymentInput = {
 	chequeDate?: Date;
 	paymentDate: Date;
 	sourceRecordId?: string;
+	notes?: string;
+	instantVerify?: boolean;
 };
 
 export type SettlementPayment = {

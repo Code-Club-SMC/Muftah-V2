@@ -8,6 +8,8 @@ import {
   creditRecoveryAttempts,
   orders,
   salesmen,
+  drivers,
+  driverTrips,
 } from "@/db/schemas/sales-erp-schema";
 import { getSalesmanBusinessDateRange } from "@/server-functions/sales/salesman-attendance-sync";
 
@@ -31,7 +33,7 @@ export const getDailyAttendanceFn = createServerFn()
     });
 
     const punchDrivenEmployeeIds = allEmployees
-      .filter((employee) => !employee.isOrderBooker && !employee.isSalesman)
+      .filter((employee) => !employee.isOrderBooker && !employee.isSalesman && !employee.isDriver)
       .map((employee) => employee.id);
 
     const punches =
@@ -126,6 +128,58 @@ export const getDailyAttendanceFn = createServerFn()
       }
     }
 
+    // Activity tracking for drivers
+    const driverEmployees = allEmployees.filter((e) => e.isDriver);
+    const driverEmployeeIds = driverEmployees.map((e) => e.id);
+
+    const linkedDrivers =
+      driverEmployeeIds.length > 0
+        ? await db.query.drivers.findMany({
+            where: inArray(drivers.employeeId, driverEmployeeIds),
+            columns: { id: true, employeeId: true },
+          })
+        : [];
+
+    const driverIdToEmployeeId = new Map(
+      linkedDrivers.map((d) => [d.id, d.employeeId!]),
+    );
+    const driverIds = linkedDrivers.map((d) => d.id);
+
+    const driverTripStats =
+      driverIds.length > 0
+        ? await db
+            .select({
+              driverId: driverTrips.driverId,
+              tripsCount: sql<number>`count(*)`,
+              totalDistanceKm: sql<number>`coalesce(sum(${driverTrips.distanceKm}), 0)`,
+              totalTadaAmount: sql<number>`coalesce(sum(${driverTrips.tadaAmount}), 0)`,
+            })
+            .from(driverTrips)
+            .where(
+              and(
+                inArray(driverTrips.driverId, driverIds),
+                gte(driverTrips.tripDate, start),
+                lt(driverTrips.tripDate, endExclusive),
+              ),
+            )
+            .groupBy(driverTrips.driverId)
+        : [];
+
+    const driverActivityByEmployee = new Map<
+      string,
+      { tripsCount: number; totalDistanceKm: number; totalTadaAmount: number }
+    >();
+    for (const stat of driverTripStats) {
+      const empId = driverIdToEmployeeId.get(stat.driverId);
+      if (empId) {
+        driverActivityByEmployee.set(empId, {
+          tripsCount: Number(stat.tripsCount || 0),
+          totalDistanceKm: Number(stat.totalDistanceKm || 0),
+          totalTadaAmount: Number(stat.totalTadaAmount || 0),
+        });
+      }
+    }
+
     return allEmployees.map((employee) => ({
       ...employee,
       dailyPunches: punchesByEmployee.get(employee.id) ?? [],
@@ -133,6 +187,13 @@ export const getDailyAttendanceFn = createServerFn()
         ? {
             deliveriesCount: deliveryCountByEmployee.get(employee.id) ?? 0,
             recoveryCount: recoveryCountByEmployee.get(employee.id) ?? 0,
+          }
+        : undefined,
+      driverActivity: employee.isDriver
+        ? driverActivityByEmployee.get(employee.id) ?? {
+            tripsCount: 0,
+            totalDistanceKm: 0,
+            totalTadaAmount: 0,
           }
         : undefined,
     }));

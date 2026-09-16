@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { db } from "@/db";
 import { employees, salaryRevisions } from "@/db/schemas/hr-schema";
-import { salesmen, orderBookers } from "@/db/schemas/sales-erp-schema";
+import { salesmen, orderBookers, drivers } from "@/db/schemas/sales-erp-schema";
 import { createEmployeeSchema } from "@/lib/validators/hr-validators";
 import { requireHrManageMiddleware } from "@/lib/middlewares";
 import { eq } from "drizzle-orm";
@@ -61,6 +61,7 @@ export const createEmployeeFn = createServerFn()
             basicSalary: data.basicSalary || "0",
             isOrderBooker: data.isOrderBooker ?? false,
             isSalesman: data.isSalesman ?? false,
+            isDriver: data.isDriver ?? false,
             allowanceConfig: data.allowanceConfig,
             annualLeaveAllowance: data.annualLeaveAllowance ?? 14,
             annualLeaveBalance: data.annualLeaveAllowance ?? 14,
@@ -98,6 +99,15 @@ export const createEmployeeFn = createServerFn()
             name: `${data.firstName} ${data.lastName}`.trim(),
             phone: data.phone || undefined,
             address: data.address || undefined,
+            employeeId: newEmployee.id,
+          });
+        }
+
+        // Create linked driver record
+        if (data.isDriver) {
+          await tx.insert(drivers).values({
+            name: `${data.firstName} ${data.lastName}`.trim(),
+            phone: data.phone || undefined,
             employeeId: newEmployee.id,
           });
         }

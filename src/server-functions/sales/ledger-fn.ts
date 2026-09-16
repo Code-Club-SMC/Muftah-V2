@@ -149,6 +149,9 @@ function filterAndSortEntries(entries: LedgerEntry[], query: LedgerQuery) {
       return (
         entry.reference?.toLowerCase().includes(term) ||
         entry.method.toLowerCase().includes(term) ||
+        entry.walletName?.toLowerCase().includes(term) ||
+        entry.chequeNumber?.toLowerCase().includes(term) ||
+        entry.chequeBank?.toLowerCase().includes(term) ||
         entry.notes?.toLowerCase().includes(term)
       );
     });
@@ -290,7 +293,10 @@ async function buildLedger(customerIds: string[], query: LedgerQuery) {
       }),
       db.query.payments.findMany({
         where: and(...paymentConditions),
-        with: { invoice: { columns: { invoiceNumber: true } } },
+        with: {
+          invoice: { columns: { invoiceNumber: true } },
+          wallet: { columns: { id: true, name: true, type: true } },
+        },
         orderBy: [asc(payments.effectiveDate), asc(payments.id)],
       }),
       db.query.salesReturns.findMany({
@@ -428,6 +434,11 @@ async function buildLedger(customerIds: string[], query: LedgerQuery) {
       invoiceId: payment.invoiceId,
       invoiceNumber: payment.invoice.invoiceNumber,
       customerName: customerNames.get(payment.customerId) ?? null,
+      walletName: payment.wallet?.name ?? null,
+      walletType: payment.wallet?.type ?? null,
+      chequeNumber: payment.chequeNumber ?? null,
+      chequeBank: payment.chequeBank ?? null,
+      chequeDate: payment.chequeDate ?? null,
     });
   }
 

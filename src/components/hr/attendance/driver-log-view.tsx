@@ -1,15 +1,10 @@
 import { DatePicker } from "@/components/custom/date-picker";
-import { EmployeeAttendanceLog } from "@/components/hr/attendance/employee-attendance-log";
-import { OrderBookerAttendanceLog } from "@/components/hr/attendance/order-booker-attendance-log";
-import { SalesmanAttendanceLog } from "@/components/hr/attendance/salesman-attendance-log";
 import { DriverAttendanceLog } from "@/components/hr/attendance/driver-attendance-log";
 import { Button } from "@/components/ui/button";
 import { GenericLoader } from "@/components/custom/generic-loader";
 import { format, parseISO, startOfMonth, endOfMonth } from "date-fns";
-import { ArrowLeft, CalendarRange, Check, FilterX } from "lucide-react";
+import { ArrowLeft, Check, FilterX, Truck } from "lucide-react";
 import { useState, useEffect, Suspense } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { getEmployeeFn } from "@/server-functions/hr/employees/get-employee-fn";
 import {
   Link,
   useNavigate,
@@ -17,34 +12,28 @@ import {
   useSearch,
 } from "@tanstack/react-router";
 
-export const AttendanceLogView = () => {
+export const DriverLogView = () => {
   const { employeeId } = useParams({
-    from: "/_protected/hr/attendance/$employeeId",
+    from: "/_protected/hr/driver-details/$employeeId",
   });
   const { from, to } = useSearch({
-    from: "/_protected/hr/attendance/$employeeId",
+    from: "/_protected/hr/driver-details/$employeeId",
   });
-  const navigate = useNavigate({ from: "/hr/attendance/$employeeId" });
+  const navigate = useNavigate({
+    from: "/hr/driver-details/$employeeId",
+  });
 
   const today = new Date();
   const defaultStart = format(startOfMonth(today), "yyyy-MM-dd");
   const defaultEnd = format(endOfMonth(today), "yyyy-MM-dd");
 
-  // Local state for filters
   const [localFrom, setLocalFrom] = useState(from || defaultStart);
   const [localTo, setLocalTo] = useState(to || defaultEnd);
 
-  // Sync local state if search params change (e.g. on clear)
   useEffect(() => {
     setLocalFrom(from || defaultStart);
     setLocalTo(to || defaultEnd);
   }, [from, to]);
-
-  const { data: employee } = useQuery({
-    queryKey: ["employee", employeeId],
-    queryFn: () => getEmployeeFn({ data: { id: employeeId } }),
-    staleTime: 60_000,
-  });
 
   const handleApply = () => {
     navigate({
@@ -67,7 +56,6 @@ export const AttendanceLogView = () => {
 
   return (
     <div className="p-8 pt-6 space-y-8 animate-in fade-in duration-500">
-      {/* Action Bar / Filter */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 bg-secondary p-5 rounded-2xl border">
         <div className="flex items-start gap-4 mt-1">
           <Button
@@ -82,11 +70,11 @@ export const AttendanceLogView = () => {
           </Button>
           <div className="space-y-1">
             <h1 className="text-2xl font-black tracking-tight flex items-center gap-2">
-              <CalendarRange className="text-primary size-6" />
-              Attendance Log
+              <Truck className="text-primary size-6" />
+              Driver Delivery Trips & TA/DA Log
             </h1>
             <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">
-              Monitoring productivity & attendance records
+              Comprehensive vehicle trip performance, distance mileage, and attendance
             </p>
           </div>
         </div>
@@ -130,32 +118,12 @@ export const AttendanceLogView = () => {
         </div>
       </div>
 
-      <Suspense fallback={<GenericLoader title="Loading Attendance Log..." />}>
-        {employee?.isOrderBooker ? (
-          <OrderBookerAttendanceLog
-            employeeId={employeeId}
-            startDate={from || defaultStart}
-            endDate={to || defaultEnd}
-          />
-        ) : employee?.isSalesman ? (
-          <SalesmanAttendanceLog
-            employeeId={employeeId}
-            startDate={from || defaultStart}
-            endDate={to || defaultEnd}
-          />
-        ) : employee?.isDriver ? (
-          <DriverAttendanceLog
-            employeeId={employeeId}
-            startDate={from || defaultStart}
-            endDate={to || defaultEnd}
-          />
-        ) : (
-          <EmployeeAttendanceLog
-            employeeId={employeeId}
-            startDate={from || defaultStart}
-            endDate={to || defaultEnd}
-          />
-        )}
+      <Suspense fallback={<GenericLoader title="Loading Driver Trips Log..." />}>
+        <DriverAttendanceLog
+          employeeId={employeeId}
+          startDate={from || defaultStart}
+          endDate={to || defaultEnd}
+        />
       </Suspense>
     </div>
   );

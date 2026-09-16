@@ -20,9 +20,15 @@ import {
   useGetRetailers,
 } from "@/hooks/sales/use-sales-people";
 import { CustomerPagination } from "@/components/sales/customer-pagination";
-import { BookOpen, Plus, Trash2 } from "lucide-react";
+import { BookOpen, Plus, Trash2, Truck } from "lucide-react";
 import { CreateDistributorDialog } from "@/components/sales/create-distributor-dialog";
 import { useClearDistributorLedgerSeed } from "@/hooks/sales/use-clear-distributor-ledger-seed";
+import {
+  useGetDrivers,
+  useGetDriverTrips,
+  useDeleteDriverTrip,
+} from "@/hooks/sales/use-driver-trips";
+import { CreateDriverTripDialog } from "@/components/sales/create-driver-trip-dialog";
 import { toast } from "sonner";
 
 const PKR = (v: number) =>
@@ -57,6 +63,7 @@ function SalesPeopleContent() {
         <TabsTrigger value="retailers">Retailers</TabsTrigger>
         <TabsTrigger value="salesmen">Salesmen</TabsTrigger>
         <TabsTrigger value="order-bookers">Order Bookers</TabsTrigger>
+        <TabsTrigger value="drivers">Drivers</TabsTrigger>
       </TabsList>
 
       <TabsContent value="distributors">
@@ -73,6 +80,10 @@ function SalesPeopleContent() {
 
       <TabsContent value="order-bookers">
         <OrderBookersTab />
+      </TabsContent>
+
+      <TabsContent value="drivers">
+        <DriversTab />
       </TabsContent>
     </Tabs>
   );
@@ -414,3 +425,232 @@ function OrderBookersTab() {
     </div>
   );
 }
+
+// ── Drivers Tab ──
+function DriversTab() {
+  const { data: drivers, isLoading: isLoadingDrivers } = useGetDrivers();
+  const { data: trips, isLoading: isLoadingTrips } = useGetDriverTrips();
+  const deleteTrip = useDeleteDriverTrip();
+  const [selectedDriverId, setSelectedDriverId] = useState<string | undefined>();
+  const [dialogOpen, setDialogOpen] = useState(false);
+
+  const handleDeleteTrip = (tripId: string) => {
+    if (
+      !window.confirm(
+        "Are you sure you want to delete this trip? Driver attendance and TA/DA will be updated accordingly.",
+      )
+    ) {
+      return;
+    }
+    deleteTrip.mutate(
+      { data: { id: tripId } },
+      {
+        onSuccess: () => {
+          toast.success("Driver trip deleted successfully");
+        },
+        onError: (err: any) => {
+          toast.error(err?.message || "Failed to delete trip");
+        },
+      },
+    );
+  };
+
+  const handleLogTripForDriver = (driverId: string) => {
+    setSelectedDriverId(driverId);
+    setDialogOpen(true);
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <h3 className="text-lg font-semibold">Drivers</h3>
+          <p className="text-sm text-muted-foreground">
+            Create drivers from{" "}
+            <span className="font-medium text-foreground">
+              HR → Employees → Add Employee
+            </span>{" "}
+            by checking "Is this employee a Driver?".
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            className="gap-1.5"
+            onClick={() => {
+              setSelectedDriverId(undefined);
+              setDialogOpen(true);
+            }}
+          >
+            <Plus className="size-4" />
+            Log Driver Trip
+          </Button>
+        </div>
+      </div>
+
+      <CreateDriverTripDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        defaultDriverId={selectedDriverId}
+        trigger={null}
+      />
+
+      <Tabs defaultValue="drivers-list" className="w-full">
+        <TabsList className="mb-3 h-9">
+          <TabsTrigger value="drivers-list" className="text-xs">
+            Drivers Directory ({drivers?.length || 0})
+          </TabsTrigger>
+          <TabsTrigger value="trips-history" className="text-xs">
+            Delivery Trips ({trips?.length || 0})
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="drivers-list">
+          <div className="rounded-xl border border-border/60 bg-card overflow-hidden">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="text-[11px]">Name</TableHead>
+                  <TableHead className="text-[11px]">Phone</TableHead>
+                  <TableHead className="text-[11px]">License #</TableHead>
+                  <TableHead className="text-[11px]">Linked Employee</TableHead>
+                  <TableHead className="text-[11px]">Status</TableHead>
+                  <TableHead className="text-[11px] text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {!drivers?.length ? (
+                  <TableRow>
+                    <TableCell
+                      colSpan={6}
+                      className="text-center text-muted-foreground py-10 text-sm"
+                    >
+                      {isLoadingDrivers
+                        ? "Loading drivers..."
+                        : "No drivers found. Add employees with the Driver role in HR."}
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  drivers.map((d: any) => (
+                    <TableRow key={d.id}>
+                      <TableCell className="text-sm font-medium">{d.name}</TableCell>
+                      <TableCell className="text-sm">{d.phone || "—"}</TableCell>
+                      <TableCell className="text-sm font-mono text-xs">
+                        {d.licenseNumber || "—"}
+                      </TableCell>
+                      <TableCell className="text-sm">
+                        {d.employee ? (
+                          <Badge variant="outline" className="text-[10px] font-mono">
+                            {d.employee.employeeCode || d.employee.id.slice(0, 8)}
+                          </Badge>
+                        ) : (
+                          "—"
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          variant={d.status === "active" ? "default" : "outline"}
+                          className="text-[10px]"
+                        >
+                          {d.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 text-xs gap-1"
+                          onClick={() => handleLogTripForDriver(d.id)}
+                        >
+                          <Truck className="size-3.5" />
+                          Log Trip
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="trips-history">
+          <div className="rounded-xl border border-border/60 bg-card overflow-hidden">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="text-[11px]">Trip Date</TableHead>
+                  <TableHead className="text-[11px]">Driver</TableHead>
+                  <TableHead className="text-[11px]">Destination</TableHead>
+                  <TableHead className="text-[11px]">Vehicle #</TableHead>
+                  <TableHead className="text-[11px] text-right">Distance</TableHead>
+                  <TableHead className="text-[11px] text-right">Rate / KM</TableHead>
+                  <TableHead className="text-[11px] text-right">TA/DA Amount</TableHead>
+                  <TableHead className="text-[11px] w-[50px]" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {!trips?.length ? (
+                  <TableRow>
+                    <TableCell
+                      colSpan={8}
+                      className="text-center text-muted-foreground py-10 text-sm"
+                    >
+                      {isLoadingTrips
+                        ? "Loading trips..."
+                        : "No delivery trips recorded yet."}
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  trips.map((t: any) => (
+                    <TableRow key={t.id}>
+                      <TableCell className="text-xs font-medium">
+                        {new Date(t.tripDate).toLocaleDateString("en-PK", {
+                          year: "numeric",
+                          month: "short",
+                          day: "numeric",
+                        })}
+                      </TableCell>
+                      <TableCell className="text-xs font-medium">
+                        {t.driver?.name || "—"}
+                      </TableCell>
+                      <TableCell className="text-xs">{t.destination}</TableCell>
+                      <TableCell className="text-xs font-mono">
+                        {t.vehicleNumber || "—"}
+                      </TableCell>
+                      <TableCell className="text-xs text-right tabular-nums">
+                        {Number(t.distanceKm).toLocaleString()} km
+                      </TableCell>
+                      <TableCell className="text-xs text-right tabular-nums text-muted-foreground">
+                        PKR {Number(t.ratePerKm).toFixed(2)}
+                      </TableCell>
+                      <TableCell className="text-xs text-right font-semibold tabular-nums text-primary">
+                        PKR{" "}
+                        {Number(t.tadaAmount).toLocaleString("en-PK", {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}
+                      </TableCell>
+                      <TableCell>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-7 text-muted-foreground hover:text-destructive"
+                          onClick={() => handleDeleteTrip(t.id)}
+                          disabled={deleteTrip.isPending}
+                        >
+                          <Trash2 className="size-3.5" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
+

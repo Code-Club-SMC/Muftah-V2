@@ -56,6 +56,11 @@ export const Route = createFileRoute(
   component: DistributorLedgerPage,
 });
 
+function formatBalance(v: number): string {
+  if (v === 0) return "0.00";
+  return `${formatPKR(Math.abs(v), false)} ${v > 0 ? "Cr" : "Dr"}`;
+}
+
 function DistributorLedgerPage() {
   const { customerId } = Route.useParams();
   const router = useRouter();
@@ -384,6 +389,26 @@ function DistributorLedgerPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
+                {page === 1 && (
+                  <TableRow className="bg-muted/30 font-medium">
+                    <TableCell />
+                    <TableCell className="text-sm tabular-nums text-muted-foreground whitespace-nowrap">
+                      {dateFrom ? format(new Date(dateFrom), "dd MMM yyyy") : "—"}
+                    </TableCell>
+                    <TableCell className="text-sm font-semibold text-muted-foreground">
+                      Opening Balance B/F
+                    </TableCell>
+                    <TableCell className="text-sm tabular-nums text-right text-muted-foreground">
+                      {summary.openingBalance < 0 ? formatPKR(Math.abs(summary.openingBalance), false) : "—"}
+                    </TableCell>
+                    <TableCell className="text-sm tabular-nums text-right text-muted-foreground">
+                      {summary.openingBalance > 0 ? formatPKR(summary.openingBalance, false) : "—"}
+                    </TableCell>
+                    <TableCell className="text-sm tabular-nums text-right font-semibold">
+                      {formatBalance(summary.openingBalance)}
+                    </TableCell>
+                  </TableRow>
+                )}
                 {entries.length === 0 ? (
                   <TableRow>
                     <TableCell
@@ -606,25 +631,50 @@ function LedgerTableRow({
               </div>
             </div>
           ) : (
-            <div className="space-y-1">
-              <div>
-                Payment <span className="capitalize">({entry.method.replaceAll("_", " ")})</span>
-                {entry.reference && ` — Ref: ${entry.reference}`}
-              </div>
-              <div className="text-xs text-blue-600">
-                Invoice #{entry.invoiceNumber}
-              </div>
-            </div>
+            (() => {
+              const digitalMatch = entry.notes?.match(/^\[(.*?)\]/);
+              const provider = digitalMatch ? digitalMatch[1] : null;
+              const displayNotes = (digitalMatch && entry.notes)
+                ? entry.notes.slice(digitalMatch[0].length).trim().replace(/^[·•-]\s*/, "")
+                : entry.notes;
+              const methodLabel = provider ? provider : entry.method.replaceAll("_", " ");
+
+              return (
+                <div className="space-y-1">
+                  <div className="font-medium">
+                    {entry.method === "cheque" ? (
+                      <span>
+                        Payment (Cheque #{entry.chequeNumber || "—"}{entry.chequeBank ? ` · ${entry.chequeBank}` : ""})
+                      </span>
+                    ) : (
+                      <span>
+                        Payment <span className="capitalize">({methodLabel})</span>
+                        {entry.walletName && (
+                          <span className="text-muted-foreground font-normal"> · {entry.walletName}</span>
+                        )}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+                    <span className="text-blue-600 font-medium">Invoice #{entry.invoiceNumber}</span>
+                    {entry.reference && (
+                      <span>• Ref: <strong className="text-foreground font-mono">{entry.reference}</strong></span>
+                    )}
+                    {displayNotes && <span>• {displayNotes}</span>}
+                  </div>
+                </div>
+              );
+            })()
           )}
         </TableCell>
-        <TableCell className="text-sm tabular-nums text-right">
-          {isInvoice ? formatPKR(entry.totalPrice, false) : "—"}
-        </TableCell>
-        <TableCell className={cn("text-sm tabular-nums text-right", isReturn ? "text-amber-600" : "text-green-600")}>
+        <TableCell className={cn("text-sm tabular-nums text-right", isReturn ? "text-amber-600 font-medium" : "text-green-600 font-medium")}>
           {!isInvoice ? formatPKR(entry.amount, false) : "—"}
         </TableCell>
+        <TableCell className="text-sm tabular-nums text-right font-medium">
+          {isInvoice ? formatPKR(entry.totalPrice, false) : "—"}
+        </TableCell>
         <TableCell className="text-sm tabular-nums text-right font-semibold">
-          {formatPKR(entry.runningBalance, false)}
+          {formatBalance(entry.runningBalance)}
         </TableCell>
       </TableRow>
 

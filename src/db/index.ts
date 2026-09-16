@@ -88,6 +88,8 @@ export const {
 export const { customers, invoices, invoiceItems, invoiceNumberCounters } = salesSchema;
 export const {
   salesmen,
+  drivers,
+  driverTrips,
   discountRules,
   payments,
   slipRecords,

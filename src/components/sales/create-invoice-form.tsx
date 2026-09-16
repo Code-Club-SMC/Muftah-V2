@@ -210,20 +210,52 @@ export const CreateInvoiceForm = ({ onSuccess, onCancel, onDirtyChange, initialD
             customerBankAccount: "",
             customerType: initialCustomerType,
             warehouseId: resolvedInitialWarehouseId,
-            payments: ((initialData.payments ?? []) as Array<Record<string, any>>).map((payment) => ({
-                method: payment.method,
-                amount: Number(payment.amount) || 0,
-                walletId: payment.walletId || "",
-                reference: payment.reference || "",
-                chequeNumber: payment.chequeNumber || "",
-                chequeBank: payment.chequeBank || "",
-                chequeDate: payment.chequeDate ? new Date(payment.chequeDate).toISOString().split("T")[0] : "",
-                paymentDate: payment.paymentDate
-                    ? new Date(payment.paymentDate).toISOString().slice(0, 16)
-                    : new Date().toISOString().slice(0, 16),
-                sourceRecordId: payment.sourceRecordId || undefined,
-                status: payment.status,
-            })),
+            payments: ((initialData.payments ?? []) as Array<Record<string, any>>).map((payment) => {
+                const notesStr = String(payment.notes || "");
+                const digitalMatch = notesStr.match(/^\[(.*?)\]\s*From:\s*([^\s(]+)(?:\s*\((.*?)\))?(?:\s*·\s*(.*))?$/);
+                const bankMatch = notesStr.match(/^From:\s*(.*?)\s*\(A\/C:\s*(.*?)\)(?:\s*·\s*(.*))?$/);
+
+                let method = payment.method as PaymentInput["method"];
+                let senderBankName = "";
+                let senderAccountNumber = "";
+                let digitalProvider = "";
+                let senderMobileNumber = "";
+                let senderAccountTitle = "";
+                let residualNotes = notesStr;
+
+                if (payment.method === "bank_transfer" && digitalMatch) {
+                    method = "digital_wallet";
+                    digitalProvider = digitalMatch[1];
+                    senderMobileNumber = digitalMatch[2];
+                    senderAccountTitle = digitalMatch[3] || "";
+                    residualNotes = digitalMatch[4] || "";
+                } else if (payment.method === "bank_transfer" && bankMatch) {
+                    senderBankName = bankMatch[1];
+                    senderAccountNumber = bankMatch[2];
+                    residualNotes = bankMatch[3] || "";
+                }
+
+                return {
+                    method,
+                    amount: Number(payment.amount) || 0,
+                    walletId: payment.walletId || "",
+                    reference: payment.reference || "",
+                    senderBankName,
+                    senderAccountNumber,
+                    digitalProvider,
+                    senderMobileNumber,
+                    senderAccountTitle,
+                    chequeNumber: payment.chequeNumber || "",
+                    chequeBank: payment.chequeBank || "",
+                    chequeDate: payment.chequeDate ? new Date(payment.chequeDate).toISOString().split("T")[0] : "",
+                    paymentDate: payment.paymentDate
+                        ? new Date(payment.paymentDate).toISOString().slice(0, 16)
+                        : new Date().toISOString().slice(0, 16),
+                    sourceRecordId: payment.sourceRecordId || undefined,
+                    status: payment.status,
+                    notes: residualNotes,
+                };
+            }),
             paymentDueDate: initialData.paymentDueDate ? new Date(initialData.paymentDueDate).toISOString().split("T")[0] : "",
             expenses: Number(initialData.expenses) || 0,
             expensesDescription: initialData.expensesDescription || "",
@@ -302,9 +334,62 @@ export const CreateInvoiceForm = ({ onSuccess, onCancel, onDirtyChange, initialD
                 toast.error("Duplicate payment rows are not allowed.");
                 return;
             }
-            if (value.payments.some((payment) => Number(payment.amount) <= 0)) {
-                toast.error("Every payment amount must be greater than zero.");
-                return;
+            for (let i = 0; i < value.payments.length; i++) {
+                const payment = value.payments[i];
+                if (Number(payment.amount) <= 0) {
+                    toast.error(`Payment ${i + 1}: Amount must be greater than zero.`);
+                    return;
+                }
+                if (!payment.walletId) {
+                    toast.error(
+                        payment.method === "cash"
+                            ? `Payment ${i + 1}: Select a cash destination account.`
+                            : `Payment ${i + 1}: Select a bank destination account.`,
+                    );
+                    return;
+                }
+                if (payment.method === "bank_transfer") {
+                    if (!payment.senderBankName?.trim()) {
+                        toast.error(`Payment ${i + 1}: Distributor bank name is required.`);
+                        return;
+                    }
+                    if (!payment.senderAccountNumber?.trim()) {
+                        toast.error(`Payment ${i + 1}: Distributor account number / IBAN is required.`);
+                        return;
+                    }
+                    if (!payment.reference?.trim()) {
+                        toast.error(`Payment ${i + 1}: Transaction reference is required.`);
+                        return;
+                    }
+                }
+                if (payment.method === "digital_wallet") {
+                    if (!payment.digitalProvider?.trim()) {
+                        toast.error(`Payment ${i + 1}: Digital platform / provider is required.`);
+                        return;
+                    }
+                    if (!payment.senderMobileNumber?.trim()) {
+                        toast.error(`Payment ${i + 1}: Sender mobile / account number is required.`);
+                        return;
+                    }
+                    if (!payment.reference?.trim()) {
+                        toast.error(`Payment ${i + 1}: Transaction ID (TID) is required.`);
+                        return;
+                    }
+                }
+                if (payment.method === "cheque") {
+                    if (!payment.chequeBank?.trim()) {
+                        toast.error(`Payment ${i + 1}: Cheque bank name is required.`);
+                        return;
+                    }
+                    if (!payment.chequeNumber?.trim()) {
+                        toast.error(`Payment ${i + 1}: Cheque number is required.`);
+                        return;
+                    }
+                    if (!payment.chequeDate) {
+                        toast.error(`Payment ${i + 1}: Cheque date is required.`);
+                        return;
+                    }
+                }
             }
             if (paymentBreakdown.payLaterAmount > 0 && !value.paymentDueDate) {
                 toast.error("Please set a Payment Due Date for the amount being paid later.");
@@ -326,19 +411,45 @@ export const CreateInvoiceForm = ({ onSuccess, onCancel, onDirtyChange, initialD
                         legacyBaseCartonRate: 0,
                     };
                 });
-                const normalizedPayments = value.payments.map((payment) => ({
-                    method: payment.method,
-                    amount: roundMoney(Number(payment.amount)),
-                    walletId: payment.walletId,
-                    reference: payment.reference.trim() || undefined,
-                    chequeNumber: payment.chequeNumber.trim() || undefined,
-                    chequeBank: payment.chequeBank.trim() || undefined,
-                    chequeDate: payment.chequeDate
-                        ? new Date(`${payment.chequeDate}T12:00:00`)
-                        : undefined,
-                    paymentDate: new Date(payment.paymentDate),
-                    sourceRecordId: payment.sourceRecordId,
-                }));
+                const normalizedPayments = value.payments.map((payment) => {
+                    const isDigital = payment.method === "digital_wallet";
+                    const isBank = payment.method === "bank_transfer";
+                    const backendMethod: "cash" | "bank_transfer" | "cheque" =
+                        isDigital ? "bank_transfer" : payment.method;
+
+                    let formattedNotes = payment.notes?.trim() || undefined;
+                    if (isDigital) {
+                        const provider = payment.digitalProvider?.trim() || "Digital Account";
+                        const mobile = payment.senderMobileNumber?.trim() || "";
+                        const title = payment.senderAccountTitle?.trim();
+                        const titlePart = title ? ` (${title})` : "";
+                        const prefix = `[${provider}] From: ${mobile}${titlePart}`;
+                        formattedNotes = formattedNotes ? `${prefix} · ${formattedNotes}` : prefix;
+                    } else if (isBank) {
+                        const bankName = payment.senderBankName?.trim();
+                        const accNo = payment.senderAccountNumber?.trim();
+                        if (bankName || accNo) {
+                            const prefix = `From: ${bankName || "Unknown Bank"} (A/C: ${accNo || "—"})`;
+                            formattedNotes = formattedNotes ? `${prefix} · ${formattedNotes}` : prefix;
+                        }
+                    }
+
+                    return {
+                        method: backendMethod,
+                        amount: roundMoney(Number(payment.amount)),
+                        walletId: payment.walletId,
+                        reference: payment.reference.trim() || undefined,
+                        chequeNumber: payment.chequeNumber.trim() || undefined,
+                        chequeBank: payment.chequeBank.trim() || undefined,
+                        chequeDate: payment.chequeDate
+                            ? new Date(`${payment.chequeDate}T12:00:00`)
+                            : undefined,
+                        paymentDate: new Date(payment.paymentDate),
+                        sourceRecordId: payment.sourceRecordId,
+                        notes: formattedNotes,
+                        instantVerify: Boolean(payment.instantVerify),
+                    };
+                });
                 const commonPayload = {
                     warehouseId: activeWarehouse,
                     paymentDueDate: value.paymentDueDate

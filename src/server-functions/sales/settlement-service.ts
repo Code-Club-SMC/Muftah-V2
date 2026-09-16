@@ -93,6 +93,7 @@ type PreparedPayment = {
 	sourceRecordId: string | null;
 	allocationGroupId: string | null;
 	notes: string | null;
+	instantVerify?: boolean;
 };
 
 function cleanOptional(value: string | undefined): string | null {
@@ -164,6 +165,7 @@ function preparePayment(input: RecoveryPaymentInput): PreparedPayment {
 		sourceRecordId: cleanOptional(input.sourceRecordId),
 		allocationGroupId: cleanOptional(input.allocationGroupId),
 		notes: cleanOptional(input.notes),
+		instantVerify: Boolean(input.instantVerify),
 	};
 }
 
@@ -295,7 +297,9 @@ async function insertPayment(
 	source: PaymentSource,
 	prepared: PreparedPayment,
 ): Promise<PaymentRecord> {
-	const status = initialStatus(prepared.method);
+	const status = prepared.instantVerify
+		? "confirmed"
+		: initialStatus(prepared.method);
 	const now = new Date();
 	const [payment] = await tx
 		.insert(payments)
@@ -365,7 +369,7 @@ async function assertProposedSettlement(
 	const proposed = newPayments.map((payment) => ({
 		amount: payment.amount,
 		method: payment.method,
-		status: initialStatus(payment.method),
+		status: payment.instantVerify ? "confirmed" : initialStatus(payment.method),
 	}));
 	const returnedAmount = await getApprovedReturnAmount(tx, invoice.id);
 	const netReceivable = roundMoney(

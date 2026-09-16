@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useForm } from "@tanstack/react-form";
 import { toast } from "sonner";
 import { format } from "date-fns";
@@ -56,6 +56,8 @@ import {
   AlertTriangle,
   Banknote,
   Building2,
+  Smartphone,
+  CheckSquare,
   ClipboardList,
   RefreshCw,
   AlertCircle,
@@ -107,6 +109,13 @@ function ReconciliationPage() {
     retry: false,
   });
 
+  const pendingAmount = Number((slip as any)?.pendingAmount ?? 0);
+  const outstandingAmount = Number(slip?.outstandingAmount ?? 0);
+  const unallocatedAmount =
+    (slip as any)?.unallocatedAmount !== undefined
+      ? Number((slip as any).unallocatedAmount)
+      : Math.max(0, outstandingAmount - pendingAmount);
+
   // ── Overdue slips ────────────────────────────────────────────────────────
   const { data: overdueData, isLoading: overdueLoading } = useQuery({
     queryKey: ["overdue-slips"],
@@ -131,10 +140,14 @@ function ReconciliationPage() {
     mutationFn: (payload: {
       slipId: string;
       amount: number;
-      method: "cash" | "bank_transfer" | "expense_offset";
+      method: "cash" | "bank_transfer" | "cheque";
       walletId?: string;
       reference?: string;
+      chequeBank?: string;
+      chequeNumber?: string;
+      chequeDate?: Date;
       notes?: string;
+      instantVerify?: boolean;
     }) =>
       reconcileSlipFn({ data: payload }),
     onSuccess: (result) => {
@@ -145,7 +158,9 @@ function ReconciliationPage() {
           `Payment recorded. Remaining: ${PKR(result.remainingDue)}`,
         );
       }
+      form.reset();
       qc.invalidateQueries({ queryKey: ["slip-lookup"] });
+      qc.invalidateQueries({ queryKey: ["slip-history"] });
       qc.invalidateQueries({ queryKey: ["overdue-slips"] });
       qc.invalidateQueries({ queryKey: ["daily-closing"] });
       qc.invalidateQueries({ queryKey: ["customers"] });
@@ -158,23 +173,120 @@ function ReconciliationPage() {
   const form = useForm({
     defaultValues: {
       amount: 0,
-      method: "cash" as "cash" | "bank_transfer",
-      walletId: wallets[0]?.id ?? "",
+      method: "cash" as "cash" | "bank_transfer" | "digital_wallet" | "cheque",
+      walletId: wallets.find((w) => w.type === "cash")?.id ?? wallets[0]?.id ?? "",
       reference: "",
+      senderBankName: "",
+      senderAccountNumber: "",
+      digitalProvider: "EasyPaisa",
+      senderMobileNumber: "",
+      chequeBank: "",
+      chequeNumber: "",
+      chequeDate: format(new Date(), "yyyy-MM-dd"),
       notes: "",
+      instantVerify: false,
     },
     onSubmit: async ({ value }) => {
       if (!slip) return;
+      if (value.amount <= 0) {
+        toast.error("Amount must be greater than zero");
+        return;
+      }
+      if (unallocatedAmount > 0 && value.amount > unallocatedAmount) {
+        toast.error(`Amount cannot exceed remaining collectible: ${PKR(unallocatedAmount)}`);
+        return;
+      }
+      if (!value.walletId || value.walletId === "__none__") {
+        toast.error(
+          value.method === "cash"
+            ? "Please select a cash deposit account"
+            : "Please select a bank account",
+        );
+        return;
+      }
+      if (value.method === "bank_transfer") {
+        if (!value.senderBankName?.trim()) {
+          toast.error("Distributor bank name is required");
+          return;
+        }
+        if (!value.senderAccountNumber?.trim()) {
+          toast.error("Distributor account number / IBAN is required");
+          return;
+        }
+        if (!value.reference?.trim()) {
+          toast.error("Transaction reference / ID is required");
+          return;
+        }
+      }
+      if (value.method === "digital_wallet") {
+        if (!value.digitalProvider?.trim()) {
+          toast.error("Digital platform / provider is required");
+          return;
+        }
+        if (!value.senderMobileNumber?.trim()) {
+          toast.error("Sender mobile / account number is required");
+          return;
+        }
+        if (!value.reference?.trim()) {
+          toast.error("Transaction ID (TID) is required");
+          return;
+        }
+      }
+      if (value.method === "cheque") {
+        if (!value.chequeBank?.trim()) {
+          toast.error("Cheque bank name is required");
+          return;
+        }
+        if (!value.chequeNumber?.trim()) {
+          toast.error("Cheque number is required");
+          return;
+        }
+        if (!value.chequeDate) {
+          toast.error("Cheque date is required");
+          return;
+        }
+      }
+
+      const backendMethod: "cash" | "bank_transfer" | "cheque" =
+        value.method === "digital_wallet"
+          ? "bank_transfer"
+          : value.method;
+
+      let formattedNotes = value.notes?.trim() || undefined;
+      if (value.method === "digital_wallet") {
+        const prefix = `[${value.digitalProvider.trim()}] From: ${value.senderMobileNumber.trim()}`;
+        formattedNotes = formattedNotes ? `${prefix} · ${formattedNotes}` : prefix;
+      } else if (value.method === "bank_transfer") {
+        const prefix = `From: ${value.senderBankName.trim()} (A/C: ${value.senderAccountNumber.trim()})`;
+        formattedNotes = formattedNotes ? `${prefix} · ${formattedNotes}` : prefix;
+      }
+
       await reconcileSlip({
         slipId: slip.id,
         amount: value.amount,
-        method: value.method,
+        method: backendMethod,
         walletId: value.walletId,
-        reference: value.reference,
-        notes: value.notes,
+        reference: value.reference?.trim(),
+        chequeBank: value.method === "cheque" ? value.chequeBank.trim() : undefined,
+        chequeNumber: value.method === "cheque" ? value.chequeNumber.trim() : undefined,
+        chequeDate: value.method === "cheque" && value.chequeDate ? new Date(value.chequeDate) : undefined,
+        notes: formattedNotes,
+        instantVerify: value.method !== "cash" ? Boolean(value.instantVerify) : undefined,
       });
     },
   });
+
+  useEffect(() => {
+    const currentMethod = form.getFieldValue("method");
+    const currentWalletId = form.getFieldValue("walletId");
+    const requiredType = currentMethod === "cash" ? "cash" : "bank";
+    const eligible = wallets.filter(
+      (w) => w.type === requiredType,
+    );
+    if (eligible.length > 0 && !eligible.some((w) => w.id === currentWalletId)) {
+      form.setFieldValue("walletId", eligible[0].id);
+    }
+  }, [wallets, form]);
 
   const handleSlipSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -309,40 +421,110 @@ function ReconciliationPage() {
                         {PKR(Number(slip.paidAmount))}
                       </p>
                     </div>
+                    {pendingAmount > 0 && (
+                      <div className="col-span-2 rounded border border-amber-200 bg-amber-50/70 p-2 dark:border-amber-800 dark:bg-amber-950/20">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-medium text-amber-800 dark:text-amber-200 flex items-center gap-1.5">
+                            <Clock className="size-3.5 text-amber-600" />
+                            Pending Verification
+                          </span>
+                          <span className="font-bold text-amber-700 dark:text-amber-300">
+                            {PKR(pendingAmount)}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-amber-700/80 dark:text-amber-400/80 mt-0.5">
+                          Recovery payment recorded. Awaiting finance confirmation.
+                        </p>
+                      </div>
+                    )}
                   </div>
 
                   <div
                     className={cn(
                       "rounded-lg p-3 border",
-                      Number(slip.outstandingAmount) > 0
+                      outstandingAmount > 0
                         ? "bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-800"
                         : "bg-green-50 dark:bg-green-950/20 border-green-200",
                     )}
                   >
-                    <p className="text-xs text-muted-foreground mb-0.5">
-                      Outstanding Due
-                    </p>
-                    <p
-                      className={cn(
-                        "text-2xl font-bold tabular-nums",
-                        Number(slip.outstandingAmount) > 0
-                          ? "text-red-700"
-                          : "text-green-700",
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-0.5">
+                          Outstanding Due
+                        </p>
+                        <p
+                          className={cn(
+                            "text-2xl font-bold tabular-nums",
+                            outstandingAmount > 0
+                              ? "text-red-700 dark:text-red-400"
+                              : "text-green-700 dark:text-green-400",
+                          )}
+                        >
+                          {PKR(outstandingAmount)}
+                        </p>
+                      </div>
+                      {pendingAmount > 0 && (
+                        <div className="text-right">
+                          <p className="text-[11px] font-medium text-amber-700 dark:text-amber-400">
+                            {PKR(pendingAmount)} unverified
+                          </p>
+                          <p className="text-[10px] text-muted-foreground">
+                            Collectible: {PKR(unallocatedAmount)}
+                          </p>
+                        </div>
                       )}
-                    >
-                      {PKR(Number(slip.outstandingAmount))}
-                    </p>
+                    </div>
                   </div>
                 </CardContent>
               </Card>
 
               {/* Reconcile form */}
-              {slip.status !== "closed" ? (
+              {slip.status === "closed" ? (
+                <Card>
+                  <CardContent className="pt-10 flex flex-col items-center gap-3 text-center">
+                    <CheckCircle2 className="size-10 text-green-500" />
+                    <p className="font-semibold">Slip Fully Closed</p>
+                    <p className="text-sm text-muted-foreground">
+                      All {PKR(Number(slip.paidAmount))} paid.
+                    </p>
+                  </CardContent>
+                </Card>
+              ) : unallocatedAmount === 0 && pendingAmount > 0 ? (
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <Clock className="size-4 text-amber-600" />
+                      Payment Pending Verification
+                    </CardTitle>
+                    <CardDescription>
+                      Full balance is covered by pending payment(s).
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-800 p-4 space-y-2">
+                      <p className="text-sm font-medium text-amber-900 dark:text-amber-200">
+                        Recovery Awaiting Finance Approval
+                      </p>
+                      <p className="text-xs text-amber-800 dark:text-amber-300 leading-relaxed">
+                        A payment of <strong>{PKR(pendingAmount)}</strong> has been recorded and is currently in the verification queue. The slip balance will be settled once verified by Finance.
+                      </p>
+                      <div className="pt-2">
+                        <Button size="sm" variant="outline" className="h-8 text-xs border-amber-300 gap-1.5" asChild>
+                          <Link to="/finance/payment-verification">
+                            Open Payment Verification
+                          </Link>
+                        </Button>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ) : (
                 <Card>
                   <CardHeader className="pb-3">
                     <CardTitle className="text-base">Record Payment</CardTitle>
                     <CardDescription>
-                      Max: {PKR(Number(slip.outstandingAmount))}
+                      Max collectible: {PKR(unallocatedAmount)}
+                      {pendingAmount > 0 && ` (${PKR(pendingAmount)} pending verification)`}
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
@@ -362,7 +544,7 @@ function ReconciliationPage() {
                             <Input
                               type="number"
                               min="1"
-                              max={Number(slip.outstandingAmount)}
+                              max={unallocatedAmount}
                               step="1"
                               value={field.state.value || ""}
                               onChange={(e) =>
@@ -379,9 +561,16 @@ function ReconciliationPage() {
                             <label className="text-sm font-medium">Method</label>
                             <Select
                               value={field.state.value}
-                              onValueChange={(v: string) =>
-                                field.handleChange(v as "cash" | "bank_transfer")
-                              }
+                              onValueChange={(v: string) => {
+                                const nextMethod = v as "cash" | "bank_transfer" | "digital_wallet" | "cheque";
+                                field.handleChange(nextMethod);
+                                form.setFieldValue("instantVerify", false);
+                                const requiredType = nextMethod === "cash" ? "cash" : "bank";
+                                const eligible = wallets.filter((w) => w.type === requiredType);
+                                if (eligible.length > 0 && !eligible.some((w) => w.id === form.getFieldValue("walletId"))) {
+                                  form.setFieldValue("walletId", eligible[0].id);
+                                }
+                              }}
                             >
                               <SelectTrigger>
                                 <SelectValue />
@@ -399,6 +588,18 @@ function ReconciliationPage() {
                                     Bank Transfer
                                   </span>
                                 </SelectItem>
+                                <SelectItem value="digital_wallet">
+                                  <span className="flex items-center gap-2">
+                                    <Smartphone className="size-3.5 text-violet-500" />
+                                    Digital Account (EasyPaisa / JazzCash / Raast)
+                                  </span>
+                                </SelectItem>
+                                <SelectItem value="cheque">
+                                  <span className="flex items-center gap-2">
+                                    <CheckSquare className="size-3.5 text-amber-500" />
+                                    Cheque
+                                  </span>
+                                </SelectItem>
                               </SelectContent>
                             </Select>
                           </div>
@@ -406,52 +607,299 @@ function ReconciliationPage() {
                       </form.Field>
 
                       <form.Field name="walletId">
-                        {(field) => (
-                          <div className="space-y-1.5">
-                            <label className="text-sm font-medium">
-                              Deposit Account
-                            </label>
-                            <Select
-                              value={field.state.value}
-                              onValueChange={field.handleChange}
-                            >
-                              <SelectTrigger>
-                                <SelectValue placeholder="Select account" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {wallets.map((w: Wallet) => (
-                                  <SelectItem key={w.id} value={w.id}>
-                                    {w.name}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-                        )}
+                        {(field) => {
+                          const currentMethod = form.getFieldValue("method");
+                          const requiredType = currentMethod === "cash" ? "cash" : "bank";
+                          const filteredWallets = wallets.filter(
+                            (w) => w.type === requiredType,
+                          );
+
+                          const accountLabel =
+                            currentMethod === "cash"
+                              ? "Cash"
+                              : currentMethod === "digital_wallet"
+                                ? "Bank / Digital"
+                                : "Bank";
+
+                          return (
+                            <div className="space-y-1.5">
+                              <label className="text-sm font-medium">
+                                Deposit Account ({accountLabel})
+                              </label>
+                              <Select
+                                value={field.state.value}
+                                onValueChange={field.handleChange}
+                              >
+                                <SelectTrigger>
+                                  <SelectValue placeholder={`Select ${accountLabel.toLowerCase()} account`} />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {filteredWallets.length === 0 ? (
+                                    <SelectItem value="__none__" disabled>
+                                      No {accountLabel.toLowerCase()} accounts found
+                                    </SelectItem>
+                                  ) : (
+                                    filteredWallets.map((w: Wallet) => (
+                                      <SelectItem key={w.id} value={w.id}>
+                                        <div className="flex flex-col text-left py-0.5">
+                                          <span className="font-medium">{w.name}</span>
+                                          {w.type === "bank" && (w.bankName || w.accountNumber) && (
+                                            <span className="text-[10px] text-muted-foreground">
+                                              {[w.bankName, w.accountNumber].filter(Boolean).join(" · ")}
+                                            </span>
+                                          )}
+                                        </div>
+                                      </SelectItem>
+                                    ))
+                                  )}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          );
+                        }}
                       </form.Field>
 
-                      <form.Field name="reference">
-                        {(field) => (
-                          <div className="space-y-1.5">
-                            <label className="text-sm font-medium">
-                              Reference (optional)
-                            </label>
-                            <Input
-                              value={field.state.value}
-                              onChange={(e) =>
-                                field.handleChange(e.target.value)
-                              }
-                              placeholder="Cheque / Tx ID"
-                            />
+                      {form.getFieldValue("method") === "bank_transfer" && (
+                        <div className="space-y-3 rounded-lg border border-blue-200 bg-blue-50/50 dark:border-blue-900/40 dark:bg-blue-950/10 p-3">
+                          <p className="text-xs font-semibold text-blue-900 dark:text-blue-300">
+                            Bank Transfer Details
+                          </p>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <form.Field name="senderBankName">
+                              {(field) => (
+                                <div className="space-y-1">
+                                  <label className="text-xs font-medium">
+                                    Distributor Bank Name <span className="text-destructive">*</span>
+                                  </label>
+                                  <Input
+                                    value={field.state.value}
+                                    onChange={(e) => field.handleChange(e.target.value)}
+                                    placeholder="e.g. Meezan Bank, HBL, MCB"
+                                    required
+                                  />
+                                </div>
+                              )}
+                            </form.Field>
+                            <form.Field name="senderAccountNumber">
+                              {(field) => (
+                                <div className="space-y-1">
+                                  <label className="text-xs font-medium">
+                                    Distributor A/C # / IBAN <span className="text-destructive">*</span>
+                                  </label>
+                                  <Input
+                                    value={field.state.value}
+                                    onChange={(e) => field.handleChange(e.target.value)}
+                                    placeholder="e.g. PK36MEZN... or Account #"
+                                    required
+                                  />
+                                </div>
+                              )}
+                            </form.Field>
                           </div>
-                        )}
-                      </form.Field>
+                          <form.Field name="reference">
+                            {(field) => (
+                              <div className="space-y-1">
+                                <label className="text-xs font-medium">
+                                  Transaction Reference / ID <span className="text-destructive">*</span>
+                                </label>
+                                <Input
+                                  value={field.state.value}
+                                  onChange={(e) => field.handleChange(e.target.value)}
+                                  placeholder="e.g. FT26081234"
+                                  required
+                                />
+                              </div>
+                            )}
+                          </form.Field>
+                        </div>
+                      )}
+
+                      {form.getFieldValue("method") === "digital_wallet" && (
+                        <div className="space-y-3 rounded-lg border border-violet-200 bg-violet-50/50 dark:border-violet-900/40 dark:bg-violet-950/10 p-3">
+                          <p className="text-xs font-semibold text-violet-900 dark:text-violet-300">
+                            Digital Account Details
+                          </p>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <form.Field name="digitalProvider">
+                              {(field) => (
+                                <div className="space-y-1">
+                                  <label className="text-xs font-medium">
+                                    Platform / Provider <span className="text-destructive">*</span>
+                                  </label>
+                                  <Select
+                                    value={field.state.value || "EasyPaisa"}
+                                    onValueChange={field.handleChange}
+                                  >
+                                    <SelectTrigger>
+                                      <SelectValue placeholder="Select platform" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="EasyPaisa">EasyPaisa</SelectItem>
+                                      <SelectItem value="JazzCash">JazzCash</SelectItem>
+                                      <SelectItem value="Raast">Raast (Instant)</SelectItem>
+                                      <SelectItem value="SadaPay">SadaPay</SelectItem>
+                                      <SelectItem value="NayaPay">NayaPay</SelectItem>
+                                      <SelectItem value="Other">Other Digital</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                              )}
+                            </form.Field>
+                            <form.Field name="senderMobileNumber">
+                              {(field) => (
+                                <div className="space-y-1">
+                                  <label className="text-xs font-medium">
+                                    Sender Mobile / A/C # <span className="text-destructive">*</span>
+                                  </label>
+                                  <Input
+                                    value={field.state.value}
+                                    onChange={(e) => field.handleChange(e.target.value)}
+                                    placeholder="e.g. 0300-1234567"
+                                    required
+                                  />
+                                </div>
+                              )}
+                            </form.Field>
+                          </div>
+                          <form.Field name="reference">
+                            {(field) => (
+                              <div className="space-y-1">
+                                <label className="text-xs font-medium">
+                                  Transaction ID (TID) <span className="text-destructive">*</span>
+                                </label>
+                                <Input
+                                  value={field.state.value}
+                                  onChange={(e) => field.handleChange(e.target.value)}
+                                  placeholder="e.g. 2948291823"
+                                  required
+                                />
+                              </div>
+                            )}
+                          </form.Field>
+                        </div>
+                      )}
+
+                      {form.getFieldValue("method") === "cheque" && (
+                        <div className="space-y-3 rounded-lg border border-amber-200 bg-amber-50/50 dark:border-amber-900/40 dark:bg-amber-950/10 p-3">
+                          <p className="text-xs font-semibold text-amber-900 dark:text-amber-300">
+                            Cheque Information
+                          </p>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <form.Field name="chequeBank">
+                              {(field) => (
+                                <div className="space-y-1">
+                                  <label className="text-xs font-medium">
+                                    Cheque Bank <span className="text-destructive">*</span>
+                                  </label>
+                                  <Input
+                                    value={field.state.value}
+                                    onChange={(e) => field.handleChange(e.target.value)}
+                                    placeholder="e.g. HBL, Meezan Bank"
+                                    required
+                                  />
+                                </div>
+                              )}
+                            </form.Field>
+                            <form.Field name="chequeNumber">
+                              {(field) => (
+                                <div className="space-y-1">
+                                  <label className="text-xs font-medium">
+                                    Cheque Number <span className="text-destructive">*</span>
+                                  </label>
+                                  <Input
+                                    value={field.state.value}
+                                    onChange={(e) => field.handleChange(e.target.value)}
+                                    placeholder="e.g. 10293847"
+                                    required
+                                  />
+                                </div>
+                              )}
+                            </form.Field>
+                          </div>
+                          <form.Field name="chequeDate">
+                            {(field) => (
+                              <div className="space-y-1">
+                                <label className="text-xs font-medium">
+                                  Cheque Date <span className="text-destructive">*</span>
+                                </label>
+                                <Input
+                                  type="date"
+                                  value={field.state.value}
+                                  onChange={(e) => field.handleChange(e.target.value)}
+                                  required
+                                />
+                              </div>
+                            )}
+                          </form.Field>
+                          <form.Field name="reference">
+                            {(field) => (
+                              <div className="space-y-1">
+                                <label className="text-xs font-medium flex items-center justify-between">
+                                  <span>Deposit Slip / Clearing Ref</span>
+                                  <span className="text-muted-foreground font-normal">(optional)</span>
+                                </label>
+                                <Input
+                                  value={field.state.value}
+                                  onChange={(e) => field.handleChange(e.target.value)}
+                                  placeholder="Deposit slip # or clearing ref"
+                                />
+                              </div>
+                            )}
+                          </form.Field>
+                        </div>
+                      )}
+
+                      {form.getFieldValue("method") === "cash" && (
+                        <form.Field name="reference">
+                          {(field) => (
+                            <div className="space-y-1.5">
+                              <label className="text-sm font-medium flex items-center justify-between">
+                                <span>Receipt / Memo Reference</span>
+                                <span className="text-muted-foreground font-normal">(optional)</span>
+                              </label>
+                              <Input
+                                value={field.state.value}
+                                onChange={(e) => field.handleChange(e.target.value)}
+                                placeholder="Cash receipt number or memo"
+                              />
+                            </div>
+                          )}
+                        </form.Field>
+                      )}
+
+                      {form.getFieldValue("method") !== "cash" && (
+                        <form.Field name="instantVerify">
+                          {(field) => (
+                            <div className="flex items-start gap-2.5 rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3 dark:border-emerald-500/30 dark:bg-emerald-950/10">
+                              <input
+                                type="checkbox"
+                                id="slip-instant-verify"
+                                checked={Boolean(field.state.value)}
+                                onChange={(e) => field.handleChange(e.target.checked)}
+                                className="mt-0.5 size-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                              />
+                              <label
+                                htmlFor="slip-instant-verify"
+                                className="flex flex-col cursor-pointer text-xs"
+                              >
+                                <span className="font-semibold text-emerald-900 dark:text-emerald-300 flex items-center gap-1.5">
+                                  <CheckCircle2 className="size-3.5 text-emerald-600" />
+                                  Instant Verification (Confirmed in Bank / Account)
+                                </span>
+                                <span className="text-muted-foreground mt-0.5">
+                                  Funds already verified received in company account. Skips the finance verification queue and settles the slip immediately.
+                                </span>
+                              </label>
+                            </div>
+                          )}
+                        </form.Field>
+                      )}
 
                       <div className="flex gap-2 pt-2">
                         <Button
                           type="submit"
                           className="flex-1"
-                          disabled={reconciling}
+                          disabled={reconciling || unallocatedAmount <= 0}
                         >
                           {reconciling ? (
                             <RefreshCw className="mr-2 size-4 animate-spin" />
@@ -463,10 +911,11 @@ function ReconciliationPage() {
                         <Button
                           type="button"
                           variant="outline"
+                          disabled={unallocatedAmount <= 0}
                           onClick={() => {
                             form.setFieldValue(
                               "amount",
-                              Number(slip.outstandingAmount),
+                              unallocatedAmount,
                             );
                           }}
                         >
@@ -474,16 +923,6 @@ function ReconciliationPage() {
                         </Button>
                       </div>
                     </form>
-                  </CardContent>
-                </Card>
-              ) : (
-                <Card>
-                  <CardContent className="pt-10 flex flex-col items-center gap-3 text-center">
-                    <CheckCircle2 className="size-10 text-green-500" />
-                    <p className="font-semibold">Slip Fully Closed</p>
-                    <p className="text-sm text-muted-foreground">
-                      All {PKR(Number(slip.paidAmount))} paid.
-                    </p>
                   </CardContent>
                 </Card>
               )}
@@ -520,28 +959,95 @@ function ReconciliationPage() {
                         <p className="text-sm text-muted-foreground">No payments recorded.</p>
                       ) : (
                         <div className="space-y-2">
-                          {history.payments.map((p: ReconcileHistoryPayment) => (
-                            <div
-                              key={p.id}
-                              className="flex items-center justify-between rounded-lg border p-3"
-                            >
-                              <div className="space-y-0.5">
-                                <p className="text-sm font-medium capitalize">
-                                  {p.method.replace("_", " ")}
-                                </p>
-                                <p className="text-xs text-muted-foreground">
-                                  {format(new Date(p.paymentDate), "dd MMM yyyy HH:mm")} ·{" "}
-                                  {p.recordedBy?.name ?? "—"}
-                                </p>
-                                {p.reference && (
-                                  <p className="text-xs text-muted-foreground">Ref: {p.reference}</p>
+                          {history.payments.map((p: ReconcileHistoryPayment) => {
+                            const isPending = p.status === "pending";
+                            const isConfirmed = p.status === "confirmed";
+                            const isCancelled = p.status === "cancelled" || p.status === "returned";
+
+                            return (
+                              <div
+                                key={p.id}
+                                className={cn(
+                                  "flex items-center justify-between rounded-lg border p-3 transition-colors",
+                                  isPending && "border-amber-200 bg-amber-50/40 dark:border-amber-900/50 dark:bg-amber-950/10",
+                                  isCancelled && "border-muted bg-muted/20 opacity-75",
                                 )}
+                              >
+                                <div className="space-y-1">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <p className="text-sm font-medium capitalize">
+                                      {p.method === "cheque"
+                                        ? `Cheque #${p.chequeNumber || "—"}${p.chequeBank ? ` · ${p.chequeBank}` : ""}`
+                                        : p.method.replace("_", " ")}
+                                    </p>
+                                    {isPending && (
+                                      <Badge
+                                        variant="outline"
+                                        className="border-amber-300 bg-amber-50 text-[10px] px-1.5 py-0 text-amber-700 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300"
+                                      >
+                                        Pending Verification
+                                      </Badge>
+                                    )}
+                                    {isConfirmed && (
+                                      <Badge
+                                        variant="outline"
+                                        className="border-emerald-300 bg-emerald-50 text-[10px] px-1.5 py-0 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300"
+                                      >
+                                        Confirmed
+                                      </Badge>
+                                    )}
+                                    {isCancelled && (
+                                      <Badge variant="destructive" className="text-[10px] px-1.5 py-0">
+                                        {p.status === "returned" ? "Cheque Returned" : "Cancelled"}
+                                      </Badge>
+                                    )}
+                                  </div>
+                                  <p className="text-xs text-muted-foreground">
+                                    {format(new Date(p.paymentDate), "dd MMM yyyy HH:mm")} ·{" "}
+                                    {p.recordedBy?.name ?? "—"}
+                                  </p>
+                                  {p.wallet?.name && (
+                                    <p className="text-xs text-muted-foreground">
+                                      Destination: <span className="font-medium text-foreground">{p.wallet.name}</span>
+                                    </p>
+                                  )}
+                                  {p.method === "cheque" && p.chequeDate && (
+                                    <p className="text-xs text-muted-foreground">
+                                      Cheque Date: {format(new Date(p.chequeDate), "dd MMM yyyy")}
+                                    </p>
+                                  )}
+                                  {p.reference && (
+                                    <p className="text-xs text-muted-foreground font-mono">Ref: {p.reference}</p>
+                                  )}
+                                  {p.notes && (
+                                    <p className="text-xs text-muted-foreground">Note: {p.notes}</p>
+                                  )}
+                                  {(p as any).resolutionReason && (
+                                    <p className="text-xs text-destructive">
+                                      Reason: {(p as any).resolutionReason}
+                                    </p>
+                                  )}
+                                </div>
+                                <div className="text-right">
+                                  <p
+                                    className={cn(
+                                      "text-sm font-semibold tabular-nums",
+                                      isPending && "text-amber-600 dark:text-amber-400",
+                                      isConfirmed && "text-emerald-600 dark:text-emerald-500",
+                                      isCancelled && "text-muted-foreground line-through",
+                                    )}
+                                  >
+                                    {PKR(Number(p.amount))}
+                                  </p>
+                                  {isPending && (
+                                    <p className="text-[10px] text-amber-600/90 dark:text-amber-400/90 font-medium">
+                                      Unverified
+                                    </p>
+                                  )}
+                                </div>
                               </div>
-                              <p className="text-sm font-semibold tabular-nums text-emerald-600">
-                                {PKR(Number(p.amount))}
-                              </p>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       )}
                     </div>

@@ -4,9 +4,11 @@ import {
 	Cash01Icon,
 	Delete02Icon,
 	Invoice03Icon,
+	SmartPhone01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { format } from "date-fns";
+import { CheckCircle2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -25,14 +27,21 @@ import {
 } from "@/components/ui/select";
 
 export type PaymentInput = {
-	method: "cash" | "bank_transfer" | "cheque";
+	method: "cash" | "bank_transfer" | "digital_wallet" | "cheque";
 	amount: number;
 	walletId: string;
 	reference: string;
+	senderBankName?: string;
+	senderAccountNumber?: string;
+	digitalProvider?: string;
+	senderMobileNumber?: string;
+	senderAccountTitle?: string;
 	chequeNumber: string;
 	chequeBank: string;
 	chequeDate: string;
 	paymentDate: string;
+	notes?: string;
+	instantVerify?: boolean;
 	sourceRecordId?: string;
 	status?: "pending" | "confirmed" | "returned" | "cancelled" | "reversed";
 };
@@ -51,10 +60,17 @@ export function blankPayment(
 		amount: 0,
 		walletId: "",
 		reference: "",
+		senderBankName: "",
+		senderAccountNumber: "",
+		digitalProvider: method === "digital_wallet" ? "EasyPaisa" : "",
+		senderMobileNumber: "",
+		senderAccountTitle: "",
 		chequeNumber: "",
 		chequeBank: "",
 		chequeDate: "",
 		paymentDate: format(new Date(), "yyyy-MM-dd'T'HH:mm"),
+		notes: "",
+		instantVerify: false,
 	};
 }
 
@@ -64,6 +80,10 @@ function normalizedDuplicateKey(payment: PaymentInput) {
 		Number(Number(payment.amount || 0).toFixed(2)),
 		payment.walletId.trim(),
 		payment.reference.trim().toLowerCase(),
+		(payment.senderBankName || "").trim().toLowerCase(),
+		(payment.senderAccountNumber || "").trim().toLowerCase(),
+		(payment.digitalProvider || "").trim().toLowerCase(),
+		(payment.senderMobileNumber || "").trim().toLowerCase(),
 		payment.chequeNumber.trim().toLowerCase(),
 		payment.chequeBank.trim().toLowerCase(),
 		payment.chequeDate,
@@ -95,9 +115,13 @@ export function calculatePaymentBreakdown(
 ) {
 	const invoiceTotal = Number(Math.max(0, total).toFixed(2));
 	const countsAsPaid = (payment: PaymentInput) =>
-		payment.status ? payment.status === "confirmed" : payment.method === "cash";
+		payment.status
+			? payment.status === "confirmed"
+			: payment.method === "cash" || Boolean(payment.instantVerify);
 	const countsAsPending = (payment: PaymentInput) =>
-		payment.status ? payment.status === "pending" : payment.method !== "cash";
+		payment.status
+			? payment.status === "pending"
+			: payment.method !== "cash" && !payment.instantVerify;
 	const paidAmount = Number(
 		payments
 			.filter(countsAsPaid)
@@ -129,6 +153,7 @@ export function calculatePaymentBreakdown(
 
 function paymentMethodLabel(method: PaymentInput["method"]) {
 	if (method === "bank_transfer") return "Bank Transfer";
+	if (method === "digital_wallet") return "Digital Account";
 	if (method === "cheque") return "Cheque";
 	return "Cash";
 }
@@ -150,9 +175,19 @@ export function PaymentRowsField({
 		form.setFieldValue(`payments[${index}].method`, method);
 		form.setFieldValue(`payments[${index}].walletId`, "");
 		form.setFieldValue(`payments[${index}].reference`, "");
+		form.setFieldValue(`payments[${index}].senderBankName`, "");
+		form.setFieldValue(`payments[${index}].senderAccountNumber`, "");
+		form.setFieldValue(
+			`payments[${index}].digitalProvider`,
+			method === "digital_wallet" ? "EasyPaisa" : "",
+		);
+		form.setFieldValue(`payments[${index}].senderMobileNumber`, "");
+		form.setFieldValue(`payments[${index}].senderAccountTitle`, "");
 		form.setFieldValue(`payments[${index}].chequeNumber`, "");
 		form.setFieldValue(`payments[${index}].chequeBank`, "");
 		form.setFieldValue(`payments[${index}].chequeDate`, "");
+		form.setFieldValue(`payments[${index}].notes`, "");
+		form.setFieldValue(`payments[${index}].instantVerify`, false);
 	}
 
 	return (
@@ -192,7 +227,9 @@ export function PaymentRowsField({
 														? Cash01Icon
 														: payment.method === "bank_transfer"
 															? BankIcon
-															: Invoice03Icon
+															: payment.method === "digital_wallet"
+																? SmartPhone01Icon
+																: Invoice03Icon
 												}
 												strokeWidth={2}
 											/>
@@ -262,6 +299,9 @@ export function PaymentRowsField({
 														<SelectItem value="bank_transfer">
 															Bank Transfer
 														</SelectItem>
+														<SelectItem value="digital_wallet">
+															Digital Account (EasyPaisa / JazzCash / Raast)
+														</SelectItem>
 														<SelectItem value="cheque">Cheque</SelectItem>
 													</SelectContent>
 												</Select>
@@ -318,7 +358,9 @@ export function PaymentRowsField({
 												<FieldDescription>
 													{payment.method === "cash"
 														? "Only cash accounts are shown."
-														: "Only bank accounts are shown."}
+														: payment.method === "digital_wallet"
+															? "Company bank or digital account where funds were received."
+															: "Only bank accounts are shown."}
 												</FieldDescription>
 											</Field>
 										)}
@@ -342,16 +384,220 @@ export function PaymentRowsField({
 								</div>
 
 								{payment.method === "bank_transfer" && (
+									<div className="grid gap-4 sm:grid-cols-3">
+										<form.Field name={`payments[${index}].senderBankName`}>
+											{(senderBankField: any) => (
+												<Field>
+													<FieldLabel>
+														Distributor Bank Name <span className="text-destructive">*</span>
+													</FieldLabel>
+													<Input
+														value={senderBankField.state.value || ""}
+														onChange={(event) =>
+															senderBankField.handleChange(event.target.value)
+														}
+														placeholder="e.g. Meezan Bank, HBL, MCB"
+														disabled={rowReadOnly}
+													/>
+												</Field>
+											)}
+										</form.Field>
+										<form.Field name={`payments[${index}].senderAccountNumber`}>
+											{(senderAccountField: any) => (
+												<Field>
+													<FieldLabel>
+														Distributor A/C # / IBAN <span className="text-destructive">*</span>
+													</FieldLabel>
+													<Input
+														value={senderAccountField.state.value || ""}
+														onChange={(event) =>
+															senderAccountField.handleChange(event.target.value)
+														}
+														placeholder="e.g. PK36MEZN... or Account #"
+														disabled={rowReadOnly}
+													/>
+												</Field>
+											)}
+										</form.Field>
+										<form.Field name={`payments[${index}].reference`}>
+											{(referenceField: any) => (
+												<Field>
+													<FieldLabel>
+														Transaction Reference / ID <span className="text-destructive">*</span>
+													</FieldLabel>
+													<Input
+														value={referenceField.state.value || ""}
+														onChange={(event) =>
+															referenceField.handleChange(event.target.value)
+														}
+														placeholder="Bank transaction ID"
+														disabled={rowReadOnly}
+													/>
+												</Field>
+											)}
+										</form.Field>
+									</div>
+								)}
+
+								{payment.method === "digital_wallet" && (
+									<div className="grid gap-4 sm:grid-cols-3">
+										<form.Field name={`payments[${index}].digitalProvider`}>
+											{(providerField: any) => (
+												<Field>
+													<FieldLabel>
+														Platform / Provider <span className="text-destructive">*</span>
+													</FieldLabel>
+													<Select
+														value={providerField.state.value || "EasyPaisa"}
+														onValueChange={providerField.handleChange}
+														disabled={rowReadOnly}
+													>
+														<SelectTrigger>
+															<SelectValue placeholder="Select platform" />
+														</SelectTrigger>
+														<SelectContent>
+															<SelectItem value="EasyPaisa">EasyPaisa</SelectItem>
+															<SelectItem value="JazzCash">JazzCash</SelectItem>
+															<SelectItem value="Raast">Raast (Instant)</SelectItem>
+															<SelectItem value="SadaPay">SadaPay</SelectItem>
+															<SelectItem value="NayaPay">NayaPay</SelectItem>
+															<SelectItem value="Other">Other Digital</SelectItem>
+														</SelectContent>
+													</Select>
+												</Field>
+											)}
+										</form.Field>
+										<form.Field name={`payments[${index}].senderMobileNumber`}>
+											{(mobileField: any) => (
+												<Field>
+													<FieldLabel>
+														Sender Mobile / A/C # <span className="text-destructive">*</span>
+													</FieldLabel>
+													<Input
+														value={mobileField.state.value || ""}
+														onChange={(event) =>
+															mobileField.handleChange(event.target.value)
+														}
+														placeholder="e.g. 0300-1234567"
+														disabled={rowReadOnly}
+													/>
+												</Field>
+											)}
+										</form.Field>
+										<form.Field name={`payments[${index}].reference`}>
+											{(referenceField: any) => (
+												<Field>
+													<FieldLabel>
+														Transaction ID (TID) <span className="text-destructive">*</span>
+													</FieldLabel>
+													<Input
+														value={referenceField.state.value || ""}
+														onChange={(event) =>
+															referenceField.handleChange(event.target.value)
+														}
+														placeholder="e.g. 2948291823"
+														disabled={rowReadOnly}
+													/>
+												</Field>
+											)}
+										</form.Field>
+									</div>
+								)}
+
+								{payment.method === "cheque" && (
+									<div className="space-y-3">
+										<div className="grid gap-4 sm:grid-cols-3">
+											<form.Field name={`payments[${index}].chequeBank`}>
+												{(chequeBankField: any) => (
+													<Field>
+														<FieldLabel>
+															Cheque Bank <span className="text-destructive">*</span>
+														</FieldLabel>
+														<Input
+															value={chequeBankField.state.value || ""}
+															onChange={(event) =>
+																chequeBankField.handleChange(event.target.value)
+															}
+															placeholder="e.g. HBL, Meezan Bank"
+															disabled={rowReadOnly}
+														/>
+													</Field>
+												)}
+											</form.Field>
+											<form.Field name={`payments[${index}].chequeNumber`}>
+												{(chequeNumberField: any) => (
+													<Field>
+														<FieldLabel>
+															Cheque Number <span className="text-destructive">*</span>
+														</FieldLabel>
+														<Input
+															value={chequeNumberField.state.value || ""}
+															onChange={(event) =>
+																chequeNumberField.handleChange(event.target.value)
+															}
+															placeholder="e.g. 10293847"
+															disabled={rowReadOnly}
+														/>
+													</Field>
+												)}
+											</form.Field>
+											<form.Field name={`payments[${index}].chequeDate`}>
+												{(chequeDateField: any) => (
+													<Field>
+														<FieldLabel>
+															Cheque Date <span className="text-destructive">*</span>
+														</FieldLabel>
+														<Input
+															type="date"
+															value={chequeDateField.state.value || ""}
+															onChange={(event) =>
+																chequeDateField.handleChange(event.target.value)
+															}
+															disabled={rowReadOnly}
+														/>
+													</Field>
+												)}
+											</form.Field>
+										</div>
+										<form.Field name={`payments[${index}].reference`}>
+											{(referenceField: any) => (
+												<Field>
+													<FieldLabel>
+														Deposit Slip / Memo Ref{" "}
+														<span className="text-muted-foreground font-normal">
+															(optional)
+														</span>
+													</FieldLabel>
+													<Input
+														value={referenceField.state.value || ""}
+														onChange={(event) =>
+															referenceField.handleChange(event.target.value)
+														}
+														placeholder="Deposit slip number or tracking memo"
+														disabled={rowReadOnly}
+													/>
+												</Field>
+											)}
+										</form.Field>
+									</div>
+								)}
+
+								{payment.method === "cash" && (
 									<form.Field name={`payments[${index}].reference`}>
 										{(referenceField: any) => (
 											<Field>
-												<FieldLabel>Transaction Reference</FieldLabel>
+												<FieldLabel>
+													Receipt / Memo Reference{" "}
+													<span className="text-muted-foreground font-normal">
+														(optional)
+													</span>
+												</FieldLabel>
 												<Input
-													value={referenceField.state.value}
+													value={referenceField.state.value || ""}
 													onChange={(event) =>
 														referenceField.handleChange(event.target.value)
 													}
-													placeholder="Bank transaction ID"
+													placeholder="Cash receipt number or memo"
 													disabled={rowReadOnly}
 												/>
 											</Field>
@@ -359,51 +605,32 @@ export function PaymentRowsField({
 									</form.Field>
 								)}
 
-								{payment.method === "cheque" && (
-									<div className="grid gap-4 sm:grid-cols-3">
-										<form.Field name={`payments[${index}].chequeBank`}>
-											{(chequeBankField: any) => (
-												<Field>
-													<FieldLabel>Cheque Bank</FieldLabel>
-													<Input
-														value={chequeBankField.state.value}
-														onChange={(event) =>
-															chequeBankField.handleChange(event.target.value)
-														}
-														disabled={rowReadOnly}
-													/>
-												</Field>
-											)}
-										</form.Field>
-										<form.Field name={`payments[${index}].chequeNumber`}>
-											{(chequeNumberField: any) => (
-												<Field>
-													<FieldLabel>Cheque Number</FieldLabel>
-													<Input
-														value={chequeNumberField.state.value}
-														onChange={(event) =>
-															chequeNumberField.handleChange(event.target.value)
-														}
-														disabled={rowReadOnly}
-													/>
-												</Field>
-											)}
-										</form.Field>
-										<form.Field name={`payments[${index}].chequeDate`}>
-											{(chequeDateField: any) => (
-												<Field>
-													<FieldLabel>Cheque Date</FieldLabel>
-													<Input
-														type="date"
-														value={chequeDateField.state.value}
-														onChange={(event) =>
-															chequeDateField.handleChange(event.target.value)
-														}
-														disabled={rowReadOnly}
-													/>
-												</Field>
-											)}
-										</form.Field>
+								{payment.method !== "cash" && !rowReadOnly && (
+									<div className="flex items-start gap-2.5 rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3 dark:border-emerald-500/30 dark:bg-emerald-950/10">
+										<input
+											type="checkbox"
+											id={`instant-verify-${index}`}
+											checked={Boolean(payment.instantVerify)}
+											onChange={(e) =>
+												form.setFieldValue(
+													`payments[${index}].instantVerify`,
+													e.target.checked,
+												)
+											}
+											className="mt-0.5 size-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+										/>
+										<label
+											htmlFor={`instant-verify-${index}`}
+											className="flex flex-col cursor-pointer text-xs"
+										>
+											<span className="font-semibold text-emerald-900 dark:text-emerald-300 flex items-center gap-1.5">
+												<CheckCircle2 className="size-3.5 text-emerald-600" />
+												Instant Verification (Confirmed in Bank / Account)
+											</span>
+											<span className="text-muted-foreground mt-0.5">
+												Funds already verified received in company account. Skips the finance verification queue and settles the invoice immediately.
+											</span>
+										</label>
 									</div>
 								)}
 							</div>

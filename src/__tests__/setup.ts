@@ -1,5 +1,8 @@
 import { vi } from "vitest";
 
+process.env.DATABASE_URL ||=
+  "postgresql://postgres:postgres@localhost:5433/titan_test";
+
 Object.defineProperty(window, "matchMedia", {
   writable: true,
   value: vi.fn().mockImplementation((query: string) => ({

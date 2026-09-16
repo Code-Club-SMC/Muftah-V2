@@ -16,8 +16,14 @@ const EDIT_FORM_SOURCE = readFileSync(
 );
 
 describe("Salesman tab in attendance table", () => {
-  it("filters standardData to exclude both order bookers and salesmen", () => {
-    expect(TABLE_SOURCE).toContain("!e.isOrderBooker && !e.isSalesman");
+  it("filters standardData to exclude order bookers, salesmen, and drivers", () => {
+    expect(TABLE_SOURCE).toContain("!e.isOrderBooker && !e.isSalesman && !e.isDriver");
+  });
+
+  it("filters driverData for isDriver and renders Drivers tab", () => {
+    expect(TABLE_SOURCE).toContain("const driverData = data.filter((e) => e.isDriver)");
+    expect(TABLE_SOURCE).toContain('value="drivers"');
+    expect(TABLE_SOURCE).toContain("Drivers");
   });
 
   it("filters salesmanData for isSalesman", () => {

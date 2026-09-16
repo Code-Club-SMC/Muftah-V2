@@ -11,7 +11,7 @@ import {
   hrPayrollSettings,
   HR_PAYROLL_SETTINGS_SINGLETON_ID,
 } from "@/db/schemas/hr-schema";
-import { orderBookerTrips, commissionRecords, orderBookers } from "@/db/schemas/sales-erp-schema";
+import { orderBookerTrips, commissionRecords, orderBookers, drivers, driverTrips } from "@/db/schemas/sales-erp-schema";
 import { eq, and, inArray, gte, lt, desc, sql, isNull } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
 import {
@@ -69,9 +69,9 @@ function resolveBasicSalaryDeductionPolicy(
 }
 
 function shouldBlockMissingAttendance(
-  _employee: Pick<typeof employees.$inferSelect, "isSalesman" | "isOrderBooker">,
+  _employee: Pick<typeof employees.$inferSelect, "isSalesman" | "isOrderBooker" | "isDriver">,
 ): boolean {
-  // All employees (including Order Bookers and Salesmen) require all working days
+  // All employees (including Order Bookers, Salesmen, and Drivers) require all working days
   // to be resolved (present, rest day, holiday, leave, or marked absent) before payroll finalizes.
   return true;
 }
@@ -538,13 +538,35 @@ export async function generateEmployeePayslipCore(
     }));
   }
 
+  // -- 5.6 Driver TA from driver trips ---------------------------------------
+  let driverTA = 0;
+  const linkedDriver = await db.query.drivers.findFirst({
+    where: eq(drivers.employeeId, employeeId),
+  });
+
+  if (linkedDriver) {
+    const payrollStartTs = parseISO(payrollPeriod.startDate);
+    const payrollEndExclusiveTs = addDays(parseISO(payrollPeriod.endDate), 1);
+
+    const trips = await db.query.driverTrips.findMany({
+      where: and(
+        eq(driverTrips.driverId, linkedDriver.id),
+        gte(driverTrips.tripDate, payrollStartTs),
+        lt(driverTrips.tripDate, payrollEndExclusiveTs),
+      ),
+    });
+    driverTA = trips.reduce((sum, trip) => {
+      return sum + parseFloat(trip.tadaAmount || "0");
+    }, 0);
+  }
+
   // -- 6. Calculate payslip --------------------------------------------------
   const mergedAdditional = {
     ...additionalAmounts,
     advanceDeduction,
     nightShiftAllowance: nightShiftAllowance ?? additionalAmounts.nightShiftAllowance,
     incentiveAmount:
-      (additionalAmounts.incentiveAmount || 0) + tadaAmount + dynamicTA,
+      (additionalAmounts.incentiveAmount || 0) + tadaAmount + dynamicTA + driverTA,
     commissionAmount: orderBookerCommission,
   };
 
@@ -1034,13 +1056,35 @@ export async function simulateEmployeePayslipCore(
     }));
   }
 
+  // -- 5.6 Driver TA from driver trips ---------------------------------------
+  let driverTA = 0;
+  const linkedDriver = await db.query.drivers.findFirst({
+    where: eq(drivers.employeeId, employeeId),
+  });
+
+  if (linkedDriver) {
+    const payrollStartTs = parseISO(payrollPeriod.startDate);
+    const payrollEndExclusiveTs = addDays(parseISO(payrollPeriod.endDate), 1);
+
+    const trips = await db.query.driverTrips.findMany({
+      where: and(
+        eq(driverTrips.driverId, linkedDriver.id),
+        gte(driverTrips.tripDate, payrollStartTs),
+        lt(driverTrips.tripDate, payrollEndExclusiveTs),
+      ),
+    });
+    driverTA = trips.reduce((sum, trip) => {
+      return sum + parseFloat(trip.tadaAmount || "0");
+    }, 0);
+  }
+
   // -- 6. Calculate payslip --------------------------------------------------
   const mergedAdditional = {
     ...additionalAmounts,
     advanceDeduction,
     nightShiftAllowance: nightShiftAllowance ?? additionalAmounts.nightShiftAllowance,
     incentiveAmount:
-      (additionalAmounts.incentiveAmount || 0) + tadaAmount + dynamicTA,
+      (additionalAmounts.incentiveAmount || 0) + tadaAmount + dynamicTA + driverTA,
     commissionAmount: orderBookerCommission,
   };
 

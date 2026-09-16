@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { db } from "@/db";
 import { employees, salaryRevisions } from "@/db/schemas/hr-schema";
-import { salesmen, orderBookers } from "@/db/schemas/sales-erp-schema";
+import { salesmen, orderBookers, drivers } from "@/db/schemas/sales-erp-schema";
 import { and, eq, ne } from "drizzle-orm";
 import { updateEmployeeSchema } from "@/lib/validators/hr-validators";
 import { requireHrManageMiddleware } from "@/lib/middlewares";
@@ -79,6 +79,7 @@ export const updateEmployeeFn = createServerFn()
             basicSalary: updateData.basicSalary || "0",
             isOrderBooker: updateData.isOrderBooker ?? false,
             isSalesman: updateData.isSalesman ?? false,
+            isDriver: updateData.isDriver ?? false,
             allowanceConfig: updateData.allowanceConfig,
             annualLeaveAllowance: updateData.annualLeaveAllowance ?? 14,
             compensatoryHoursBalance: updateData.compensatoryHoursBalance !== undefined ? updateData.compensatoryHoursBalance.toString() : "0",
@@ -177,6 +178,40 @@ export const updateEmployeeFn = createServerFn()
               .update(orderBookers)
               .set({ status: "inactive" })
               .where(eq(orderBookers.id, existingOB.id));
+          }
+        }
+
+        // Sync driver record
+        if (updateData.isDriver) {
+          const existingDriver = await tx.query.drivers.findFirst({
+            where: eq(drivers.employeeId, id),
+          });
+          if (existingDriver) {
+            await tx
+              .update(drivers)
+              .set({
+                name: fullName,
+                phone: updateData.phone || existingDriver.phone,
+                status: "active",
+              })
+              .where(eq(drivers.id, existingDriver.id));
+          } else {
+            await tx.insert(drivers).values({
+              name: fullName,
+              phone: updateData.phone || undefined,
+              employeeId: id,
+            });
+          }
+        } else if (existing.isDriver && !updateData.isDriver) {
+          // Flag turned off — deactivate linked driver
+          const existingDriver = await tx.query.drivers.findFirst({
+            where: eq(drivers.employeeId, id),
+          });
+          if (existingDriver) {
+            await tx
+              .update(drivers)
+              .set({ status: "inactive" })
+              .where(eq(drivers.id, existingDriver.id));
           }
         }
 

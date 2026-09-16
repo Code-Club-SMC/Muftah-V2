@@ -77,7 +77,26 @@ export const lookupSlipFn = createServerFn()
 
     if (!slip) throw new Error(`Slip "${data.slipNumber}" not found`);
 
-    return slip;
+    const slipPayments = await db.query.payments.findMany({
+      where: eq(payments.invoiceId, slip.invoiceId),
+      columns: { amount: true, status: true },
+    });
+
+    const pendingAmount = slipPayments
+      .filter((p) => p.status === "pending")
+      .reduce((sum, p) => sum + Number(p.amount), 0);
+
+    const invoiceTotal = Number(slip.invoice?.totalPrice ?? 0);
+    const paidAmount = Number(slip.paidAmount ?? 0);
+    const returnedAmount = Number(slip.returnedAmount ?? 0);
+    const netReceivable = Math.max(0, invoiceTotal - returnedAmount);
+    const unallocatedAmount = Math.max(0, netReceivable - paidAmount - pendingAmount);
+
+    return {
+      ...slip,
+      pendingAmount,
+      unallocatedAmount,
+    };
   });
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -149,6 +168,7 @@ export const reconcileSlipFn = createServerFn()
         paymentDate: z.coerce.date().default(() => new Date()),
         sourceRecordId: z.string().trim().min(1).optional(),
         notes: z.string().optional(),
+        instantVerify: z.boolean().optional(),
       })
       .superRefine((row, ctx) => {
         if (row.method === "bank_transfer" && !row.reference) {
@@ -208,6 +228,7 @@ export const reconcileSlipFn = createServerFn()
           paymentDate: data.paymentDate,
           sourceRecordId: data.sourceRecordId ?? `recovery-${createId()}`,
           notes: data.notes,
+          instantVerify: data.instantVerify,
         },
       });
 
@@ -462,6 +483,7 @@ export const batchReconcileSlipsFn = createServerFn()
         paymentDate: z.coerce.date().default(() => new Date()),
         sourceRecordId: z.string().trim().min(1).optional(),
         notes: z.string().optional(),
+        instantVerify: z.boolean().optional(),
       })
       .superRefine((row, ctx) => {
         if (row.method === "bank_transfer" && !row.reference) {
@@ -534,6 +556,7 @@ export const batchReconcileSlipsFn = createServerFn()
                 : `${allocationGroupId}:${slip.invoiceId}`,
             allocationGroupId,
             notes: data.notes,
+            instantVerify: data.instantVerify,
           },
         });
 

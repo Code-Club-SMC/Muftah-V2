@@ -57,6 +57,11 @@ export interface LedgerPaymentEntry {
   invoiceId: string;
   invoiceNumber: string;
   customerName?: string | null;
+  walletName?: string | null;
+  walletType?: string | null;
+  chequeNumber?: string | null;
+  chequeBank?: string | null;
+  chequeDate?: Date | null;
 }
 
 export interface LedgerReturnEntry {

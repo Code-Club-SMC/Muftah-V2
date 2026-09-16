@@ -153,9 +153,10 @@ export const employees = pgTable("employees", {
   sickLeaveBalance: integer("sick_leave_balance").default(10),
   compensatoryHoursBalance: decimal("compensatory_hours_balance", { precision: 6, scale: 2 }).default("0"),
 
-  // Sales roles
+  // Sales & logistics roles
   isOrderBooker: boolean("is_order_booker").default(false).notNull(),
   isSalesman: boolean("is_salesman").default(false).notNull(),
+  isDriver: boolean("is_driver").default(false).notNull(),
 
   ...timestamps,
 });

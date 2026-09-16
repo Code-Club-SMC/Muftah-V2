@@ -67,11 +67,60 @@ describe("invoice payment rows", () => {
 
 	it("finds duplicate instrument rows after normalizing text", () => {
 		const rows = [
-			payment("bank_transfer", 100, { reference: " TRX-9 " }),
-			payment("bank_transfer", 100, { reference: "trx-9" }),
+			payment("bank_transfer", 100, {
+				reference: " TRX-9 ",
+				senderBankName: " Meezan ",
+				senderAccountNumber: " 010203 ",
+			}),
+			payment("bank_transfer", 100, {
+				reference: "trx-9",
+				senderBankName: "meezan",
+				senderAccountNumber: "010203",
+			}),
 		];
 
 		expect([...findDuplicatePaymentRows(rows)]).toEqual([0, 1]);
+	});
+
+	it("calculates breakdown with digital wallet treated as pending", () => {
+		const result = calculatePaymentBreakdown(1_000, [
+			payment("cash", 300),
+			payment("digital_wallet", 400, {
+				reference: "TID-9876",
+				digitalProvider: "EasyPaisa",
+				senderMobileNumber: "03001234567",
+			}),
+		]);
+
+		expect(result).toEqual({
+			invoiceTotal: 1_000,
+			paidAmount: 300,
+			pendingAmount: 400,
+			outstandingAmount: 700,
+			payLaterAmount: 300,
+			overAllocatedAmount: 0,
+		});
+	});
+
+	it("calculates breakdown with digital wallet treated as paid when instantVerify is true", () => {
+		const result = calculatePaymentBreakdown(1_000, [
+			payment("cash", 300),
+			payment("digital_wallet", 400, {
+				reference: "TID-9876",
+				digitalProvider: "EasyPaisa",
+				senderMobileNumber: "03001234567",
+				instantVerify: true,
+			}),
+		]);
+
+		expect(result).toEqual({
+			invoiceTotal: 1_000,
+			paidAmount: 700,
+			pendingAmount: 0,
+			outstandingAmount: 300,
+			payLaterAmount: 300,
+			overAllocatedAmount: 0,
+		});
 	});
 
 	it("keeps method fields, wallet filtering, array controls, and read-only edit mode", () => {
@@ -80,7 +129,13 @@ describe("invoice payment rows", () => {
 
 		expect(source).toContain('<SelectItem value="cash">Cash</SelectItem>');
 		expect(source).toContain('value="bank_transfer"');
+		expect(source).toContain('value="digital_wallet"');
 		expect(source).toContain('<SelectItem value="cheque">Cheque</SelectItem>');
+		expect(source).toContain("senderBankName");
+		expect(source).toContain("senderAccountNumber");
+		expect(source).toContain("digitalProvider");
+		expect(source).toContain("senderMobileNumber");
+		expect(source).toContain("instantVerify");
 		expect(source).toContain('payment.method === "cash" ? "cash" : "bank"');
 		expect(source).toContain("field.pushValue(blankPayment())");
 		expect(source).toContain("field.removeValue(index)");

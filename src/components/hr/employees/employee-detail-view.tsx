@@ -40,6 +40,9 @@ import { EditEmployeeDialog } from "./edit-employee-dialog";
 import { EmployeeIDCard } from "./employee-id-card";
 import { useDeleteEmployee } from "@/hooks/hr/use-delete-employee";
 import { EmployeeAttendanceLog } from "@/components/hr/attendance/employee-attendance-log";
+import { OrderBookerAttendanceLog } from "@/components/hr/attendance/order-booker-attendance-log";
+import { SalesmanAttendanceLog } from "@/components/hr/attendance/salesman-attendance-log";
+import { DriverAttendanceLog } from "@/components/hr/attendance/driver-attendance-log";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   AlertDialog,
@@ -730,7 +733,15 @@ export const EmployeeDetailView = () => {
 
         {/* ═══════════════════ ATTENDANCE TAB ═══════════════════════════════ */}
         <TabsContent value="attendance" className="mt-6">
-          <EmployeeAttendanceLog employeeId={employee.id} showHeader={false} />
+          {employee.isOrderBooker ? (
+            <OrderBookerAttendanceLog employeeId={employee.id} showHeader={false} />
+          ) : employee.isSalesman ? (
+            <SalesmanAttendanceLog employeeId={employee.id} showHeader={false} />
+          ) : employee.isDriver ? (
+            <DriverAttendanceLog employeeId={employee.id} showHeader={false} />
+          ) : (
+            <EmployeeAttendanceLog employeeId={employee.id} showHeader={false} />
+          )}
         </TabsContent>
       </Tabs>
 

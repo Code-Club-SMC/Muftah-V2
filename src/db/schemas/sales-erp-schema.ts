@@ -41,6 +41,19 @@ export const salesmen = pgTable("salesmen", {
   ...timestamps,
 });
 
+// --- DRIVERS ---
+export const drivers = pgTable("drivers", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => createId()),
+  name: text("name").notNull(),
+  phone: text("phone"),
+  licenseNumber: text("license_number"),
+  status: text("status").notNull().default("active"), // "active" | "inactive"
+  employeeId: text("employee_id").references(() => employees.id, { onDelete: "cascade" }),
+  ...timestamps,
+});
+
 // --- RECIPE PRICES (per-pack baseline pricing for invoices) ---
 export const recipePrices = pgTable("recipe_prices", {
   id: text("id")
@@ -407,6 +420,26 @@ export const orderBookerTrips = pgTable("order_booker_trips", {
   ...timestamps,
 });
 
+// --- DRIVER TRIPS ---
+export const driverTrips = pgTable("driver_trips", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => createId()),
+  driverId: text("driver_id")
+    .notNull()
+    .references(() => drivers.id, { onDelete: "cascade" }),
+  tripDate: timestamp("trip_date").notNull(),
+  destination: text("destination").notNull(),
+  vehicleNumber: text("vehicle_number"),
+  distanceKm: decimal("distance_km", { precision: 8, scale: 2 }).notNull().default("0"),
+  ratePerKm: decimal("rate_per_km", { precision: 8, scale: 2 }).notNull(),
+  tadaAmount: decimal("tada_amount", { precision: 12, scale: 2 }).notNull().default("0"),
+  notes: text("notes"),
+  recordedById: text("recorded_by_id")
+    .references(() => user.id),
+  ...timestamps,
+});
+
 // --- COMMISSION TIERS ---
 export const commissionTiers = pgTable("commission_tiers", {
   id: text("id")
@@ -638,6 +671,25 @@ export const orderBookerTripsRelations = relations(orderBookerTrips, ({ one, man
     references: [user.id],
   }),
   orders: many(orders),
+}));
+
+export const driversRelations = relations(drivers, ({ one, many }) => ({
+  employee: one(employees, {
+    fields: [drivers.employeeId],
+    references: [employees.id],
+  }),
+  trips: many(driverTrips),
+}));
+
+export const driverTripsRelations = relations(driverTrips, ({ one }) => ({
+  driver: one(drivers, {
+    fields: [driverTrips.driverId],
+    references: [drivers.id],
+  }),
+  recordedBy: one(user, {
+    fields: [driverTrips.recordedById],
+    references: [user.id],
+  }),
 }));
 
 export const commissionRecordsRelations = relations(commissionRecords, ({ one }) => ({

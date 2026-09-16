@@ -96,6 +96,7 @@ export const createEmployeeSchema = z.object({
 
   isOrderBooker: z.boolean(),
   isSalesman: z.boolean(),
+  isDriver: z.boolean(),
 
   /**
    * Days of week this employee does NOT work.

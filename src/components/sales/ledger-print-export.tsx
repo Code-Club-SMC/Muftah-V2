@@ -127,17 +127,31 @@ export function LedgerPrintExport({
           totalDebit += debitAmount;
           totalCredit += creditAmount;
 
+          const digitalMatch = pay?.notes?.match(/^\[(.*?)\]/);
+          const provider = digitalMatch ? digitalMatch[1] : null;
+          const displayNotes = (digitalMatch && pay?.notes)
+            ? pay.notes.slice(digitalMatch[0].length).trim().replace(/^[·•-]\s*/, "")
+            : pay?.notes;
+
+          const methodLabel = provider
+            ? provider
+            : pay
+              ? pay.method.replaceAll("_", " ")
+              : "";
+
           const titleDesc = isInvoice
             ? `Sales Invoice #${entry.invoiceNumber}`
             : isReturn
               ? `Sales Return #${entry.returnNumber}`
-              : `Payment (${entry.method.replaceAll("_", " ")})`;
+              : pay?.method === "cheque"
+                ? `Payment (Cheque #${pay.chequeNumber || "—"}${pay.chequeBank ? ` · ${pay.chequeBank}` : ""})`
+                : `Payment (${methodLabel}${pay?.walletName ? ` · ${pay.walletName}` : ""})`;
 
           const subDesc = isInvoice
             ? `${entry.warehouseName ? `${entry.warehouseName} · ` : ""}Paid Amount: ${fmtPKR(entry.paidAmount)} · Returned Amount: ${fmtPKR(entry.returnedAmount)} · Outstanding Amount: ${fmtPKR(entry.outstandingAmount)}`
             : isReturn
               ? `Invoice #${entry.invoiceNumber} · Reason: ${entry.reason}${entry.condition ? ` · Condition: ${entry.condition}` : ""}`
-              : `Invoice #${entry.invoiceNumber}${entry.reference ? ` · Ref: ${entry.reference}` : ""}`;
+              : `Invoice #${entry.invoiceNumber}${entry.reference ? ` · Ref: ${entry.reference}` : ""}${displayNotes ? ` · ${displayNotes}` : ""}`;
 
           const desc = `<div style="font-weight:600;color:#1e293b;">${titleDesc}</div><div style="font-size:10px;color:#64748b;margin-top:1px;">${subDesc}</div>`;
 
@@ -145,7 +159,7 @@ export function LedgerPrintExport({
             ? entry.invoiceNumber
             : isReturn
               ? `RET-${entry.returnNumber ?? "—"}`
-              : (pay?.reference || "—");
+              : (pay?.reference || pay?.chequeNumber || (pay ? `REC-${pay.id.slice(-6).toUpperCase()}` : "—"));
 
           const creditStyle = isReturn
             ? "color:#b45309;font-weight:600;"
@@ -356,17 +370,31 @@ export function LedgerPrintExport({
       const rows = exportEntries.map((entry) => {
         const isInvoice = entry.type === "invoice";
         const isReturn = entry.type === "return";
+        const pay = entry.type === "payment" ? entry : null;
         const date = format(new Date(entry.date), "dd-MMM-yyyy");
         const vrNo = isInvoice
           ? entry.invoiceNumber
           : isReturn
             ? `RET-${entry.returnNumber ?? ""}`
-            : (entry.reference || "—");
+            : (pay?.reference || pay?.chequeNumber || (pay ? `REC-${pay.id.slice(-6).toUpperCase()}` : "—"));
+        const digitalMatch = pay?.notes?.match(/^\[(.*?)\]/);
+        const provider = digitalMatch ? digitalMatch[1] : null;
+        const displayNotes = (digitalMatch && pay?.notes)
+          ? pay.notes.slice(digitalMatch[0].length).trim().replace(/^[·•-]\s*/, "")
+          : pay?.notes;
+        const methodLabel = provider
+          ? provider
+          : pay
+            ? pay.method.replaceAll("_", " ")
+            : "";
+
         const desc = isInvoice
           ? `Sales Invoice #${entry.invoiceNumber} (Paid Amount: ${fmtPKR(entry.paidAmount)}, Returned Amount: ${fmtPKR(entry.returnedAmount)}, Outstanding Amount: ${fmtPKR(entry.outstandingAmount)})`
           : isReturn
             ? `Sales Return #${entry.returnNumber} (Invoice ${entry.invoiceNumber}) - ${entry.reason}`
-            : `Payment (${entry.method.replaceAll("_", " ")}) for Invoice ${entry.invoiceNumber}${entry.reference ? ` Ref: ${entry.reference}` : ""}`;
+            : pay?.method === "cheque"
+              ? `Payment (Cheque #${pay.chequeNumber || "—"} · ${pay.chequeBank || "—"}) for Invoice ${entry.invoiceNumber}${pay.reference ? ` Ref: ${pay.reference}` : ""}${displayNotes ? ` · ${displayNotes}` : ""}`
+              : `Payment (${methodLabel}${pay?.walletName ? ` · ${pay.walletName}` : ""}) for Invoice ${entry.invoiceNumber}${entry.reference ? ` Ref: ${entry.reference}` : ""}${displayNotes ? ` · ${displayNotes}` : ""}`;
         const debit = getDebitAmount(entry) > 0 ? String(getDebitAmount(entry)) : "";
         const credit = getCreditAmount(entry) > 0 ? String(getCreditAmount(entry)) : "";
         const balance = formatBalance(entry.runningBalance);

@@ -949,6 +949,8 @@ interface Props {
     lastName: string;
     standardDutyHours?: number | null;
     isOrderBooker?: boolean | null;
+    isSalesman?: boolean | null;
+    isDriver?: boolean | null;
     shiftStartTime?: string | null;
     shiftEndTime?: string | null;
     shifts?: { start: string; end: string }[] | null;
@@ -1303,6 +1305,14 @@ export const EditAttendanceForm = ({
   const baseStd = shiftHours > 0 ? shiftHours : (employee.standardDutyHours || 8);
   const std = isRest ? 0 : baseStd;
   const isOrderBooker = Boolean(employee.isOrderBooker);
+  const isSalesman = Boolean(employee.isSalesman);
+  const isDriver = Boolean(employee.isDriver);
+  const isFieldWorker = isOrderBooker || isSalesman || isDriver;
+
+  const isTripDrivenDay =
+    (isOrderBooker && attendance?.entrySource === "order_booker_trip") ||
+    (isSalesman && attendance?.entrySource === "salesman_activity") ||
+    (isDriver && attendance?.entrySource === "driver_trip");
   const isTripDrivenOrderBookerDay =
     isOrderBooker && attendance?.entrySource === "order_booker_trip";
   const isManualOrderBookerDay =
@@ -1314,7 +1324,7 @@ export const EditAttendanceForm = ({
     null,
   );
   const [presentPunchesLoaded, setPresentPunchesLoaded] = useState(
-    employee.isOrderBooker ? true : false,
+    isFieldWorker ? true : false,
   );
   const [punchSummary, setPunchSummary] = useState<RecomputeResult | null>(null);
   // Surfaces validation/mutation failures to the user instead of failing
@@ -1367,7 +1377,7 @@ export const EditAttendanceForm = ({
         );
         const trimmedOvertimeRemarks = value.overtimeRemarks?.trim() || null;
         const isPunchDrivenPresentStaff =
-          value.status === "present" && !employee.isOrderBooker;
+          value.status === "present" && !isFieldWorker;
         const overtimeUiState = buildPunchDrivenOvertimeUiState({
           dutyHours: punchSummary?.dutyHours ?? value.dutyHours,
           standardDutyHours: std,
@@ -1388,12 +1398,14 @@ export const EditAttendanceForm = ({
         }
 
         if (
-          isOrderBooker &&
-          !isTripDrivenOrderBookerDay &&
+          isFieldWorker &&
+          !isTripDrivenDay &&
           !value.notes?.trim()
         ) {
           setSubmitError(
-            "A remark is required when manually resolving an order-booker day.",
+            isOrderBooker
+              ? "A remark is required when manually resolving an order-booker day."
+              : "A remark is required when manually resolving a field worker (salesman or driver) day.",
           );
           return;
         }
@@ -1473,7 +1485,7 @@ export const EditAttendanceForm = ({
       <AutoPopulate form={form} />
       <PunchDrivenOvertimeSync
         form={form}
-        enabled={!isOrderBooker}
+        enabled={!isFieldWorker}
         presentPunchesLoaded={presentPunchesLoaded}
         standardDutyHours={std}
         workedDutyHours={punchSummary?.dutyHours ?? attendance?.dutyHours}
@@ -1698,7 +1710,7 @@ export const EditAttendanceForm = ({
         </SectionBlock>
 
         {/* ── Section: Time Tracking ──────────────────────────────────── */}
-        {!employee.isOrderBooker && (
+        {!isFieldWorker && (
           <form.Subscribe selector={(s: any) => s.values.status}>
             {(status: string) => {
               const blocked = ["absent", "holiday", "leave"].includes(status);
@@ -2060,23 +2072,23 @@ export const EditAttendanceForm = ({
             {(field) => (
               <Field>
                 <FieldLabel className="sr-only">
-                  {isOrderBooker && !isTripDrivenOrderBookerDay
-                    ? "Required order-booker remark"
+                  {isFieldWorker && !isTripDrivenDay
+                    ? "Required field worker remark"
                     : "Notes"}
                 </FieldLabel>
                 <Textarea
                   placeholder={
-                    isOrderBooker && !isTripDrivenOrderBookerDay
-                      ? "Required: explain why HR is manually resolving this order-booker day."
+                    isFieldWorker && !isTripDrivenDay
+                      ? "Required: explain why HR is manually resolving this field worker day."
                       : "Add any specific observations, corrections, or context..."
                   }
                   className="min-h-[100px] text-[13.5px] resize-none bg-background border-border/60 focus-visible:ring-2 focus-visible:ring-primary/20 transition-colors rounded-xl shadow-sm"
                   value={field.state.value || ""}
                   onChange={(e) => field.handleChange(e.target.value || null)}
                 />
-                {isOrderBooker && !isTripDrivenOrderBookerDay && (
+                {isFieldWorker && !isTripDrivenDay && (
                   <p className="text-[11.5px] font-medium text-muted-foreground">
-                    Required for manual order-booker overrides.
+                    Required for manual field worker overrides.
                   </p>
                 )}
               </Field>
@@ -2109,7 +2121,7 @@ export const EditAttendanceForm = ({
             overtimeUi: PunchDrivenOvertimeUiState;
           }) => {
             const requiresPunches =
-              status === "present" && !employee.isOrderBooker;
+              status === "present" && !isFieldWorker;
             const presentWithoutPunches =
               requiresPunches &&
               presentPunchesLoaded &&
@@ -2218,16 +2230,17 @@ export const EditAttendanceForm = ({
                       Requested OT is higher than the latest suggested OT. Lower it before saving.
                     </p>
                   )}
-                  {status === "present" && !isOrderBooker && (
+                  {status === "present" && !isFieldWorker && (
                     <p className="text-center text-[11.5px] font-medium text-muted-foreground/80">
                       Punch changes save immediately. Use this button only for
                       notes, overtime, or early-leave review.
                     </p>
                   )}
-                  {isOrderBooker && !isTripDrivenOrderBookerDay && (
+                  {isFieldWorker && !isTripDrivenDay && (
                     <p className="text-center text-[11.5px] font-medium text-muted-foreground/80">
-                      Manual order-booker decisions need a remark and will be
-                      used by payroll until returned to trip-driven status.
+                      {isOrderBooker
+                        ? "Manual order-booker decisions need a remark and will be used by payroll until returned to trip-driven status."
+                        : "Manual field worker decisions need a remark and will be used by payroll until returned to activity-driven status."}
                     </p>
                   )}
                 </div>

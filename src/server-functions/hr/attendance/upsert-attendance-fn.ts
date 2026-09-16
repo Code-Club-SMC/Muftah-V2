@@ -188,8 +188,11 @@ export const upsertAttendanceFn = createServerFn()
       });
     }
 
+    const isFieldWorker = Boolean(
+      employee.isOrderBooker || employee.isSalesman || employee.isDriver,
+    );
     const usesPunchDrivenPresentRow =
-      !employee.isOrderBooker && rest.status === "present" && hasPunches;
+      !isFieldWorker && rest.status === "present" && hasPunches;
 
     if (usesPunchDrivenPresentRow) {
       return await db.transaction(async (tx) => {

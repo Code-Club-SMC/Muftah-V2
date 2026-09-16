@@ -21,6 +21,8 @@ export const invoicePaymentInputSchema = z
     chequeDate: z.coerce.date().optional(),
     paymentDate: z.coerce.date(),
     sourceRecordId: z.string().trim().min(1).optional(),
+    notes: z.string().trim().optional(),
+    instantVerify: z.boolean().optional(),
   })
   .superRefine((row, ctx) => {
     if (row.method === "bank_transfer" && !row.reference) {

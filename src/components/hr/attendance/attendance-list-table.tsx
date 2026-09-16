@@ -9,7 +9,7 @@ import {
   type PunchTimelineItem,
 } from "./punch-timeline-preview";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Zap, Users, Truck } from "lucide-react";
+import { Zap, Users, Truck, Car } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { parseISO } from "date-fns";
@@ -45,7 +45,7 @@ interface AttendanceRecord {
   shopType?: "old" | "new" | null;
 }
 
-interface EmployeeWithAttendance {
+export interface EmployeeWithAttendance {
   id: string;
   employeeCode: string;
   firstName: string;
@@ -54,9 +54,15 @@ interface EmployeeWithAttendance {
   status?: string;
   isOrderBooker: boolean;
   isSalesman: boolean;
+  isDriver: boolean;
   salesmanActivity?: {
     deliveriesCount: number;
     recoveryCount: number;
+  };
+  driverActivity?: {
+    tripsCount: number;
+    totalDistanceKm: number;
+    totalTadaAmount: number;
   };
   standardDutyHours: number | null;
   shiftStartTime?: string | null;
@@ -732,15 +738,150 @@ export const AttendanceListTable = ({ data, date }: Props) => {
             >
               <Edit2 className="size-3.5" />
             </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-7 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+              asChild
+              title="View Field Performance Details"
+            >
+              <Link
+                to="/hr/salesman-details/$employeeId"
+                params={{ employeeId: row.original.id }}
+              >
+                <ExternalLink className="size-3.5" />
+              </Link>
+            </Button>
           </div>
         );
       },
     },
   ];
 
-  const standardData = data.filter((e) => !e.isOrderBooker && !e.isSalesman);
+  // ── Driver Columns ────────────────────────────────────────────────────────
+  const driverColumns: ColumnDef<EmployeeWithAttendance>[] = [
+    {
+      header: "Employee",
+      cell: ({ row }) => {
+        return <EmployeeCell row={row.original} />;
+      },
+    },
+    {
+      header: "Status",
+      cell: ({ row }) => {
+        const record = row.original.attendance[0];
+        if (record) {
+          if (record.entrySource === "driver_trip") {
+            return (
+              <Badge
+                variant="secondary"
+                className="bg-amber-50 text-amber-700 border-amber-200/60 dark:bg-amber-950/40 dark:text-amber-300 font-medium text-[11px] px-2 py-0.5 gap-1.5 inline-flex items-center"
+              >
+                <span className="size-1.5 rounded-full bg-amber-500" />
+                Present (Driver Trip)
+              </Badge>
+            );
+          }
+          return <StatusBadge status={record.status} leaveType={record.leaveType} />;
+        }
+        if (isRestDay(date, row.original.restDays)) return <RestDayBadge />;
+        return <PendingReviewBadge />;
+      },
+    },
+    {
+      header: "Trip Activity",
+      cell: ({ row }) => {
+        const driverActivity = row.original.driverActivity;
+        const tripsCount = driverActivity?.tripsCount ?? 0;
+        if (tripsCount === 0) {
+          if (isRestDay(date, row.original.restDays))
+            return <span className="text-muted-foreground/40 text-[13px]">—</span>;
+          return (
+            <span className="text-muted-foreground/60 text-[12px]">No Trips</span>
+          );
+        }
+        return (
+          <div className="flex items-center gap-2 text-[12px]">
+            <Badge
+              variant="secondary"
+              className="bg-amber-50 text-amber-700 border-amber-200/60 dark:bg-amber-950/40 dark:text-amber-300 font-normal"
+            >
+              {tripsCount} {tripsCount === 1 ? "Trip" : "Trips"} · {driverActivity?.totalDistanceKm} km
+            </Badge>
+            {driverActivity?.totalTadaAmount ? (
+              <Badge
+                variant="secondary"
+                className="bg-emerald-50 text-emerald-700 border-emerald-200/60 dark:bg-emerald-950/40 dark:text-emerald-300 font-normal"
+              >
+                TA/DA PKR {driverActivity.totalTadaAmount.toLocaleString("en-PK")}
+              </Badge>
+            ) : null}
+          </div>
+        );
+      },
+    },
+    {
+      header: "Duty Hours",
+      cell: ({ row }) => {
+        const record = row.original.attendance[0];
+        if (record?.dutyHours) {
+          return (
+            <div className="text-[13px] font-medium">
+              {record.dutyHours} hrs
+            </div>
+          );
+        }
+        if (isRestDay(date, row.original.restDays))
+          return <span className="text-muted-foreground/40 text-[13px]">—</span>;
+        return <span className="text-muted-foreground/40 text-[13px]">—</span>;
+      },
+    },
+    {
+      id: "actions",
+      header: () => <div className="text-right">Actions</div>,
+      cell: ({ row }) => {
+        const disabled = isRestDay(date, row.original.restDays) && !row.original.attendance[0];
+        return (
+          <div className="flex items-center justify-end gap-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              className={cn(
+                "size-7 rounded-md transition-colors",
+                disabled
+                  ? "text-muted-foreground/30 cursor-not-allowed pointer-events-none"
+                  : "text-blue-600 hover:text-primary hover:bg-primary/10",
+              )}
+              onClick={() => !disabled && handleEdit(row.original)}
+              disabled={disabled}
+              title={disabled ? "Cannot edit attendance on an unworked rest day" : "Edit / Mark Attendance"}
+            >
+              <Edit2 className="size-3.5" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-7 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+              asChild
+              title="View Driver Delivery Trips"
+            >
+              <Link
+                to="/hr/driver-details/$employeeId"
+                params={{ employeeId: row.original.id }}
+              >
+                <ExternalLink className="size-3.5" />
+              </Link>
+            </Button>
+          </div>
+        );
+      },
+    },
+  ];
+
+  const standardData = data.filter((e) => !e.isOrderBooker && !e.isSalesman && !e.isDriver);
   const orderBookerData = data.filter((e) => e.isOrderBooker);
   const salesmanData = data.filter((e) => e.isSalesman);
+  const driverData = data.filter((e) => e.isDriver);
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
@@ -767,6 +908,13 @@ export const AttendanceListTable = ({ data, date }: Props) => {
             >
               <Truck className="size-3.5" />
               Salesmen
+            </TabsTrigger>
+            <TabsTrigger
+              value="drivers"
+              className="gap-2 px-4 text-[13px] rounded-md data-[state=active]:bg-background data-[state=active]:"
+            >
+              <Car className="size-3.5" />
+              Drivers
             </TabsTrigger>
           </TabsList>
         </div>
@@ -806,6 +954,20 @@ export const AttendanceListTable = ({ data, date }: Props) => {
           <DataTable
             columns={salesmanColumns}
             data={salesmanData}
+            pageSize={100}
+            showSearch={false}
+            showPagination={false}
+            showFooter={false}
+          />
+        </TabsContent>
+
+        <TabsContent
+          value="drivers"
+          className="mt-0 focus-visible:outline-none"
+        >
+          <DataTable
+            columns={driverColumns}
+            data={driverData}
             pageSize={100}
             showSearch={false}
             showPagination={false}

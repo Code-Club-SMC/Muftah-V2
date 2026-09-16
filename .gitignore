@@ -43,3 +43,4 @@ graphify-out/graph.json
 *.exe
 *.msi
 *.png
+*.dump
