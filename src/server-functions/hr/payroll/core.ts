@@ -23,11 +23,20 @@ import {
   type EmployeeData,
 } from "@/lib/payroll-calculator";
 import { getSalaryAtDate } from "./salary-revisions-fn";
-import { addDays, parseISO } from "date-fns";
+import { addDays, parseISO, format } from "date-fns";
 import {
   DEFAULT_BASIC_SALARY_DEDUCTION_POLICY,
   type BasicSalaryDeductionPolicy,
 } from "@/lib/types/hr-types";
+
+function getEffectiveSalaryDate(payrollPeriod: { startDate: string; endDate: string }): string {
+  const todayStr = format(new Date(), "yyyy-MM-dd");
+  const thirtyDaysAfterEnd = format(addDays(parseISO(payrollPeriod.endDate), 30), "yyyy-MM-dd");
+  if (todayStr >= payrollPeriod.startDate && todayStr <= thirtyDaysAfterEnd) {
+    return todayStr;
+  }
+  return payrollPeriod.endDate;
+}
 
 type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -382,9 +391,10 @@ export async function generateEmployeePayslipCore(
   );
 
   // Fetch the salary revision active for this payroll period
-  const salaryRevision = await getSalaryAtDate(employeeId, payrollPeriod.startDate);
+  const effectiveSalaryDate = getEffectiveSalaryDate(payrollPeriod);
+  const salaryRevision = await getSalaryAtDate(employeeId, effectiveSalaryDate);
   if (!salaryRevision) {
-    throw new Error(`No salary configuration found for employee ${employeeId} at ${payrollPeriod.startDate}`);
+    throw new Error(`No salary configuration found for employee ${employeeId} at ${effectiveSalaryDate}`);
   }
 
   // Merge historical salary onto employee data for the calculator
@@ -909,9 +919,10 @@ export async function simulateEmployeePayslipCore(
     companyBasicPolicy,
   );
 
-  const salaryRevision = await getSalaryAtDate(employeeId, payrollPeriod.startDate);
+  const effectiveSalaryDate = getEffectiveSalaryDate(payrollPeriod);
+  const salaryRevision = await getSalaryAtDate(employeeId, effectiveSalaryDate);
   if (!salaryRevision) {
-    throw new Error(`No salary configuration found for employee ${employeeId} at ${payrollPeriod.startDate}`);
+    throw new Error(`No salary configuration found for employee ${employeeId} at ${effectiveSalaryDate}`);
   }
 
   const employeeWithHistoricalSalary = {

@@ -34,8 +34,6 @@ function getAllowanceLabel(id: string): string {
     );
 }
 
-const NON_DEDUCTIBLE_IDS = new Set(["fuel", "special", "nightShift"]);
-
 type SalaryCalculatorFormProps = {
     employeeId: string;
     month: string;
@@ -310,7 +308,7 @@ export const SalaryCalculatorForm = ({ employeeId, month, onSuccess, isOpen }: S
                                     />
                                     {(() => {
                                         const nonDeductibleTotal = Object.entries(calculation.allowanceBreakdown)
-                                            .filter(([id]) => NON_DEDUCTIBLE_IDS.has(id))
+                                            .filter(([id]) => id !== "basicSalary" && (calculation.fixedComponents?.[id] ?? false))
                                             .reduce((sum, [, val]) => sum + val, 0);
                                         return nonDeductibleTotal > 0 ? (
                                             <SummaryRow label="Fixed Allowances (non-deductible)" value={nonDeductibleTotal} />
@@ -673,7 +671,16 @@ export const SalaryCalculatorForm = ({ employeeId, month, onSuccess, isOpen }: S
                         />
                         <CalcRow
                             label="Total Working Days (this cycle)"
-                            formula={`Mon–Fri days between ${format(parseISO(calculation.startDate), "dd MMM")} – ${format(parseISO(calculation.endDate), "dd MMM")}`}
+                            formula={(() => {
+                                const restDays = calculation.calculationMeta.restDays ?? [0];
+                                const restDesc =
+                                    restDays.length === 1 && restDays[0] === 0
+                                        ? "6 days/wk (Mon–Sat)"
+                                        : restDays.length === 2 && restDays.includes(0) && restDays.includes(6)
+                                            ? "5 days/wk (Mon–Fri)"
+                                            : "Scheduled days";
+                                return `${restDesc} between ${format(parseISO(calculation.startDate), "dd MMM")} – ${format(parseISO(calculation.endDate), "dd MMM")}`;
+                            })()}
                             result={`${calculation.totalWorkingDays} days`}
                         />
                         <CalcRow
@@ -703,13 +710,14 @@ export const SalaryCalculatorForm = ({ employeeId, month, onSuccess, isOpen }: S
                                     {Object.entries(calculation.standardBreakdown)
                                         .filter(([, stdVal]) => stdVal > 0)
                                         .map(([id, stdVal]) => {
-                                            const adjVal = calculation.allowanceBreakdown[id] ?? stdVal;
-                                            const deducted = stdVal - adjVal;
-                                            const isFixed = NON_DEDUCTIBLE_IDS.has(id);
+                                            const adjVal = calculation.adjustedBreakdown?.[id] ?? (calculation.allowanceBreakdown[id] ?? stdVal);
+                                            const deducted = calculation.componentDeductions?.[id] ?? (stdVal - adjVal);
+                                            const name = calculation.allowanceNames?.[id] ?? getAllowanceLabel(id);
+                                            const isFixed = deducted === 0 && (calculation.fixedComponents?.[id] ?? false);
                                             return (
                                                 <tr key={id} className="hover:bg-muted/20">
                                                     <td className="py-1.5 px-2 text-muted-foreground">
-                                                        {getAllowanceLabel(id)}
+                                                        {name}
                                                         {isFixed && (
                                                             <span className="ml-1.5 text-[9px] text-muted-foreground/60 italic">(non-deductible)</span>
                                                         )}
@@ -736,7 +744,7 @@ export const SalaryCalculatorForm = ({ employeeId, month, onSuccess, isOpen }: S
                                         <Badge variant="outline" className="text-[10px] border-orange-200 text-orange-700 bg-white">{calculation.daysNotEmployed} day(s)</Badge>
                                     </div>
                                     <p className="text-muted-foreground font-mono leading-relaxed">
-                                        {calculation.daysNotEmployed} × Per Day Rate (Basic + allowances)
+                                        {calculation.daysNotEmployed} × Per Day Rate (Basic + allowances): - PKR {Math.round(calculation.deductionBreakdownByOccasion?.notEmployed ?? calculation.notEmployedDeduction).toLocaleString()}
                                     </p>
                                 </div>
                             )}
@@ -747,7 +755,7 @@ export const SalaryCalculatorForm = ({ employeeId, month, onSuccess, isOpen }: S
                                         <Badge variant="outline" className="text-[10px] border-rose-200 text-rose-700 bg-white">{calculation.daysAbsent} day(s)</Badge>
                                     </div>
                                     <p className="text-muted-foreground font-mono leading-relaxed">
-                                        {calculation.daysAbsent} × Per Day Rate (Basic + all allowances except Fuel & Special)
+                                        {calculation.daysAbsent} × Per Day Rate (Basic + configured allowances): - PKR {Math.round(calculation.deductionBreakdownByOccasion?.absent ?? calculation.absentDeduction).toLocaleString()}
                                     </p>
                                 </div>
                             )}
@@ -758,7 +766,40 @@ export const SalaryCalculatorForm = ({ employeeId, month, onSuccess, isOpen }: S
                                         <Badge variant="outline" className="text-[10px] border-amber-200 text-amber-700 bg-white">{calculation.totalUndertimeHours} hrs</Badge>
                                     </div>
                                     <p className="text-muted-foreground font-mono leading-relaxed">
-                                        {calculation.totalUndertimeHours} hrs × PKR {calculation.calculationMeta.perHourBasic.toFixed(2)} per hour (Basic salary only)
+                                        {calculation.totalUndertimeHours} hrs × Hourly Rate (Basic + configured allowances): - PKR {Math.round(calculation.deductionBreakdownByOccasion?.undertime ?? 0).toLocaleString()}
+                                    </p>
+                                </div>
+                            )}
+                            {calculation.daysSpecialLeave > 0 && (calculation.deductionBreakdownByOccasion?.specialLeave ?? 0) > 0 && (
+                                <div className="p-3 rounded-lg border border-orange-100 bg-orange-50/50 space-y-1">
+                                    <div className="flex items-center justify-between">
+                                        <span className="font-semibold text-orange-800">Special Leave (Allowances Deducted)</span>
+                                        <Badge variant="outline" className="text-[10px] border-orange-200 text-orange-700 bg-white">{calculation.daysSpecialLeave} day(s)</Badge>
+                                    </div>
+                                    <p className="text-muted-foreground font-mono leading-relaxed">
+                                        {calculation.daysSpecialLeave} × Per Day Rate (Basic paid; allowances with Special Leave rule deducted): - PKR {Math.round(calculation.deductionBreakdownByOccasion.specialLeave).toLocaleString()}
+                                    </p>
+                                </div>
+                            )}
+                            {calculation.daysSickLeave > 0 && (calculation.deductionBreakdownByOccasion?.sickLeave ?? 0) > 0 && (
+                                <div className="p-3 rounded-lg border border-teal-100 bg-teal-50/50 space-y-1">
+                                    <div className="flex items-center justify-between">
+                                        <span className="font-semibold text-teal-800">Sick Leave Deduction</span>
+                                        <Badge variant="outline" className="text-[10px] border-teal-200 text-teal-700 bg-white">{calculation.daysSickLeave} day(s)</Badge>
+                                    </div>
+                                    <p className="text-muted-foreground font-mono leading-relaxed">
+                                        {calculation.daysSickLeave} × Per Day Rate (Configured allowances): - PKR {Math.round(calculation.deductionBreakdownByOccasion.sickLeave).toLocaleString()}
+                                    </p>
+                                </div>
+                            )}
+                            {calculation.daysAnnualLeave > 0 && (calculation.deductionBreakdownByOccasion?.annualLeave ?? 0) > 0 && (
+                                <div className="p-3 rounded-lg border border-amber-100 bg-amber-50/50 space-y-1">
+                                    <div className="flex items-center justify-between">
+                                        <span className="font-semibold text-amber-800">Annual Leave Allowance Deduction</span>
+                                        <Badge variant="outline" className="text-[10px] border-amber-200 text-amber-700 bg-white">{calculation.daysAnnualLeave} day(s)</Badge>
+                                    </div>
+                                    <p className="text-muted-foreground font-mono leading-relaxed">
+                                        {calculation.daysAnnualLeave} × Per Day Rate (Configured allowances): - PKR {Math.round(calculation.deductionBreakdownByOccasion.annualLeave).toLocaleString()}
                                     </p>
                                 </div>
                             )}
@@ -769,11 +810,17 @@ export const SalaryCalculatorForm = ({ employeeId, month, onSuccess, isOpen }: S
                                         <Badge variant="outline" className="text-[10px] border-violet-200 text-violet-700 bg-white">{calculation.daysUnapprovedLeave} day(s)</Badge>
                                     </div>
                                     <p className="text-muted-foreground font-mono leading-relaxed">
-                                        {calculation.daysUnapprovedLeave} × Per Day Conveyance only
+                                        {calculation.daysUnapprovedLeave} × Per Day Rate (Configured rules): - PKR {Math.round(calculation.deductionBreakdownByOccasion?.unapprovedLeave ?? calculation.leaveDeduction).toLocaleString()}
                                     </p>
                                 </div>
                             )}
-                            {calculation.daysNotEmployed === 0 && calculation.daysAbsent === 0 && calculation.totalUndertimeHours === 0 && calculation.daysUnapprovedLeave === 0 && (
+                            {calculation.daysNotEmployed === 0 &&
+                                calculation.daysAbsent === 0 &&
+                                calculation.totalUndertimeHours === 0 &&
+                                (calculation.deductionBreakdownByOccasion?.specialLeave ?? 0) === 0 &&
+                                (calculation.deductionBreakdownByOccasion?.sickLeave ?? 0) === 0 &&
+                                (calculation.deductionBreakdownByOccasion?.annualLeave ?? 0) === 0 &&
+                                calculation.daysUnapprovedLeave === 0 && (
                                 <p className="text-muted-foreground italic py-2 text-center">No attendance deductions this cycle. 🎉</p>
                             )}
                         </div>
@@ -804,14 +851,17 @@ export const SalaryCalculatorForm = ({ employeeId, month, onSuccess, isOpen }: S
                         <div className="space-y-1 text-xs font-mono">
                             {Object.entries(calculation.allowanceBreakdown)
                                 .filter(([id]) => id !== "nightShift")
-                                .map(([id, val]) => (
-                                    <div key={id} className="flex justify-between py-0.5 border-b border-dashed border-border/40">
-                                        <span className={`${(val as number) <= 0 ? "text-rose-400 line-through" : "text-muted-foreground"}`}>
-                                            {id === "basicSalary" ? "+" : "+"} {getAllowanceLabel(id)}
-                                        </span>
-                                        <span className={(val as number) <= 0 ? "text-rose-400" : ""}>{Math.round(val as number).toLocaleString()}</span>
-                                    </div>
-                                ))}
+                                .map(([id, val]) => {
+                                    const label = calculation.allowanceNames?.[id] ?? getAllowanceLabel(id);
+                                    return (
+                                        <div key={id} className="flex justify-between py-0.5 border-b border-dashed border-border/40">
+                                            <span className={`${(val as number) <= 0 ? "text-rose-400 line-through" : "text-muted-foreground"}`}>
+                                                + {label}
+                                            </span>
+                                            <span className={(val as number) <= 0 ? "text-rose-400" : ""}>{Math.round(val as number).toLocaleString()}</span>
+                                        </div>
+                                    );
+                                })}
                             {[
                                 { label: "Overtime Pay", val: calculation.overtimeAmount },
                                 { label: "Night Shift Allowance", val: calculation.nightShiftAllowanceAmount },

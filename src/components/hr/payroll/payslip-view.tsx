@@ -213,7 +213,7 @@ export const PayslipView = ({
     const baseDeductions: { label: string; value: number }[] = [
         { label: "Income Tax", value: toN(payslip.taxDeduction) },
         { label: "Absent / Undertime", value: toN(payslip.absentDeduction) },
-        { label: "Unapproved Leave", value: toN(payslip.leaveDeduction) },
+        { label: "Leave Deductions", value: toN(payslip.leaveDeduction) },
         { label: "Proration / Not Employed", value: toN(payslip.notEmployedDeduction) },
         { label: "Loan Recovery", value: toN(payslip.advanceDeduction) },   // official label
         { label: "Other Deductions", value: toN(payslip.otherDeduction) },

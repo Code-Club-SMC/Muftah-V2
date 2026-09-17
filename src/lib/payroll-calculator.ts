@@ -123,6 +123,21 @@ export type PayslipCalculation = {
   // Original Standard Snapshot
   standardBreakdown: Record<string, number>;
 
+  // Post-attendance Component Breakdowns
+  adjustedBreakdown: Record<string, number>;
+  componentDeductions: Record<string, number>;
+  deductionBreakdownByOccasion: {
+    absent: number;
+    undertime: number;
+    specialLeave: number;
+    sickLeave: number;
+    annualLeave: number;
+    unapprovedLeave: number;
+    notEmployed: number;
+  };
+  allowanceNames: Record<string, string>;
+  fixedComponents: Record<string, boolean>;
+
   calculationMeta: {
     calendarDaysInMonth: number;
     perDayBasic: number;
@@ -251,6 +266,16 @@ export function calculateAbsentDeductions(
   notEmployedDeduction: number;
   totalUndertimeHours: number;
   adjustedAllowances: Record<string, number>;
+  componentDeductions: Record<string, number>;
+  deductionBreakdownByOccasion: {
+    absent: number;
+    undertime: number;
+    specialLeave: number;
+    sickLeave: number;
+    annualLeave: number;
+    unapprovedLeave: number;
+    notEmployed: number;
+  };
 } {
   const shiftHours = calculateTotalShiftHours(employee.shifts);
   const standardDutyHours = shiftHours > 0 ? shiftHours : (employee.standardDutyHours || 8);
@@ -269,11 +294,21 @@ export function calculateAbsentDeductions(
   let totalNotEmployedDeduction = 0;
   let totalUndertimeHours = 0;
 
+  const deductionBreakdownByOccasion = {
+    absent: 0,
+    undertime: 0,
+    specialLeave: 0,
+    sickLeave: 0,
+    annualLeave: 0,
+    unapprovedLeave: 0,
+    notEmployed: 0,
+  };
+
   const adjustments: Record<string, number> = {};
   adjustments["basicSalary"] = 0;
   for (const a of config) adjustments[a.id] = 0;
 
-  const shouldDeductBasic = (
+  const deductBasicPolicy = (
     occasion:
       | "absent"
       | "not_employed"
@@ -284,7 +319,7 @@ export function calculateAbsentDeductions(
       | "earlyLeaving",
   ) => {
     if (occasion === "not_employed") return basicPolicy.notEmployed;
-    return basicPolicy[occasion];
+    return basicPolicy[occasion] ?? false;
   };
 
   const applyOccasionDeduction = (
@@ -296,30 +331,55 @@ export function calculateAbsentDeductions(
       | "sickLeave"
       | "specialLeave"
       | "lateArrival"
-      | "earlyLeaving",
+      | "earlyLeaving"
+      | "undertime",
     deductionTarget: "absent" | "leave" | "not_employed" = "absent",
+    occasionBucket?: keyof typeof deductionBreakdownByOccasion,
   ) => {
     let subTotal = 0;
 
-    if (shouldDeductBasic(occasion)) {
-      const basicDeduction =
-        occasion === "lateArrival" || occasion === "earlyLeaving"
-          ? perHourBasic * fraction
-          : perDayBasic * fraction;
+    const isHourlyOccasion =
+      occasion === "lateArrival" || occasion === "earlyLeaving" || occasion === "undertime";
+
+    // 1. Basic Salary deduction
+    let shouldDeductBasic = false;
+    if (occasion === "undertime") {
+      shouldDeductBasic = deductBasicPolicy("lateArrival") || deductBasicPolicy("earlyLeaving");
+    } else {
+      shouldDeductBasic = deductBasicPolicy(occasion);
+    }
+
+    if (shouldDeductBasic) {
+      const basicDeduction = isHourlyOccasion
+        ? perHourBasic * fraction
+        : perDayBasic * fraction;
       adjustments["basicSalary"] += basicDeduction;
       subTotal += basicDeduction;
     }
 
+    // 2. Allowance deductions
     for (const allowance of config) {
-      const shouldDeduct = occasion === "not_employed" 
-        ? true // Always prorate all allowances if the employee is not employed (pre-joining or post-cutoff)
-        : (allowance.deductions?.[occasion] ?? false);
+      let shouldDeduct = false;
+      if (occasion === "not_employed") {
+        shouldDeduct = true; // Always prorate all allowances if not employed
+      } else if (occasion === "undertime") {
+        shouldDeduct =
+          (allowance.deductions?.lateArrival ?? false) ||
+          (allowance.deductions?.earlyLeaving ?? false);
+      } else {
+        shouldDeduct = allowance.deductions?.[occasion] ?? false;
+      }
+
       if (shouldDeduct) {
         let amt = 0;
-        if (occasion === "lateArrival" || occasion === "earlyLeaving") {
-          const perHourRate =
-            allowance.amount / (calendarDaysInMonth * standardDutyHours);
-          amt = perHourRate * fraction;
+        if (isHourlyOccasion) {
+          if (allowance.lateEarlyBasis === "perDay") {
+            amt = allowance.amount / calendarDaysInMonth;
+          } else {
+            const perHourRate =
+              allowance.amount / (calendarDaysInMonth * standardDutyHours);
+            amt = perHourRate * fraction;
+          }
         } else {
           amt = (allowance.amount / calendarDaysInMonth) * fraction;
         }
@@ -334,6 +394,10 @@ export function calculateAbsentDeductions(
       totalNotEmployedDeduction += subTotal;
     } else {
       totalAbsentDeduction += subTotal;
+    }
+
+    if (occasionBucket) {
+      deductionBreakdownByOccasion[occasionBucket] += subTotal;
     }
   };
 
@@ -350,21 +414,18 @@ export function calculateAbsentDeductions(
     const dutyHours = baseDutyHours + compHoursUsed;
 
     if (record.status === "absent") {
-      applyOccasionDeduction(1, "absent", "absent");
+      applyOccasionDeduction(1, "absent", "absent", "absent");
     } else if (record.status === "not_employed") {
-      // For not_employed, we deduct exactly identical to "absent" (all standard wages)
-      applyOccasionDeduction(1, "not_employed", "not_employed");
+      applyOccasionDeduction(1, "not_employed", "not_employed", "notEmployed");
     } else if (record.status === "leave") {
       if (record.leaveType === "special") {
-        applyOccasionDeduction(1, "specialLeave", "leave");
+        applyOccasionDeduction(1, "specialLeave", "leave", "specialLeave");
       } else if (record.leaveType === "sick") {
-        applyOccasionDeduction(1, "sickLeave", "leave");
+        applyOccasionDeduction(1, "sickLeave", "leave", "sickLeave");
       } else if (record.leaveType === "annual") {
-        if (!record.isApprovedLeave) {
-          applyOccasionDeduction(1, "annualLeave", "leave");
-        }
+        applyOccasionDeduction(1, "annualLeave", "leave", "annualLeave");
       } else if (!record.isApprovedLeave) {
-        applyOccasionDeduction(1, "annualLeave", "leave");
+        applyOccasionDeduction(1, "annualLeave", "leave", "unapprovedLeave");
       }
     } else if (
       record.status === "present" &&
@@ -373,27 +434,37 @@ export function calculateAbsentDeductions(
       const shortHours = standardDutyHours - dutyHours;
       totalUndertimeHours += shortHours;
 
-      if (record.isLate) {
-        applyOccasionDeduction(shortHours, "lateArrival");
-      } else if (
-        record.earlyDepartureStatus === "approved"
-      ) {
-        applyOccasionDeduction(shortHours, "earlyLeaving");
+      const isLate = record.isLate ?? false;
+      const isEarly = (record.earlyDepartureStatus !== "none" && record.earlyDepartureStatus !== null && record.earlyDepartureStatus !== undefined);
+
+      if (isLate && isEarly) {
+        applyOccasionDeduction(shortHours, "undertime", "absent", "undertime");
+      } else if (isLate) {
+        applyOccasionDeduction(shortHours, "lateArrival", "absent", "undertime");
+      } else if (isEarly) {
+        applyOccasionDeduction(shortHours, "earlyLeaving", "absent", "undertime");
       } else {
-        applyOccasionDeduction(shortHours, "lateArrival");
+        applyOccasionDeduction(shortHours, "undertime", "absent", "undertime");
       }
     }
   }
 
   const adjustedAllowances: Record<string, number> = {};
+  const componentDeductions: Record<string, number> = {};
+
+  const basicDeducted = Math.round(adjustments["basicSalary"] || 0);
+  componentDeductions["basicSalary"] = basicDeducted;
   adjustedAllowances["basicSalary"] = Math.max(
     0,
-    Math.round(basicSalary - adjustments["basicSalary"]),
+    Math.round(basicSalary - basicDeducted),
   );
+
   for (const allowance of config) {
+    const deducted = Math.round(adjustments[allowance.id] || 0);
+    componentDeductions[allowance.id] = deducted;
     adjustedAllowances[allowance.id] = Math.max(
       0,
-      Math.round(allowance.amount - (adjustments[allowance.id] || 0)),
+      Math.round(allowance.amount - deducted),
     );
   }
 
@@ -403,6 +474,16 @@ export function calculateAbsentDeductions(
     notEmployedDeduction: Math.round(totalNotEmployedDeduction),
     totalUndertimeHours: +totalUndertimeHours.toFixed(2),
     adjustedAllowances,
+    componentDeductions,
+    deductionBreakdownByOccasion: {
+      absent: Math.round(deductionBreakdownByOccasion.absent),
+      undertime: Math.round(deductionBreakdownByOccasion.undertime),
+      specialLeave: Math.round(deductionBreakdownByOccasion.specialLeave),
+      sickLeave: Math.round(deductionBreakdownByOccasion.sickLeave),
+      annualLeave: Math.round(deductionBreakdownByOccasion.annualLeave),
+      unapprovedLeave: Math.round(deductionBreakdownByOccasion.unapprovedLeave),
+      notEmployed: Math.round(deductionBreakdownByOccasion.notEmployed),
+    },
   };
 }
 
@@ -639,7 +720,22 @@ export function calculatePayslip(
     leaveDeduction,
     notEmployedDeduction,
     totalUndertimeHours,
+    adjustedAllowances,
+    componentDeductions,
+    deductionBreakdownByOccasion,
   } = calculateAbsentDeductions(employee, workingDayRecords, calendarDaysInMonth);
+
+  const allowanceNames: Record<string, string> = {
+    basicSalary: "Basic Salary",
+  };
+  const fixedComponents: Record<string, boolean> = {
+    basicSalary: false,
+  };
+  for (const a of config) {
+    allowanceNames[a.id] = a.name;
+    const hasAnyDeduction = Object.values(a.deductions || {}).some(Boolean);
+    fixedComponents[a.id] = !hasAnyDeduction;
+  }
 
   // ── 5. Overtime ───────────────────────────────────────────────────────────
   const overtimeMultiplier = additionalAmounts.overtimeMultiplier || 1.0;
@@ -763,6 +859,11 @@ export function calculatePayslip(
     paymentSource: null,
 
     standardBreakdown,
+    adjustedBreakdown: adjustedAllowances,
+    componentDeductions,
+    deductionBreakdownByOccasion,
+    allowanceNames,
+    fixedComponents,
     calculationMeta: {
       calendarDaysInMonth,
       perDayBasic: +perDayBasic.toFixed(4),
