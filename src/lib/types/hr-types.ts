@@ -51,6 +51,31 @@ export const DEFAULT_BASIC_SALARY_DEDUCTION_POLICY: BasicSalaryDeductionPolicy =
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// ATTENDANCE DEDUCTION ADJUSTMENTS & WAIVERS
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type AttendanceDeductionAdjustments = {
+  /** Master switch: waive all attendance-related deductions (absent, undertime, leaves) */
+  waiveAll?: boolean;
+  /** Selective toggles (true = waive this occasion, false/undefined = apply calculated deduction) */
+  waiveAbsent?: boolean;
+  waiveUndertime?: boolean;
+  waiveSpecialLeave?: boolean;
+  waiveSickLeave?: boolean;
+  waiveAnnualLeave?: boolean;
+  waiveUnapprovedLeave?: boolean;
+  /** Custom override amounts for specific occasions (replaces calculated amount if specified) */
+  customDeductions?: {
+    absent?: number;
+    undertime?: number;
+    specialLeave?: number;
+    sickLeave?: number;
+    annualLeave?: number;
+    unapprovedLeave?: number;
+  };
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // STANDARD ALLOWANCES
 // Correct defaults per client deduction rules:
 //

@@ -50,6 +50,27 @@ export const generateEmployeePayslipFn = createServerFn()
           arrearsFromMonths: z.array(z.string()),
         })
         .optional(),
+      attendanceAdjustments: z
+        .object({
+          waiveAll: z.boolean().optional(),
+          waiveAbsent: z.boolean().optional(),
+          waiveUndertime: z.boolean().optional(),
+          waiveSpecialLeave: z.boolean().optional(),
+          waiveSickLeave: z.boolean().optional(),
+          waiveAnnualLeave: z.boolean().optional(),
+          waiveUnapprovedLeave: z.boolean().optional(),
+          customDeductions: z
+            .object({
+              absent: z.number().optional(),
+              undertime: z.number().optional(),
+              specialLeave: z.number().optional(),
+              sickLeave: z.number().optional(),
+              annualLeave: z.number().optional(),
+              unapprovedLeave: z.number().optional(),
+            })
+            .optional(),
+        })
+        .optional(),
       remarks: z.string().optional(),
     }),
   )

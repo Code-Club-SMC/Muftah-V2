@@ -1,0 +1,1 @@
+ALTER TABLE "payslips" ADD COLUMN "attendance_adjustments" jsonb DEFAULT '{}'::jsonb;

@@ -1,5 +1,6 @@
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import { previewEmployeePayslipFn } from "@/server-functions/hr/payroll/dashboard-fn";
+import type { AttendanceDeductionAdjustments } from "@/lib/types/hr-types";
 
 interface PreviewPayslipInput {
   employeeId: string;
@@ -17,6 +18,7 @@ interface PreviewPayslipInput {
     arrearsFromMonths: string[];
   };
   earlyCutoffDate?: string;
+  attendanceAdjustments?: AttendanceDeductionAdjustments;
 }
 
 export function usePreviewPayslip(
@@ -32,6 +34,7 @@ export function usePreviewPayslip(
       input.additionalAmounts,
       input.arrears,
       input.earlyCutoffDate,
+      input.attendanceAdjustments,
     ],
     queryFn: () => previewEmployeePayslipFn({ data: input }),
     enabled: enabled && !!input.employeeId,

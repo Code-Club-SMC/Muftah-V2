@@ -27,6 +27,7 @@ import { addDays, parseISO, format } from "date-fns";
 import {
   DEFAULT_BASIC_SALARY_DEDUCTION_POLICY,
   type BasicSalaryDeductionPolicy,
+  type AttendanceDeductionAdjustments,
 } from "@/lib/types/hr-types";
 
 function getEffectiveSalaryDate(payrollPeriod: { startDate: string; endDate: string }): string {
@@ -329,6 +330,8 @@ export type GeneratePayslipInput = {
   autoFetchTada?: boolean;
   earlyCutoffDate?: string;
   ignorePastUnmarkedDays?: boolean;
+  /** Attendance deduction waivers and custom overrides */
+  attendanceAdjustments?: AttendanceDeductionAdjustments;
   /** User-entered payslip remarks. If omitted, stored as empty string. */
   remarks?: string;
 };
@@ -344,6 +347,7 @@ export async function generateEmployeePayslipCore(
     deductionConfig,
     additionalAmounts = {},
     arrears,
+    attendanceAdjustments,
     autoDeductAdvances = true,
     autoUpdateLeaveBalances: _autoUpdateLeaveBalances = true,
     autoFetchNightShiftRate = true,
@@ -587,6 +591,7 @@ export async function generateEmployeePayslipCore(
     deductionConfig,
     mergedAdditional,
     earlyCutoffDate,
+    attendanceAdjustments,
   );
 
   // -- 6.1 Strict validation for missing attendance --------------------------
@@ -743,6 +748,7 @@ export async function generateEmployeePayslipCore(
 
         paymentSource: null,
         remarks: remarks || null,
+        attendanceAdjustments: attendanceAdjustments || {},
       })
       .returning();
 
@@ -875,6 +881,7 @@ export async function simulateEmployeePayslipCore(
     deductionConfig,
     additionalAmounts = {},
     arrears,
+    attendanceAdjustments,
     autoDeductAdvances = true,
     autoFetchNightShiftRate = true,
     autoFetchTada = true,
@@ -1106,6 +1113,7 @@ export async function simulateEmployeePayslipCore(
     deductionConfig,
     mergedAdditional,
     earlyCutoffDate,
+    attendanceAdjustments,
   );
 
   // -- 6.1 Strict validation for missing attendance --------------------------

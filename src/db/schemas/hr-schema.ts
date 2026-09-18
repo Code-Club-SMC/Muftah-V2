@@ -17,6 +17,7 @@ import { createId } from "@paralleldrive/cuid2";
 import {
   type AllowanceConfig,
   type BasicSalaryDeductionPolicy,
+  type AttendanceDeductionAdjustments,
   DEFAULT_BASIC_SALARY_DEDUCTION_POLICY,
   STANDARD_ALLOWANCES,
 } from "@/lib/types/hr-types";
@@ -483,6 +484,11 @@ export const payslips = pgTable(
 
   paymentSource: text("payment_source"),
   remarks: text("remarks"),
+
+  // Attendance deductions waivers and overrides (e.g. { waiveAll: true }, { waiveUndertime: true })
+  attendanceAdjustments: jsonb("attendance_adjustments")
+    .$type<AttendanceDeductionAdjustments>()
+    .default({}),
 
     ...timestamps,
   },

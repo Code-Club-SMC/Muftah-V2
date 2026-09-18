@@ -278,6 +278,28 @@ export const getMonthlyPayrollTableFn = createServerFn()
 
 // ── Preview Payslip ────────────────────────────────────────────────────────
 
+const attendanceAdjustmentsSchema = z
+  .object({
+    waiveAll: z.boolean().optional(),
+    waiveAbsent: z.boolean().optional(),
+    waiveUndertime: z.boolean().optional(),
+    waiveSpecialLeave: z.boolean().optional(),
+    waiveSickLeave: z.boolean().optional(),
+    waiveAnnualLeave: z.boolean().optional(),
+    waiveUnapprovedLeave: z.boolean().optional(),
+    customDeductions: z
+      .object({
+        absent: z.number().optional(),
+        undertime: z.number().optional(),
+        specialLeave: z.number().optional(),
+        sickLeave: z.number().optional(),
+        annualLeave: z.number().optional(),
+        unapprovedLeave: z.number().optional(),
+      })
+      .optional(),
+  })
+  .optional();
+
 export const previewEmployeePayslipFn = createServerFn()
   .middleware([requireHrViewMiddleware])
   .inputValidator(
@@ -306,6 +328,7 @@ export const previewEmployeePayslipFn = createServerFn()
         })
         .optional(),
       earlyCutoffDate: z.string().optional(),
+      attendanceAdjustments: attendanceAdjustmentsSchema,
     }),
   )
   .handler(async ({ data }) => {
@@ -316,6 +339,24 @@ export const previewEmployeePayslipFn = createServerFn()
       where: eq(employees.id, employeeId),
     });
     if (!employeeData) throw new Error("Employee not found");
+
+    let effectiveAdjustments = data.attendanceAdjustments;
+    if (effectiveAdjustments === undefined) {
+      const currentPayroll = await db.query.payrolls.findFirst({
+        where: eq(payrolls.month, payrollPeriod.month),
+      });
+      if (currentPayroll) {
+        const existingSlip = await db.query.payslips.findFirst({
+          where: and(
+            eq(payslips.payrollId, currentPayroll.id),
+            eq(payslips.employeeId, employeeId),
+          ),
+        });
+        if (existingSlip?.attendanceAdjustments) {
+          effectiveAdjustments = existingSlip.attendanceAdjustments;
+        }
+      }
+    }
 
     const simulation = await simulateEmployeePayslipCore({
       employeeId,
@@ -328,6 +369,7 @@ export const previewEmployeePayslipFn = createServerFn()
       additionalAmounts: data.additionalAmounts || {},
       arrears: data.arrears,
       earlyCutoffDate: data.earlyCutoffDate,
+      attendanceAdjustments: effectiveAdjustments,
       ignorePastUnmarkedDays: true,
     });
 
@@ -382,6 +424,7 @@ export const previewEmployeePayslipFn = createServerFn()
 
     return {
       ...simulation.calculation,
+      attendanceAdjustments: effectiveAdjustments ?? simulation.calculation.attendanceAdjustments ?? {},
       netSalary: simulation.totalNetWithArrears,
       yearlyBradfordScore: simulation.yearlyBradfordScore,
       arrearsAmount: simulation.arrearsAmount,
@@ -412,11 +455,12 @@ export const saveEmployeePayslipFn = createServerFn()
         .optional(),
       earlyCutoffDate: z.string().optional(),
       ignorePastUnmarkedDays: z.boolean().optional(),
+      attendanceAdjustments: attendanceAdjustmentsSchema,
       remarks: z.string().optional(),
     }),
   )
   .handler(async ({ data, context }) => {
-    const { employeeId, month, deductionConfig, additionalAmounts, arrears, remarks } = data;
+    const { employeeId, month, deductionConfig, additionalAmounts, arrears, remarks, attendanceAdjustments } = data;
     const payrollPeriod = getPayrollPeriodForMonthKey(month);
 
     let payroll = await db.query.payrolls.findFirst({
@@ -449,6 +493,7 @@ export const saveEmployeePayslipFn = createServerFn()
         deductionConfig,
         additionalAmounts,
         arrears,
+        attendanceAdjustments,
         earlyCutoffDate: data.earlyCutoffDate,
         ignorePastUnmarkedDays: data.ignorePastUnmarkedDays,
         remarks,

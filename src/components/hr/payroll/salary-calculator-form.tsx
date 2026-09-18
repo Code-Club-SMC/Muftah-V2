@@ -15,8 +15,10 @@ import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import React, { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { STANDARD_ALLOWANCES } from "@/lib/types/hr-types";
+import { STANDARD_ALLOWANCES, type AttendanceDeductionAdjustments } from "@/lib/types/hr-types";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
 import { ShieldAlert } from "lucide-react";
 import { getCycleForPayoutMonth } from "@/lib/payroll-cycle";
 import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
@@ -47,6 +49,8 @@ export const SalaryCalculatorForm = ({ employeeId, month, onSuccess, isOpen }: S
     const [earlyCutoffDate, setEarlyCutoffDate] = useState<string | undefined>();
     const [ignorePastUnmarkedDays, setIgnorePastUnmarkedDays] = useState(false);
     const [showUnmarkedModal, setShowUnmarkedModal] = useState<{ count: number } | null>(null);
+
+    const [attendanceAdjustments, setAttendanceAdjustments] = useState<AttendanceDeductionAdjustments>({});
 
     const saveMutation = useSavePayslip(onSuccess);
 
@@ -92,7 +96,23 @@ export const SalaryCalculatorForm = ({ employeeId, month, onSuccess, isOpen }: S
             }, 0),
         } : undefined,
         earlyCutoffDate,
+        attendanceAdjustments,
     }, isOpen);
+
+    const initialAdjustmentsLoadedRef = useRef<string | null>(null);
+    useEffect(() => {
+        initialAdjustmentsLoadedRef.current = null;
+    }, [employeeId, month]);
+
+    useEffect(() => {
+        const key = `${employeeId}-${month}`;
+        if (calculation && initialAdjustmentsLoadedRef.current !== key) {
+            if (calculation.attendanceAdjustments && Object.keys(calculation.attendanceAdjustments).length > 0) {
+                setAttendanceAdjustments(calculation.attendanceAdjustments);
+            }
+            initialAdjustmentsLoadedRef.current = key;
+        }
+    }, [calculation, employeeId, month]);
 
     // Pre-fill remarks with the standard OTL-exceptions note once the preview
     // loads, but only if the user hasn't already typed something. Reset when
@@ -128,6 +148,28 @@ export const SalaryCalculatorForm = ({ employeeId, month, onSuccess, isOpen }: S
     const handleSave = (customIgnore?: boolean) => {
         if (!calculation) return;
 
+        let finalRemarks = formValues.remarks || "";
+        const hasWaivers = !!(
+            attendanceAdjustments.waiveAll ||
+            attendanceAdjustments.waiveAbsent ||
+            attendanceAdjustments.waiveUndertime ||
+            attendanceAdjustments.waiveSpecialLeave ||
+            attendanceAdjustments.waiveSickLeave ||
+            attendanceAdjustments.waiveAnnualLeave ||
+            attendanceAdjustments.waiveUnapprovedLeave ||
+            (attendanceAdjustments.customDeductions &&
+                Object.values(attendanceAdjustments.customDeductions).some((v) => v !== undefined))
+        );
+
+        if (hasWaivers) {
+            const waiverTag = attendanceAdjustments.waiveAll
+                ? "[Full salary paid · attendance deductions waived]"
+                : "[Attendance deductions adjusted by HR]";
+            if (!finalRemarks.includes(waiverTag) && !finalRemarks.includes("waived")) {
+                finalRemarks = finalRemarks ? `${finalRemarks} · ${waiverTag}` : waiverTag;
+            }
+        }
+
         saveMutation.mutate({
             employeeId,
             month,
@@ -154,7 +196,8 @@ export const SalaryCalculatorForm = ({ employeeId, month, onSuccess, isOpen }: S
             } : undefined,
             earlyCutoffDate,
             ignorePastUnmarkedDays: customIgnore ?? ignorePastUnmarkedDays,
-            remarks: formValues.remarks,
+            attendanceAdjustments,
+            remarks: finalRemarks,
         }, {
             onError: (err: Error) => {
                 if (err.message.includes("PAST_UNMARKED_DAYS")) {
@@ -282,6 +325,47 @@ export const SalaryCalculatorForm = ({ employeeId, month, onSuccess, isOpen }: S
                         </AlertDescription>
                     </Alert>
                 )}
+            </div>
+
+            {/* Master Switch: Pay Full Salary / Waive Attendance Deductions */}
+            <div
+                className={cn(
+                    "flex items-center justify-between p-3.5 border rounded-lg transition-colors",
+                    attendanceAdjustments.waiveAll
+                        ? "bg-emerald-50/80 border-emerald-300 dark:bg-emerald-950/40 dark:border-emerald-800"
+                        : "bg-muted/30 border-border"
+                )}
+            >
+                <div className="space-y-0.5">
+                    <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold text-foreground">
+                            Pay Full Salary (Waive Attendance Deductions)
+                        </span>
+                        {attendanceAdjustments.waiveAll ? (
+                            <Badge className="bg-emerald-600 text-white text-[10px] h-5 px-1.5 hover:bg-emerald-600">
+                                Full Salary Active · 0 Deductions
+                            </Badge>
+                        ) : (
+                            <Badge variant="outline" className="text-[10px] h-5 px-1.5 text-muted-foreground">
+                                Standard Deductions Active
+                            </Badge>
+                        )}
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                        Waive all attendance penalties (absent, undertime, leave) in a single click. Attendance records remain intact.
+                    </p>
+                </div>
+                <div className="flex items-center gap-2">
+                    <Switch
+                        checked={!!attendanceAdjustments.waiveAll}
+                        onCheckedChange={(checked) => {
+                            setAttendanceAdjustments((prev) => ({
+                                ...prev,
+                                waiveAll: checked,
+                            }));
+                        }}
+                    />
+                </div>
             </div>
 
             <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
@@ -514,6 +598,233 @@ export const SalaryCalculatorForm = ({ employeeId, month, onSuccess, isOpen }: S
 
                 {/* ADJUSTMENTS TAB */}
                 <TabsContent value="adjustments" className="space-y-6">
+                    {/* Attendance Deductions & Selective Waivers Card */}
+                    <Card className="border-border">
+                        <CardHeader className="py-3 px-4 bg-muted/20 border-b flex flex-row items-center justify-between">
+                            <div>
+                                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                                    <Calculator className="size-4 text-primary" />
+                                    Attendance Deductions & Selective Waivers
+                                </CardTitle>
+                                <p className="text-xs text-muted-foreground mt-0.5">
+                                    Uncheck any occasion to waive its deduction completely, or specify custom override amounts.
+                                </p>
+                            </div>
+                            {attendanceAdjustments.waiveAll ? (
+                                <Badge className="bg-emerald-600 text-white text-xs">All Waived (Full Salary)</Badge>
+                            ) : (
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-7 text-xs"
+                                    onClick={() => {
+                                        setAttendanceAdjustments({});
+                                    }}
+                                >
+                                    Reset to Calculated
+                                </Button>
+                            )}
+                        </CardHeader>
+                        <CardContent className="p-4 space-y-4">
+                            {attendanceAdjustments.waiveAll ? (
+                                <div className="p-3.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                    <div className="flex items-center gap-2">
+                                        <CheckCircle2 className="size-4 text-emerald-600 shrink-0" />
+                                        <span>Master switch is ON. All attendance misconduct and short hour penalties are currently waived.</span>
+                                    </div>
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-7 text-xs text-emerald-700 hover:bg-emerald-100 bg-white border border-emerald-200"
+                                        onClick={() => setAttendanceAdjustments((prev) => ({ ...prev, waiveAll: false }))}
+                                    >
+                                        Use Selective Controls
+                                    </Button>
+                                </div>
+                            ) : (
+                                (() => {
+                                    const occasionItems = [
+                                        {
+                                            key: "absent" as const,
+                                            label: "Full Day Absent",
+                                            countLabel: `${calculation.daysAbsent} day(s)`,
+                                            hasOccurrences: calculation.daysAbsent > 0,
+                                            unadjustedAmt: calculation.unadjustedOccasionDeductions?.absent ?? calculation.deductionBreakdownByOccasion?.absent ?? 0,
+                                            currentAmt: calculation.deductionBreakdownByOccasion?.absent ?? calculation.absentDeduction,
+                                            waived: !!attendanceAdjustments.waiveAbsent,
+                                            waiveKey: "waiveAbsent" as const,
+                                        },
+                                        {
+                                            key: "undertime" as const,
+                                            label: "Undertime (Short Hours)",
+                                            countLabel: `${calculation.totalUndertimeHours} hrs`,
+                                            hasOccurrences: calculation.totalUndertimeHours > 0,
+                                            unadjustedAmt: calculation.unadjustedOccasionDeductions?.undertime ?? calculation.deductionBreakdownByOccasion?.undertime ?? 0,
+                                            currentAmt: calculation.deductionBreakdownByOccasion?.undertime ?? 0,
+                                            waived: !!attendanceAdjustments.waiveUndertime,
+                                            waiveKey: "waiveUndertime" as const,
+                                        },
+                                        {
+                                            key: "specialLeave" as const,
+                                            label: "Special Leave (Allowances)",
+                                            countLabel: `${calculation.daysSpecialLeave} day(s)`,
+                                            hasOccurrences: calculation.daysSpecialLeave > 0,
+                                            unadjustedAmt: calculation.unadjustedOccasionDeductions?.specialLeave ?? calculation.deductionBreakdownByOccasion?.specialLeave ?? 0,
+                                            currentAmt: calculation.deductionBreakdownByOccasion?.specialLeave ?? 0,
+                                            waived: !!attendanceAdjustments.waiveSpecialLeave,
+                                            waiveKey: "waiveSpecialLeave" as const,
+                                        },
+                                        {
+                                            key: "sickLeave" as const,
+                                            label: "Sick Leave",
+                                            countLabel: `${calculation.daysSickLeave} day(s)`,
+                                            hasOccurrences: calculation.daysSickLeave > 0,
+                                            unadjustedAmt: calculation.unadjustedOccasionDeductions?.sickLeave ?? calculation.deductionBreakdownByOccasion?.sickLeave ?? 0,
+                                            currentAmt: calculation.deductionBreakdownByOccasion?.sickLeave ?? 0,
+                                            waived: !!attendanceAdjustments.waiveSickLeave,
+                                            waiveKey: "waiveSickLeave" as const,
+                                        },
+                                        {
+                                            key: "annualLeave" as const,
+                                            label: "Annual Leave Allowance Penalty",
+                                            countLabel: `${calculation.daysAnnualLeave} day(s)`,
+                                            hasOccurrences: calculation.daysAnnualLeave > 0,
+                                            unadjustedAmt: calculation.unadjustedOccasionDeductions?.annualLeave ?? calculation.deductionBreakdownByOccasion?.annualLeave ?? 0,
+                                            currentAmt: calculation.deductionBreakdownByOccasion?.annualLeave ?? 0,
+                                            waived: !!attendanceAdjustments.waiveAnnualLeave,
+                                            waiveKey: "waiveAnnualLeave" as const,
+                                        },
+                                        {
+                                            key: "unapprovedLeave" as const,
+                                            label: "Unapproved Leave",
+                                            countLabel: `${calculation.daysUnapprovedLeave} day(s)`,
+                                            hasOccurrences: calculation.daysUnapprovedLeave > 0,
+                                            unadjustedAmt: calculation.unadjustedOccasionDeductions?.unapprovedLeave ?? calculation.deductionBreakdownByOccasion?.unapprovedLeave ?? 0,
+                                            currentAmt: calculation.deductionBreakdownByOccasion?.unapprovedLeave ?? calculation.leaveDeduction,
+                                            waived: !!attendanceAdjustments.waiveUnapprovedLeave,
+                                            waiveKey: "waiveUnapprovedLeave" as const,
+                                        },
+                                    ];
+
+                                    const visibleItems = occasionItems.filter(item => item.hasOccurrences || item.unadjustedAmt > 0);
+
+                                    if (visibleItems.length === 0) {
+                                        return (
+                                            <p className="text-xs text-muted-foreground italic py-2 text-center">
+                                                No attendance misconduct or penalties recorded for this employee in this cycle.
+                                            </p>
+                                        );
+                                    }
+
+                                    return (
+                                        <div className="space-y-3">
+                                            {visibleItems.map((item) => {
+                                                const customValue = attendanceAdjustments.customDeductions?.[item.key];
+                                                const hasCustom = !item.waived && customValue !== undefined;
+
+                                                return (
+                                                    <div
+                                                        key={item.key}
+                                                        className={cn(
+                                                            "p-3 rounded-lg border transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-3",
+                                                            item.waived
+                                                                ? "bg-emerald-50/40 border-emerald-200"
+                                                                : hasCustom
+                                                                    ? "bg-blue-50/40 border-blue-200"
+                                                                    : "bg-background border-border"
+                                                        )}
+                                                    >
+                                                        <div className="flex items-start gap-3">
+                                                            <Checkbox
+                                                                id={`apply-${item.key}`}
+                                                                checked={!item.waived}
+                                                                onCheckedChange={(checked) => {
+                                                                    setAttendanceAdjustments((prev) => ({
+                                                                        ...prev,
+                                                                        [item.waiveKey]: !checked,
+                                                                    }));
+                                                                }}
+                                                                className="mt-0.5"
+                                                            />
+                                                            <div>
+                                                                <label
+                                                                    htmlFor={`apply-${item.key}`}
+                                                                    className="text-xs font-semibold cursor-pointer flex items-center gap-2 flex-wrap"
+                                                                >
+                                                                    <span>Apply {item.label}</span>
+                                                                    <Badge variant="outline" className="text-[10px] h-4 px-1 border-border">
+                                                                        {item.countLabel}
+                                                                    </Badge>
+                                                                    {item.waived && (
+                                                                        <Badge className="bg-emerald-600 text-white text-[9px] h-4 px-1">
+                                                                            WAIVED (PKR 0)
+                                                                        </Badge>
+                                                                    )}
+                                                                    {hasCustom && (
+                                                                        <Badge className="bg-blue-600 text-white text-[9px] h-4 px-1">
+                                                                            CUSTOM OVERRIDE
+                                                                        </Badge>
+                                                                    )}
+                                                                </label>
+                                                                <p className="text-[11px] text-muted-foreground mt-0.5 font-mono">
+                                                                    Calculated: - PKR {Math.round(item.unadjustedAmt).toLocaleString()}
+                                                                    {item.waived && (
+                                                                        <span className="text-emerald-700 font-semibold ml-1.5">
+                                                                            → 0 (waived)
+                                                                        </span>
+                                                                    )}
+                                                                    {hasCustom && (
+                                                                        <span className="text-blue-700 font-semibold ml-1.5">
+                                                                            → - PKR {Math.round(item.currentAmt).toLocaleString()} (override)
+                                                                        </span>
+                                                                    )}
+                                                                </p>
+                                                            </div>
+                                                        </div>
+
+                                                        {!item.waived && (
+                                                            <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                                                                <span className="text-[11px] text-muted-foreground whitespace-nowrap">
+                                                                    Override PKR:
+                                                                </span>
+                                                                <Input
+                                                                    type="number"
+                                                                    min={0}
+                                                                    placeholder={Math.round(item.unadjustedAmt).toString()}
+                                                                    value={customValue ?? ""}
+                                                                    onChange={(e: ChangeEvent<HTMLInputElement>) => {
+                                                                        const val = e.target.value.trim();
+                                                                        setAttendanceAdjustments((prev) => {
+                                                                            const prevCustom = { ...(prev.customDeductions || {}) };
+                                                                            if (val === "") {
+                                                                                delete prevCustom[item.key];
+                                                                            } else {
+                                                                                prevCustom[item.key] = Math.max(0, parseFloat(val) || 0);
+                                                                            }
+                                                                            return {
+                                                                                ...prev,
+                                                                                customDeductions: prevCustom,
+                                                                            };
+                                                                        });
+                                                                    }}
+                                                                    className="w-28 h-8 text-xs font-mono"
+                                                                />
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    );
+                                })()
+                            )}
+                        </CardContent>
+                    </Card>
+
+                    <Separator className="my-2" />
+
                     <FieldGroup>
                         <form.Field name="overtimeMultiplier">
                             {(field) => (
@@ -748,72 +1059,342 @@ export const SalaryCalculatorForm = ({ employeeId, month, onSuccess, isOpen }: S
                                     </p>
                                 </div>
                             )}
-                            {calculation.daysAbsent > 0 && (
-                                <div className="p-3 rounded-lg border border-rose-100 bg-rose-50/50 space-y-1">
-                                    <div className="flex items-center justify-between">
-                                        <span className="font-semibold text-rose-800">Full Day Absent</span>
-                                        <Badge variant="outline" className="text-[10px] border-rose-200 text-rose-700 bg-white">{calculation.daysAbsent} day(s)</Badge>
+                            {calculation.daysAbsent > 0 && (() => {
+                                const isWaived = !!(attendanceAdjustments.waiveAll || attendanceAdjustments.waiveAbsent);
+                                const customAmt = attendanceAdjustments.customDeductions?.absent;
+                                const isCustom = !isWaived && customAmt !== undefined;
+                                const currentAmt = calculation.deductionBreakdownByOccasion?.absent ?? calculation.absentDeduction;
+                                const origAmt = calculation.unadjustedOccasionDeductions?.absent ?? currentAmt;
+
+                                return (
+                                    <div className={cn(
+                                        "p-3 rounded-lg border space-y-1 transition-colors",
+                                        isWaived
+                                            ? "border-emerald-200 bg-emerald-50/40"
+                                            : isCustom
+                                                ? "border-blue-200 bg-blue-50/40"
+                                                : "border-rose-100 bg-rose-50/50"
+                                    )}>
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-2">
+                                                <span className={cn(
+                                                    "font-semibold",
+                                                    isWaived ? "text-emerald-800" : isCustom ? "text-blue-800" : "text-rose-800"
+                                                )}>
+                                                    Full Day Absent
+                                                </span>
+                                                {isWaived && (
+                                                    <Badge className="bg-emerald-600 text-white text-[9px] h-4 px-1">WAIVED BY HR</Badge>
+                                                )}
+                                                {isCustom && (
+                                                    <Badge className="bg-blue-600 text-white text-[9px] h-4 px-1">ADJUSTED BY HR</Badge>
+                                                )}
+                                            </div>
+                                            <Badge variant="outline" className="text-[10px] border-border bg-white">{calculation.daysAbsent} day(s)</Badge>
+                                        </div>
+                                        <p className="text-muted-foreground font-mono leading-relaxed">
+                                            {isWaived ? (
+                                                <span>
+                                                    <span className="line-through text-muted-foreground/60">Original: - PKR {Math.round(origAmt).toLocaleString()}</span>
+                                                    {" "}→{" "}
+                                                    <strong className="text-emerald-700">- PKR 0</strong> (Waived)
+                                                </span>
+                                            ) : isCustom ? (
+                                                <span>
+                                                    <span className="line-through text-muted-foreground/60">Calculated: - PKR {Math.round(origAmt).toLocaleString()}</span>
+                                                    {" "}→{" "}
+                                                    <strong className="text-blue-700">- PKR {Math.round(currentAmt).toLocaleString()}</strong> (Custom Override)
+                                                </span>
+                                            ) : (
+                                                <span>
+                                                    {calculation.daysAbsent} × Per Day Rate (Basic + configured allowances): <strong className="text-rose-700">- PKR {Math.round(currentAmt).toLocaleString()}</strong>
+                                                </span>
+                                            )}
+                                        </p>
                                     </div>
-                                    <p className="text-muted-foreground font-mono leading-relaxed">
-                                        {calculation.daysAbsent} × Per Day Rate (Basic + configured allowances): - PKR {Math.round(calculation.deductionBreakdownByOccasion?.absent ?? calculation.absentDeduction).toLocaleString()}
-                                    </p>
-                                </div>
-                            )}
-                            {calculation.totalUndertimeHours > 0 && (
-                                <div className="p-3 rounded-lg border border-amber-100 bg-amber-50/50 space-y-1">
-                                    <div className="flex items-center justify-between">
-                                        <span className="font-semibold text-amber-800">Undertime (Short Hours)</span>
-                                        <Badge variant="outline" className="text-[10px] border-amber-200 text-amber-700 bg-white">{calculation.totalUndertimeHours} hrs</Badge>
+                                );
+                            })()}
+
+                            {calculation.totalUndertimeHours > 0 && (() => {
+                                const isWaived = !!(attendanceAdjustments.waiveAll || attendanceAdjustments.waiveUndertime);
+                                const customAmt = attendanceAdjustments.customDeductions?.undertime;
+                                const isCustom = !isWaived && customAmt !== undefined;
+                                const currentAmt = calculation.deductionBreakdownByOccasion?.undertime ?? 0;
+                                const origAmt = calculation.unadjustedOccasionDeductions?.undertime ?? currentAmt;
+
+                                return (
+                                    <div className={cn(
+                                        "p-3 rounded-lg border space-y-1 transition-colors",
+                                        isWaived
+                                            ? "border-emerald-200 bg-emerald-50/40"
+                                            : isCustom
+                                                ? "border-blue-200 bg-blue-50/40"
+                                                : "border-amber-100 bg-amber-50/50"
+                                    )}>
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-2">
+                                                <span className={cn(
+                                                    "font-semibold",
+                                                    isWaived ? "text-emerald-800" : isCustom ? "text-blue-800" : "text-amber-800"
+                                                )}>
+                                                    Undertime (Short Hours)
+                                                </span>
+                                                {isWaived && (
+                                                    <Badge className="bg-emerald-600 text-white text-[9px] h-4 px-1">WAIVED BY HR</Badge>
+                                                )}
+                                                {isCustom && (
+                                                    <Badge className="bg-blue-600 text-white text-[9px] h-4 px-1">ADJUSTED BY HR</Badge>
+                                                )}
+                                            </div>
+                                            <Badge variant="outline" className="text-[10px] border-border bg-white">{calculation.totalUndertimeHours} hrs</Badge>
+                                        </div>
+                                        <p className="text-muted-foreground font-mono leading-relaxed">
+                                            {isWaived ? (
+                                                <span>
+                                                    <span className="line-through text-muted-foreground/60">Original: - PKR {Math.round(origAmt).toLocaleString()}</span>
+                                                    {" "}→{" "}
+                                                    <strong className="text-emerald-700">- PKR 0</strong> (Waived)
+                                                </span>
+                                            ) : isCustom ? (
+                                                <span>
+                                                    <span className="line-through text-muted-foreground/60">Calculated: - PKR {Math.round(origAmt).toLocaleString()}</span>
+                                                    {" "}→{" "}
+                                                    <strong className="text-blue-700">- PKR {Math.round(currentAmt).toLocaleString()}</strong> (Custom Override)
+                                                </span>
+                                            ) : (
+                                                <span>
+                                                    {calculation.totalUndertimeHours} hrs × Hourly Rate (Basic + configured allowances): <strong className="text-amber-800">- PKR {Math.round(currentAmt).toLocaleString()}</strong>
+                                                </span>
+                                            )}
+                                        </p>
                                     </div>
-                                    <p className="text-muted-foreground font-mono leading-relaxed">
-                                        {calculation.totalUndertimeHours} hrs × Hourly Rate (Basic + configured allowances): - PKR {Math.round(calculation.deductionBreakdownByOccasion?.undertime ?? 0).toLocaleString()}
-                                    </p>
-                                </div>
-                            )}
-                            {calculation.daysSpecialLeave > 0 && (calculation.deductionBreakdownByOccasion?.specialLeave ?? 0) > 0 && (
-                                <div className="p-3 rounded-lg border border-orange-100 bg-orange-50/50 space-y-1">
-                                    <div className="flex items-center justify-between">
-                                        <span className="font-semibold text-orange-800">Special Leave (Allowances Deducted)</span>
-                                        <Badge variant="outline" className="text-[10px] border-orange-200 text-orange-700 bg-white">{calculation.daysSpecialLeave} day(s)</Badge>
+                                );
+                            })()}
+
+                            {calculation.daysSpecialLeave > 0 && ((calculation.unadjustedOccasionDeductions?.specialLeave ?? 0) > 0 || (calculation.deductionBreakdownByOccasion?.specialLeave ?? 0) > 0) && (() => {
+                                const isWaived = !!(attendanceAdjustments.waiveAll || attendanceAdjustments.waiveSpecialLeave);
+                                const customAmt = attendanceAdjustments.customDeductions?.specialLeave;
+                                const isCustom = !isWaived && customAmt !== undefined;
+                                const currentAmt = calculation.deductionBreakdownByOccasion?.specialLeave ?? 0;
+                                const origAmt = calculation.unadjustedOccasionDeductions?.specialLeave ?? currentAmt;
+
+                                return (
+                                    <div className={cn(
+                                        "p-3 rounded-lg border space-y-1 transition-colors",
+                                        isWaived
+                                            ? "border-emerald-200 bg-emerald-50/40"
+                                            : isCustom
+                                                ? "border-blue-200 bg-blue-50/40"
+                                                : "border-orange-100 bg-orange-50/50"
+                                    )}>
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-2">
+                                                <span className={cn(
+                                                    "font-semibold",
+                                                    isWaived ? "text-emerald-800" : isCustom ? "text-blue-800" : "text-orange-800"
+                                                )}>
+                                                    Special Leave (Allowances Deducted)
+                                                </span>
+                                                {isWaived && (
+                                                    <Badge className="bg-emerald-600 text-white text-[9px] h-4 px-1">WAIVED BY HR</Badge>
+                                                )}
+                                                {isCustom && (
+                                                    <Badge className="bg-blue-600 text-white text-[9px] h-4 px-1">ADJUSTED BY HR</Badge>
+                                                )}
+                                            </div>
+                                            <Badge variant="outline" className="text-[10px] border-border bg-white">{calculation.daysSpecialLeave} day(s)</Badge>
+                                        </div>
+                                        <p className="text-muted-foreground font-mono leading-relaxed">
+                                            {isWaived ? (
+                                                <span>
+                                                    <span className="line-through text-muted-foreground/60">Original: - PKR {Math.round(origAmt).toLocaleString()}</span>
+                                                    {" "}→{" "}
+                                                    <strong className="text-emerald-700">- PKR 0</strong> (Waived)
+                                                </span>
+                                            ) : isCustom ? (
+                                                <span>
+                                                    <span className="line-through text-muted-foreground/60">Calculated: - PKR {Math.round(origAmt).toLocaleString()}</span>
+                                                    {" "}→{" "}
+                                                    <strong className="text-blue-700">- PKR {Math.round(currentAmt).toLocaleString()}</strong> (Custom Override)
+                                                </span>
+                                            ) : (
+                                                <span>
+                                                    {calculation.daysSpecialLeave} × Per Day Rate (Basic paid; allowances with Special Leave rule deducted): <strong className="text-orange-800">- PKR {Math.round(currentAmt).toLocaleString()}</strong>
+                                                </span>
+                                            )}
+                                        </p>
                                     </div>
-                                    <p className="text-muted-foreground font-mono leading-relaxed">
-                                        {calculation.daysSpecialLeave} × Per Day Rate (Basic paid; allowances with Special Leave rule deducted): - PKR {Math.round(calculation.deductionBreakdownByOccasion.specialLeave).toLocaleString()}
-                                    </p>
-                                </div>
-                            )}
-                            {calculation.daysSickLeave > 0 && (calculation.deductionBreakdownByOccasion?.sickLeave ?? 0) > 0 && (
-                                <div className="p-3 rounded-lg border border-teal-100 bg-teal-50/50 space-y-1">
-                                    <div className="flex items-center justify-between">
-                                        <span className="font-semibold text-teal-800">Sick Leave Deduction</span>
-                                        <Badge variant="outline" className="text-[10px] border-teal-200 text-teal-700 bg-white">{calculation.daysSickLeave} day(s)</Badge>
+                                );
+                            })()}
+
+                            {calculation.daysSickLeave > 0 && ((calculation.unadjustedOccasionDeductions?.sickLeave ?? 0) > 0 || (calculation.deductionBreakdownByOccasion?.sickLeave ?? 0) > 0) && (() => {
+                                const isWaived = !!(attendanceAdjustments.waiveAll || attendanceAdjustments.waiveSickLeave);
+                                const customAmt = attendanceAdjustments.customDeductions?.sickLeave;
+                                const isCustom = !isWaived && customAmt !== undefined;
+                                const currentAmt = calculation.deductionBreakdownByOccasion?.sickLeave ?? 0;
+                                const origAmt = calculation.unadjustedOccasionDeductions?.sickLeave ?? currentAmt;
+
+                                return (
+                                    <div className={cn(
+                                        "p-3 rounded-lg border space-y-1 transition-colors",
+                                        isWaived
+                                            ? "border-emerald-200 bg-emerald-50/40"
+                                            : isCustom
+                                                ? "border-blue-200 bg-blue-50/40"
+                                                : "border-teal-100 bg-teal-50/50"
+                                    )}>
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-2">
+                                                <span className={cn(
+                                                    "font-semibold",
+                                                    isWaived ? "text-emerald-800" : isCustom ? "text-blue-800" : "text-teal-800"
+                                                )}>
+                                                    Sick Leave Deduction
+                                                </span>
+                                                {isWaived && (
+                                                    <Badge className="bg-emerald-600 text-white text-[9px] h-4 px-1">WAIVED BY HR</Badge>
+                                                )}
+                                                {isCustom && (
+                                                    <Badge className="bg-blue-600 text-white text-[9px] h-4 px-1">ADJUSTED BY HR</Badge>
+                                                )}
+                                            </div>
+                                            <Badge variant="outline" className="text-[10px] border-border bg-white">{calculation.daysSickLeave} day(s)</Badge>
+                                        </div>
+                                        <p className="text-muted-foreground font-mono leading-relaxed">
+                                            {isWaived ? (
+                                                <span>
+                                                    <span className="line-through text-muted-foreground/60">Original: - PKR {Math.round(origAmt).toLocaleString()}</span>
+                                                    {" "}→{" "}
+                                                    <strong className="text-emerald-700">- PKR 0</strong> (Waived)
+                                                </span>
+                                            ) : isCustom ? (
+                                                <span>
+                                                    <span className="line-through text-muted-foreground/60">Calculated: - PKR {Math.round(origAmt).toLocaleString()}</span>
+                                                    {" "}→{" "}
+                                                    <strong className="text-blue-700">- PKR {Math.round(currentAmt).toLocaleString()}</strong> (Custom Override)
+                                                </span>
+                                            ) : (
+                                                <span>
+                                                    {calculation.daysSickLeave} × Per Day Rate (Configured allowances): <strong className="text-teal-800">- PKR {Math.round(currentAmt).toLocaleString()}</strong>
+                                                </span>
+                                            )}
+                                        </p>
                                     </div>
-                                    <p className="text-muted-foreground font-mono leading-relaxed">
-                                        {calculation.daysSickLeave} × Per Day Rate (Configured allowances): - PKR {Math.round(calculation.deductionBreakdownByOccasion.sickLeave).toLocaleString()}
-                                    </p>
-                                </div>
-                            )}
-                            {calculation.daysAnnualLeave > 0 && (calculation.deductionBreakdownByOccasion?.annualLeave ?? 0) > 0 && (
-                                <div className="p-3 rounded-lg border border-amber-100 bg-amber-50/50 space-y-1">
-                                    <div className="flex items-center justify-between">
-                                        <span className="font-semibold text-amber-800">Annual Leave Allowance Deduction</span>
-                                        <Badge variant="outline" className="text-[10px] border-amber-200 text-amber-700 bg-white">{calculation.daysAnnualLeave} day(s)</Badge>
+                                );
+                            })()}
+
+                            {calculation.daysAnnualLeave > 0 && ((calculation.unadjustedOccasionDeductions?.annualLeave ?? 0) > 0 || (calculation.deductionBreakdownByOccasion?.annualLeave ?? 0) > 0) && (() => {
+                                const isWaived = !!(attendanceAdjustments.waiveAll || attendanceAdjustments.waiveAnnualLeave);
+                                const customAmt = attendanceAdjustments.customDeductions?.annualLeave;
+                                const isCustom = !isWaived && customAmt !== undefined;
+                                const currentAmt = calculation.deductionBreakdownByOccasion?.annualLeave ?? 0;
+                                const origAmt = calculation.unadjustedOccasionDeductions?.annualLeave ?? currentAmt;
+
+                                return (
+                                    <div className={cn(
+                                        "p-3 rounded-lg border space-y-1 transition-colors",
+                                        isWaived
+                                            ? "border-emerald-200 bg-emerald-50/40"
+                                            : isCustom
+                                                ? "border-blue-200 bg-blue-50/40"
+                                                : "border-amber-100 bg-amber-50/50"
+                                    )}>
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-2">
+                                                <span className={cn(
+                                                    "font-semibold",
+                                                    isWaived ? "text-emerald-800" : isCustom ? "text-blue-800" : "text-amber-800"
+                                                )}>
+                                                    Annual Leave Allowance Deduction
+                                                </span>
+                                                {isWaived && (
+                                                    <Badge className="bg-emerald-600 text-white text-[9px] h-4 px-1">WAIVED BY HR</Badge>
+                                                )}
+                                                {isCustom && (
+                                                    <Badge className="bg-blue-600 text-white text-[9px] h-4 px-1">ADJUSTED BY HR</Badge>
+                                                )}
+                                            </div>
+                                            <Badge variant="outline" className="text-[10px] border-border bg-white">{calculation.daysAnnualLeave} day(s)</Badge>
+                                        </div>
+                                        <p className="text-muted-foreground font-mono leading-relaxed">
+                                            {isWaived ? (
+                                                <span>
+                                                    <span className="line-through text-muted-foreground/60">Original: - PKR {Math.round(origAmt).toLocaleString()}</span>
+                                                    {" "}→{" "}
+                                                    <strong className="text-emerald-700">- PKR 0</strong> (Waived)
+                                                </span>
+                                            ) : isCustom ? (
+                                                <span>
+                                                    <span className="line-through text-muted-foreground/60">Calculated: - PKR {Math.round(origAmt).toLocaleString()}</span>
+                                                    {" "}→{" "}
+                                                    <strong className="text-blue-700">- PKR {Math.round(currentAmt).toLocaleString()}</strong> (Custom Override)
+                                                </span>
+                                            ) : (
+                                                <span>
+                                                    {calculation.daysAnnualLeave} × Per Day Rate (Configured allowances): <strong className="text-amber-800">- PKR {Math.round(currentAmt).toLocaleString()}</strong>
+                                                </span>
+                                            )}
+                                        </p>
                                     </div>
-                                    <p className="text-muted-foreground font-mono leading-relaxed">
-                                        {calculation.daysAnnualLeave} × Per Day Rate (Configured allowances): - PKR {Math.round(calculation.deductionBreakdownByOccasion.annualLeave).toLocaleString()}
-                                    </p>
-                                </div>
-                            )}
-                            {calculation.daysUnapprovedLeave > 0 && (
-                                <div className="p-3 rounded-lg border border-violet-100 bg-violet-50/50 space-y-1">
-                                    <div className="flex items-center justify-between">
-                                        <span className="font-semibold text-violet-800">Unpaid / Unapproved Leave</span>
-                                        <Badge variant="outline" className="text-[10px] border-violet-200 text-violet-700 bg-white">{calculation.daysUnapprovedLeave} day(s)</Badge>
+                                );
+                            })()}
+
+                            {calculation.daysUnapprovedLeave > 0 && (() => {
+                                const isWaived = !!(attendanceAdjustments.waiveAll || attendanceAdjustments.waiveUnapprovedLeave);
+                                const customAmt = attendanceAdjustments.customDeductions?.unapprovedLeave;
+                                const isCustom = !isWaived && customAmt !== undefined;
+                                const currentAmt = calculation.deductionBreakdownByOccasion?.unapprovedLeave ?? calculation.leaveDeduction;
+                                const origAmt = calculation.unadjustedOccasionDeductions?.unapprovedLeave ?? currentAmt;
+
+                                return (
+                                    <div className={cn(
+                                        "p-3 rounded-lg border space-y-1 transition-colors",
+                                        isWaived
+                                            ? "border-emerald-200 bg-emerald-50/40"
+                                            : isCustom
+                                                ? "border-blue-200 bg-blue-50/40"
+                                                : "border-violet-100 bg-violet-50/50"
+                                    )}>
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-2">
+                                                <span className={cn(
+                                                    "font-semibold",
+                                                    isWaived ? "text-emerald-800" : isCustom ? "text-blue-800" : "text-violet-800"
+                                                )}>
+                                                    Unpaid / Unapproved Leave
+                                                </span>
+                                                {isWaived && (
+                                                    <Badge className="bg-emerald-600 text-white text-[9px] h-4 px-1">WAIVED BY HR</Badge>
+                                                )}
+                                                {isCustom && (
+                                                    <Badge className="bg-blue-600 text-white text-[9px] h-4 px-1">ADJUSTED BY HR</Badge>
+                                                )}
+                                            </div>
+                                            <Badge variant="outline" className="text-[10px] border-border bg-white">{calculation.daysUnapprovedLeave} day(s)</Badge>
+                                        </div>
+                                        <p className="text-muted-foreground font-mono leading-relaxed">
+                                            {isWaived ? (
+                                                <span>
+                                                    <span className="line-through text-muted-foreground/60">Original: - PKR {Math.round(origAmt).toLocaleString()}</span>
+                                                    {" "}→{" "}
+                                                    <strong className="text-emerald-700">- PKR 0</strong> (Waived)
+                                                </span>
+                                            ) : isCustom ? (
+                                                <span>
+                                                    <span className="line-through text-muted-foreground/60">Calculated: - PKR {Math.round(origAmt).toLocaleString()}</span>
+                                                    {" "}→{" "}
+                                                    <strong className="text-blue-700">- PKR {Math.round(currentAmt).toLocaleString()}</strong> (Custom Override)
+                                                </span>
+                                            ) : (
+                                                <span>
+                                                    {calculation.daysUnapprovedLeave} × Per Day Rate (Configured rules): <strong className="text-violet-800">- PKR {Math.round(currentAmt).toLocaleString()}</strong>
+                                                </span>
+                                            )}
+                                        </p>
                                     </div>
-                                    <p className="text-muted-foreground font-mono leading-relaxed">
-                                        {calculation.daysUnapprovedLeave} × Per Day Rate (Configured rules): - PKR {Math.round(calculation.deductionBreakdownByOccasion?.unapprovedLeave ?? calculation.leaveDeduction).toLocaleString()}
-                                    </p>
-                                </div>
-                            )}
+                                );
+                            })()}
+
                             {calculation.daysNotEmployed === 0 &&
                                 calculation.daysAbsent === 0 &&
                                 calculation.totalUndertimeHours === 0 &&
@@ -824,10 +1405,33 @@ export const SalaryCalculatorForm = ({ employeeId, month, onSuccess, isOpen }: S
                                 <p className="text-muted-foreground italic py-2 text-center">No attendance deductions this cycle. 🎉</p>
                             )}
                         </div>
-                        <div className="mt-3 flex items-center justify-between p-2.5 bg-rose-50 border border-rose-100 rounded-lg">
-                            <span className="text-xs font-semibold text-rose-800">Total Attendance & Proration Deduction</span>
-                            <span className="text-sm font-bold font-mono text-rose-700">- PKR {Math.round(calculation.absentDeduction + calculation.leaveDeduction + calculation.notEmployedDeduction).toLocaleString()}</span>
-                        </div>
+                        {(() => {
+                            const totalAttendanceDeduction = Math.round(
+                                calculation.absentDeduction +
+                                calculation.leaveDeduction +
+                                calculation.notEmployedDeduction
+                            );
+                            const isZeroDeduction = totalAttendanceDeduction === 0;
+
+                            return (
+                                <div className={cn(
+                                    "mt-3 flex items-center justify-between p-2.5 rounded-lg border transition-colors",
+                                    isZeroDeduction
+                                        ? "bg-emerald-50 border-emerald-200 text-emerald-800"
+                                        : "bg-rose-50 border-rose-100 text-rose-800"
+                                )}>
+                                    <span className="text-xs font-semibold">
+                                        Total Attendance & Proration Deduction
+                                    </span>
+                                    <span className={cn(
+                                        "text-sm font-bold font-mono",
+                                        isZeroDeduction ? "text-emerald-700" : "text-rose-700"
+                                    )}>
+                                        - PKR {totalAttendanceDeduction.toLocaleString()}
+                                    </span>
+                                </div>
+                            );
+                        })()}
                     </CalcSection>
 
                     {calculation.totalOvertimeHours > 0 && (

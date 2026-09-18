@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { saveEmployeePayslipFn } from "@/server-functions/hr/payroll/dashboard-fn";
+import type { AttendanceDeductionAdjustments } from "@/lib/types/hr-types";
 import { toast } from "sonner";
 
 type SavePayslipInput = {
@@ -22,6 +23,7 @@ type SavePayslipInput = {
   };
   earlyCutoffDate?: string;
   ignorePastUnmarkedDays?: boolean;
+  attendanceAdjustments?: AttendanceDeductionAdjustments;
   remarks?: string;
 };
 
