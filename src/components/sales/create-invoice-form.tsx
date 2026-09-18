@@ -802,6 +802,7 @@ export const CreateInvoiceForm = ({ onSuccess, onCancel, onDirtyChange, initialD
                                             <Select value={field.state.value} onValueChange={(v: any) => field.handleChange(v)}>
                                                 <SelectTrigger><SelectValue /></SelectTrigger>
                                                 <SelectContent>
+                                                    <SelectItem value="distributor">Distributor</SelectItem>
                                                     <SelectItem value="retailer">Retailer</SelectItem>
                                                     <SelectItem value="wholesaler">Wholesaler</SelectItem>
                                                 </SelectContent>

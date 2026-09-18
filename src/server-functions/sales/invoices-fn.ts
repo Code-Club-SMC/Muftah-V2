@@ -1600,17 +1600,7 @@ export const updateInvoiceFn = createServerFn()
         await addPaymentsToInvoice(tx, {
           invoiceId: existing.id,
           actorId: userId,
-          payments: data.newPayments!.map((p) => ({
-            method: p.method,
-            amount: p.amount,
-            walletId: p.walletId,
-            reference: p.reference,
-            chequeNumber: p.chequeNumber,
-            chequeBank: p.chequeBank,
-            chequeDate: p.chequeDate,
-            paymentDate: p.paymentDate,
-            sourceRecordId: p.sourceRecordId,
-          })),
+          payments: data.newPayments as any,
         });
       } else {
         await recalculateInvoiceSettlement(tx, existing.id, {

@@ -39,7 +39,9 @@ import { getProductsFn } from "@/server-functions/sales/sales-config-fn";
 import { getRecipesByProductFn } from "@/server-functions/inventory/recipes/get-recipes-by-product-fn";
 import { getOrderBookerCommissionTiersFn } from "@/server-functions/sales/order-booker-commission-fn";
 import { getRecipeRatesForEntityFn } from "@/server-functions/sales/entity-recipe-rates-fn";
-import { useCreateOrder } from "@/hooks/sales/use-orders";
+import { useNavigate } from "@tanstack/react-router";
+import { useCreateOrder, useGetRecentShopkeepers } from "@/hooks/sales/use-orders";
+import { useGetDistributors } from "@/hooks/sales/use-sales-people";
 import {
   ORDER_BOOKER_SHOP_TYPE_OPTIONS,
   ORDER_BOOKER_VEHICLE_TYPE_OPTIONS,
@@ -218,12 +220,18 @@ interface CreateOrderPadDialogProps {
 export function CreateOrderPadDialog({ orderBookers }: CreateOrderPadDialogProps) {
   const [open, setOpen] = useState(false);
   const [manualRateOverrides, setManualRateOverrides] = useState<Set<number>>(new Set());
+  const [customerTargetType, setCustomerTargetType] = useState<"retailer" | "distributor">("retailer");
   const create = useCreateOrder();
+  const navigate = useNavigate();
 
   const { data: products } = useQuery({
     queryKey: ["products"],
     queryFn: () => getProductsFn(),
   });
+
+  const { data: recentShopkeepers } = useGetRecentShopkeepers(undefined, customerTargetType === "retailer");
+  const { data: distributorsRes } = useGetDistributors(1, 1000, customerTargetType === "distributor");
+  const distributors = distributorsRes?.data || [];
 
   const form = useForm({
     defaultValues: {
@@ -501,22 +509,107 @@ export function CreateOrderPadDialog({ orderBookers }: CreateOrderPadDialogProps
               )}
             </form.Field>
 
+            <div className="space-y-1.5">
+              <Label className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Customer Type
+              </Label>
+              <Select value={customerTargetType} onValueChange={(v: "retailer" | "distributor") => {
+                setCustomerTargetType(v);
+                form.setFieldValue("shopkeeperName", "");
+                form.setFieldValue("shopkeeperMobile", "");
+                form.setFieldValue("shopkeeperAddress", "");
+              }}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="retailer">Retailer / Shopkeeper</SelectItem>
+                  <SelectItem value="distributor">Distributor</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
             <form.Field
               name="shopkeeperName"
-              validators={{ onChange: z.string().min(1, "Shopkeeper name is required") }}
+              validators={{ onChange: z.string().min(1, "Customer name is required") }}
             >
               {(field) => (
                 <div className="space-y-1.5">
                   <Label className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                     <Store className="size-3" />
-                    Shopkeeper Name
+                    {customerTargetType === "distributor" ? "Distributor Name" : "Shopkeeper Name"}
                   </Label>
-                  <Input
-                    value={field.state.value}
-                    onChange={(e) => field.handleChange(e.target.value)}
-                    placeholder="Enter shopkeeper name"
-                    className={field.state.meta.errors.length > 0 ? "border-destructive" : ""}
-                  />
+                  
+                  {customerTargetType === "retailer" ? (
+                    <>
+                      <Input
+                        list="recent-shopkeepers"
+                        value={field.state.value}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          field.handleChange(val);
+                          const matched = recentShopkeepers?.find((s) => s.name === val);
+                          if (matched) {
+                            if (matched.mobile && !form.getFieldValue("shopkeeperMobile")) {
+                              form.setFieldValue("shopkeeperMobile", matched.mobile);
+                            }
+                            if (matched.address && !form.getFieldValue("shopkeeperAddress")) {
+                              form.setFieldValue("shopkeeperAddress", matched.address);
+                            }
+                            form.setFieldValue("trip.shopType", "old");
+                          }
+                        }}
+                        placeholder="Enter shopkeeper name"
+                        className={field.state.meta.errors.length > 0 ? "border-destructive" : ""}
+                      />
+                      <datalist id="recent-shopkeepers">
+                        {recentShopkeepers?.map((s, idx) => (
+                          <option key={`${s.name}-${idx}`} value={s.name}>
+                            {[s.mobile, s.address].filter(Boolean).join(", ")}
+                          </option>
+                        ))}
+                      </datalist>
+                    </>
+                  ) : (
+                    <div className="space-y-2">
+                      <Select value={field.state.value} onValueChange={(v) => {
+                        field.handleChange(v);
+                        const matched = distributors.find(d => d.name === v);
+                        if (matched) {
+                          form.setFieldValue("shopkeeperMobile", matched.mobileNumber || "");
+                          form.setFieldValue("shopkeeperAddress", matched.address || "");
+                          form.setFieldValue("trip.shopType", "old");
+                        }
+                      }}>
+                        <SelectTrigger className={field.state.meta.errors.length > 0 ? "border-destructive" : ""}>
+                          <SelectValue placeholder="Select a distributor" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {distributors.length === 0 && (
+                            <div className="p-2 text-sm text-muted-foreground text-center">No distributors found</div>
+                          )}
+                          {distributors.map(d => (
+                            <SelectItem key={d.id} value={d.name}>{d.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <div className="flex justify-end mt-1">
+                        <Button
+                          type="button"
+                          variant="link"
+                          size="sm"
+                          className="h-auto p-0 text-[10px] text-muted-foreground hover:text-primary"
+                          onClick={() => {
+                            setOpen(false);
+                            navigate({ to: "/sales/people", search: { tab: "distributors" } as any });
+                          }}
+                        >
+                          <Plus className="size-3 mr-1" />
+                          Distributor missing? Add here
+                        </Button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </form.Field>

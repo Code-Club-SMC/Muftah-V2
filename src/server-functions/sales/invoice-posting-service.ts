@@ -1361,7 +1361,7 @@ export async function postInvoice(
     invoiceId: invoice.id,
     actorId: userId,
     source: input.source === "online" ? "invoice_creation" : "offline_import",
-    payments: data.payments,
+    payments: data.payments as any,
   });
 
   const postedInvoice = await tx.query.invoices.findFirst({

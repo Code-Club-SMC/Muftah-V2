@@ -59,7 +59,7 @@ async function computePeriodMetrics(
         and(
           gte(invoices.createdAt, rangeStart),
           lte(invoices.createdAt, rangeEnd),
-          inArray(invoices.status, ["paid", "partially_paid"]),
+          inArray(invoices.paymentStatus, ["paid", "partially_paid"]),
         ),
       )
       .then((r) => r[0]),
@@ -204,7 +204,7 @@ export const getDashboardStatsFn = createServerFn()
         and(
           gte(invoices.createdAt, rangeStart),
           lte(invoices.createdAt, rangeEnd),
-          inArray(invoices.status, ["paid", "partially_paid"]),
+          inArray(invoices.paymentStatus, ["paid", "partially_paid"]),
         ),
       )
       .then((r) => r[0]);
@@ -236,7 +236,7 @@ export const getDashboardStatsFn = createServerFn()
           and(
             gte(invoices.createdAt, chartWindowStart),
             lte(invoices.createdAt, rangeEnd),
-            inArray(invoices.status, ["paid", "partially_paid"]),
+            inArray(invoices.paymentStatus, ["paid", "partially_paid"]),
           ),
         )
         .groupBy(sql`date_trunc('month', ${invoices.createdAt})`)

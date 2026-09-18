@@ -67,3 +67,13 @@ export function useFulfillOrder() {
     },
   });
 }
+
+import { getRecentShopkeepersFn } from "@/server-functions/sales/orders-fn";
+
+export function useGetRecentShopkeepers(orderBookerId?: string, enabled = true) {
+  return useQuery({
+    queryKey: ["recent-shopkeepers", orderBookerId],
+    queryFn: () => getRecentShopkeepersFn({ data: { orderBookerId } }),
+    enabled,
+  });
+}

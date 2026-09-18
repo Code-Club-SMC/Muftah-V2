@@ -88,10 +88,11 @@ export function useUpdateOrderBooker() {
 }
 
 // ── Customers by Type ──
-export function useGetDistributors(page = 1, limit = 20) {
+export function useGetDistributors(page = 1, limit = 20, enabled = true) {
   return useQuery({
     queryKey: salesPeopleKeys.distributors(page, limit),
     queryFn: () => getCustomersByTypeFn({ data: { customerType: "distributor", page, limit } }),
+    enabled,
   });
 }
 

@@ -13,6 +13,7 @@ import {
 } from "@/server-functions/sales/reconciliation-fn";
 import { useGetRecoverySummary } from "@/hooks/sales/use-credit-recovery";
 import { useWallets } from "@/hooks/finance/use-finance";
+import { useGetSalesmen } from "@/hooks/sales/use-sales-people";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -94,6 +95,7 @@ function ReconciliationPage() {
   const [submittedSlip, setSubmittedSlip] = useState("");
   const { data: walletsData } = useWallets();
   const wallets = walletsData ?? [];
+  const { data: salesmen } = useGetSalesmen();
   const { data: recoverySummary } = useGetRecoverySummary();
 
   // ── Slip lookup ──────────────────────────────────────────────────────────
@@ -140,7 +142,7 @@ function ReconciliationPage() {
     mutationFn: (payload: {
       slipId: string;
       amount: number;
-      method: "cash" | "bank_transfer" | "cheque";
+      method: "cash" | "bank_transfer" | "cheque" | "expense_offset";
       walletId?: string;
       reference?: string;
       chequeBank?: string;
@@ -148,6 +150,8 @@ function ReconciliationPage() {
       chequeDate?: Date;
       notes?: string;
       instantVerify?: boolean;
+      expenseType?: string;
+      expenseEmployeeId?: string;
     }) =>
       reconcileSlipFn({ data: payload }),
     onSuccess: (result) => {
@@ -173,7 +177,7 @@ function ReconciliationPage() {
   const form = useForm({
     defaultValues: {
       amount: 0,
-      method: "cash" as "cash" | "bank_transfer" | "digital_wallet" | "cheque",
+      method: "cash" as "cash" | "bank_transfer" | "digital_wallet" | "cheque" | "expense_offset",
       walletId: wallets.find((w) => w.type === "cash")?.id ?? wallets[0]?.id ?? "",
       reference: "",
       senderBankName: "",
@@ -185,6 +189,8 @@ function ReconciliationPage() {
       chequeDate: format(new Date(), "yyyy-MM-dd"),
       notes: "",
       instantVerify: false,
+      expenseType: "",
+      expenseEmployeeId: "",
     },
     onSubmit: async ({ value }) => {
       if (!slip) return;
@@ -196,13 +202,19 @@ function ReconciliationPage() {
         toast.error(`Amount cannot exceed remaining collectible: ${PKR(unallocatedAmount)}`);
         return;
       }
-      if (!value.walletId || value.walletId === "__none__") {
+      if (value.method !== "expense_offset" && (!value.walletId || value.walletId === "__none__")) {
         toast.error(
           value.method === "cash"
             ? "Please select a cash deposit account"
             : "Please select a bank account",
         );
         return;
+      }
+      if (value.method === "expense_offset") {
+        if (value.expenseType === "salesman_salary" && !value.expenseEmployeeId) {
+          toast.error("Please select a salesman for salary offset");
+          return;
+        }
       }
       if (value.method === "bank_transfer") {
         if (!value.senderBankName?.trim()) {
@@ -247,7 +259,7 @@ function ReconciliationPage() {
         }
       }
 
-      const backendMethod: "cash" | "bank_transfer" | "cheque" =
+      const backendMethod: "cash" | "bank_transfer" | "cheque" | "expense_offset" =
         value.method === "digital_wallet"
           ? "bank_transfer"
           : value.method;
@@ -265,13 +277,15 @@ function ReconciliationPage() {
         slipId: slip.id,
         amount: value.amount,
         method: backendMethod,
-        walletId: value.walletId,
+        walletId: value.method === "expense_offset" ? undefined : value.walletId,
         reference: value.reference?.trim(),
         chequeBank: value.method === "cheque" ? value.chequeBank.trim() : undefined,
         chequeNumber: value.method === "cheque" ? value.chequeNumber.trim() : undefined,
         chequeDate: value.method === "cheque" && value.chequeDate ? new Date(value.chequeDate) : undefined,
         notes: formattedNotes,
-        instantVerify: value.method !== "cash" ? Boolean(value.instantVerify) : undefined,
+        instantVerify: value.method !== "cash" && value.method !== "expense_offset" ? Boolean(value.instantVerify) : undefined,
+        expenseType: value.method === "expense_offset" ? value.expenseType : undefined,
+        expenseEmployeeId: value.method === "expense_offset" ? value.expenseEmployeeId : undefined,
       });
     },
   });
@@ -562,9 +576,11 @@ function ReconciliationPage() {
                             <Select
                               value={field.state.value}
                               onValueChange={(v: string) => {
-                                const nextMethod = v as "cash" | "bank_transfer" | "digital_wallet" | "cheque";
+                                const nextMethod = v as "cash" | "bank_transfer" | "digital_wallet" | "cheque" | "expense_offset";
                                 field.handleChange(nextMethod);
                                 form.setFieldValue("instantVerify", false);
+                                form.setFieldValue("expenseType", nextMethod === "expense_offset" ? "salesman_salary" : "");
+                                form.setFieldValue("expenseEmployeeId", "");
                                 const requiredType = nextMethod === "cash" ? "cash" : "bank";
                                 const eligible = wallets.filter((w) => w.type === requiredType);
                                 if (eligible.length > 0 && !eligible.some((w) => w.id === form.getFieldValue("walletId"))) {
@@ -600,6 +616,12 @@ function ReconciliationPage() {
                                     Cheque
                                   </span>
                                 </SelectItem>
+                                <SelectItem value="expense_offset">
+                                  <span className="flex items-center gap-2">
+                                    <Receipt className="size-3.5 text-orange-500" />
+                                    Salesman Salary Paid by Distributor
+                                  </span>
+                                </SelectItem>
                               </SelectContent>
                             </Select>
                           </div>
@@ -609,6 +631,7 @@ function ReconciliationPage() {
                       <form.Field name="walletId">
                         {(field) => {
                           const currentMethod = form.getFieldValue("method");
+                          if (currentMethod === "expense_offset") return null;
                           const requiredType = currentMethod === "cash" ? "cash" : "bank";
                           const filteredWallets = wallets.filter(
                             (w) => w.type === requiredType,
@@ -658,6 +681,35 @@ function ReconciliationPage() {
                           );
                         }}
                       </form.Field>
+                      {form.getFieldValue("method") === "expense_offset" && (
+                        <form.Field name="expenseEmployeeId">
+                          {(field) => (
+                            <div className="space-y-1.5">
+                              <label className="text-sm font-medium">
+                                Select Salesman <span className="text-destructive">*</span>
+                              </label>
+                              <Select
+                                value={field.state.value}
+                                onValueChange={field.handleChange}
+                              >
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Select salesman" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {salesmen?.filter((s) => s.employeeId).map((s) => (
+                                    <SelectItem key={s.employeeId} value={s.employeeId!}>
+                                      {s.name}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              <p className="text-xs text-muted-foreground">
+                                Their salary will be marked as paid/advanced in HR.
+                              </p>
+                            </div>
+                          )}
+                        </form.Field>
+                      )}
 
                       {form.getFieldValue("method") === "bank_transfer" && (
                         <div className="space-y-3 rounded-lg border border-blue-200 bg-blue-50/50 dark:border-blue-900/40 dark:bg-blue-950/10 p-3">

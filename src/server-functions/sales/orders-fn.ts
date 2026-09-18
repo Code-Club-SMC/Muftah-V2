@@ -27,6 +27,37 @@ import { logActivityQuiet } from "@/lib/activity-logger.server";
 
 
 // ═══════════════════════════════════════════════════════════════════════════
+// SHOPKEEPERS (From historical orders)
+
+export const getRecentShopkeepersFn = createServerFn()
+  .middleware([requireSalesOrdersViewMiddleware])
+  .inputValidator((input: any) => z.object({ orderBookerId: z.string().optional() }).optional().parse(input))
+  .handler(async ({ data }) => {
+    // We want distinct shopkeeper info. Since distinct ON multiple columns isn't fully supported via drizzle query builder easily in a clean way across all fields, we'll fetch recently booked ones and deduplicate in JS, or use a distinct SQL query.
+    // Let's just fetch the last 1000 orders and distinct them in memory to avoid complex SQL for now, it's fast enough.
+    const recentOrders = await db.query.orders.findMany({
+      where: data?.orderBookerId ? eq(orders.orderBookerId, data.orderBookerId) : undefined,
+      columns: { shopkeeperName: true, shopkeeperMobile: true, shopkeeperAddress: true, createdAt: true },
+      orderBy: [desc(orders.createdAt)],
+      limit: 1000,
+    });
+
+    const uniqueShopkeepers = new Map<string, typeof recentOrders[0]>();
+    for (const order of recentOrders) {
+      const key = order.shopkeeperName.trim().toLowerCase();
+      if (!uniqueShopkeepers.has(key)) {
+        uniqueShopkeepers.set(key, order);
+      }
+    }
+
+    return Array.from(uniqueShopkeepers.values()).map(o => ({
+      name: o.shopkeeperName,
+      mobile: o.shopkeeperMobile,
+      address: o.shopkeeperAddress,
+    }));
+  });
+
+// ═══════════════════════════════════════════════════════════════════════════
 // ORDERS
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -404,6 +435,8 @@ export const getOrderForInvoiceFn = createServerFn()
           or(
             eq(customers.customerType, "shopkeeper"),
             eq(customers.customerType, "retailer"),
+            eq(customers.customerType, "distributor"),
+            eq(customers.customerType, "wholesaler"),
           ),
         ),
       })) ?? null;

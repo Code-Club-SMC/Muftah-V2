@@ -159,8 +159,8 @@ export const reconcileSlipFn = createServerFn()
       .object({
         slipId: z.string().min(1),
         amount: z.number().positive("Amount must be positive"),
-        method: z.enum(["cash", "bank_transfer", "cheque"]).default("cash"),
-        walletId: z.string().min(1, "Destination account is required"),
+        method: z.enum(["cash", "bank_transfer", "cheque", "expense_offset"]).default("cash"),
+        walletId: z.string().optional(),
         reference: z.string().trim().min(1).optional(),
         chequeNumber: z.string().trim().min(1).optional(),
         chequeBank: z.string().trim().min(1).optional(),
@@ -169,8 +169,24 @@ export const reconcileSlipFn = createServerFn()
         sourceRecordId: z.string().trim().min(1).optional(),
         notes: z.string().optional(),
         instantVerify: z.boolean().optional(),
+        expenseType: z.string().optional(),
+        expenseEmployeeId: z.string().optional(),
       })
       .superRefine((row, ctx) => {
+        if (row.method !== "expense_offset" && !row.walletId) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["walletId"],
+            message: "Destination account is required",
+          });
+        }
+        if (row.method === "expense_offset" && row.expenseType === "salesman_salary" && !row.expenseEmployeeId) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["expenseEmployeeId"],
+            message: "Salesman is required",
+          });
+        }
         if (row.method === "bank_transfer" && !row.reference) {
           ctx.addIssue({
             code: "custom",
@@ -217,10 +233,20 @@ export const reconcileSlipFn = createServerFn()
       const payment = await recordRecoveryPayment(tx, {
         invoiceId: slip.invoiceId,
         actorId: userId,
-        payment: {
+        payment: data.method === "expense_offset" ? {
           method: data.method,
           amount: data.amount,
-          walletId: data.walletId,
+          expenseType: data.expenseType!,
+          expenseEmployeeId: data.expenseEmployeeId!,
+          paymentDate: data.paymentDate,
+          sourceRecordId: data.sourceRecordId,
+          notes: data.notes,
+          instantVerify: data.instantVerify,
+          reference: data.reference,
+        } : {
+          method: data.method,
+          amount: data.amount,
+          walletId: data.walletId!,
           reference: data.reference,
           chequeNumber: data.chequeNumber,
           chequeBank: data.chequeBank,

@@ -1,6 +1,7 @@
 import { createId } from "@paralleldrive/cuid2";
 import type { db as rootDb } from "@/db";
 import { wallets, transactions } from "@/db/schemas/finance-schema";
+import { salaryAdvances } from "@/db/schemas/hr-schema";
 import { payments, salesReturns, slipRecords } from "@/db/schemas/sales-erp-schema";
 import { customers, invoices } from "@/db/schemas/sales-schema";
 import type {
@@ -25,10 +26,9 @@ export type SalesTransaction = Parameters<
 export type PaymentRecord = typeof payments.$inferSelect;
 type InvoiceRecord = typeof invoices.$inferSelect;
 
-export type InitialPaymentInput = PaymentInput & {
-	allocationGroupId?: string;
-	notes?: string;
-};
+export type InitialPaymentInput =
+	| (PaymentInput & { allocationGroupId?: string; notes?: string })
+	| ExpenseOffsetPaymentInput;
 
 export type CreateInitialPaymentsInput = {
 	invoiceId: string;
@@ -42,10 +42,12 @@ export type ExpenseOffsetPaymentInput = {
 	amount: number;
 	paymentDate: Date;
 	expenseType: string;
-	sourceRecordId: string;
+	expenseEmployeeId?: string;
+	sourceRecordId?: string;
 	allocationGroupId?: string;
 	reference?: string;
 	notes?: string;
+	instantVerify?: boolean;
 };
 
 export type RecoveryPaymentInput =
@@ -89,6 +91,7 @@ type PreparedPayment = {
 	chequeBank: string | null;
 	chequeDate: Date | null;
 	expenseType: string | null;
+	expenseEmployeeId: string | null;
 	paymentDate: Date;
 	sourceRecordId: string | null;
 	allocationGroupId: string | null;
@@ -118,8 +121,14 @@ function preparePayment(input: RecoveryPaymentInput): PreparedPayment {
 	if (input.method === "expense_offset") {
 		const expenseType = cleanOptional(input.expenseType);
 		const sourceRecordId = cleanOptional(input.sourceRecordId);
+		const expenseEmployeeId = cleanOptional(input.expenseEmployeeId);
 		if (!expenseType) throw new Error("Expense type is required");
-		if (!sourceRecordId) throw new Error("Payment identity is required");
+		if (expenseType === "salesman_salary" && !expenseEmployeeId && !sourceRecordId) {
+			throw new Error("Salesman is required for salary offset");
+		}
+		if (expenseType !== "salesman_salary" && !sourceRecordId) {
+			throw new Error("Payment identity is required for this expense type");
+		}
 		return {
 			method: input.method,
 			amount,
@@ -129,6 +138,7 @@ function preparePayment(input: RecoveryPaymentInput): PreparedPayment {
 			chequeBank: null,
 			chequeDate: null,
 			expenseType,
+			expenseEmployeeId,
 			paymentDate: input.paymentDate,
 			sourceRecordId,
 			allocationGroupId: cleanOptional(input.allocationGroupId),
@@ -161,6 +171,7 @@ function preparePayment(input: RecoveryPaymentInput): PreparedPayment {
 		chequeBank,
 		chequeDate: input.chequeDate ?? null,
 		expenseType: null,
+		expenseEmployeeId: null,
 		paymentDate: input.paymentDate,
 		sourceRecordId: cleanOptional(input.sourceRecordId),
 		allocationGroupId: cleanOptional(input.allocationGroupId),
@@ -297,6 +308,27 @@ async function insertPayment(
 	source: PaymentSource,
 	prepared: PreparedPayment,
 ): Promise<PaymentRecord> {
+	let actualSourceRecordId = prepared.sourceRecordId;
+	if (
+		prepared.method === "expense_offset" &&
+		prepared.expenseType === "salesman_salary" &&
+		prepared.expenseEmployeeId &&
+		!prepared.sourceRecordId
+	) {
+		const [{ id: advanceId }] = await tx
+			.insert(salaryAdvances)
+			.values({
+				employeeId: prepared.expenseEmployeeId,
+				amount: moneyString(prepared.amount),
+				date: prepared.paymentDate.toISOString().split("T")[0],
+				reason: `Salary paid directly by distributor. Reference: Invoice ${invoice.invoiceNumber ?? invoice.id}`,
+				status: "approved",
+				paidAt: prepared.paymentDate,
+			})
+			.returning({ id: salaryAdvances.id });
+		actualSourceRecordId = advanceId;
+	}
+
 	const status = prepared.instantVerify
 		? "confirmed"
 		: initialStatus(prepared.method);
@@ -320,7 +352,7 @@ async function insertPayment(
 			paymentDate: prepared.paymentDate,
 			effectiveDate: status === "confirmed" ? prepared.paymentDate : null,
 			source,
-			sourceRecordId: prepared.sourceRecordId,
+			sourceRecordId: actualSourceRecordId,
 			allocationGroupId: prepared.allocationGroupId,
 			confirmedById: status === "confirmed" ? actorId : null,
 			confirmedAt: status === "confirmed" ? now : null,
@@ -533,10 +565,17 @@ export async function addPaymentsToInvoice(
 	if (input.payments.length === 0) return [];
 
 	const invoice = await lockInvoice(tx, input.invoiceId);
-	const preparedPayments = input.payments.map((payment) => ({
-		...preparePayment(payment),
-		sourceRecordId: payment.sourceRecordId ?? `invoice-edit:${createId()}`,
-	}));
+	const preparedPayments = input.payments.map((payment) => {
+		const prepared = preparePayment(payment);
+		return {
+			...prepared,
+			sourceRecordId: prepared.sourceRecordId ?? (
+				(prepared.method === "expense_offset" && prepared.expenseType === "salesman_salary") 
+					? null 
+					: `invoice-edit:${createId()}`
+			),
+		};
+	});
 	assertNoDuplicatePayments(preparedPayments);
 	await validatePreparedWallets(tx, preparedPayments);
 	await assertProposedSettlement(tx, invoice, preparedPayments);
@@ -585,7 +624,9 @@ export async function recordRecoveryPayment(
 ): Promise<PaymentRecord> {
 	const invoice = await lockInvoice(tx, input.invoiceId);
 	const prepared = preparePayment(input.payment);
-	if (!prepared.sourceRecordId) throw new Error("Payment identity is required");
+	if (!prepared.sourceRecordId && !(prepared.method === "expense_offset" && prepared.expenseType === "salesman_salary")) {
+		throw new Error("Payment identity is required");
+	}
 	await validatePreparedWallets(tx, [prepared]);
 	await assertProposedSettlement(tx, invoice, [prepared]);
 

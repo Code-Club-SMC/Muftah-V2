@@ -12,9 +12,9 @@ export const stockTransferInputSchema = z.object({
 
 export const invoicePaymentInputSchema = z
   .object({
-    method: z.enum(["cash", "bank_transfer", "cheque"]),
+    method: z.enum(["cash", "bank_transfer", "cheque", "expense_offset"]),
     amount: z.number().positive(),
-    walletId: z.string().min(1, "Select a destination account"),
+    walletId: z.string().optional(),
     reference: z.string().trim().min(1).optional(),
     chequeNumber: z.string().trim().min(1).optional(),
     chequeBank: z.string().trim().min(1).optional(),
@@ -23,8 +23,24 @@ export const invoicePaymentInputSchema = z
     sourceRecordId: z.string().trim().min(1).optional(),
     notes: z.string().trim().optional(),
     instantVerify: z.boolean().optional(),
+    expenseType: z.string().optional(),
+    expenseEmployeeId: z.string().optional(),
   })
   .superRefine((row, ctx) => {
+    if (row.method !== "expense_offset" && (!row.walletId || row.walletId.trim().length === 0)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["walletId"],
+        message: "Select a destination account",
+      });
+    }
+    if (row.method === "expense_offset" && row.expenseType === "salesman_salary" && !row.expenseEmployeeId) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["expenseEmployeeId"],
+        message: "Salesman is required for salary offset",
+      });
+    }
     if (row.method === "bank_transfer" && !row.reference) {
       ctx.addIssue({
         code: "custom",

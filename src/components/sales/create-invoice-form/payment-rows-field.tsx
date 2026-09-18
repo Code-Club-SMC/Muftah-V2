@@ -27,7 +27,7 @@ import {
 } from "@/components/ui/select";
 
 export type PaymentInput = {
-	method: "cash" | "bank_transfer" | "digital_wallet" | "cheque";
+	method: "cash" | "bank_transfer" | "digital_wallet" | "cheque" | "expense_offset";
 	amount: number;
 	walletId: string;
 	reference: string;
@@ -43,6 +43,8 @@ export type PaymentInput = {
 	notes?: string;
 	instantVerify?: boolean;
 	sourceRecordId?: string;
+	expenseType?: string;
+	expenseEmployeeId?: string;
 	status?: "pending" | "confirmed" | "returned" | "cancelled" | "reversed";
 };
 
@@ -71,6 +73,8 @@ export function blankPayment(
 		paymentDate: format(new Date(), "yyyy-MM-dd'T'HH:mm"),
 		notes: "",
 		instantVerify: false,
+		expenseType: "",
+		expenseEmployeeId: "",
 	};
 }
 
@@ -155,8 +159,11 @@ function paymentMethodLabel(method: PaymentInput["method"]) {
 	if (method === "bank_transfer") return "Bank Transfer";
 	if (method === "digital_wallet") return "Digital Account";
 	if (method === "cheque") return "Cheque";
+	if (method === "expense_offset") return "Salesman Salary Paid by Distributor";
 	return "Cash";
 }
+
+import { useGetSalesmen } from "@/hooks/sales/use-sales-people";
 
 export function PaymentRowsField({
 	form,
@@ -170,6 +177,7 @@ export function PaymentRowsField({
 	readOnly?: boolean;
 }) {
 	const duplicateRows = findDuplicatePaymentRows(payments);
+	const { data: salesmen } = useGetSalesmen();
 
 	function setMethod(index: number, method: PaymentInput["method"]) {
 		form.setFieldValue(`payments[${index}].method`, method);
@@ -188,6 +196,8 @@ export function PaymentRowsField({
 		form.setFieldValue(`payments[${index}].chequeDate`, "");
 		form.setFieldValue(`payments[${index}].notes`, "");
 		form.setFieldValue(`payments[${index}].instantVerify`, false);
+		form.setFieldValue(`payments[${index}].expenseType`, method === "expense_offset" ? "salesman_salary" : "");
+		form.setFieldValue(`payments[${index}].expenseEmployeeId`, "");
 	}
 
 	return (
@@ -303,6 +313,7 @@ export function PaymentRowsField({
 															Digital Account (EasyPaisa / JazzCash / Raast)
 														</SelectItem>
 														<SelectItem value="cheque">Cheque</SelectItem>
+														<SelectItem value="expense_offset">Salesman Salary Paid by Distributor</SelectItem>
 													</SelectContent>
 												</Select>
 											</Field>
@@ -333,38 +344,40 @@ export function PaymentRowsField({
 										)}
 									</form.Field>
 
-									<form.Field name={`payments[${index}].walletId`}>
-										{(walletField: any) => (
-											<Field>
-												<FieldLabel>Destination Account</FieldLabel>
-												<Select
-													value={walletField.state.value}
-													onValueChange={walletField.handleChange}
-													disabled={rowReadOnly}
-												>
-													<SelectTrigger>
-														<SelectValue
-															placeholder={`Select ${requiredWalletType} account`}
-														/>
-													</SelectTrigger>
-													<SelectContent>
-														{availableWallets.map((wallet) => (
-															<SelectItem key={wallet.id} value={wallet.id}>
-																{wallet.name}
-															</SelectItem>
-														))}
-													</SelectContent>
-												</Select>
-												<FieldDescription>
-													{payment.method === "cash"
-														? "Only cash accounts are shown."
-														: payment.method === "digital_wallet"
-															? "Company bank or digital account where funds were received."
-															: "Only bank accounts are shown."}
-												</FieldDescription>
-											</Field>
-										)}
-									</form.Field>
+									{payment.method !== "expense_offset" && (
+										<form.Field name={`payments[${index}].walletId`}>
+											{(walletField: any) => (
+												<Field>
+													<FieldLabel>Destination Account</FieldLabel>
+													<Select
+														value={walletField.state.value}
+														onValueChange={walletField.handleChange}
+														disabled={rowReadOnly}
+													>
+														<SelectTrigger>
+															<SelectValue
+																placeholder={`Select ${requiredWalletType} account`}
+															/>
+														</SelectTrigger>
+														<SelectContent>
+															{availableWallets.map((wallet) => (
+																<SelectItem key={wallet.id} value={wallet.id}>
+																	{wallet.name}
+																</SelectItem>
+															))}
+														</SelectContent>
+													</Select>
+													<FieldDescription>
+														{payment.method === "cash"
+															? "Only cash accounts are shown."
+															: payment.method === "digital_wallet"
+																? "Company bank or digital account where funds were received."
+																: "Only bank accounts are shown."}
+													</FieldDescription>
+												</Field>
+											)}
+										</form.Field>
+									)}
 
 									<form.Field name={`payments[${index}].paymentDate`}>
 										{(dateField: any) => (
@@ -382,6 +395,37 @@ export function PaymentRowsField({
 										)}
 									</form.Field>
 								</div>
+								
+								{payment.method === "expense_offset" && (
+									<div className="grid gap-4 sm:grid-cols-2">
+										<form.Field name={`payments[${index}].expenseEmployeeId`}>
+											{(employeeField: any) => (
+												<Field>
+													<FieldLabel>Select Salesman <span className="text-destructive">*</span></FieldLabel>
+													<Select
+														value={employeeField.state.value}
+														onValueChange={employeeField.handleChange}
+														disabled={rowReadOnly}
+													>
+														<SelectTrigger>
+															<SelectValue placeholder="Select salesman whose salary is being offset" />
+														</SelectTrigger>
+														<SelectContent>
+															{salesmen?.filter((s) => s.employeeId).map((s) => (
+																<SelectItem key={s.employeeId} value={s.employeeId!}>
+																	{s.name}
+																</SelectItem>
+															))}
+														</SelectContent>
+													</Select>
+													<FieldDescription>
+														Their salary will be marked as paid/advanced in HR.
+													</FieldDescription>
+												</Field>
+											)}
+										</form.Field>
+									</div>
+								)}
 
 								{payment.method === "bank_transfer" && (
 									<div className="grid gap-4 sm:grid-cols-3">
