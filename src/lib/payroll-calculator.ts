@@ -101,6 +101,13 @@ export type PayslipCalculation = {
   nightShiftsCount: number;
   bradfordFactorScore: number;
   bradfordFactorPeriod: string;
+  explanationLog: Array<{
+    date: string;
+    type: "absent" | "undertime" | "specialLeave" | "sickLeave" | "annualLeave" | "unapprovedLeave" | "not_employed" | "lateArrival" | "earlyLeaving" | "overtime";
+    description: string;
+    value: number; // shortHours or days (usually 1 for full day deduction)
+    unit: "hrs" | "days";
+  }>;
 
   // Earnings
   basicSalary: number;
@@ -273,6 +280,7 @@ export function calculateAbsentDeductions(
   calendarDaysInMonth: number,
   adjustmentsConfig?: AttendanceDeductionAdjustments,
 ): {
+  explanationLog: PayslipCalculation["explanationLog"];
   absentDeduction: number;
   leaveDeduction: number;
   notEmployedDeduction: number;
@@ -311,6 +319,7 @@ export function calculateAbsentDeductions(
   const perHourBasic = perDayBasic / standardDutyHours;
 
   let totalUndertimeHours = 0;
+  const explanationLog: PayslipCalculation["explanationLog"] = [];
 
   const deductionBreakdownByOccasion = {
     absent: 0,
@@ -461,17 +470,23 @@ export function calculateAbsentDeductions(
     const dutyHours = baseDutyHours + compHoursUsed;
 
     if (record.status === "absent") {
+      explanationLog.push({ date: record.date, type: "absent", description: "Absent (Full Day)", value: 1, unit: "days" });
       applyOccasionDeduction(1, "absent", "absent", "absent");
     } else if (record.status === "not_employed") {
+      explanationLog.push({ date: record.date, type: "not_employed", description: "Not Employed (Pre-Joining / Cutoff)", value: 1, unit: "days" });
       applyOccasionDeduction(1, "not_employed", "not_employed", "notEmployed");
     } else if (record.status === "leave") {
       if (record.leaveType === "special") {
+        explanationLog.push({ date: record.date, type: "specialLeave", description: "Special Leave (Paid but allowances deducted)", value: 1, unit: "days" });
         applyOccasionDeduction(1, "specialLeave", "leave", "specialLeave");
       } else if (record.leaveType === "sick") {
+        explanationLog.push({ date: record.date, type: "sickLeave", description: "Sick Leave (Paid)", value: 1, unit: "days" });
         applyOccasionDeduction(1, "sickLeave", "leave", "sickLeave");
       } else if (record.leaveType === "annual") {
+        explanationLog.push({ date: record.date, type: "annualLeave", description: "Annual Leave (Paid)", value: 1, unit: "days" });
         applyOccasionDeduction(1, "annualLeave", "leave", "annualLeave");
       } else if (!record.isApprovedLeave) {
+        explanationLog.push({ date: record.date, type: "unapprovedLeave", description: "Unapproved/Unpaid Leave", value: 1, unit: "days" });
         applyOccasionDeduction(1, "annualLeave", "leave", "unapprovedLeave");
       }
     } else if (
@@ -484,13 +499,19 @@ export function calculateAbsentDeductions(
       const isLate = record.isLate ?? false;
       const isEarly = (record.earlyDepartureStatus !== "none" && record.earlyDepartureStatus !== null && record.earlyDepartureStatus !== undefined);
 
+      const roundedShort = parseFloat(shortHours.toFixed(2));
+
       if (isLate && isEarly) {
+        explanationLog.push({ date: record.date, type: "undertime", description: `Late Arrival & Early Departure (short by ${roundedShort} hrs)`, value: roundedShort, unit: "hrs" });
         applyOccasionDeduction(shortHours, "undertime", "absent", "undertime");
       } else if (isLate) {
+        explanationLog.push({ date: record.date, type: "lateArrival", description: `Late Arrival (short by ${roundedShort} hrs)`, value: roundedShort, unit: "hrs" });
         applyOccasionDeduction(shortHours, "lateArrival", "absent", "undertime");
       } else if (isEarly) {
+        explanationLog.push({ date: record.date, type: "earlyLeaving", description: `Early Departure (short by ${roundedShort} hrs)`, value: roundedShort, unit: "hrs" });
         applyOccasionDeduction(shortHours, "earlyLeaving", "absent", "undertime");
       } else {
+        explanationLog.push({ date: record.date, type: "undertime", description: `Undertime/Short hours (${roundedShort} hrs)`, value: roundedShort, unit: "hrs" });
         applyOccasionDeduction(shortHours, "undertime", "absent", "undertime");
       }
     }
@@ -577,6 +598,7 @@ export function calculateAbsentDeductions(
   }
 
   return {
+    explanationLog,
     absentDeduction: finalAbsent + finalUndertime,
     leaveDeduction: roundedSpecialLeave + roundedSickLeave + roundedAnnualLeave + roundedUnapprovedLeave,
     notEmployedDeduction: roundedNotEmployed,
@@ -834,6 +856,7 @@ export function calculatePayslip(
 
   // 7. Deductions
   const {
+    explanationLog,
     absentDeduction,
     leaveDeduction,
     notEmployedDeduction,
@@ -843,6 +866,22 @@ export function calculatePayslip(
     deductionBreakdownByOccasion,
     unadjustedOccasionDeductions,
   } = calculateAbsentDeductions(employee, workingDayRecords, calendarDaysInMonth, attendanceAdjustments);
+
+  // Add overtime to explanation log
+  for (const record of workingDayRecords) {
+    if (record.overtimeStatus === "approved" && record.overtimeCompensationMethod !== "comp_off") {
+        const hours = parseFloat(record.overtimeHours || "0");
+        if (hours > 0) {
+            explanationLog.push({
+                date: record.date,
+                type: "overtime",
+                description: `Approved Overtime (${hours} hrs)`,
+                value: hours,
+                unit: "hrs"
+            });
+        }
+    }
+  }
 
   const allowanceNames: Record<string, string> = {
     basicSalary: "Basic Salary",
@@ -954,6 +993,7 @@ export function calculatePayslip(
     nightShiftsCount,
     bradfordFactorScore,
     bradfordFactorPeriod: `${format(parseISO(evaluationStartDate), "d MMM yyyy")} to ${format(parseISO(evaluationEndDate), "d MMM yyyy")}`,
+    explanationLog,
 
     basicSalary: Math.round(basicSalaryStd),
     allowanceBreakdown: originalAllowanceBreakdown,

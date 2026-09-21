@@ -149,7 +149,7 @@ export const EmployeeAttendanceLog = ({
         }
         return acc;
       }, 0)
-      .toFixed(1),
+      .toFixed(2),
     daysPresent: records.filter((r: any) => r.status === "present").length,
   };
 

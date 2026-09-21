@@ -22,6 +22,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { ShieldAlert } from "lucide-react";
 import { getCycleForPayoutMonth } from "@/lib/payroll-cycle";
 import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 
 // ── Allowance display name resolver ──────────────────────────────────────────
 const ALLOWANCE_LABELS: Record<string, string> = Object.fromEntries(
@@ -33,6 +34,39 @@ function getAllowanceLabel(id: string): string {
     return (
         ALLOWANCE_LABELS[id] ??
         id.replace(/([A-Z])/g, " $1").replace(/^./, (s) => s.toUpperCase())
+    );
+}
+
+function BreakdownExplanationDialog({ title, log, typeKeys }: { title: string, log: any[], typeKeys: string[] }) {
+    const filteredLog = log?.filter(l => typeKeys.includes(l.type)) || [];
+    if (filteredLog.length === 0) return null;
+
+    return (
+        <Dialog>
+            <DialogTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-5 w-5 ml-1.5 hover:bg-transparent text-muted-foreground hover:text-foreground">
+                    <Info className="size-3.5" />
+                </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-md">
+                <DialogHeader>
+                    <DialogTitle className="text-lg">{title} Breakdown</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-2 mt-2 max-h-[60vh] overflow-y-auto pr-2">
+                    {filteredLog.map((entry, idx) => (
+                        <div key={idx} className="flex justify-between items-start py-2.5 border-b last:border-0 text-sm">
+                            <div>
+                                <div className="font-semibold text-foreground">{format(parseISO(entry.date), "EEE, dd MMM yyyy")}</div>
+                                <div className="text-muted-foreground text-xs mt-0.5">{entry.description}</div>
+                            </div>
+                            <div className="font-mono text-xs bg-muted px-2 py-1 rounded">
+                                {entry.value} {entry.unit}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </DialogContent>
+        </Dialog>
     );
 }
 
@@ -1051,7 +1085,10 @@ export const SalaryCalculatorForm = ({ employeeId, month, onSuccess, isOpen }: S
                             {calculation.daysNotEmployed > 0 && (
                                 <div className="p-3 rounded-lg border border-orange-100 bg-orange-50/50 space-y-1">
                                     <div className="flex items-center justify-between">
-                                        <span className="font-semibold text-orange-800">Pre-Joining / Cutoff Proration</span>
+                                        <div className="flex items-center">
+                                            <span className="font-semibold text-orange-800">Pre-Joining / Cutoff Proration</span>
+                                            <BreakdownExplanationDialog title="Pre-Joining/Cutoff" log={calculation.explanationLog} typeKeys={["not_employed"]} />
+                                        </div>
                                         <Badge variant="outline" className="text-[10px] border-orange-200 text-orange-700 bg-white">{calculation.daysNotEmployed} day(s)</Badge>
                                     </div>
                                     <p className="text-muted-foreground font-mono leading-relaxed">
@@ -1083,6 +1120,7 @@ export const SalaryCalculatorForm = ({ employeeId, month, onSuccess, isOpen }: S
                                                 )}>
                                                     Full Day Absent
                                                 </span>
+                                                <BreakdownExplanationDialog title="Full Day Absent" log={calculation.explanationLog} typeKeys={["absent"]} />
                                                 {isWaived && (
                                                     <Badge className="bg-emerald-600 text-white text-[9px] h-4 px-1">WAIVED BY HR</Badge>
                                                 )}
@@ -1139,6 +1177,7 @@ export const SalaryCalculatorForm = ({ employeeId, month, onSuccess, isOpen }: S
                                                 )}>
                                                     Undertime (Short Hours)
                                                 </span>
+                                                <BreakdownExplanationDialog title="Undertime / Late / Early" log={calculation.explanationLog} typeKeys={["undertime", "lateArrival", "earlyLeaving"]} />
                                                 {isWaived && (
                                                     <Badge className="bg-emerald-600 text-white text-[9px] h-4 px-1">WAIVED BY HR</Badge>
                                                 )}
@@ -1195,6 +1234,7 @@ export const SalaryCalculatorForm = ({ employeeId, month, onSuccess, isOpen }: S
                                                 )}>
                                                     Special Leave (Allowances Deducted)
                                                 </span>
+                                                <BreakdownExplanationDialog title="Special Leave" log={calculation.explanationLog} typeKeys={["specialLeave"]} />
                                                 {isWaived && (
                                                     <Badge className="bg-emerald-600 text-white text-[9px] h-4 px-1">WAIVED BY HR</Badge>
                                                 )}
@@ -1251,6 +1291,7 @@ export const SalaryCalculatorForm = ({ employeeId, month, onSuccess, isOpen }: S
                                                 )}>
                                                     Sick Leave Deduction
                                                 </span>
+                                                <BreakdownExplanationDialog title="Sick Leave" log={calculation.explanationLog} typeKeys={["sickLeave"]} />
                                                 {isWaived && (
                                                     <Badge className="bg-emerald-600 text-white text-[9px] h-4 px-1">WAIVED BY HR</Badge>
                                                 )}
@@ -1307,6 +1348,7 @@ export const SalaryCalculatorForm = ({ employeeId, month, onSuccess, isOpen }: S
                                                 )}>
                                                     Annual Leave Allowance Deduction
                                                 </span>
+                                                <BreakdownExplanationDialog title="Annual Leave" log={calculation.explanationLog} typeKeys={["annualLeave"]} />
                                                 {isWaived && (
                                                     <Badge className="bg-emerald-600 text-white text-[9px] h-4 px-1">WAIVED BY HR</Badge>
                                                 )}
@@ -1363,6 +1405,7 @@ export const SalaryCalculatorForm = ({ employeeId, month, onSuccess, isOpen }: S
                                                 )}>
                                                     Unpaid / Unapproved Leave
                                                 </span>
+                                                <BreakdownExplanationDialog title="Unapproved Leave" log={calculation.explanationLog} typeKeys={["unapprovedLeave"]} />
                                                 {isWaived && (
                                                     <Badge className="bg-emerald-600 text-white text-[9px] h-4 px-1">WAIVED BY HR</Badge>
                                                 )}
@@ -1441,7 +1484,10 @@ export const SalaryCalculatorForm = ({ employeeId, month, onSuccess, isOpen }: S
                                 <p className="font-bold">OT Rate = {calculation.calculationMeta.perHourBasic.toFixed(2)} × {calculation.calculationMeta.overtimeMultiplier} = {calculation.calculationMeta.overtimeRatePerHour.toFixed(2)} / hr</p>
                                 <Separator className="my-1.5 bg-blue-200" />
                                 <p>OT Pay = OT Rate × Total OT Hours</p>
-                                <p className="font-bold">OT Pay = {calculation.calculationMeta.overtimeRatePerHour.toFixed(2)} × {calculation.totalOvertimeHours} hrs = PKR {Math.round(calculation.overtimeAmount).toLocaleString()}</p>
+                                <div className="flex items-center">
+                                    <p className="font-bold">OT Pay = {calculation.calculationMeta.overtimeRatePerHour.toFixed(2)} × {calculation.totalOvertimeHours} hrs = PKR {Math.round(calculation.overtimeAmount).toLocaleString()}</p>
+                                    <BreakdownExplanationDialog title="Overtime" log={calculation.explanationLog} typeKeys={["overtime"]} />
+                                </div>
                             </div>
                             {calculation.calculationMeta.overtimeMultiplier !== 1.0 && (
                                 <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 mt-2">
