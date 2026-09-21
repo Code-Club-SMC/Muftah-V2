@@ -44,19 +44,47 @@ function BreakdownExplanationDialog({
     typeKeys,
     bucketKey,
     exemptedDates,
-    onToggleExempt
+    onApplyExemptions
 }: { 
     title: string, 
     log: any[], 
     typeKeys: string[],
     bucketKey?: keyof NonNullable<AttendanceDeductionAdjustments["exemptedDates"]>,
     exemptedDates?: string[],
-    onToggleExempt?: (bucket: string, date: string) => void
+    onApplyExemptions?: (bucket: string, dates: string[]) => void
 }) {
     const [open, setOpen] = useState(false);
+    const [stagedDates, setStagedDates] = useState<string[]>(exemptedDates || []);
+
+    useEffect(() => {
+        if (open) {
+            setStagedDates(exemptedDates || []);
+        }
+    }, [open, exemptedDates]);
+
     const filteredLog = log?.filter(l => typeKeys.includes(l.type)) || [];
     
     if (filteredLog.length === 0) return null;
+
+    const handleToggleDate = (date: string) => {
+        setStagedDates(prev => 
+            prev.includes(date) ? prev.filter(d => d !== date) : [...prev, date]
+        );
+    };
+
+    const handleApply = () => {
+        if (bucketKey && onApplyExemptions) {
+            onApplyExemptions(bucketKey, stagedDates);
+        }
+        setOpen(false);
+    };
+
+    const hasChanges = (() => {
+        const current = exemptedDates || [];
+        if (current.length !== stagedDates.length) return true;
+        const currentSet = new Set(current);
+        return stagedDates.some(d => !currentSet.has(d));
+    })();
 
     return (
         <>
@@ -71,43 +99,70 @@ function BreakdownExplanationDialog({
             
             <ResponsiveDialog
                 title={`${title} Breakdown`}
-                description={onToggleExempt ? "Review attendance logs. Exempt specific days (e.g. approved field work)." : "Review the specific attendance logs contributing to this amount."}
+                description={onApplyExemptions ? "Review attendance logs. Toggle specific days to exempt, then click Apply Changes." : "Review the specific attendance logs contributing to this amount."}
                 open={open}
                 onOpenChange={setOpen}
                 className="max-w-md p-0"
                 noScroll
             >
-                <ScrollArea className="max-h-[60vh]">
-                    <div className="space-y-0 p-4 pt-0">
-                        {filteredLog.map((entry, idx) => {
-                            const isExempted = Boolean(bucketKey && exemptedDates?.includes(entry.date));
-                            const isWaived = isExempted || Boolean(entry.isWaived);
-                            return (
-                                <div key={idx} className={cn("flex justify-between items-start py-3 border-b last:border-0 text-sm transition-colors", isWaived && "bg-emerald-50/50 -mx-4 px-4")}>
-                                    <div>
-                                        <div className={cn("font-semibold text-foreground", isWaived && "line-through opacity-70")}>{format(parseISO(entry.date), "EEE, dd MMM yyyy")}</div>
-                                        <div className={cn("text-xs mt-0.5", isWaived ? "text-emerald-700 font-medium" : "text-muted-foreground")}>{entry.description} {isWaived && "(Exempted)"}</div>
-                                    </div>
-                                    <div className="flex flex-col gap-2 items-end ml-2">
-                                        <div className="font-mono text-xs bg-muted px-2 py-1 rounded whitespace-nowrap">
-                                            {entry.value} {entry.unit}
+                <div className="flex flex-col min-h-0 flex-1">
+                    <ScrollArea className="max-h-[50vh] flex-1">
+                        <div className="space-y-0 p-4 pt-0">
+                            {filteredLog.map((entry, idx) => {
+                                const isExempted = Boolean(bucketKey && stagedDates.includes(entry.date));
+                                const isWaived = isExempted || Boolean(entry.isWaived);
+                                return (
+                                    <div key={idx} className={cn("flex justify-between items-start py-3 border-b last:border-0 text-sm transition-colors", isWaived && "bg-emerald-50/50 -mx-4 px-4")}>
+                                        <div>
+                                            <div className={cn("font-semibold text-foreground", isWaived && "line-through opacity-70")}>{format(parseISO(entry.date), "EEE, dd MMM yyyy")}</div>
+                                            <div className={cn("text-xs mt-0.5", isWaived ? "text-emerald-700 font-medium" : "text-muted-foreground")}>{entry.description} {isWaived && "(Exempted)"}</div>
                                         </div>
-                                        {onToggleExempt && bucketKey && (
-                                            <div className="flex items-center gap-1.5 mt-1">
-                                                <span className="text-[10px] uppercase text-muted-foreground font-semibold">Exempt</span>
-                                                <Switch 
-                                                    checked={isExempted}
-                                                    onCheckedChange={() => onToggleExempt(bucketKey, entry.date)} 
-                                                    className="scale-75 origin-right"
-                                                />
+                                        <div className="flex flex-col gap-2 items-end ml-2">
+                                            <div className="font-mono text-xs bg-muted px-2 py-1 rounded whitespace-nowrap">
+                                                {entry.value} {entry.unit}
                                             </div>
-                                        )}
+                                            {onApplyExemptions && bucketKey && (
+                                                <div className="flex items-center gap-1.5 mt-1">
+                                                    <span className="text-[10px] uppercase text-muted-foreground font-semibold">Exempt</span>
+                                                    <Switch 
+                                                        checked={isExempted}
+                                                        onCheckedChange={() => handleToggleDate(entry.date)} 
+                                                        className="scale-75 origin-right"
+                                                    />
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
-                                </div>
-                            );
-                        })}
-                    </div>
-                </ScrollArea>
+                                );
+                            })}
+                        </div>
+                    </ScrollArea>
+                    {onApplyExemptions && bucketKey && (
+                        <div className="flex items-center justify-between p-4 border-t bg-muted/20 mt-auto">
+                            <div className="text-xs text-muted-foreground">
+                                <span className="font-medium text-foreground">{stagedDates.length}</span> {stagedDates.length === 1 ? "day" : "days"} exempt
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => setOpen(false)}
+                                >
+                                    Cancel
+                                </Button>
+                                <Button
+                                    type="button"
+                                    size="sm"
+                                    onClick={handleApply}
+                                    disabled={!hasChanges}
+                                >
+                                    Apply Changes
+                                </Button>
+                            </div>
+                        </div>
+                    )}
+                </div>
             </ResponsiveDialog>
         </>
     );
@@ -133,22 +188,18 @@ export const SalaryCalculatorForm = ({ employeeId, month, onSuccess, isOpen }: S
     useEffect(() => {
         const timer = setTimeout(() => {
             setDebouncedAdjustments(attendanceAdjustments);
-        }, 300);
+        }, 100);
         return () => clearTimeout(timer);
     }, [attendanceAdjustments]);
 
-    const handleToggleExempt = (bucket: string, date: string) => {
-        setAttendanceAdjustments((prev) => {
-            const currentDates = prev.exemptedDates?.[bucket as keyof NonNullable<typeof prev.exemptedDates>] || [];
-            const isCurrentlyExempt = currentDates.includes(date);
-            return {
-                ...prev,
-                exemptedDates: {
-                    ...(prev.exemptedDates || {}),
-                    [bucket]: isCurrentlyExempt ? currentDates.filter((d) => d !== date) : [...currentDates, date],
-                },
-            };
-        });
+    const handleApplyExemptions = (bucket: string, dates: string[]) => {
+        setAttendanceAdjustments((prev) => ({
+            ...prev,
+            exemptedDates: {
+                ...(prev.exemptedDates || {}),
+                [bucket]: dates,
+            },
+        }));
     };
 
     const saveMutation = useSavePayslip(onSuccess);
@@ -1185,7 +1236,7 @@ export const SalaryCalculatorForm = ({ employeeId, month, onSuccess, isOpen }: S
                                                 )}>
                                                     Full Day Absent
                                                 </span>
-                                                <BreakdownExplanationDialog title="Full Day Absent" log={calculation.explanationLog} typeKeys={["absent"]} bucketKey="absent" exemptedDates={attendanceAdjustments.exemptedDates?.absent} onToggleExempt={handleToggleExempt} />
+                                                <BreakdownExplanationDialog title="Full Day Absent" log={calculation.explanationLog} typeKeys={["absent"]} bucketKey="absent" exemptedDates={attendanceAdjustments.exemptedDates?.absent} onApplyExemptions={handleApplyExemptions} />
                                                 {isWaived && (
                                                     <Badge className="bg-emerald-600 text-white text-[9px] h-4 px-1">WAIVED BY HR</Badge>
                                                 )}
@@ -1242,7 +1293,7 @@ export const SalaryCalculatorForm = ({ employeeId, month, onSuccess, isOpen }: S
                                                 )}>
                                                     Undertime (Short Hours)
                                                 </span>
-                                                <BreakdownExplanationDialog title="Undertime / Late / Early" log={calculation.explanationLog} typeKeys={["undertime", "lateArrival", "earlyLeaving"]} bucketKey="undertime" exemptedDates={attendanceAdjustments.exemptedDates?.undertime} onToggleExempt={handleToggleExempt} />
+                                                <BreakdownExplanationDialog title="Undertime / Late / Early" log={calculation.explanationLog} typeKeys={["undertime", "lateArrival", "earlyLeaving"]} bucketKey="undertime" exemptedDates={attendanceAdjustments.exemptedDates?.undertime} onApplyExemptions={handleApplyExemptions} />
                                                 {isWaived && (
                                                     <Badge className="bg-emerald-600 text-white text-[9px] h-4 px-1">WAIVED BY HR</Badge>
                                                 )}
@@ -1299,7 +1350,7 @@ export const SalaryCalculatorForm = ({ employeeId, month, onSuccess, isOpen }: S
                                                 )}>
                                                     Special Leave (Allowances Deducted)
                                                 </span>
-                                                <BreakdownExplanationDialog title="Special Leave" log={calculation.explanationLog} typeKeys={["specialLeave"]} bucketKey="specialLeave" exemptedDates={attendanceAdjustments.exemptedDates?.specialLeave} onToggleExempt={handleToggleExempt} />
+                                                <BreakdownExplanationDialog title="Special Leave" log={calculation.explanationLog} typeKeys={["specialLeave"]} bucketKey="specialLeave" exemptedDates={attendanceAdjustments.exemptedDates?.specialLeave} onApplyExemptions={handleApplyExemptions} />
                                                 {isWaived && (
                                                     <Badge className="bg-emerald-600 text-white text-[9px] h-4 px-1">WAIVED BY HR</Badge>
                                                 )}
@@ -1356,7 +1407,7 @@ export const SalaryCalculatorForm = ({ employeeId, month, onSuccess, isOpen }: S
                                                 )}>
                                                     Sick Leave Deduction
                                                 </span>
-                                                <BreakdownExplanationDialog title="Sick Leave" log={calculation.explanationLog} typeKeys={["sickLeave"]} bucketKey="sickLeave" exemptedDates={attendanceAdjustments.exemptedDates?.sickLeave} onToggleExempt={handleToggleExempt} />
+                                                <BreakdownExplanationDialog title="Sick Leave" log={calculation.explanationLog} typeKeys={["sickLeave"]} bucketKey="sickLeave" exemptedDates={attendanceAdjustments.exemptedDates?.sickLeave} onApplyExemptions={handleApplyExemptions} />
                                                 {isWaived && (
                                                     <Badge className="bg-emerald-600 text-white text-[9px] h-4 px-1">WAIVED BY HR</Badge>
                                                 )}
@@ -1413,7 +1464,7 @@ export const SalaryCalculatorForm = ({ employeeId, month, onSuccess, isOpen }: S
                                                 )}>
                                                     Annual Leave Allowance Deduction
                                                 </span>
-                                                <BreakdownExplanationDialog title="Annual Leave" log={calculation.explanationLog} typeKeys={["annualLeave"]} bucketKey="annualLeave" exemptedDates={attendanceAdjustments.exemptedDates?.annualLeave} onToggleExempt={handleToggleExempt} />
+                                                <BreakdownExplanationDialog title="Annual Leave" log={calculation.explanationLog} typeKeys={["annualLeave"]} bucketKey="annualLeave" exemptedDates={attendanceAdjustments.exemptedDates?.annualLeave} onApplyExemptions={handleApplyExemptions} />
                                                 {isWaived && (
                                                     <Badge className="bg-emerald-600 text-white text-[9px] h-4 px-1">WAIVED BY HR</Badge>
                                                 )}
@@ -1470,7 +1521,7 @@ export const SalaryCalculatorForm = ({ employeeId, month, onSuccess, isOpen }: S
                                                 )}>
                                                     Unpaid / Unapproved Leave
                                                 </span>
-                                                <BreakdownExplanationDialog title="Unapproved Leave" log={calculation.explanationLog} typeKeys={["unapprovedLeave"]} bucketKey="unapprovedLeave" exemptedDates={attendanceAdjustments.exemptedDates?.unapprovedLeave} onToggleExempt={handleToggleExempt} />
+                                                <BreakdownExplanationDialog title="Unapproved Leave" log={calculation.explanationLog} typeKeys={["unapprovedLeave"]} bucketKey="unapprovedLeave" exemptedDates={attendanceAdjustments.exemptedDates?.unapprovedLeave} onApplyExemptions={handleApplyExemptions} />
                                                 {isWaived && (
                                                     <Badge className="bg-emerald-600 text-white text-[9px] h-4 px-1">WAIVED BY HR</Badge>
                                                 )}
