@@ -109,13 +109,12 @@ function BreakdownExplanationDialog({
                     <ScrollArea className="max-h-[50vh] flex-1">
                         <div className="space-y-0 p-4 pt-0">
                             {filteredLog.map((entry, idx) => {
-                                const isExempted = Boolean(bucketKey && stagedDates.includes(entry.date));
-                                const isWaived = isExempted || Boolean(entry.isWaived);
+                                const isExempted = bucketKey ? stagedDates.includes(entry.date) : Boolean(entry.isWaived);
                                 return (
-                                    <div key={idx} className={cn("flex justify-between items-start py-3 border-b last:border-0 text-sm transition-colors", isWaived && "bg-emerald-50/50 -mx-4 px-4")}>
+                                    <div key={idx} className={cn("flex justify-between items-start py-3 border-b last:border-0 text-sm transition-colors", isExempted && "bg-emerald-50/50 -mx-4 px-4")}>
                                         <div>
-                                            <div className={cn("font-semibold text-foreground", isWaived && "line-through opacity-70")}>{format(parseISO(entry.date), "EEE, dd MMM yyyy")}</div>
-                                            <div className={cn("text-xs mt-0.5", isWaived ? "text-emerald-700 font-medium" : "text-muted-foreground")}>{entry.description} {isWaived && "(Exempted)"}</div>
+                                            <div className={cn("font-semibold text-foreground", isExempted && "line-through opacity-70")}>{format(parseISO(entry.date), "EEE, dd MMM yyyy")}</div>
+                                            <div className={cn("text-xs mt-0.5", isExempted ? "text-emerald-700 font-medium" : "text-muted-foreground")}>{entry.description} {isExempted && "(Exempted)"}</div>
                                         </div>
                                         <div className="flex flex-col gap-2 items-end ml-2">
                                             <div className="font-mono text-xs bg-muted px-2 py-1 rounded whitespace-nowrap">
