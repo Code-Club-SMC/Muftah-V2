@@ -1,5 +1,6 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { getEmployeeAttendanceLogFn } from "@/server-functions/hr/attendance/get-employee-attendance-log-fn";
+import { calculateTotalShiftHours } from "@/lib/attendance/time";
 import {
   format,
   parseISO,
@@ -143,7 +144,8 @@ export const EmployeeAttendanceLog = ({
       .reduce((acc: number, r: any) => {
         if (checkIsRestDay(r.date, restDays)) return acc; // Never penalize rest days
         const duty = parseFloat(r.dutyHours || "0");
-        const standard = employee.standardDutyHours || 8;
+        const shiftHours = calculateTotalShiftHours(employee.shifts);
+        const standard = shiftHours > 0 ? shiftHours : (employee.standardDutyHours || 8);
         if (r.status === "present" && duty < standard) {
           return acc + (standard - duty);
         }

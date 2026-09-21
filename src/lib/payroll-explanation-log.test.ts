@@ -4,7 +4,7 @@ import { EmployeeData } from "./payroll-calculator";
 import { DEFAULT_BASIC_SALARY_DEDUCTION_POLICY } from "./types/hr-types";
 
 describe("Payroll Explanation Log & Undertime Math", () => {
-  const dummyEmployee: EmployeeData = {
+  const dummyEmployee = {
     id: "emp_1",
     employeeCode: "E001",
     firstName: "Test",
@@ -16,7 +16,7 @@ describe("Payroll Explanation Log & Undertime Math", () => {
     restDays: [0], // Sunday
     basicSalaryDeductionPolicy: DEFAULT_BASIC_SALARY_DEDUCTION_POLICY,
     allowanceConfig: []
-  };
+  } as unknown as EmployeeData;
 
   const period = { month: "2026-02-01", startDate: "2026-02-01", endDate: "2026-02-28" };
 
