@@ -297,6 +297,18 @@ const attendanceAdjustmentsSchema = z
         unapprovedLeave: z.number().optional(),
       })
       .optional(),
+    exemptedDates: z
+      .object({
+        absent: z.array(z.string()).optional(),
+        undertime: z.array(z.string()).optional(),
+        lateArrival: z.array(z.string()).optional(),
+        earlyLeaving: z.array(z.string()).optional(),
+        specialLeave: z.array(z.string()).optional(),
+        annualLeave: z.array(z.string()).optional(),
+        sickLeave: z.array(z.string()).optional(),
+        unapprovedLeave: z.array(z.string()).optional(),
+      })
+      .optional(),
   })
   .optional();
 
