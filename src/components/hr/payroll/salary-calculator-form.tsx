@@ -23,6 +23,8 @@ import { ShieldAlert } from "lucide-react";
 import { getCycleForPayoutMonth } from "@/lib/payroll-cycle";
 import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { ResponsiveDialog } from "@/components/custom/responsive-dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 // ── Allowance display name resolver ──────────────────────────────────────────
 const ALLOWANCE_LABELS: Record<string, string> = Object.fromEntries(
@@ -38,35 +40,47 @@ function getAllowanceLabel(id: string): string {
 }
 
 function BreakdownExplanationDialog({ title, log, typeKeys }: { title: string, log: any[], typeKeys: string[] }) {
+    const [open, setOpen] = useState(false);
     const filteredLog = log?.filter(l => typeKeys.includes(l.type)) || [];
+    
     if (filteredLog.length === 0) return null;
 
     return (
-        <Dialog>
-            <DialogTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-5 w-5 ml-1.5 hover:bg-transparent text-muted-foreground hover:text-foreground">
-                    <Info className="size-3.5" />
-                </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-md">
-                <DialogHeader>
-                    <DialogTitle className="text-lg">{title} Breakdown</DialogTitle>
-                </DialogHeader>
-                <div className="space-y-2 mt-2 max-h-[60vh] overflow-y-auto pr-2">
-                    {filteredLog.map((entry, idx) => (
-                        <div key={idx} className="flex justify-between items-start py-2.5 border-b last:border-0 text-sm">
-                            <div>
-                                <div className="font-semibold text-foreground">{format(parseISO(entry.date), "EEE, dd MMM yyyy")}</div>
-                                <div className="text-muted-foreground text-xs mt-0.5">{entry.description}</div>
+        <>
+            <Button 
+                variant="ghost" 
+                size="icon" 
+                className="h-5 w-5 ml-1.5 hover:bg-transparent text-muted-foreground hover:text-foreground"
+                onClick={() => setOpen(true)}
+            >
+                <Info className="size-3.5" />
+            </Button>
+            
+            <ResponsiveDialog
+                title={`${title} Breakdown`}
+                description="Review the specific attendance logs contributing to this amount."
+                open={open}
+                onOpenChange={setOpen}
+                className="max-w-md p-0"
+                noScroll
+            >
+                <ScrollArea className="max-h-[60vh]">
+                    <div className="space-y-0 p-4 pt-0">
+                        {filteredLog.map((entry, idx) => (
+                            <div key={idx} className="flex justify-between items-start py-3 border-b last:border-0 text-sm">
+                                <div>
+                                    <div className="font-semibold text-foreground">{format(parseISO(entry.date), "EEE, dd MMM yyyy")}</div>
+                                    <div className="text-muted-foreground text-xs mt-0.5">{entry.description}</div>
+                                </div>
+                                <div className="font-mono text-xs bg-muted px-2 py-1 rounded whitespace-nowrap ml-2">
+                                    {entry.value} {entry.unit}
+                                </div>
                             </div>
-                            <div className="font-mono text-xs bg-muted px-2 py-1 rounded">
-                                {entry.value} {entry.unit}
-                            </div>
-                        </div>
-                    ))}
-                </div>
-            </DialogContent>
-        </Dialog>
+                        ))}
+                    </div>
+                </ScrollArea>
+            </ResponsiveDialog>
+        </>
     );
 }
 
