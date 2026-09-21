@@ -500,19 +500,18 @@ export function calculateAbsentDeductions(
       const isEarly = (record.earlyDepartureStatus !== "none" && record.earlyDepartureStatus !== null && record.earlyDepartureStatus !== undefined);
 
       const roundedShort = parseFloat(shortHours.toFixed(2));
-      const workedHours = parseFloat(Number(dutyHours).toFixed(2));
 
       if (isLate && isEarly) {
-        explanationLog.push({ date: record.date, type: "undertime", description: `Late Arrival & Early Departure (Worked ${workedHours} of ${standardDutyHours} hrs)`, value: roundedShort, unit: "hrs" });
+        explanationLog.push({ date: record.date, type: "undertime", description: `Late Arrival & Early Departure (short by ${roundedShort} hrs)`, value: roundedShort, unit: "hrs" });
         applyOccasionDeduction(shortHours, "undertime", "absent", "undertime");
       } else if (isLate) {
-        explanationLog.push({ date: record.date, type: "lateArrival", description: `Late Arrival (Worked ${workedHours} of ${standardDutyHours} hrs)`, value: roundedShort, unit: "hrs" });
+        explanationLog.push({ date: record.date, type: "lateArrival", description: `Late Arrival (short by ${roundedShort} hrs)`, value: roundedShort, unit: "hrs" });
         applyOccasionDeduction(shortHours, "lateArrival", "absent", "undertime");
       } else if (isEarly) {
-        explanationLog.push({ date: record.date, type: "earlyLeaving", description: `Early Departure (Worked ${workedHours} of ${standardDutyHours} hrs)`, value: roundedShort, unit: "hrs" });
+        explanationLog.push({ date: record.date, type: "earlyLeaving", description: `Early Departure (short by ${roundedShort} hrs)`, value: roundedShort, unit: "hrs" });
         applyOccasionDeduction(shortHours, "earlyLeaving", "absent", "undertime");
       } else {
-        explanationLog.push({ date: record.date, type: "undertime", description: `Undertime (Worked ${workedHours} of ${standardDutyHours} hrs)`, value: roundedShort, unit: "hrs" });
+        explanationLog.push({ date: record.date, type: "undertime", description: `Undertime/Short hours (${roundedShort} hrs)`, value: roundedShort, unit: "hrs" });
         applyOccasionDeduction(shortHours, "undertime", "absent", "undertime");
       }
     }

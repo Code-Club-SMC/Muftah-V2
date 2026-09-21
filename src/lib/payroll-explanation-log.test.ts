@@ -12,7 +12,7 @@ describe("Payroll Explanation Log & Undertime Math", () => {
     designation: "Developer",
     basicSalary: "50000",
     standardDutyHours: 8,
-    joinedAt: "2026-01-01",
+    joiningDate: "2026-01-01",
     restDays: [0], // Sunday
     basicSalaryDeductionPolicy: DEFAULT_BASIC_SALARY_DEDUCTION_POLICY,
     allowanceConfig: []

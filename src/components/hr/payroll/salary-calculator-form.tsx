@@ -22,7 +22,6 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { ShieldAlert } from "lucide-react";
 import { getCycleForPayoutMonth } from "@/lib/payroll-cycle";
 import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { ResponsiveDialog } from "@/components/custom/responsive-dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
