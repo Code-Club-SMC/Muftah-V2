@@ -107,6 +107,7 @@ export type PayslipCalculation = {
     description: string;
     value: number; // shortHours or days (usually 1 for full day deduction)
     unit: "hrs" | "days";
+    isWaived?: boolean;
   }>;
 
   // Earnings
@@ -392,6 +393,7 @@ export function calculateAbsentDeductions(
       | "undertime",
     _deductionTarget: "absent" | "leave" | "not_employed" = "absent",
     occasionBucket: keyof typeof deductionBreakdownByOccasion = "absent",
+    isWaivedAtDateLevel: boolean = false,
   ) => {
     const isHourlyOccasion =
       occasion === "lateArrival" || occasion === "earlyLeaving" || occasion === "undertime";
@@ -437,7 +439,7 @@ export function calculateAbsentDeductions(
           amt = (allowance.amount / calendarDaysInMonth) * fraction;
         }
         allowanceOccasionTotal += amt;
-        if (!isOccasionWaived(occasionBucket)) {
+        if (!isOccasionWaived(occasionBucket) && !isWaivedAtDateLevel) {
           componentOccasionDeductions[allowance.id][occasionBucket] =
             (componentOccasionDeductions[allowance.id][occasionBucket] || 0) + amt;
         }
@@ -445,7 +447,7 @@ export function calculateAbsentDeductions(
     }
     unadjustedOccasionDeductions[occasionBucket] += allowanceOccasionTotal;
 
-    if (isOccasionWaived(occasionBucket)) {
+    if (isOccasionWaived(occasionBucket) || isWaivedAtDateLevel) {
       return;
     }
 
@@ -469,25 +471,33 @@ export function calculateAbsentDeductions(
     const compHoursUsed = parseFloat(record.compensatoryHoursUsed || "0");
     const dutyHours = baseDutyHours + compHoursUsed;
 
+    const checkWaived = (bucket: string) =>
+      adjustmentsConfig?.exemptedDates?.[bucket as keyof typeof adjustmentsConfig.exemptedDates]?.includes(record.date) ?? false;
+
     if (record.status === "absent") {
-      explanationLog.push({ date: record.date, type: "absent", description: "Absent (Full Day)", value: 1, unit: "days" });
-      applyOccasionDeduction(1, "absent", "absent", "absent");
+      const isW = checkWaived("absent");
+      explanationLog.push({ date: record.date, type: "absent", description: "Absent (Full Day)", value: 1, unit: "days", isWaived: isW });
+      applyOccasionDeduction(1, "absent", "absent", "absent", isW);
     } else if (record.status === "not_employed") {
       explanationLog.push({ date: record.date, type: "not_employed", description: "Not Employed (Pre-Joining / Cutoff)", value: 1, unit: "days" });
       applyOccasionDeduction(1, "not_employed", "not_employed", "notEmployed");
     } else if (record.status === "leave") {
       if (record.leaveType === "special") {
-        explanationLog.push({ date: record.date, type: "specialLeave", description: "Special Leave (Paid but allowances deducted)", value: 1, unit: "days" });
-        applyOccasionDeduction(1, "specialLeave", "leave", "specialLeave");
+        const isW = checkWaived("specialLeave");
+        explanationLog.push({ date: record.date, type: "specialLeave", description: "Special Leave (Paid but allowances deducted)", value: 1, unit: "days", isWaived: isW });
+        applyOccasionDeduction(1, "specialLeave", "leave", "specialLeave", isW);
       } else if (record.leaveType === "sick") {
-        explanationLog.push({ date: record.date, type: "sickLeave", description: "Sick Leave (Paid)", value: 1, unit: "days" });
-        applyOccasionDeduction(1, "sickLeave", "leave", "sickLeave");
+        const isW = checkWaived("sickLeave");
+        explanationLog.push({ date: record.date, type: "sickLeave", description: "Sick Leave (Paid)", value: 1, unit: "days", isWaived: isW });
+        applyOccasionDeduction(1, "sickLeave", "leave", "sickLeave", isW);
       } else if (record.leaveType === "annual") {
-        explanationLog.push({ date: record.date, type: "annualLeave", description: "Annual Leave (Paid)", value: 1, unit: "days" });
-        applyOccasionDeduction(1, "annualLeave", "leave", "annualLeave");
+        const isW = checkWaived("annualLeave");
+        explanationLog.push({ date: record.date, type: "annualLeave", description: "Annual Leave (Paid)", value: 1, unit: "days", isWaived: isW });
+        applyOccasionDeduction(1, "annualLeave", "leave", "annualLeave", isW);
       } else if (!record.isApprovedLeave) {
-        explanationLog.push({ date: record.date, type: "unapprovedLeave", description: "Unapproved/Unpaid Leave", value: 1, unit: "days" });
-        applyOccasionDeduction(1, "annualLeave", "leave", "unapprovedLeave");
+        const isW = checkWaived("unapprovedLeave");
+        explanationLog.push({ date: record.date, type: "unapprovedLeave", description: "Unapproved/Unpaid Leave", value: 1, unit: "days", isWaived: isW });
+        applyOccasionDeduction(1, "annualLeave", "leave", "unapprovedLeave", isW);
       }
     } else if (
       record.status === "present" &&
@@ -502,18 +512,31 @@ export function calculateAbsentDeductions(
       const roundedShort = parseFloat(shortHours.toFixed(2));
       const workedHours = parseFloat(Number(dutyHours).toFixed(2));
 
+      const formatHHMM = (hrs: number) => {
+        const h = Math.floor(hrs);
+        const m = Math.round((hrs - h) * 60);
+        if (h > 0 && m > 0) return `${h}h ${m}m`;
+        if (h > 0) return `${h} hrs`;
+        return `${m} mins`;
+      };
+
+      const workedStr = formatHHMM(workedHours);
+      const standardStr = formatHHMM(standardDutyHours);
+
+      const isW = checkWaived("undertime");
+
       if (isLate && isEarly) {
-        explanationLog.push({ date: record.date, type: "undertime", description: `Late Arrival & Early Departure (Worked ${workedHours} of ${standardDutyHours} hrs)`, value: roundedShort, unit: "hrs" });
-        applyOccasionDeduction(shortHours, "undertime", "absent", "undertime");
+        explanationLog.push({ date: record.date, type: "undertime", description: `Late Arrival & Early Departure (Worked ${workedStr} out of ${standardStr})`, value: roundedShort, unit: "hrs", isWaived: isW });
+        applyOccasionDeduction(shortHours, "undertime", "absent", "undertime", isW);
       } else if (isLate) {
-        explanationLog.push({ date: record.date, type: "lateArrival", description: `Late Arrival (Worked ${workedHours} of ${standardDutyHours} hrs)`, value: roundedShort, unit: "hrs" });
-        applyOccasionDeduction(shortHours, "lateArrival", "absent", "undertime");
+        explanationLog.push({ date: record.date, type: "lateArrival", description: `Late Arrival (Worked ${workedStr} out of ${standardStr})`, value: roundedShort, unit: "hrs", isWaived: isW });
+        applyOccasionDeduction(shortHours, "lateArrival", "absent", "undertime", isW);
       } else if (isEarly) {
-        explanationLog.push({ date: record.date, type: "earlyLeaving", description: `Early Departure (Worked ${workedHours} of ${standardDutyHours} hrs)`, value: roundedShort, unit: "hrs" });
-        applyOccasionDeduction(shortHours, "earlyLeaving", "absent", "undertime");
+        explanationLog.push({ date: record.date, type: "earlyLeaving", description: `Early Departure (Worked ${workedStr} out of ${standardStr})`, value: roundedShort, unit: "hrs", isWaived: isW });
+        applyOccasionDeduction(shortHours, "earlyLeaving", "absent", "undertime", isW);
       } else {
-        explanationLog.push({ date: record.date, type: "undertime", description: `Undertime (Worked ${workedHours} of ${standardDutyHours} hrs)`, value: roundedShort, unit: "hrs" });
-        applyOccasionDeduction(shortHours, "undertime", "absent", "undertime");
+        explanationLog.push({ date: record.date, type: "undertime", description: `Undertime (Worked ${workedStr} out of ${standardStr})`, value: roundedShort, unit: "hrs", isWaived: isW });
+        applyOccasionDeduction(shortHours, "undertime", "absent", "undertime", isW);
       }
     }
   }

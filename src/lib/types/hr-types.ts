@@ -73,6 +73,17 @@ export type AttendanceDeductionAdjustments = {
     annualLeave?: number;
     unapprovedLeave?: number;
   };
+  /** Granular date-level waivers (e.g., waiving undertime on a specific date for company work) */
+  exemptedDates?: {
+    absent?: string[];
+    undertime?: string[];
+    lateArrival?: string[];
+    earlyLeaving?: string[];
+    specialLeave?: string[];
+    annualLeave?: string[];
+    sickLeave?: string[];
+    unapprovedLeave?: string[];
+  };
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

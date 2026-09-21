@@ -38,7 +38,19 @@ function getAllowanceLabel(id: string): string {
     );
 }
 
-function BreakdownExplanationDialog({ title, log, typeKeys }: { title: string, log: any[], typeKeys: string[] }) {
+function BreakdownExplanationDialog({ 
+    title, 
+    log, 
+    typeKeys,
+    bucketKey,
+    onToggleExempt
+}: { 
+    title: string, 
+    log: any[], 
+    typeKeys: string[],
+    bucketKey?: keyof NonNullable<AttendanceDeductionAdjustments["exemptedDates"]>,
+    onToggleExempt?: (bucket: string, date: string) => void
+}) {
     const [open, setOpen] = useState(false);
     const filteredLog = log?.filter(l => typeKeys.includes(l.type)) || [];
     
@@ -57,7 +69,7 @@ function BreakdownExplanationDialog({ title, log, typeKeys }: { title: string, l
             
             <ResponsiveDialog
                 title={`${title} Breakdown`}
-                description="Review the specific attendance logs contributing to this amount."
+                description={onToggleExempt ? "Review attendance logs. Exempt specific days (e.g. approved field work)." : "Review the specific attendance logs contributing to this amount."}
                 open={open}
                 onOpenChange={setOpen}
                 className="max-w-md p-0"
@@ -66,13 +78,25 @@ function BreakdownExplanationDialog({ title, log, typeKeys }: { title: string, l
                 <ScrollArea className="max-h-[60vh]">
                     <div className="space-y-0 p-4 pt-0">
                         {filteredLog.map((entry, idx) => (
-                            <div key={idx} className="flex justify-between items-start py-3 border-b last:border-0 text-sm">
+                            <div key={idx} className={cn("flex justify-between items-start py-3 border-b last:border-0 text-sm transition-colors", entry.isWaived && "bg-emerald-50/50 -mx-4 px-4")}>
                                 <div>
-                                    <div className="font-semibold text-foreground">{format(parseISO(entry.date), "EEE, dd MMM yyyy")}</div>
-                                    <div className="text-muted-foreground text-xs mt-0.5">{entry.description}</div>
+                                    <div className={cn("font-semibold text-foreground", entry.isWaived && "line-through opacity-70")}>{format(parseISO(entry.date), "EEE, dd MMM yyyy")}</div>
+                                    <div className={cn("text-xs mt-0.5", entry.isWaived ? "text-emerald-700 font-medium" : "text-muted-foreground")}>{entry.description} {entry.isWaived && "(Exempted)"}</div>
                                 </div>
-                                <div className="font-mono text-xs bg-muted px-2 py-1 rounded whitespace-nowrap ml-2">
-                                    {entry.value} {entry.unit}
+                                <div className="flex flex-col gap-2 items-end ml-2">
+                                    <div className="font-mono text-xs bg-muted px-2 py-1 rounded whitespace-nowrap">
+                                        {entry.value} {entry.unit}
+                                    </div>
+                                    {onToggleExempt && bucketKey && (
+                                        <div className="flex items-center gap-1.5 mt-1">
+                                            <span className="text-[10px] uppercase text-muted-foreground font-semibold">Exempt</span>
+                                            <Switch 
+                                                checked={entry.isWaived ?? false}
+                                                onCheckedChange={() => onToggleExempt(bucketKey, entry.date)} 
+                                                className="scale-75 origin-right"
+                                            />
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         ))}
@@ -415,6 +439,21 @@ export const SalaryCalculatorForm = ({ employeeId, month, onSuccess, isOpen }: S
                 </div>
             </div>
 
+            {(() => {
+                const handleToggleExempt = (bucket: string, date: string) => {
+                    setAttendanceAdjustments(prev => {
+                        const currentDates = prev.exemptedDates?.[bucket as keyof NonNullable<typeof prev.exemptedDates>] || [];
+                        const isCurrentlyExempt = currentDates.includes(date);
+                        return {
+                            ...prev,
+                            exemptedDates: {
+                                ...(prev.exemptedDates || {}),
+                                [bucket]: isCurrentlyExempt ? currentDates.filter(d => d !== date) : [...currentDates, date]
+                            }
+                        };
+                    });
+                };
+                return (
             <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
                 <TabsList className="w-full grid grid-cols-4 mb-4">
                     <TabsTrigger value="overview">Overview</TabsTrigger>
@@ -816,7 +855,7 @@ export const SalaryCalculatorForm = ({ employeeId, month, onSuccess, isOpen }: S
                                                                     )}
                                                                 </label>
                                                                 <p className="text-[11px] text-muted-foreground mt-0.5 font-mono">
-                                                                    Calculated: - PKR {Math.round(item.unadjustedAmt).toLocaleString()}
+                                                                    Calculated: - PKR {Math.round(item.waived ? item.unadjustedAmt : item.currentAmt).toLocaleString()}
                                                                     {item.waived && (
                                                                         <span className="text-emerald-700 font-semibold ml-1.5">
                                                                             → 0 (waived)
@@ -1133,7 +1172,7 @@ export const SalaryCalculatorForm = ({ employeeId, month, onSuccess, isOpen }: S
                                                 )}>
                                                     Full Day Absent
                                                 </span>
-                                                <BreakdownExplanationDialog title="Full Day Absent" log={calculation.explanationLog} typeKeys={["absent"]} />
+                                                <BreakdownExplanationDialog title="Full Day Absent" log={calculation.explanationLog} typeKeys={["absent"]} bucketKey="absent" onToggleExempt={handleToggleExempt} />
                                                 {isWaived && (
                                                     <Badge className="bg-emerald-600 text-white text-[9px] h-4 px-1">WAIVED BY HR</Badge>
                                                 )}
@@ -1190,7 +1229,7 @@ export const SalaryCalculatorForm = ({ employeeId, month, onSuccess, isOpen }: S
                                                 )}>
                                                     Undertime (Short Hours)
                                                 </span>
-                                                <BreakdownExplanationDialog title="Undertime / Late / Early" log={calculation.explanationLog} typeKeys={["undertime", "lateArrival", "earlyLeaving"]} />
+                                                <BreakdownExplanationDialog title="Undertime / Late / Early" log={calculation.explanationLog} typeKeys={["undertime", "lateArrival", "earlyLeaving"]} bucketKey="undertime" onToggleExempt={handleToggleExempt} />
                                                 {isWaived && (
                                                     <Badge className="bg-emerald-600 text-white text-[9px] h-4 px-1">WAIVED BY HR</Badge>
                                                 )}
@@ -1247,7 +1286,7 @@ export const SalaryCalculatorForm = ({ employeeId, month, onSuccess, isOpen }: S
                                                 )}>
                                                     Special Leave (Allowances Deducted)
                                                 </span>
-                                                <BreakdownExplanationDialog title="Special Leave" log={calculation.explanationLog} typeKeys={["specialLeave"]} />
+                                                <BreakdownExplanationDialog title="Special Leave" log={calculation.explanationLog} typeKeys={["specialLeave"]} bucketKey="specialLeave" onToggleExempt={handleToggleExempt} />
                                                 {isWaived && (
                                                     <Badge className="bg-emerald-600 text-white text-[9px] h-4 px-1">WAIVED BY HR</Badge>
                                                 )}
@@ -1304,7 +1343,7 @@ export const SalaryCalculatorForm = ({ employeeId, month, onSuccess, isOpen }: S
                                                 )}>
                                                     Sick Leave Deduction
                                                 </span>
-                                                <BreakdownExplanationDialog title="Sick Leave" log={calculation.explanationLog} typeKeys={["sickLeave"]} />
+                                                <BreakdownExplanationDialog title="Sick Leave" log={calculation.explanationLog} typeKeys={["sickLeave"]} bucketKey="sickLeave" onToggleExempt={handleToggleExempt} />
                                                 {isWaived && (
                                                     <Badge className="bg-emerald-600 text-white text-[9px] h-4 px-1">WAIVED BY HR</Badge>
                                                 )}
@@ -1361,7 +1400,7 @@ export const SalaryCalculatorForm = ({ employeeId, month, onSuccess, isOpen }: S
                                                 )}>
                                                     Annual Leave Allowance Deduction
                                                 </span>
-                                                <BreakdownExplanationDialog title="Annual Leave" log={calculation.explanationLog} typeKeys={["annualLeave"]} />
+                                                <BreakdownExplanationDialog title="Annual Leave" log={calculation.explanationLog} typeKeys={["annualLeave"]} bucketKey="annualLeave" onToggleExempt={handleToggleExempt} />
                                                 {isWaived && (
                                                     <Badge className="bg-emerald-600 text-white text-[9px] h-4 px-1">WAIVED BY HR</Badge>
                                                 )}
@@ -1418,7 +1457,7 @@ export const SalaryCalculatorForm = ({ employeeId, month, onSuccess, isOpen }: S
                                                 )}>
                                                     Unpaid / Unapproved Leave
                                                 </span>
-                                                <BreakdownExplanationDialog title="Unapproved Leave" log={calculation.explanationLog} typeKeys={["unapprovedLeave"]} />
+                                                <BreakdownExplanationDialog title="Unapproved Leave" log={calculation.explanationLog} typeKeys={["unapprovedLeave"]} bucketKey="unapprovedLeave" onToggleExempt={handleToggleExempt} />
                                                 {isWaived && (
                                                     <Badge className="bg-emerald-600 text-white text-[9px] h-4 px-1">WAIVED BY HR</Badge>
                                                 )}
@@ -1595,6 +1634,7 @@ export const SalaryCalculatorForm = ({ employeeId, month, onSuccess, isOpen }: S
                     </div>
                 </TabsContent>
             </Tabs>
+            )})()}
 
             {/* ── Draft Save Footer ───────────────────────────────────────────── */}
             <div className="space-y-4 pt-4 border-t sticky bottom-0 bg-background/95 backdrop-blur-sm pb-4">
