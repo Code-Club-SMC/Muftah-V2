@@ -26,6 +26,7 @@ async function ensureHrPayrollSettings() {
     .insert(hrPayrollSettings)
     .values({
       id: HR_PAYROLL_SETTINGS_SINGLETON_ID,
+      attendanceGraceMinutes: 15,
       basicSalaryDeductionPolicy: DEFAULT_BASIC_SALARY_DEDUCTION_POLICY,
     })
     .onConflictDoNothing()
@@ -50,18 +51,24 @@ export const updateHrPayrollSettingsFn = createServerFn()
   .middleware([requireHrManageMiddleware])
   .inputValidator(
     z.object({
-      basicSalaryDeductionPolicy: basicSalaryDeductionPolicySchema,
+      attendanceGraceMinutes: z.number().int().min(0).max(120).optional(),
+      basicSalaryDeductionPolicy: basicSalaryDeductionPolicySchema.optional(),
     }),
   )
   .handler(async ({ data, context }) => {
     await ensureHrPayrollSettings();
 
+    const updatePayload: any = { updatedBy: context.session.user.id };
+    if (data.basicSalaryDeductionPolicy !== undefined) {
+      updatePayload.basicSalaryDeductionPolicy = data.basicSalaryDeductionPolicy;
+    }
+    if (data.attendanceGraceMinutes !== undefined) {
+      updatePayload.attendanceGraceMinutes = data.attendanceGraceMinutes;
+    }
+
     const [updated] = await db
       .update(hrPayrollSettings)
-      .set({
-        basicSalaryDeductionPolicy: data.basicSalaryDeductionPolicy,
-        updatedBy: context.session.user.id,
-      })
+      .set(updatePayload)
       .where(eq(hrPayrollSettings.id, HR_PAYROLL_SETTINGS_SINGLETON_ID))
       .returning();
 

@@ -1,0 +1,1 @@
+ALTER TABLE "hr_payroll_settings" ADD COLUMN "attendance_grace_minutes" integer DEFAULT 15 NOT NULL;

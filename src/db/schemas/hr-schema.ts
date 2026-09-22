@@ -37,6 +37,7 @@ export const HR_PAYROLL_SETTINGS_SINGLETON_ID = "default";
 // --- HR PAYROLL SETTINGS ---
 export const hrPayrollSettings = pgTable("hr_payroll_settings", {
   id: text("id").primaryKey().default(HR_PAYROLL_SETTINGS_SINGLETON_ID),
+  attendanceGraceMinutes: integer("attendance_grace_minutes").default(15).notNull(),
   basicSalaryDeductionPolicy: jsonb("basic_salary_deduction_policy")
     .$type<BasicSalaryDeductionPolicy>()
     .default(DEFAULT_BASIC_SALARY_DEDUCTION_POLICY)

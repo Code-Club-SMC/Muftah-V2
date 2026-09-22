@@ -8,10 +8,11 @@ function isRestDay(date: string, restDays: unknown) {
 }
 
 import { and, asc, eq } from "drizzle-orm";
-import {
   attendance,
   attendancePunches,
   employees,
+  hrPayrollSettings,
+  HR_PAYROLL_SETTINGS_SINGLETON_ID,
 } from "@/db/schemas/hr-schema";
 import type { db } from "@/db";
 import { revalidateOvertimeRequest } from "./overtime-request";
@@ -66,9 +67,14 @@ export async function recomputeAttendanceRow(
   attendanceDate: string,
   options: RecomputeAttendanceRowOptions = {},
 ): Promise<RecomputedAttendanceRow> {
-  const employee = await tx.query.employees.findFirst({
-    where: eq(employees.id, employeeId),
-  });
+  const [employee, settings] = await Promise.all([
+    tx.query.employees.findFirst({
+      where: eq(employees.id, employeeId),
+    }),
+    tx.query.hrPayrollSettings.findFirst({
+      where: eq(hrPayrollSettings.id, HR_PAYROLL_SETTINGS_SINGLETON_ID),
+    }),
+  ]);
 
   if (!employee) {
     throw new Error("Employee not found");
@@ -107,7 +113,7 @@ export async function recomputeAttendanceRow(
     })),
     {
       shifts: employee.shifts ?? [],
-      graceMinutes: DEFAULT_GRACE_MINUTES,
+      graceMinutes: settings?.attendanceGraceMinutes ?? DEFAULT_GRACE_MINUTES,
       nightShiftStartHour: NIGHT_SHIFT_START_HOUR,
       forceNightShift: options.forceNightShift,
     },

@@ -1,10 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
-import { ShieldCheck, Settings2 } from "lucide-react";
+import { ShieldCheck, Settings2, Clock3 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
+import { Input } from "@/components/ui/input";
 import {
   DEFAULT_BASIC_SALARY_DEDUCTION_POLICY,
   type BasicSalaryDeductionPolicy,
@@ -79,8 +80,10 @@ function HrSettingsPage() {
   };
 
   const updateMutation = useMutation({
-    mutationFn: (basicSalaryDeductionPolicy: BasicSalaryDeductionPolicy) =>
-      updateHrPayrollSettingsFn({ data: { basicSalaryDeductionPolicy } }),
+    mutationFn: (payload: {
+      basicSalaryDeductionPolicy?: BasicSalaryDeductionPolicy;
+      attendanceGraceMinutes?: number;
+    }) => updateHrPayrollSettingsFn({ data: payload }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["hr-payroll-settings"] });
       queryClient.invalidateQueries({ queryKey: ["payroll-dashboard"] });
@@ -98,13 +101,17 @@ function HrSettingsPage() {
     value: boolean,
   ) => {
     updateMutation.mutate({
-      ...policy,
-      [key]: value,
+      basicSalaryDeductionPolicy: {
+        ...policy,
+        [key]: value,
+      },
     });
   };
 
   const resetDefaults = () => {
-    updateMutation.mutate(DEFAULT_BASIC_SALARY_DEDUCTION_POLICY);
+    updateMutation.mutate({
+      basicSalaryDeductionPolicy: DEFAULT_BASIC_SALARY_DEDUCTION_POLICY,
+    });
   };
 
   return (
@@ -170,6 +177,47 @@ function HrSettingsPage() {
                   />
                 </div>
               ))}
+            </CardContent>
+          </Card>
+
+          <Card className="mt-6 border-border/60">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Clock3 className="size-5 text-primary" />
+                Attendance & Time Tracking
+              </CardTitle>
+              <CardDescription>
+                Configure grace periods and scan behavior globally.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex flex-col gap-3 rounded-xl border border-border/50 bg-muted/20 p-4">
+                <div className="space-y-1">
+                  <p className="text-sm font-semibold">Late Arrival Grace Period</p>
+                  <p className="text-xs text-muted-foreground">
+                    Minutes an employee can be late before being marked as "Late" or incurring a deduction.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    min="0"
+                    max="120"
+                    className="w-24"
+                    disabled={updateMutation.isPending}
+                    value={data.attendanceGraceMinutes ?? 15}
+                    onChange={(e) => {
+                      const val = parseInt(e.target.value, 10);
+                      if (!isNaN(val)) {
+                        updateMutation.mutate({
+                          attendanceGraceMinutes: val,
+                        });
+                      }
+                    }}
+                  />
+                  <span className="text-sm text-muted-foreground">minutes</span>
+                </div>
+              </div>
             </CardContent>
           </Card>
         </div>

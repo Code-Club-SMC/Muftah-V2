@@ -43,6 +43,13 @@
       "when": 1789641504195,
       "tag": "0005_futuristic_stature",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1790058070556,
+      "tag": "0006_sour_vengeance",
+      "breakpoints": true
     }
   ]
 }

@@ -11,6 +11,8 @@ import {
 import { computeAttendanceFromPunches, type RecomputeResult } from "@/lib/attendance/recompute";
 import { getProtectedDeletePunchIds } from "@/lib/attendance/punch-sequence";
 import { toPKTDate, toPKTTime } from "@/lib/attendance/time";
+import { useQuery } from "@tanstack/react-query";
+import { getHrPayrollSettingsFn } from "@/server-functions/hr/payroll/settings-fn";
 import {
   useAddManualPunch,
   useCorrectPunch,
@@ -151,6 +153,11 @@ export function ManualPunchTimeline({
   const [isAddingLocked, setIsAddingLocked] = useState(false);
   const addPunchLockRef = useRef(false);
 
+  const settingsQuery = useQuery({
+    queryKey: ["hr-payroll-settings"],
+    queryFn: () => getHrPayrollSettingsFn(),
+  });
+
   const punches = (punchesQuery.data ?? []) as PunchRow[];
   const suggestedDirection = getNextDirection(punches);
   const protectedDeletePunchIds = getProtectedDeletePunchIds(punches);
@@ -161,7 +168,7 @@ export function ManualPunchTimeline({
     })),
     {
       shifts: shifts ?? [],
-      graceMinutes: DEFAULT_GRACE_MINUTES,
+      graceMinutes: settingsQuery.data?.attendanceGraceMinutes ?? DEFAULT_GRACE_MINUTES,
       nightShiftStartHour: NIGHT_SHIFT_START_HOUR,
     },
   );
