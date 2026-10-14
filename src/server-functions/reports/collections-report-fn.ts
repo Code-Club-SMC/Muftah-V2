@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { and, desc, eq, gte, inArray, lte, ne } from "drizzle-orm";
-import { endOfDay, isValid, parseISO } from "date-fns";
+import { reportDateBounds } from "@/lib/report-dates";
 import { z } from "zod";
 import { db } from "@/db";
 import { payments } from "@/db/schemas/sales-erp-schema";
@@ -19,15 +19,10 @@ function dateConditions(
   dateFrom?: string,
   dateTo?: string,
 ) {
+  const { fromDate, toDate } = reportDateBounds({ dateFrom, dateTo });
   const conditions = [];
-  if (dateFrom) {
-    const from = parseISO(dateFrom);
-    if (isValid(from)) conditions.push(gte(column, from));
-  }
-  if (dateTo) {
-    const to = parseISO(dateTo);
-    if (isValid(to)) conditions.push(lte(column, endOfDay(to)));
-  }
+  if (fromDate) conditions.push(gte(column, fromDate));
+  if (toDate) conditions.push(lte(column, toDate));
   return conditions;
 }
 

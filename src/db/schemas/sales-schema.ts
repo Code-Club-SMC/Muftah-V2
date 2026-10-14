@@ -173,7 +173,7 @@ export const invoices = pgTable(
       .where(sql`${table.offlineSalesSlotId} is not null`),
     settlementAmountsCheck: check(
       "invoices_settlement_amounts_check",
-      sql`${table.paidAmount} >= 0 and ${table.returnedAmount} >= 0 and ${table.outstandingAmount} >= 0 and ${table.paidAmount} + ${table.returnedAmount} + ${table.outstandingAmount} = ${table.totalPrice}`,
+      sql`${table.paidAmount} >= 0 and ${table.returnedAmount} >= 0 and ${table.paidAmount} + ${table.returnedAmount} + ${table.outstandingAmount} = ${table.totalPrice}`,
     ),
     sourceCheck: check(
       "invoices_source_check",

@@ -1,0 +1,2 @@
+CREATE INDEX "lab_report_mixing_run_idx" ON "production_run_lab_reports" USING btree ("mixing_run_id");--> statement-breakpoint
+ALTER TABLE "production_run_lab_reports" ADD CONSTRAINT "production_lab_report_one_run_source_ck" CHECK (("production_run_lab_reports"."production_run_id" IS NOT NULL) <> ("production_run_lab_reports"."mixing_run_id" IS NOT NULL));

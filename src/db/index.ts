@@ -13,6 +13,7 @@ import * as rbacSchema from "./schemas/rbac-schema";
 import * as offlineAttendanceSchema from "./schemas/offline-attendance-schema";
 import * as offlineSalesSchema from "./schemas/offline-sales-schema";
 import * as systemActivitySchema from "./schemas/system-activity-schema";
+import * as productionSchema from "./schemas/production-schema";
 
 const schema = {
   ...authSchema,
@@ -28,6 +29,7 @@ const schema = {
   ...offlineAttendanceSchema,
   ...offlineSalesSchema,
   ...systemActivitySchema,
+  ...productionSchema,
 };
 
 if (!process.env.DATABASE_URL) {
@@ -135,3 +137,13 @@ export const {
   stockReconciliationIssues,
 } = offlineSalesSchema;
 export const { systemActivityLog } = systemActivitySchema;
+export const {
+  formulas,
+  formulaIngredients,
+  mixingRuns,
+  mixingProgressLogs,
+  mixingMaterialsUsed,
+  packagingAllocations,
+  packagingProgressLogs,
+  packagingMaterialsUsed,
+} = productionSchema;

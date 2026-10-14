@@ -17,6 +17,7 @@ export const getRecipeFn = createServerFn()
       where: eq(recipes.id, data.id),
       with: {
         product: true,
+        formula: true,
         containerPackaging: true,
         cartonPackaging: true,
         ingredients: {
@@ -33,7 +34,7 @@ export const getRecipeFn = createServerFn()
     });
 
     if (!result) {
-      throw new Error("Recipe not found");
+      throw new Error("Packaging Format not found");
     }
 
     return result;

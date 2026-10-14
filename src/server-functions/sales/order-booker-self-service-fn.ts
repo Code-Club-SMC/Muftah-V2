@@ -10,7 +10,7 @@ import { orderBookers } from "@/db/schemas/sales-erp-schema";
 import { invoices } from "@/db/schemas/sales-schema";
 import { tadaRates } from "@/db/schemas/hr-schema";
 import { wallets } from "@/db/schemas/finance-schema";
-import { eq, and, gte, lte, desc, ilike, or, sql, gt } from "drizzle-orm";
+import { eq, and, gte, lte, desc, ilike, or, sql, gt, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { createId } from "@paralleldrive/cuid2";
 import {
@@ -347,10 +347,20 @@ export const createMyTripFn = createServerFn()
   .handler(async ({ data, context }) => {
     const ob = await requireOrderBookerFromSession(context.session);
 
-    const activeRate = await db.query.tadaRates.findFirst({
-      where: eq(tadaRates.isActive, true),
-      orderBy: [desc(tadaRates.effectiveFrom)],
-    });
+    const employeeId = ob.employeeId;
+    let activeRate = null;
+    if (employeeId) {
+      activeRate = await db.query.tadaRates.findFirst({
+        where: and(eq(tadaRates.isActive, true), eq(tadaRates.employeeId, employeeId)),
+        orderBy: [desc(tadaRates.effectiveFrom)],
+      });
+    }
+    if (!activeRate) {
+      activeRate = await db.query.tadaRates.findFirst({
+        where: and(eq(tadaRates.isActive, true), isNull(tadaRates.employeeId)),
+        orderBy: [desc(tadaRates.effectiveFrom)],
+      });
+    }
 
     const tadaAmount = activeRate
       ? data.distanceKm * Number(activeRate.ratePerKm)

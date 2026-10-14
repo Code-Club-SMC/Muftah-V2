@@ -1,3 +1,5 @@
+import { useViewerAccess } from "@/hooks/use-viewer-access";
+import { hasPermission } from "@/lib/rbac";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import {
   ArrowRightLeft,
@@ -55,6 +57,8 @@ const itemVariants: Variants = {
 // ── Component ──────────────────────────────────────────────────────────────
 
 export const InventoryContainer = () => {
+  const { data: viewer } = useViewerAccess();
+  const canAdjustOutside = !!viewer && hasPermission(viewer.permissions, "inventory.manage");
   const [selectedWarehouse, setSelectedWarehouse] = useState<string>("all");
   const [isAddWarehouseOpen, setAddWarehouseOpen] = useState(false);
   const [isTransferOpen, setTransferOpen] = useState(false);
@@ -260,6 +264,7 @@ export const InventoryContainer = () => {
 
           <TabsContent value="finished" className="mt-0 focus-visible:outline-none border border-border bg-card rounded-none shadow-none">
             <FinishedGoodsTable
+              canAdjustOutside={canAdjustOutside}
               data={finishedGoods as any}
               warehouses={warehouses}
               preselectedWarehouse={

@@ -1,3 +1,4 @@
+import { formatReportMoney } from "@/lib/report-format";
 import { useMemo } from "react";
 import {
   ComposedChart,
@@ -11,7 +12,6 @@ import {
   Legend,
 } from "recharts";
 import { TrendingUp, TrendingDown } from "lucide-react";
-import { formatPKR, formatPKRPrecise } from "@/lib/currency-format";
 
 interface CostTrendDataPoint {
   month: string;
@@ -39,18 +39,26 @@ function fmtK(v: number) {
 
 export function CostTrendChart({ data, recipeName }: CostTrendChartProps) {
   const summary = useMemo(() => {
-    if (!data.length) return { avgMargin: 0, trend: "flat" as const, latestMargin: 0 };
+    if (!data.length)
+      return { avgMargin: 0, trend: "flat" as const, latestMargin: 0 };
     const avgMargin = data.reduce((s, d) => s + d.margin, 0) / data.length;
     const latestMargin = data[data.length - 1].margin;
     const firstMargin = data[0].margin;
-    const trend = latestMargin > firstMargin + 2 ? "up" : latestMargin < firstMargin - 2 ? "down" : "flat";
+    const trend =
+      latestMargin > firstMargin + 2
+        ? "up"
+        : latestMargin < firstMargin - 2
+          ? "down"
+          : "flat";
     return { avgMargin, trend, latestMargin };
   }, [data]);
 
   if (!data.length) {
     return (
       <div className="border rounded-lg p-8 text-center">
-        <p className="text-sm text-muted-foreground">No cost trend data available for this recipe.</p>
+        <p className="text-sm text-muted-foreground">
+          No cost trend data available for this recipe.
+        </p>
       </div>
     );
   }
@@ -63,26 +71,53 @@ export function CostTrendChart({ data, recipeName }: CostTrendChartProps) {
           <div>
             <h3 className="text-sm font-bold">
               Cost & Margin Trend
-              {recipeName && <span className="text-muted-foreground font-normal ml-1">— {recipeName}</span>}
+              {recipeName && (
+                <span className="text-muted-foreground font-normal ml-1">
+                  — {recipeName}
+                </span>
+              )}
             </h3>
             <p className="text-[11px] text-muted-foreground mt-0.5">
-              Monthly WAC, selling price, and margin over the last {data.length} months
+              Monthly WAC, selling price, and margin over the last {data.length}{" "}
+              months
             </p>
           </div>
           <div className="flex items-center gap-4 text-right">
             <div>
-              <p className="text-[10px] font-semibold text-muted-foreground uppercase">Avg Margin</p>
-              <p className={`text-lg font-black tabular-nums ${summary.avgMargin >= 0 ? "text-emerald-600" : "text-rose-500"}`}>
+              <p className="text-[10px] font-semibold text-muted-foreground uppercase">
+                Avg Margin
+              </p>
+              <p
+                className={`text-lg font-black tabular-nums ${summary.avgMargin >= 0 ? "text-emerald-600" : "text-rose-500"}`}
+              >
                 {summary.avgMargin.toFixed(1)}%
               </p>
             </div>
             <div>
-              <p className="text-[10px] font-semibold text-muted-foreground uppercase">Trend</p>
-              <p className={`text-lg font-black flex items-center gap-1 ${
-                summary.trend === "up" ? "text-emerald-600" : summary.trend === "down" ? "text-rose-500" : "text-muted-foreground"
-              }`}>
-                {summary.trend === "up" ? <TrendingUp className="size-4" /> : summary.trend === "down" ? <TrendingDown className="size-4" /> : "—"}
-                {summary.trend === "up" ? "Rising" : summary.trend === "down" ? "Falling" : "Stable"}
+              <p className="text-[10px] font-semibold text-muted-foreground uppercase">
+                Trend
+              </p>
+              <p
+                className={`text-lg font-black flex items-center gap-1 ${
+                  summary.trend === "up"
+                    ? "text-emerald-600"
+                    : summary.trend === "down"
+                      ? "text-rose-500"
+                      : "text-muted-foreground"
+                }`}
+              >
+                {summary.trend === "up" ? (
+                  <TrendingUp className="size-4" />
+                ) : summary.trend === "down" ? (
+                  <TrendingDown className="size-4" />
+                ) : (
+                  "—"
+                )}
+                {summary.trend === "up"
+                  ? "Rising"
+                  : summary.trend === "down"
+                    ? "Falling"
+                    : "Stable"}
               </p>
             </div>
           </div>
@@ -92,19 +127,31 @@ export function CostTrendChart({ data, recipeName }: CostTrendChartProps) {
       {/* Chart */}
       <div className="px-2 py-4 min-h-[300px] print:hidden">
         <ResponsiveContainer width="100%" height={300}>
-          <ComposedChart data={data} margin={{ top: 10, right: 16, left: -10, bottom: 0 }}>
+          <ComposedChart
+            data={data}
+            margin={{ top: 10, right: 16, left: -10, bottom: 0 }}
+          >
             <defs>
               <linearGradient id="profitGrad" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor="#10b981" stopOpacity={0.15} />
                 <stop offset="100%" stopColor="#10b981" stopOpacity={0} />
               </linearGradient>
             </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" strokeWidth={0.6} opacity={0.4} />
+            <CartesianGrid
+              strokeDasharray="3 3"
+              stroke="hsl(var(--border))"
+              strokeWidth={0.6}
+              opacity={0.4}
+            />
             <XAxis
               dataKey="monthLabel"
               tickLine={false}
               axisLine={false}
-              tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 10, fontWeight: 600 }}
+              tick={{
+                fill: "hsl(var(--muted-foreground))",
+                fontSize: 10,
+                fontWeight: 600,
+              }}
               dy={8}
             />
             <YAxis
@@ -112,7 +159,11 @@ export function CostTrendChart({ data, recipeName }: CostTrendChartProps) {
               tickLine={false}
               axisLine={false}
               tickFormatter={(v) => fmtK(v)}
-              tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 10, fontWeight: 600 }}
+              tick={{
+                fill: "hsl(var(--muted-foreground))",
+                fontSize: 10,
+                fontWeight: 600,
+              }}
               dx={-4}
             />
             <YAxis
@@ -121,12 +172,20 @@ export function CostTrendChart({ data, recipeName }: CostTrendChartProps) {
               tickLine={false}
               axisLine={false}
               tickFormatter={(v) => `${v}%`}
-              tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 10, fontWeight: 600 }}
+              tick={{
+                fill: "hsl(var(--muted-foreground))",
+                fontSize: 10,
+                fontWeight: 600,
+              }}
               domain={[-20, 50]}
               dx={4}
             />
             <Tooltip
-              cursor={{ stroke: "hsl(var(--border))", strokeWidth: 1.5, strokeDasharray: "4 3" }}
+              cursor={{
+                stroke: "hsl(var(--border))",
+                strokeWidth: 1.5,
+                strokeDasharray: "4 3",
+              }}
               content={({ active, payload, label }) => {
                 if (!active || !payload?.length) return null;
                 const d = payload[0]?.payload as CostTrendDataPoint;
@@ -136,26 +195,46 @@ export function CostTrendChart({ data, recipeName }: CostTrendChartProps) {
                     <p className="font-bold text-foreground mb-2">{label}</p>
                     <div className="space-y-1.5">
                       <div className="flex justify-between gap-6">
-                        <span className="text-muted-foreground">Revenue/Unit</span>
-                        <span className="font-bold text-emerald-600 tabular-nums">{formatPKRPrecise(d.avgRevenuePerUnit)}</span>
+                        <span className="text-muted-foreground">
+                          Revenue/Unit
+                        </span>
+                        <span className="font-bold text-emerald-600 tabular-nums">
+                          {formatReportMoney(d.avgRevenuePerUnit)}
+                        </span>
                       </div>
                       <div className="flex justify-between gap-6">
-                        <span className="text-muted-foreground">Cost/Unit (WAC)</span>
-                        <span className="font-bold text-rose-500 tabular-nums">{formatPKRPrecise(d.avgCostPerUnit)}</span>
+                        <span className="text-muted-foreground">
+                          Cost/Unit (WAC)
+                        </span>
+                        <span className="font-bold text-rose-500 tabular-nums">
+                          {formatReportMoney(d.avgCostPerUnit)}
+                        </span>
                       </div>
                       <div className="flex justify-between gap-6 pt-1.5 mt-1.5 border-t border-border/40">
-                        <span className="text-muted-foreground font-semibold">Margin</span>
-                        <span className={`font-black tabular-nums ${d.margin >= 0 ? "text-emerald-600" : "text-rose-500"}`}>
+                        <span className="text-muted-foreground font-semibold">
+                          Margin
+                        </span>
+                        <span
+                          className={`font-black tabular-nums ${d.margin >= 0 ? "text-emerald-600" : "text-rose-500"}`}
+                        >
                           {d.margin.toFixed(1)}%
                         </span>
                       </div>
                       <div className="flex justify-between gap-6">
-                        <span className="text-muted-foreground">Total Revenue</span>
-                        <span className="font-bold tabular-nums">{formatPKR(d.revenue, false)}</span>
+                        <span className="text-muted-foreground">
+                          Total Revenue
+                        </span>
+                        <span className="font-bold tabular-nums">
+                          {formatReportMoney(d.revenue)}
+                        </span>
                       </div>
                       <div className="flex justify-between gap-6">
-                        <span className="text-muted-foreground">Units Sold</span>
-                        <span className="font-bold tabular-nums">{d.units.toLocaleString()}</span>
+                        <span className="text-muted-foreground">
+                          Units Sold
+                        </span>
+                        <span className="font-bold tabular-nums">
+                          {d.units.toLocaleString()}
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -225,13 +304,23 @@ export function CostTrendChart({ data, recipeName }: CostTrendChartProps) {
             {data.map((d, i) => (
               <tr key={i} className="border-b border-gray-300">
                 <td className="py-0.5">{d.monthLabel}</td>
-                <td className="text-right py-0.5 font-mono">{formatPKRPrecise(d.avgRevenuePerUnit)}</td>
-                <td className="text-right py-0.5 font-mono">{formatPKRPrecise(d.avgCostPerUnit)}</td>
-                <td className={`text-right py-0.5 font-mono font-bold ${d.margin >= 0 ? "" : "underline"}`}>
+                <td className="text-right py-0.5 font-mono">
+                  {formatReportMoney(d.avgRevenuePerUnit)}
+                </td>
+                <td className="text-right py-0.5 font-mono">
+                  {formatReportMoney(d.avgCostPerUnit)}
+                </td>
+                <td
+                  className={`text-right py-0.5 font-mono font-bold ${d.margin >= 0 ? "" : "underline"}`}
+                >
                   {d.margin.toFixed(1)}%
                 </td>
-                <td className="text-right py-0.5 font-mono">{formatPKR(d.revenue, false)}</td>
-                <td className="text-right py-0.5 font-mono">{d.units.toLocaleString()}</td>
+                <td className="text-right py-0.5 font-mono">
+                  {formatReportMoney(d.revenue)}
+                </td>
+                <td className="text-right py-0.5 font-mono">
+                  {d.units.toLocaleString()}
+                </td>
               </tr>
             ))}
           </tbody>

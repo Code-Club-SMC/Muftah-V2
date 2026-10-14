@@ -22,6 +22,7 @@ export const additionalPackagingItemSchema = z.object({
 
 export const createRecipeSchema = z.object({
   productId: z.string().min(1, "Please select a target product"),
+  formulaId: z.string().min(1, "Please select a bulk formula"),
   name: z
     .string()
     .min(1, "Recipe name is required")
@@ -54,9 +55,7 @@ export const createRecipeSchema = z.object({
     .number()
     .int("Units must be a whole number")
     .min(1, "Must produce at least 1 unit"),
-  ingredients: z
-    .array(ingredientSelectionSchema)
-    .min(1, "Please add at least one ingredient"),
+  ingredients: z.array(ingredientSelectionSchema).default([]),
   additionalPackaging: z.array(additionalPackagingItemSchema).optional(),
 });
 

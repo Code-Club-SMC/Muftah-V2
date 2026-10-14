@@ -6,7 +6,7 @@ import { suppliers } from "@/db/schemas/core-suppliers";
 import { warehouses, chemicals, packagingMaterials } from "@/db/schemas/inventory-schema";
 import { z } from "zod";
 import { and, eq, gte, lte, desc } from "drizzle-orm";
-import { parseISO, isValid, endOfDay } from "date-fns";
+import { reportDateBounds } from "@/lib/report-dates";
 
 export const getPurchasesReportFn = createServerFn()
   .middleware([requireReportsViewMiddleware])
@@ -17,15 +17,14 @@ export const getPurchasesReportFn = createServerFn()
     }).parse(input),
   )
   .handler(async ({ data }) => {
+    const { fromDate, toDate } = reportDateBounds(data);
     const conditions = [];
 
-    if (data.dateFrom) {
-      const from = parseISO(data.dateFrom);
-      if (isValid(from)) conditions.push(gte(purchaseRecords.purchaseDate, from));
+    if (fromDate) {
+      conditions.push(gte(purchaseRecords.purchaseDate, fromDate));
     }
-    if (data.dateTo) {
-      const to = parseISO(data.dateTo);
-      if (isValid(to)) conditions.push(lte(purchaseRecords.purchaseDate, endOfDay(to)));
+    if (toDate) {
+      conditions.push(lte(purchaseRecords.purchaseDate, toDate));
     }
 
     const rows = await db

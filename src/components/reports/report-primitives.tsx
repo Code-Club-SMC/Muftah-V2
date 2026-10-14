@@ -75,8 +75,13 @@ export function SummaryCard({
 }) {
   const a = accentMap[accentColor];
   return (
-    <div className={`print:border-b print:pb-2 ${highlight ? `${a.text}` : ""}`}>
-      <div className={`text-[10px] font-medium uppercase tracking-wide ${a.text} print:text-black mb-0.5 flex items-center gap-1.5`}>
+    <div
+      data-report-summary-card
+      className={`print:border-b print:pb-2 ${highlight ? `${a.text}` : ""}`}
+    >
+      <div
+        className={`text-[10px] font-medium uppercase tracking-wide ${a.text} print:text-black mb-0.5 flex items-center gap-1.5`}
+      >
         {icon && <span className="print:hidden">{icon}</span>}
         {label}
       </div>
@@ -104,7 +109,7 @@ export function ReportTable({
             {headers.map((h, i) => (
               <TableHead
                 key={i}
-                className={`text-xs font-medium uppercase text-muted-foreground h-9 print:text-[6.5pt] print:h-auto print:py-1 ${i === headers.length - 1 || alignRight.includes(i) ? "text-right" : ""}`}
+                className={`text-xs font-medium uppercase text-muted-foreground h-9 print:text-[9pt] print:h-auto print:py-1 ${alignRight.includes(i) ? "text-right" : ""}`}
               >
                 {h}
               </TableHead>
@@ -147,27 +152,24 @@ export function ReportCell({
   muted?: boolean;
   className?: string;
 }) {
-  const alignClass = align === "right" ? "text-right" : align === "center" ? "text-center" : "";
+  const alignClass =
+    align === "right" ? "text-right" : align === "center" ? "text-center" : "";
   const monoClass = mono ? "font-mono tabular-nums" : "";
   const boldClass = bold ? "font-medium" : "";
   const mutedClass = muted ? "text-muted-foreground print:text-black" : "";
 
   return (
     <TableCell
-      className={`text-sm py-2.5 print:text-[7pt] print:py-0.5 ${alignClass} ${monoClass} ${boldClass} ${mutedClass} ${className}`}
+      className={`text-sm py-2.5 print:text-[9pt] print:py-0.5 ${alignClass} ${monoClass} ${boldClass} ${mutedClass} ${className}`}
     >
       {children}
     </TableCell>
   );
 }
 
-export function EmptySection({
-  message,
-}: {
-  message: string;
-}) {
+export function EmptySection({ message }: { message: string }) {
   return (
-    <div className="flex items-center justify-center py-8 text-center border border-dashed rounded-md print:hidden">
+    <div className="flex items-center justify-center py-8 text-center border border-dashed rounded-md">
       <p className="text-sm text-muted-foreground">{message}</p>
     </div>
   );

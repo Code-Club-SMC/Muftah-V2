@@ -1,6 +1,14 @@
+import { formatReportMoney } from "@/lib/report-format";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { endOfMonth, format, parseISO, startOfMonth } from "date-fns";
+import { parseISO } from "date-fns";
+import {
+  currentReportMonth,
+  datePickerKey,
+  formatReportDate,
+  reportDateBounds,
+} from "@/lib/report-dates";
+import { Button as RetryButton } from "@/components/ui/button";
 import {
   ArrowRight,
   Clock,
@@ -45,7 +53,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { formatNumber, formatPKR } from "@/lib/currency-format";
+import { formatNumber } from "@/lib/currency-format";
 import {
   parseReportSource,
   reportSourceLabel,
@@ -56,10 +64,6 @@ import {
   getProductProfitLossForReportsFn,
   type ProductProfitLossForReportsResult,
 } from "@/server-functions/reports/profit-loss/product-pnl-for-reports-fn";
-
-const today = new Date();
-const defaultFrom = format(startOfMonth(today), "yyyy-MM-dd");
-const defaultTo = format(endOfMonth(today), "yyyy-MM-dd");
 
 function searchToRange(from: string, to: string): DateRange {
   return {
@@ -72,8 +76,8 @@ export const Route = createFileRoute(
   "/_protected/reports/profit-loss/product/$productId/",
 )({
   validateSearch: (search: Record<string, unknown>) => ({
-    from: String(search.from ?? defaultFrom),
-    to: String(search.to ?? defaultTo),
+    from: String(search.from ?? currentReportMonth().from),
+    to: String(search.to ?? currentReportMonth().to),
     source: parseReportSource(search.source),
   }),
   component: ProductProfitLossReportPage,
@@ -91,7 +95,7 @@ function ProductProfitLossReportPage() {
     setDateRange(searchToRange(search.from, search.to));
   }, [search.from, search.to]);
 
-  const { data, isLoading, isError, error, isFetching } =
+  const { data, isLoading, isError, error, isFetching, refetch } =
     useQuery<ProductProfitLossForReportsResult>({
       queryKey: [
         "reports",
@@ -124,18 +128,35 @@ function ProductProfitLossReportPage() {
       value: recipe.netImpact,
     })) ?? [];
 
+  const draft =
+    !dateRange?.from ||
+    !dateRange?.to ||
+    datePickerKey(dateRange.from) !== search.from ||
+    datePickerKey(dateRange.to) !== search.to;
+  const exportDisabled = !data || isFetching || isError || draft;
+
   const handleApply = () => {
     if (!dateRange?.from || !dateRange.to) {
       return;
     }
 
+    if (dateRange?.from && dateRange?.to) {
+      reportDateBounds({
+        dateFrom: datePickerKey(dateRange.from),
+        dateTo: datePickerKey(dateRange.to),
+      });
+      if (!draft) {
+        void refetch();
+        return;
+      }
+    }
     startTransition(() => {
       navigate({
         to: "/reports/profit-loss/product/$productId",
         params: { productId },
         search: {
-          from: format(dateRange.from!, "yyyy-MM-dd"),
-          to: format(dateRange.to!, "yyyy-MM-dd"),
+          from: datePickerKey(dateRange.from!),
+          to: datePickerKey(dateRange.to!),
           source: search.source,
         },
       });
@@ -153,7 +174,7 @@ function ProductProfitLossReportPage() {
   };
 
   const handlePrint = () => {
-    window.print();
+    if (!exportDisabled) window.print();
   };
 
   const breadcrumbs: BreadcrumbItem[] = data
@@ -175,16 +196,19 @@ function ProductProfitLossReportPage() {
           title="Unable to load Product P&L"
           description={error instanceof Error ? error.message : "Unknown error"}
         />
+        <RetryButton onClick={() => void refetch()}>Retry</RetryButton>
       </main>
     );
   }
 
   return (
-    <main data-pnl-report className="space-y-6 pb-8">
+    <main
+      data-pnl-report
+      data-report-document={data ? true : undefined}
+      className="space-y-6 pb-8"
+    >
       <PnlPrintStyles />
-      <div className="print:hidden">
-        <OfflineReportPendingBanner />
-      </div>
+      <OfflineReportPendingBanner />
 
       {data ? (
         <PnlPrintHeader
@@ -193,6 +217,9 @@ function ProductProfitLossReportPage() {
           productCode={data.product.productCode}
           category={data.product.category}
           periodLabel={data.reportPeriod.label}
+          source={reportSourceLabel(search.source)}
+          dateFrom={search.from}
+          dateTo={search.to}
           generatedAt={data.generatedAt}
         />
       ) : null}
@@ -228,6 +255,7 @@ function ProductProfitLossReportPage() {
           onApply={handleApply}
           isPending={isFetching}
           exportProps={{
+            disabled: exportDisabled,
             dateFrom: search.from,
             dateTo: search.to,
             productId,
@@ -269,7 +297,7 @@ function ProductProfitLossReportPage() {
           <section className="grid gap-4 grid-cols-2 md:grid-cols-4">
             <PnlKpiCard
               label="Collected Revenue"
-              value={formatPKR(data.summary.totalRevenue, false)}
+              value={formatReportMoney(data.summary.totalRevenue)}
               delta={data.kpis.totalRevenueDeltaPercent}
               deltaLabel={data.comparisonLabel}
               icon={<DollarSign className="size-5" />}
@@ -279,7 +307,7 @@ function ProductProfitLossReportPage() {
             />
             <PnlKpiCard
               label="Total COGS"
-              value={formatPKR(data.summary.totalCogs, false)}
+              value={formatReportMoney(data.summary.totalCogs)}
               delta={data.kpis.totalCogsDeltaPercent}
               deltaLabel={data.comparisonLabel}
               icon={<ShoppingBasket className="size-5" />}
@@ -289,7 +317,7 @@ function ProductProfitLossReportPage() {
             />
             <PnlKpiCard
               label="Gross Profit"
-              value={formatPKR(data.summary.grossProfit, false)}
+              value={formatReportMoney(data.summary.grossProfit)}
               delta={data.kpis.grossProfitDeltaPercent}
               deltaLabel={data.comparisonLabel}
               icon={<TrendingUp className="size-5" />}
@@ -310,7 +338,7 @@ function ProductProfitLossReportPage() {
             />
             <PnlKpiCard
               label="Direct Profit"
-              value={formatPKR(data.summary.netProfit, false)}
+              value={formatReportMoney(data.summary.netProfit)}
               delta={data.kpis.directProfitDeltaPercent}
               deltaLabel={data.comparisonLabel}
               icon={<Wallet className="size-5" />}
@@ -331,7 +359,7 @@ function ProductProfitLossReportPage() {
             />
             <PnlKpiCard
               label="Failed Batch Loss"
-              value={formatPKR(data.summary.failedBatchLosses, false)}
+              value={formatReportMoney(data.summary.failedBatchLosses)}
               delta={data.kpis.failedBatchLossesDeltaPercent}
               deltaLabel={data.comparisonLabel}
               icon={<Package className="size-5" />}
@@ -341,7 +369,7 @@ function ProductProfitLossReportPage() {
             />
             <PnlKpiCard
               label="Net Impact"
-              value={formatPKR(data.summary.netImpact, false)}
+              value={formatReportMoney(data.summary.netImpact)}
               delta={data.kpis.netImpactDeltaPercent}
               deltaLabel={data.comparisonLabel}
               icon={<Wallet className="size-5" />}
@@ -444,7 +472,7 @@ function ProductProfitLossReportPage() {
                         <TableHead className="text-right font-semibold text-foreground">
                           Net Impact
                         </TableHead>
-                        <TableHead className="text-right font-semibold text-foreground">
+                        <TableHead className="text-right font-semibold text-foreground print:hidden">
                           Action
                         </TableHead>
                       </TableRow>
@@ -459,22 +487,22 @@ function ProductProfitLossReportPage() {
                             {recipe.variantLabel ?? "Not set"}
                           </TableCell>
                           <TableCell className="text-right font-mono tabular-nums">
-                            {formatPKR(recipe.totalRevenue, false)}
+                            {formatReportMoney(recipe.totalRevenue)}
                           </TableCell>
                           <TableCell className="text-right font-mono tabular-nums">
-                            {formatPKR(recipe.grossProfit, false)}
+                            {formatReportMoney(recipe.grossProfit)}
                           </TableCell>
                           <TableCell className="text-right font-mono tabular-nums">
                             {recipe.grossMarginPercent.toFixed(2)}%
                           </TableCell>
                           <TableCell className="text-right font-mono tabular-nums">
-                            {formatPKR(recipe.netProfit, false)}
+                            {formatReportMoney(recipe.netProfit)}
                           </TableCell>
                           <TableCell className="text-right font-mono tabular-nums">
                             {recipe.netMarginPercent.toFixed(2)}%
                           </TableCell>
                           <TableCell className="text-right font-mono tabular-nums text-rose-600">
-                            {formatPKR(recipe.failedBatchLosses, false)}
+                            {formatReportMoney(recipe.failedBatchLosses)}
                           </TableCell>
                           <TableCell
                             className={cn(
@@ -484,9 +512,9 @@ function ProductProfitLossReportPage() {
                                 : "text-foreground",
                             )}
                           >
-                            {formatPKR(recipe.netImpact, false)}
+                            {formatReportMoney(recipe.netImpact)}
                           </TableCell>
-                          <TableCell className="text-right">
+                          <TableCell className="text-right print:hidden">
                             <Link
                               to="/reports/profit-loss/recipe/$recipeId"
                               params={{ recipeId: recipe.recipeId }}
@@ -511,22 +539,22 @@ function ProductProfitLossReportPage() {
                           -
                         </TableCell>
                         <TableCell className="text-right font-mono tabular-nums">
-                          {formatPKR(data.summary.totalRevenue, false)}
+                          {formatReportMoney(data.summary.totalRevenue)}
                         </TableCell>
                         <TableCell className="text-right font-mono tabular-nums">
-                          {formatPKR(data.summary.grossProfit, false)}
+                          {formatReportMoney(data.summary.grossProfit)}
                         </TableCell>
                         <TableCell className="text-right font-mono tabular-nums">
                           {data.summary.grossMarginPercent.toFixed(2)}%
                         </TableCell>
                         <TableCell className="text-right font-mono tabular-nums">
-                          {formatPKR(data.summary.netProfit, false)}
+                          {formatReportMoney(data.summary.netProfit)}
                         </TableCell>
                         <TableCell className="text-right font-mono tabular-nums">
                           {data.summary.netMarginPercent.toFixed(2)}%
                         </TableCell>
                         <TableCell className="text-right font-mono tabular-nums text-rose-600">
-                          {formatPKR(data.summary.failedBatchLosses, false)}
+                          {formatReportMoney(data.summary.failedBatchLosses)}
                         </TableCell>
                         <TableCell
                           className={cn(
@@ -536,9 +564,11 @@ function ProductProfitLossReportPage() {
                               : "text-foreground",
                           )}
                         >
-                          {formatPKR(data.summary.netImpact, false)}
+                          {formatReportMoney(data.summary.netImpact)}
                         </TableCell>
-                        <TableCell className="text-right">-</TableCell>
+                        <TableCell className="text-right print:hidden">
+                          -
+                        </TableCell>
                       </TableRow>
                     </TableFooter>
                   </Table>
@@ -605,10 +635,7 @@ function ProductProfitLossReportPage() {
                             {invoice.invoiceNumber ?? invoice.invoiceId}
                           </TableCell>
                           <TableCell className="text-muted-foreground">
-                            {format(
-                              parseISO(invoice.invoiceDate),
-                              "dd MMM yyyy",
-                            )}
+                            {formatReportDate(invoice.invoiceDate)}
                           </TableCell>
                           <TableCell>{invoice.customerName}</TableCell>
                           <TableCell className="text-muted-foreground">
@@ -621,10 +648,10 @@ function ProductProfitLossReportPage() {
                             {formatNumber(invoice.realizedUnits)}
                           </TableCell>
                           <TableCell className="text-right font-mono tabular-nums">
-                            {formatPKR(invoice.realizedRevenue, false)}
+                            {formatReportMoney(invoice.realizedRevenue)}
                           </TableCell>
                           <TableCell className="text-right font-mono tabular-nums">
-                            {formatPKR(invoice.realizedCogs, false)}
+                            {formatReportMoney(invoice.realizedCogs)}
                           </TableCell>
                           <TableCell
                             className={cn(
@@ -634,7 +661,7 @@ function ProductProfitLossReportPage() {
                                 : "text-foreground",
                             )}
                           >
-                            {formatPKR(invoice.realizedProfit, false)}
+                            {formatReportMoney(invoice.realizedProfit)}
                           </TableCell>
                           <TableCell className="text-right font-mono tabular-nums">
                             {(invoice.realizedRatio * 100).toFixed(1)}%
@@ -702,7 +729,7 @@ function ProductProfitLossReportPage() {
                           {loss.batchId}
                         </TableCell>
                         <TableCell className="text-muted-foreground">
-                          {format(parseISO(loss.settledAt), "dd MMM yyyy")}
+                          {formatReportDate(loss.settledAt)}
                         </TableCell>
                         <TableCell className="text-muted-foreground">
                           {loss.recipeName}
@@ -718,11 +745,24 @@ function ProductProfitLossReportPage() {
                           {formatNumber(loss.lossQuantity)}
                         </TableCell>
                         <TableCell className="text-right font-mono tabular-nums text-rose-600">
-                          {formatPKR(loss.lossAmount, false)}
+                          {formatReportMoney(loss.lossAmount)}
                         </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
+                  <TableFooter>
+                    <TableRow className="report-total">
+                      <TableCell colSpan={7}>Total failed-batch loss</TableCell>
+                      <TableCell className="text-right">
+                        {formatReportMoney(
+                          data.failedBatchLosses.reduce(
+                            (sum, loss) => sum + loss.lossAmount,
+                            0,
+                          ),
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  </TableFooter>
                 </Table>
               </div>
             )}

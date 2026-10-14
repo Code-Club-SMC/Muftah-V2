@@ -1,42 +1,76 @@
 import { z } from "zod";
+import Big from "big.js";
 import { PACKAGING_USAGE_BASIS } from "@/lib/recipe-packaging";
+import { calculatePackingLine } from "@/lib/production/batch-packing";
 
 export const createRecipeSchema = z.object({
   productId: z.string().min(1, "Product is required"),
-  name: z.string().min(1, "Recipe name is required"),
+  formulaId: z.string().min(1, "Bulk formula is required"),
+  name: z.string().trim().min(1, "Format name is required").max(100, "Format name must be 100 characters or less"),
   batchSize: z.string().min(1, "Batch size is required"),
   batchUnit: z.enum(["kg", "liters"]),
   // Pack size configuration
-  fillAmount: z.string().optional(), // Content per pack (e.g., "100" for 100g)
-  fillUnit: z.enum(["g", "kg", "ml", "L"]).optional(), // Unit for fill amount
-  targetUnitsPerBatch: z.number().int().min(0).default(0), // Target packs per batch (producedUnits)
+  fillAmount: z.string().refine(value => /^\d+(?:\.\d{1,3})?$/.test(value) && Number(value) > 0 && Number(value) <= 9_999_999.999, "Fill amount must be positive with at most three decimal places"), // Content per pack (e.g., "100" for 100g)
+  fillUnit: z.enum(["g", "kg", "ml", "L"]), // Unit for fill amount
+  targetUnitsPerBatch: z.number().int().min(0).max(2_147_483_647).default(0), // Target packs per batch (producedUnits)
   containerType: z.literal("pack"),
-  containerPackagingId: z.string().min(1, "Container packaging is required"),
-  containersPerCarton: z.number().int().min(0).default(0), // 0 means no cartons
-  cartonPackagingId: z.string().optional(),
-  minimumStockLevel: z.number().int().min(0).default(0),
+  containerPackagingId: z.string().trim().min(1, "Pack material is required").refine(value => value !== "_none", "Pack material is required"),
+  containersPerCarton: z.number().int().min(0).max(2_147_483_647).default(0), // 0 means no cartons
+  cartonPackagingId: z.string().trim().optional(),
+  minimumStockLevel: z.number().int().min(0).max(2_147_483_647).default(0),
   ingredients: z.array(
     z.object({
       chemicalId: z.string().min(1, "Chemical is required"),
       quantityPerBatch: z.string().min(1, "Quantity is required"),
     }),
-  ),
+  ).default([]),
   additionalPackaging: z
     .array(
       z.object({
         packagingMaterialId: z
-          .string()
-          .min(1, "Packaging material is required"),
+          .string().trim()
+          .min(1, "Packaging material is required")
+          .refine(value => value !== "_none", "Packaging material is required"),
         quantityPerContainer: z
-          .number()
-          .positive("Quantity must be a positive number"),
+          .number().finite()
+          .positive("Quantity must be a positive number")
+          .max(9_999.999999, "Quantity must be 9999.999999 or less")
+          .refine(value => Number.isFinite(value) && new Big(value).round(6).eq(value), "Use at most six decimal places"),
         usageBasis: z.enum(PACKAGING_USAGE_BASIS).default("per_unit"),
       }),
     )
     .default([]),
+}).superRefine((data, ctx) => {
+  const usesCartons = !!data.cartonPackagingId && data.cartonPackagingId !== "_none";
+  if (usesCartons !== (data.containersPerCarton > 0)) {
+    ctx.addIssue({ code: "custom", path: ["containersPerCarton"], message: "Choose a carton material and enter its packs per carton together" });
+  }
+  if (usesCartons && data.cartonPackagingId === data.containerPackagingId) {
+    ctx.addIssue({ code: "custom", path: ["cartonPackagingId"], message: "Pack and carton materials must be different" });
+  }
+  const materials = new Set([data.containerPackagingId]);
+  if (usesCartons) materials.add(data.cartonPackagingId!);
+  data.additionalPackaging.forEach((item, index) => {
+    if (materials.has(item.packagingMaterialId)) {
+      ctx.addIssue({ code: "custom", path: ["additionalPackaging", index, "packagingMaterialId"], message: "Each packaging material can only be used once" });
+    }
+    materials.add(item.packagingMaterialId);
+    if (!usesCartons && item.usageBasis === "per_carton") {
+      ctx.addIssue({ code: "custom", path: ["additionalPackaging", index, "usageBasis"], message: "Per carton extras require carton packaging" });
+    }
+  });
+  try {
+    calculatePackingLine(
+      { fullCartons: 0, partialPacks: 0, loosePacks: 1 },
+      { ...data, usesCartons },
+      data.batchUnit,
+    );
+  } catch (error) {
+    ctx.addIssue({ code: "custom", path: ["fillAmount"], message: error instanceof Error ? error.message : "Enter a valid pack content" });
+  }
 });
 
-export const updateRecipeSchema = createRecipeSchema.extend({
+export const updateRecipeSchema = createRecipeSchema.safeExtend({
   id: z.string().min(1, "Recipe ID is required"),
 });
 
@@ -113,6 +147,7 @@ export const addProductSchema = z.object({
 
 export const addProductVariantSchema = z.object({
   productId: z.string().min(1, "Product is required"),
+  formulaId: z.string().optional(),
   name: z.string().min(1, "Variant name is required"),
   packsPerCarton: z.number().int().min(1),
   weightPerPackKg: z.string().min(1, "Weight per pack is required"),

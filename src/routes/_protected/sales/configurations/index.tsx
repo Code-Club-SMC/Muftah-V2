@@ -416,7 +416,7 @@ function RuleHistoryDialog({
               {history.map((h: any, idx: number) => {
                 const now = new Date();
                 const isCurrent = h.isActive && (!h.effectiveTo || new Date(h.effectiveTo) >= now);
-                const isArchived = !h.isActive;
+                
 
                 return (
                   <div key={h.id} className="relative group">

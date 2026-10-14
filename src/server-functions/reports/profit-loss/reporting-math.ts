@@ -1,15 +1,12 @@
 import {
-  differenceInCalendarDays,
-  endOfDay,
-  endOfMonth,
-  format,
-  isSameDay,
-  isSameMonth,
-  parseISO,
-  startOfDay,
-  startOfMonth,
-  subDays,
-} from "date-fns";
+  currentReportMonth,
+  formatReportDate,
+  formatReportMonth,
+  reportDateBounds,
+  reportDateKey,
+  reportMonth,
+  shiftReportDate,
+} from "@/lib/report-dates";
 
 export interface ReportDateRange {
   fromDate: Date;
@@ -76,77 +73,48 @@ export function createReportDateRange(input?: {
   dateFrom?: string;
   dateTo?: string;
 }): ReportDateRange {
-  const today = new Date();
-  const defaultFrom = startOfMonth(today);
-  const defaultTo = endOfMonth(today);
+  const defaults = currentReportMonth();
+  return reportDateBounds({
+    dateFrom: input?.dateFrom ?? defaults.from,
+    dateTo: input?.dateTo ?? defaults.to,
+  }) as ReportDateRange;
+}
 
-  const fromDate = input?.dateFrom ? parseISO(input.dateFrom) : defaultFrom;
-  const toDate = input?.dateTo ? parseISO(input.dateTo) : defaultTo;
-
-  return {
-    fromDate: startOfDay(Number.isNaN(fromDate.getTime()) ? defaultFrom : fromDate),
-    toDate: endOfDay(Number.isNaN(toDate.getTime()) ? defaultTo : toDate),
-  };
+function isFullMonth(range: ReportDateRange): boolean {
+  const month = reportMonth(range.fromDate);
+  return (
+    reportDateKey(range.fromDate) === month.from &&
+    reportDateKey(range.toDate) === month.to
+  );
 }
 
 export function createPreviousRange(range: ReportDateRange): ReportDateRange {
-  const isFullMonthRange =
-    isSameMonth(range.fromDate, range.toDate) &&
-    isSameDay(range.fromDate, startOfMonth(range.fromDate)) &&
-    isSameDay(range.toDate, endOfMonth(range.toDate));
-
-  if (isFullMonthRange) {
-    const previousMonthDate = subDays(startOfMonth(range.fromDate), 1);
-
-    return {
-      fromDate: startOfMonth(previousMonthDate),
-      toDate: endOfDay(endOfMonth(previousMonthDate)),
-    };
+  if (isFullMonth(range)) {
+    const month = reportMonth(range.fromDate, -1);
+    return createReportDateRange({ dateFrom: month.from, dateTo: month.to });
   }
-
-  const daysInRange = Math.max(
-    differenceInCalendarDays(range.toDate, range.fromDate) + 1,
-    1,
-  );
-  const previousToDate = endOfDay(subDays(range.fromDate, 1));
-  const previousFromDate = startOfDay(subDays(previousToDate, daysInRange - 1));
-
-  return {
-    fromDate: previousFromDate,
-    toDate: previousToDate,
-  };
+  const days =
+    (new Date(`${reportDateKey(range.toDate)}T00:00:00Z`).getTime() -
+      new Date(`${reportDateKey(range.fromDate)}T00:00:00Z`).getTime()) /
+      86_400_000 +
+    1;
+  return createReportDateRange({
+    dateFrom: shiftReportDate(range.fromDate, -days),
+    dateTo: shiftReportDate(range.fromDate, -1),
+  });
 }
 
 export function createComparisonLabel(
   currentRange: ReportDateRange,
   previousRange: ReportDateRange,
 ): string {
-  const currentStartsMonth = isSameDay(
-    currentRange.fromDate,
-    startOfMonth(currentRange.fromDate),
-  );
-  const currentEndsMonth = isSameDay(
-    currentRange.toDate,
-    endOfMonth(currentRange.toDate),
-  );
-
-  if (
-    currentStartsMonth &&
-    currentEndsMonth &&
-    isSameMonth(currentRange.fromDate, currentRange.toDate) &&
-    isSameMonth(previousRange.fromDate, previousRange.toDate)
-  ) {
-    return `vs ${format(previousRange.fromDate, "MMM yyyy")}`;
-  }
-
-  return "vs previous period";
+  return isFullMonth(currentRange) && isFullMonth(previousRange)
+    ? `vs ${formatReportMonth(previousRange.fromDate)}`
+    : "vs previous period";
 }
 
 export function createPeriodLabel(range: ReportDateRange): string {
-  return `${format(range.fromDate, "dd MMM yyyy")} - ${format(
-    range.toDate,
-    "dd MMM yyyy",
-  )}`;
+  return `${formatReportDate(range.fromDate)} - ${formatReportDate(range.toDate)}`;
 }
 
 export function buildVariantLabel(
@@ -177,7 +145,8 @@ export function calculateMetrics(row: Partial<SummaryRow>): PnlMetrics {
     netProfit,
     failedBatchLosses,
     netImpact,
-    grossMarginPercent: totalRevenue > 0 ? (grossProfit / totalRevenue) * 100 : 0,
+    grossMarginPercent:
+      totalRevenue > 0 ? (grossProfit / totalRevenue) * 100 : 0,
     netMarginPercent: totalRevenue > 0 ? (netProfit / totalRevenue) * 100 : 0,
     netImpactMarginPercent:
       totalRevenue > 0 ? (netImpact / totalRevenue) * 100 : 0,
@@ -191,7 +160,10 @@ export function calculateMetrics(row: Partial<SummaryRow>): PnlMetrics {
   };
 }
 
-export function calculateDelta(currentValue: number, previousValue: number): number {
+export function calculateDelta(
+  currentValue: number,
+  previousValue: number,
+): number {
   if (previousValue === 0) {
     return currentValue === 0 ? 0 : 100;
   }

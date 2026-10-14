@@ -1,4 +1,4 @@
-import { addMonths, endOfMonth, format, startOfMonth } from "date-fns";
+import { formatReportMonth, reportMonth } from "@/lib/report-dates";
 import { eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import type { ReportSource } from "@/lib/report-source";
@@ -60,10 +60,11 @@ export interface RecipeBreakdownRow extends PnlMetrics {
 
 export interface ScopedFailedBatchLossRow {
   settlementId: string;
-  productionRunId: string;
+  productionRunId: string | null;
+  mixingRunId: string | null;
   batchId: string;
   settledAt: string;
-  recipeId: string;
+  recipeId: string | null;
   recipeName: string;
   productId: string;
   productName: string;
@@ -313,18 +314,16 @@ export async function fetchScopedTrend(
   },
 ): Promise<PnlTrendPoint[]> {
   const months = scope.months ?? DEFAULT_TREND_MONTHS;
-  const fromDate = startOfMonth(addMonths(scope.endDate, -months + 1));
-  const toDate = endOfMonth(scope.endDate);
+  const firstMonth = reportMonth(scope.endDate, -months + 1);
+  const lastMonth = reportMonth(scope.endDate);
+  const { fromDate, toDate } = createReportDateRange({ dateFrom: firstMonth.from, dateTo: lastMonth.to });
 
   const context = await loadContext(fromDate, toDate, scope.source);
   const trend: PnlTrendPoint[] = [];
 
   for (let monthIndex = 0; monthIndex < months; monthIndex += 1) {
-    const bucketDate = addMonths(fromDate, monthIndex);
-    const bucketRange = createReportDateRange({
-      dateFrom: format(startOfMonth(bucketDate), "yyyy-MM-dd"),
-      dateTo: format(endOfMonth(bucketDate), "yyyy-MM-dd"),
-    });
+    const month = reportMonth(firstMonth.from, monthIndex);
+    const bucketRange = createReportDateRange({ dateFrom: month.from, dateTo: month.to });
     const snapshot = buildSnapshot(context, bucketRange);
     const lines = filterLinesByScope(snapshot.realizedLines, scope);
     const failedBatchLosses = filterFailedBatchLossesByScope(
@@ -337,8 +336,8 @@ export async function fetchScopedTrend(
     ).reduce((sum, loss) => sum + loss.lossAmount, 0);
 
     trend.push({
-      monthKey: format(bucketDate, "yyyy-MM-01"),
-      monthLabel: format(bucketDate, "MMM yyyy"),
+      monthKey: month.from,
+      monthLabel: formatReportMonth(month.from),
       ...metricsFromLines(lines, failedBatchLosses),
     });
   }
@@ -429,6 +428,7 @@ export async function fetchProductRecipeBreakdown(
     context.failedProductionLosses,
     { productId },
   )) {
+    if (!loss.recipeId) continue;
     failedBatchLossByRecipe.set(
       loss.recipeId,
       (failedBatchLossByRecipe.get(loss.recipeId) ?? 0) + loss.lossAmount,
@@ -473,6 +473,7 @@ export async function fetchScopedFailedBatchLosses(
     .map((loss) => ({
       settlementId: loss.id,
       productionRunId: loss.productionRunId,
+      mixingRunId: loss.mixingRunId,
       batchId: loss.batchId,
       settledAt: loss.settledAt.toISOString(),
       recipeId: loss.recipeId,

@@ -14,7 +14,7 @@ import {
   warehouses,
 } from "@/db/schemas/inventory-schema";
 import { stockReconciliationIssues } from "@/db/schemas/offline-sales-schema";
-import { cartons, adjustmentLog } from "@/db/schemas/manufacturing-schema";
+import { cartons } from "@/db/schemas/manufacturing-schema";
 import type { CreateInvoiceInput } from "@/db/zod_schemas";
 import { GENERAL_RECIPE_RATE_ENTITY_ID } from "@/lib/sales/entity-recipe-rate-config";
 import { getApplicableDistributorFreeCartons } from "@/lib/sales/distributor-discount-rules";
@@ -29,7 +29,6 @@ import {
   calculateSettlement,
 } from "@/lib/sales/settlement/math";
 import { moneyString, roundMoney } from "@/lib/sales/settlement/money";
-import { calculateTotalInventoryValue, calculateTotalUnits } from "@/lib/wac";
 import {
   and,
   eq,
@@ -44,6 +43,9 @@ import {
 import { calculateCommissionForOrder } from "./order-booker-commission-calc";
 import { recordInvoiceTimelineEvent } from "./invoice-timeline-log";
 import { createInitialPayments } from "./settlement-service";
+import { lockFinishedGoods } from "@/lib/production/finished-goods-lock.server";
+import { dispatchInvoiceCartons } from "@/lib/cartons/invoice-stock.server";
+import { adjustCartonStock } from "@/lib/cartons/stock-adjustment.server";
 
 export type PostedInvoice = typeof invoices.$inferSelect;
 
@@ -78,7 +80,7 @@ const getInvoicePricingMode = (
 
 const resolveFactoryFloorWarehouse = async (tx: SalesTransaction) => {
   const factoryFloorWarehouse = await tx.query.warehouses.findFirst({
-    where: eq(warehouses.type, "factory_floor"),
+    where: and(eq(warehouses.type, "factory_floor"), eq(warehouses.isActive, true)),
     columns: { id: true, name: true },
   });
 
@@ -121,7 +123,6 @@ const UNSALEABLE_CARTON_STATUSES = [
   "DISPATCHED",
   "ARCHIVED",
   "ON_HOLD",
-  "SEALED",
 ] as const;
 
 type CartonInventorySnapshot = {
@@ -135,10 +136,12 @@ const getCartonInventorySnapshot = async ({
   tx,
   warehouseId,
   recipeId,
+  containersPerCarton,
 }: {
   tx: any;
   warehouseId: string;
   recipeId: string;
+  containersPerCarton: number;
 }): Promise<CartonInventorySnapshot> => {
   const [physicalRow] = await tx
     .select({
@@ -159,7 +162,7 @@ const getCartonInventorySnapshot = async ({
 
   const [sellableRow] = await tx
     .select({
-      sellableCompleteCartons: sql<number>`COALESCE(SUM(CASE WHEN ${cartons.status} = 'COMPLETE' THEN 1 ELSE 0 END), 0)::int`,
+      sellableCompleteCartons: sql<number>`COALESCE(SUM(CASE WHEN ${cartons.status} IN ('COMPLETE', 'SEALED') AND ${cartons.capacity} = ${containersPerCarton} AND ${cartons.currentPacks} = ${containersPerCarton} THEN 1 ELSE 0 END), 0)::int`,
       sellableTotalPacks: sql<number>`COALESCE(SUM(${cartons.currentPacks}), 0)::int`,
     })
     .from(cartons)
@@ -207,8 +210,8 @@ const buildFinishedGoodsAvailability = ({
   }
 
   return {
-    physicalTotalUnits: cartonSnapshot.physicalTotalPacks + looseUnits,
-    sellableTotalUnits: cartonSnapshot.sellableTotalPacks + looseUnits,
+    physicalTotalUnits: cartonSnapshot.physicalTotalPacks + Number(stock.quantityOutsidePacks ?? 0),
+    sellableTotalUnits: cartonSnapshot.sellableTotalPacks + Number(stock.quantityOutsidePacks ?? 0),
     sellableCompleteCartons: cartonSnapshot.sellableCompleteCartons,
   };
 };
@@ -226,8 +229,14 @@ const resolveStockUnitCostPerPack = ({
   fallbackPerCartonPrice: number;
   containersPerCarton: number;
 }): number => {
-  const weightedAverageCost = Number(weightedAverageCostPerPack ?? 0);
-  if (weightedAverageCost > 0) return weightedAverageCost;
+  const weightedAverageCost = Number(weightedAverageCostPerPack);
+  if (
+    weightedAverageCostPerPack != null &&
+    Number.isFinite(weightedAverageCost) &&
+    weightedAverageCost >= 0
+  ) {
+    return weightedAverageCost;
+  }
 
   const configuredPrice = Number(configuredPricePerPack ?? 0);
   if (configuredPrice > 0) return configuredPrice;
@@ -466,10 +475,7 @@ const resolveCanonicalInvoiceLine = ({
     unitCostPerPack,
   });
 
-  const wacPerPack = parseFloat(
-    stock.weightedAverageCostPerPack?.toString() || "0",
-  );
-  const cogsPerUnit = wacPerPack > 0 ? wacPerPack : unitCostPerPack;
+  const cogsPerUnit = unitCostPerPack;
   const cogsTotal = roundMoney(pricingBreakdown.dispatchedUnits * cogsPerUnit);
   const revenuePerUnit =
     pricingBreakdown.chargedUnits > 0
@@ -663,8 +669,8 @@ export async function postInvoice(
 
   const reservedUnitsByRecipe = new Map<string, number>();
   const reservedCartonsByRecipe = new Map<string, number>();
-  const physicalAvailableUnitsByRecipe = new Map<string, number>();
   const cartonSnapshotByRecipe = new Map<string, CartonInventorySnapshot>();
+  await lockFinishedGoods(tx, stockWarehouseId, data.items.map(item => item.recipeId));
 
   for (const [itemIndex, item] of data.items.entries()) {
     let stock: any = await tx.query.finishedGoodsStock.findFirst({
@@ -688,7 +694,7 @@ export async function postInvoice(
           recipeId: item.recipeId,
           quantityCartons: 0,
           quantityContainers: 0,
-          weightedAverageCostPerPack: "0",
+          weightedAverageCostPerPack: null,
           recipe,
         };
       }
@@ -720,6 +726,7 @@ export async function postInvoice(
             tx,
             warehouseId: stockWarehouseId,
             recipeId,
+            containersPerCarton,
           })))
         : null;
 
@@ -914,10 +921,6 @@ export async function postInvoice(
     };
 
     if (item.recipeId) {
-      physicalAvailableUnitsByRecipe.set(
-        item.recipeId,
-        availability.physicalTotalUnits,
-      );
       reservedUnitsByRecipe.set(
         item.recipeId,
         alreadyReservedUnits + deductedUnits,
@@ -1115,155 +1118,33 @@ export async function postInvoice(
   );
 
   // ── Insert line items + deduct stock (single loop, uses cached resolutions) ──
-  const remainingUnitsByRecipe = new Map<string, number>();
   for (const r of lineResolutions) {
     if (!r.item.recipeId) continue;
-
-    const stockKey = r.item.recipeId;
-    const totalAvailableUnits =
-      physicalAvailableUnitsByRecipe.get(stockKey) ??
-      r.stock.quantityCartons * r.containersPerCarton +
-        r.stock.quantityContainers;
-    const currentRemainingUnits =
-      stockKey && remainingUnitsByRecipe.has(stockKey)
-        ? remainingUnitsByRecipe.get(stockKey)!
-        : totalAvailableUnits;
-    const remainingUnits = Math.max(0, currentRemainingUnits - r.deductedUnits);
-
-    if (stockKey) {
-      remainingUnitsByRecipe.set(stockKey, remainingUnits);
-    }
 
     const hasCartons =
       (r.stock as any).recipe?.cartonPackagingId != null &&
       (r.stock as any).recipe?.containersPerCarton != null &&
       (r.stock as any).recipe?.containersPerCarton > 0;
 
-    const finalQuantityCartons = hasCartons
-      ? Math.floor(remainingUnits / r.containersPerCarton)
-      : 0;
-    const finalQuantityContainers = hasCartons
-      ? remainingUnits % r.containersPerCarton
-      : remainingUnits;
-
-    // Recalculate total inventory value after stock deduction.
-    // WAC per unit stays the same on dispatch; only total value changes.
-    const remainingTotalUnits = calculateTotalUnits(
-      finalQuantityCartons,
-      finalQuantityContainers,
-      r.containersPerCarton,
-    );
-    const newTotalValue = calculateTotalInventoryValue(
-      remainingTotalUnits,
-      r.cogsPerUnit,
-    );
-
     if (r.stockRecordExists) {
-      await tx
-        .update(finishedGoodsStock)
-        .set({
-          quantityCartons: finalQuantityCartons,
-          quantityContainers: finalQuantityContainers,
-          totalInventoryValue: newTotalValue.toFixed(2),
-          updatedAt: new Date(),
-        })
-        .where(
-          and(
-            eq(finishedGoodsStock.warehouseId, stockWarehouseId),
-            eq(finishedGoodsStock.recipeId, r.item.recipeId),
-          ),
-        );
+      await dispatchInvoiceCartons(tx, {
+        warehouseId: stockWarehouseId, recipeId: r.item.recipeId,
+        invoiceId: invoice.id, userId, units: r.deductedUnits,
+        containersPerCarton: hasCartons ? r.containersPerCarton : 0, unitType: r.item.unitType,
+        strict: input.stockPolicy === "strict",
+      });
     }
 
-    // ── Dispatch Cartons (if sold by carton) ────────────────────────────
-    if (hasCartons && r.item.unitType === "carton" && r.totalDispatchedUnits > 0) {
-      const cartonsToDispatch = Math.floor(r.totalDispatchedUnits / r.containersPerCarton);
-      
-      if (cartonsToDispatch > 0) {
-        // Fetch COMPLETE cartons (and then PARTIAL if needed)
-        const availableCartons = await tx.query.cartons.findMany({
-          where: and(
-            eq(cartons.warehouseId, stockWarehouseId),
-            eq(cartons.recipeId, r.item.recipeId),
-            inArray(cartons.status, ["COMPLETE", "SEALED", "PARTIAL"])
-          ),
-          orderBy: (cartons, { asc }) => [asc(cartons.createdAt)],
-        });
-
-        // Filter and sort to prefer COMPLETE/SEALED over PARTIAL
-        const sortedCartons = [
-          ...availableCartons.filter(c => c.status === "COMPLETE" || c.status === "SEALED"),
-          ...availableCartons.filter(c => c.status === "PARTIAL")
-        ];
-
-        let dispatchedCount = 0;
-        let unitsToFulfill = r.totalDispatchedUnits;
-
-        for (const carton of sortedCartons) {
-          if (dispatchedCount >= cartonsToDispatch && unitsToFulfill <= 0) break;
-          
-          const packsToTake = Math.min(carton.currentPacks, unitsToFulfill);
-          if (packsToTake <= 0) continue;
-
-          const isFullDispatch = packsToTake === carton.currentPacks;
-          const newStatus = isFullDispatch ? "DISPATCHED" : "PARTIAL";
-          const dispatchType = isFullDispatch ? "DISPATCH_FULL" : "DISPATCH_PARTIAL";
-          
-          const setFields: Partial<typeof cartons.$inferInsert> = {
-            currentPacks: carton.currentPacks - packsToTake,
-            status: newStatus,
-            updatedAt: new Date(),
-          };
-
-          if (isFullDispatch) {
-            setFields.dispatchedAt = new Date();
-            setFields.dispatchOrderId = invoice.id;
-          }
-
-          if (carton.status === "SEALED" && !isFullDispatch) {
-             // unseal log
-             await tx.insert(adjustmentLog).values({
-               id: createId(),
-               cartonId: carton.id,
-               batchId: carton.productionRunId,
-               sku: carton.sku,
-               type: "UNSEALED",
-               packsBefore: carton.currentPacks,
-               delta: 0,
-               packsAfter: carton.currentPacks,
-               reason: "Unsealed for partial dispatch",
-               performedBy: userId,
-               performedAt: new Date(),
-             });
-          }
-
-          await tx.update(cartons).set(setFields).where(eq(cartons.id, carton.id));
-
-          await tx.insert(adjustmentLog).values({
-            id: createId(),
-            cartonId: carton.id,
-            batchId: carton.productionRunId,
-            sku: carton.sku,
-            type: dispatchType,
-            packsBefore: carton.currentPacks,
-            delta: -packsToTake,
-            packsAfter: carton.currentPacks - packsToTake,
-            reason: isFullDispatch ? "Full dispatch" : `Partial dispatch: ${packsToTake} of ${carton.currentPacks}`,
-            dispatchOrderId: invoice.id,
-            performedBy: userId,
-            performedAt: new Date(),
-          });
-
-          if (isFullDispatch) {
-            dispatchedCount++;
-          }
-          unitsToFulfill -= packsToTake;
-        }
-
-        if (unitsToFulfill > 0) {
-          throw new Error(`Not enough pack inventory in cartons to dispatch ${r.totalDispatchedUnits} units for "${r.item.pack}".`);
-        }
-      }
+    const debitedValue = r.stockRecordExists
+      ? await adjustCartonStock(tx, { warehouseId: stockWarehouseId, recipeId: r.item.recipeId },
+          -r.deductedUnits, userId, invoice.id)
+      : "0.00";
+    // Online costs follow the recorded stock debit, including residual cents.
+    // Signed offline costs remain the immutable historical snapshot.
+    if (input.source === "online") {
+      r.cogsTotal = Number(debitedValue);
+      r.cogsPerUnit = r.totalDispatchedUnits > 0 ? r.cogsTotal / r.totalDispatchedUnits : 0;
+      r.unitMargin = roundMoney((r.chargedUnits > 0 ? r.lineAmount / r.chargedUnits : 0) - r.cogsPerUnit);
     }
 
     const [savedItem] = await tx

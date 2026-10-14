@@ -5,7 +5,7 @@ import { z } from "zod";
 import { eq, and, sql, gte, lte, inArray } from "drizzle-orm";
 import { recipes } from "@/db/schemas/inventory-schema";
 import { invoices, invoiceItems } from "@/db/schemas/sales-schema";
-import { format } from "date-fns";
+import { currentReportMonth, formatReportMonth, reportDateBounds, reportDateKey, reportMonth } from "@/lib/report-dates";
 
 export const getPnlCostTrendFn = createServerFn()
   .middleware([requireReportsViewMiddleware])
@@ -18,9 +18,9 @@ export const getPnlCostTrendFn = createServerFn()
   .handler(async ({ data }) => {
     const { recipeId, months } = data;
 
-    const endDate = new Date();
-    endDate.setHours(23, 59, 59, 999);
-    const startDate = new Date(endDate.getFullYear(), endDate.getMonth() - months + 1, 1);
+    const current = currentReportMonth();
+    const first = reportMonth(current.from, -months + 1);
+    const { fromDate: startDate, toDate: endDate } = reportDateBounds({ dateFrom: first.from, dateTo: reportDateKey(new Date()) });
 
     // 1. Recipe info
     const recipe = await db.query.recipes.findFirst({
@@ -32,7 +32,7 @@ export const getPnlCostTrendFn = createServerFn()
     // 2. Monthly cost trend from invoice COGS
     const monthlyData = await db
       .select({
-        month: sql<string>`to_char(date_trunc('month', ${invoices.date}), 'YYYY-MM-01')`,
+        month: sql<string>`to_char(date_trunc('month', ${invoices.date} AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Karachi'), 'YYYY-MM-01')`,
         avgCogsPerUnit: sql<number>`COALESCE(AVG(${invoiceItems.costOfGoodsSoldPerUnit}), 0)`,
         avgRevenuePerUnit: sql<number>`COALESCE(AVG(${invoiceItems.perCartonPrice}::numeric / NULLIF(${recipes.containersPerCarton}, 0)), 0)`,
         totalRevenue: sql<number>`COALESCE(SUM(${invoiceItems.amount}), 0)`,
@@ -46,12 +46,12 @@ export const getPnlCostTrendFn = createServerFn()
         and(
           eq(invoiceItems.recipeId, recipeId),
           inArray(invoices.paymentStatus, ["paid", "partially_paid"]),
-          gte(invoices.date, startDate),
-          lte(invoices.date, endDate),
+          gte(invoices.date, startDate!),
+          lte(invoices.date, endDate!),
         ),
       )
-      .groupBy(sql`date_trunc('month', ${invoices.date})`)
-      .orderBy(sql`date_trunc('month', ${invoices.date})`);
+      .groupBy(sql`date_trunc('month', ${invoices.date} AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Karachi')`)
+      .orderBy(sql`date_trunc('month', ${invoices.date} AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Karachi')`);
 
     // 3. Build trend array
     const trend = monthlyData.map((row) => {
@@ -60,7 +60,7 @@ export const getPnlCostTrendFn = createServerFn()
       const units = Number(row.totalUnits);
       return {
         month: row.month,
-        monthLabel: format(new Date(row.month + "T00:00:00"), "MMM yyyy"),
+        monthLabel: formatReportMonth(row.month),
         avgCogsPerUnit: Number(row.avgCogsPerUnit),
         avgRevenuePerUnit: Number(row.avgRevenuePerUnit),
         revenue,
@@ -81,7 +81,7 @@ export const getPnlCostTrendFn = createServerFn()
       },
       trend,
       months,
-      dateFrom: startDate.toISOString(),
-      dateTo: endDate.toISOString(),
+      dateFrom: startDate!.toISOString(),
+      dateTo: endDate!.toISOString(),
     };
   });

@@ -1,11 +1,11 @@
-import { and, eq } from "drizzle-orm";
+import Big from "big.js";
+import { and, eq, sql } from "drizzle-orm";
 import {
   chemicals,
   db,
   failedProductionChemicalRecoveries,
   materialStock,
-  productionRuns,
-  warehouses,
+  mixingRuns,
 } from "@/db";
 
 export type InventoryTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -19,12 +19,12 @@ function toNumber(value: string | number | null | undefined) {
 }
 
 export function hasOperatorProductionLogs(run: {
-  completedUnits: number | null;
-  materialsUsed?: Array<{ materialType: string }> | null;
+  actualBulkProduced: string | null;
+  progressLogs?: Array<{ id: string }> | null;
 }) {
   return (
-    (run.completedUnits ?? 0) > 0 ||
-    (run.materialsUsed ?? []).some((row) => row.materialType === "packaging")
+    Number(run.actualBulkProduced ?? 0) > 0 ||
+    (run.progressLogs?.length ?? 0) > 0
   );
 }
 
@@ -35,32 +35,31 @@ export async function loadFailedProductionRecoveryContext(
     chemicalId: string;
   },
 ) {
-  const factoryFloor = await tx.query.warehouses.findFirst({
-    where: eq(warehouses.type, "factory_floor"),
-  });
+  await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${input.batchId.trim()}), hashtext(${input.chemicalId}))`);
 
-  if (!factoryFloor) {
-    throw new Error("Factory floor not found.");
-  }
-
-  const run = await tx.query.productionRuns.findFirst({
+  const run = await tx.query.mixingRuns.findFirst({
     where: and(
-      eq(productionRuns.batchId, input.batchId.trim()),
-      eq(productionRuns.status, "failed"),
+      eq(mixingRuns.batchId, input.batchId.trim()),
+      eq(mixingRuns.status, "failed"),
     ),
     with: {
-      recipe: {
+      formula: {
         with: {
           product: true,
         },
       },
       materialsUsed: true,
+      progressLogs: true,
+      warehouse: true,
     },
   });
 
   if (!run) {
-    throw new Error("Failed production batch not found.");
+    throw new Error("Failed mixing batch not found.");
   }
+
+  const factoryFloor = run.warehouse;
+  if (factoryFloor.type !== "factory_floor") throw new Error("Mixing warehouse is not a factory floor");
 
   if (hasOperatorProductionLogs(run)) {
     throw new Error(
@@ -76,18 +75,19 @@ export async function loadFailedProductionRecoveryContext(
     throw new Error("Chemical not found.");
   }
 
-  const chemicalUsage = run.materialsUsed.find(
-    (row) =>
-      row.materialType === "chemical" && row.materialId === input.chemicalId,
-  );
+  const usages = run.materialsUsed.filter(row => row.chemicalId === input.chemicalId);
+  const chemicalUsage = usages[0];
 
   if (!chemicalUsage) {
     throw new Error("This chemical was not deducted for the selected failed batch.");
   }
+  const expectedQuantity = usages.reduce((sum, row) => sum.plus(row.quantityUsed), new Big(0)).toNumber();
+  const totalCost = usages.reduce((sum, row) => sum.plus(row.totalCost), new Big(0)).toNumber();
+  if (expectedQuantity <= 0) throw new Error("Chemical deduction must be positive");
 
   const settlement = await tx.query.failedProductionChemicalRecoveries.findFirst({
     where: and(
-      eq(failedProductionChemicalRecoveries.productionRunId, run.id),
+      eq(failedProductionChemicalRecoveries.mixingRunId, run.id),
       eq(failedProductionChemicalRecoveries.chemicalId, input.chemicalId),
     ),
   });
@@ -106,8 +106,8 @@ export async function loadFailedProductionRecoveryContext(
     chemicalUsage,
     settlement,
     currentStock,
-    expectedQuantity: toNumber(chemicalUsage.quantityUsed),
-    costPerUnit: toNumber(chemicalUsage.costPerUnit),
+    expectedQuantity,
+    costPerUnit: totalCost / expectedQuantity,
     currentStockQty: toNumber(currentStock?.quantity),
   };
 }
@@ -117,8 +117,9 @@ export function calculateRecoveryLoss(input: {
   recoveredQuantity: number;
   costPerUnit: number;
 }) {
-  const lossQuantity = Math.max(0, input.expectedQuantity - input.recoveredQuantity);
-  const lossAmount = Number((lossQuantity * input.costPerUnit).toFixed(2));
+  const difference = new Big(input.expectedQuantity).minus(input.recoveredQuantity);
+  const lossQuantity = difference.gt(0) ? difference.toNumber() : 0;
+  const lossAmount = Number(new Big(lossQuantity).times(input.costPerUnit).toFixed(2));
 
   return {
     lossQuantity,

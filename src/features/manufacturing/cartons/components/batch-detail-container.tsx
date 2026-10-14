@@ -1,6 +1,6 @@
 import { useState, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useParams, Link } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import { ArrowLeft, Plus, ShieldAlert, Lock, Package } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -21,7 +21,9 @@ import {
   AddCartonsSheet,
   AuditLogSheet,
 } from "../sheets";
-import type { CartonStatus } from "@/lib/cartons/carton.types";
+import type { CartonStatus, IntegrityAlertStatus } from "@/lib/cartons/carton.types";
+import { useViewerAccess } from "@/hooks/use-viewer-access";
+import { hasPermission } from "@/lib/rbac";
 
 type CartonRow = {
   id: string;
@@ -56,20 +58,24 @@ type SheetName =
   | "audit-log"
   | null;
 
-export function BatchDetailContainer() {
-  const params = useParams({ strict: false }) as Record<string, string>;
-  const runId = params.runId;
+export function BatchDetailContainer({ allocationId }: { allocationId: string }) {
+  const runId = allocationId;
+  const { data: viewerAccess } = useViewerAccess();
+  const canCheckIntegrity = !!viewerAccess && hasPermission(viewerAccess.permissions, "manufacturing.integrity.check");
+  const canViewIntegrity = !!viewerAccess && hasPermission(viewerAccess.permissions, "manufacturing.integrity.alerts");
 
   const { data: kpis, isLoading: kpisLoading } = useBatchKpis(runId);
-  const { data: alerts } = useIntegrityAlerts();
+  const { data: integrityAlerts } = useIntegrityAlerts(canViewIntegrity);
+  const alerts = integrityAlerts?.filter(alert => alert.packagingAllocationId === allocationId);
+  const alertRows = (alerts ?? []).map(alert => ({ ...alert, status: alert.status as IntegrityAlertStatus }));
   const runIntegrity = useRunIntegrityCheck();
   const updateAlert = useUpdateIntegrityAlert();
 
   const hasCartons = kpis ? kpis.totalCartons > 0 : false;
   const runStatus = kpis?.runStatus ?? "";
   const isBatchClosed = ["completed", "cancelled", "failed"].includes(runStatus);
-  const canAddCartons = !["cancelled", "failed"].includes(runStatus);
-  const canCloseBatch = !["completed", "cancelled", "failed"].includes(runStatus);
+  const canAddCartons = false; // Allocation cartons are created from verified packaging output.
+  const canCloseBatch = false; // Packaging completion owns this transition.
   const maxCartons = kpis?.shortfallCartons ?? null;
 
   const [activeSheet, setActiveSheet] = useState<SheetName>(null);
@@ -94,7 +100,7 @@ export function BatchDetailContainer() {
       <div className="sticky top-0 z-10 bg-background/80 backdrop-blur-md border-b px-8 py-4 flex items-center justify-between">
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="icon" asChild className="-ml-2">
-            <Link to="/manufacturing/productions">
+            <Link to="/manufacturing/packaging">
               <ArrowLeft className="size-5 text-muted-foreground" />
             </Link>
           </Button>
@@ -126,16 +132,16 @@ export function BatchDetailContainer() {
               {runStatus}
             </span>
           )}
-          <Button
+          {canCheckIntegrity && <Button
             variant="outline"
             size="sm"
             className="h-8 text-xs font-bold uppercase tracking-wide"
-            onClick={() => runIntegrity.mutate(runId)}
+            onClick={() => runIntegrity.mutate(runId, { onSuccess: () => setActiveTab("integrity") })}
             disabled={runIntegrity.isPending}
           >
             <ShieldAlert className="size-3.5 mr-1.5" />
             {runIntegrity.isPending ? "Checking…" : "Integrity Check"}
-          </Button>
+          </Button>}
           {canAddCartons && (
             <Button
               size="sm"
@@ -151,12 +157,13 @@ export function BatchDetailContainer() {
 
       <div className="flex-1 overflow-y-auto">
         <div className="p-8 pb-24 space-y-8 max-w-[1600px] mx-auto">
+          {!hasCartons && (runIntegrity.data || alertRows.length > 0) && <IntegrityAlertsWidget alerts={alertRows} checkResult={runIntegrity.data} />}
           {!hasCartons && !kpisLoading ? (
             <div className="py-24">
               <GenericEmpty
                 icon={Package}
                 title="No Cartons Yet"
-                description="This production run doesn't have any cartons. Add cartons to start tracking packs, dispatching, and managing inventory."
+                description="Cartons are received when packaging completes. This allocation has no carton records."
                 ctaText={canAddCartons ? "Add Cartons to Batch" : undefined}
                 onAddChange={canAddCartons ? () => openSheet("add-cartons") : undefined}
               />
@@ -193,17 +200,8 @@ export function BatchDetailContainer() {
 
                 <TabsContent value="integrity" className="mt-6">
                   <IntegrityAlertsWidget
-                    alerts={(alerts ?? []).map((a: any) => ({
-                      id: a.id,
-                      sku: a.sku,
-                      batchId: a.batchId,
-                      cartonSum: a.cartonSum,
-                      ledgerTotal: a.ledgerTotal,
-                      delta: a.delta,
-                      status: a.status,
-                      detectedAt: a.detectedAt,
-                      resolution: a.resolution,
-                    }))}
+                    checkResult={runIntegrity.data}
+                    alerts={alertRows}
                     onAcknowledge={(id) => updateAlert.mutate({ alertId: id, status: "ACKNOWLEDGED" })}
                     onResolve={(id) => updateAlert.mutate({ alertId: id, status: "RESOLVED" })}
                   />
@@ -325,7 +323,7 @@ function CartonsTab({ runId, openSheet, selectedStatus }: { runId: string; openS
     queryKey: cartonKeys.byBatch(runId),
     queryFn: () =>
       import("@/server-functions/manufacturing/cartons").then((m) =>
-        m.getCartonsByBatchFn({ data: { productionRunId: runId } }),
+        m.getCartonsByBatchFn({ data: { packagingAllocationId: runId } }),
       ),
   });
 

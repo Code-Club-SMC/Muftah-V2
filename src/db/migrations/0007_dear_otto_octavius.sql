@@ -1,0 +1,2 @@
+ALTER TABLE "tada_rates" ADD COLUMN "employee_id" text;--> statement-breakpoint
+ALTER TABLE "tada_rates" ADD CONSTRAINT "tada_rates_employee_id_employees_id_fk" FOREIGN KEY ("employee_id") REFERENCES "public"."employees"("id") ON DELETE no action ON UPDATE no action;

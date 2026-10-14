@@ -8,6 +8,7 @@ export type CartonStatus =
   | "ON_HOLD";
 
 export type AdjustmentType =
+  | "PRODUCTION_RECEIPT"
   | "TOP_UP"
   | "REMOVAL"
   | "MANUAL_OVERRIDE"
@@ -20,6 +21,7 @@ export type AdjustmentType =
   | "TRANSFER_OUT"
   | "DISPATCH_PARTIAL"
   | "DISPATCH_FULL"
+  | "INVOICE_REVERSAL"
   | "RETURN_GOOD"
   | "RETURN_DAMAGED"
   | "RECONCILIATION"
@@ -64,6 +66,7 @@ export const CARTON_STATUSES = [
 ] as const;
 
 export const ADJUSTMENT_TYPES = [
+  "PRODUCTION_RECEIPT",
   "TOP_UP",
   "REMOVAL",
   "MANUAL_OVERRIDE",
@@ -76,6 +79,7 @@ export const ADJUSTMENT_TYPES = [
   "TRANSFER_OUT",
   "DISPATCH_PARTIAL",
   "DISPATCH_FULL",
+  "INVOICE_REVERSAL",
   "RETURN_GOOD",
   "RETURN_DAMAGED",
   "RECONCILIATION",
@@ -96,6 +100,7 @@ export const TOLERANCE_PCT = 5;
 export const MIN_YIELD_THRESHOLD = 80;
 
 export const ADJUSTMENT_TYPE_LABELS: Record<AdjustmentType, string> = {
+  PRODUCTION_RECEIPT: "Production Receipt",
   TOP_UP: "Top-Up",
   REMOVAL: "Removal",
   MANUAL_OVERRIDE: "Override",
@@ -108,6 +113,7 @@ export const ADJUSTMENT_TYPE_LABELS: Record<AdjustmentType, string> = {
   TRANSFER_OUT: "Transfer Out",
   DISPATCH_PARTIAL: "Dispatch (Partial)",
   DISPATCH_FULL: "Dispatch (Full)",
+  INVOICE_REVERSAL: "Invoice Dispatch Reversal",
   RETURN_GOOD: "Return — Good",
   RETURN_DAMAGED: "Return — Damaged",
   RECONCILIATION: "Stock Count",

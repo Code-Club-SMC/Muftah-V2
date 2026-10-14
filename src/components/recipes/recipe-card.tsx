@@ -1,14 +1,18 @@
 import { useNavigate } from "@tanstack/react-router";
-import { Eye, Play, Trash2, Edit } from "lucide-react";
-import { Badge } from "../ui/badge";
-import { Button } from "../ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
-import { Separator } from "../ui/separator";
 import { useState } from "react";
-import { InitiateProductionSheet } from "../productions/initiate-production-sheet";
+import { Button } from "../ui/button";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardFooter,
+} from "../ui/card";
+import { Badge } from "../ui/badge";
+import { Alert, AlertDescription } from "../ui/alert";
 import {
   AlertDialog,
-  AlertDialogAction,
   AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
@@ -17,240 +21,126 @@ import {
   AlertDialogTitle,
 } from "../ui/alert-dialog";
 import { useDeleteRecipe } from "@/hooks/recipes/use-delete-recipe";
-import { getRecipesFn } from "@/server-functions/inventory/recipes/get-recipe-fn";
+import type { getRecipesFn } from "@/server-functions/inventory/recipes/get-recipe-fn";
 
 type Recipe = Awaited<ReturnType<typeof getRecipesFn>>[number];
-
-type RecipeCardProps = {
+export const RecipeCard = ({
+  recipe,
+  onEdit,
+  canManage = false,
+}: {
   recipe: Recipe;
   onEdit?: () => void;
-};
-
-export const RecipeCard = ({ recipe, onEdit }: RecipeCardProps) => {
+  canManage?: boolean;
+}) => {
   const navigate = useNavigate();
-  const [initiateOpen, setInitiateOpen] = useState(false);
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-
-  const deleteRecipeMutation = useDeleteRecipe();
-  const [forceDeleteMode, setForceDeleteMode] = useState(false); // Added forceDeleteMode state
-
-  // Use targetUnitsPerBatch from the recipe (direct user input)
-  const totalContainers = recipe.targetUnitsPerBatch || 0;
-
-  const handleDelete = async (force = false) => {
-    try {
-      await deleteRecipeMutation.mutateAsync({
-        data: { id: recipe.id, force },
-      });
-      setDeleteDialogOpen(false);
-      setForceDeleteMode(false);
-    } catch (error: any) {
-      // If normal delete fails due to production runs, offer force delete
-      if (!force && error.message?.includes("production run")) {
-        setForceDeleteMode(true);
-      }
-    }
-  };
-
+  const [removing, setRemoving] = useState(false);
+  const mutation = useDeleteRecipe();
+  const hasCartons =
+    !!recipe.cartonPackagingId && (recipe.containersPerCarton ?? 0) > 0;
   return (
     <>
-      <Card className="hover: transition-shadow flex flex-col justify-between h-full group">
-        <div>
-          <CardHeader>
-            <div className="flex items-start justify-between">
-              <div className="flex-1">
-                <CardTitle className="text-lg line-clamp-1">
-                  {recipe.name}
-                </CardTitle>
-                <p className="text-sm text-muted-foreground mt-1 text-ellipsis overflow-hidden whitespace-nowrap">
-                  {recipe.product.name}
-                </p>
-              </div>
-              <Badge variant="outline">
+      <Card className="min-w-0">
+        <CardHeader>
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <CardTitle className="break-words text-lg">{recipe.name}</CardTitle>
+            {!recipe.formulaId && (
+              <Badge variant="outline">Needs a formula</Badge>
+            )}
+          </div>
+          <CardDescription>{recipe.product.name}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <dl className="grid grid-cols-2 gap-4">
+            <div>
+              <dt className="text-sm text-muted-foreground">One pack</dt>
+              <dd className="mt-1 text-xl font-semibold tabular-nums">
                 {recipe.fillAmount && recipe.fillUnit
-                  ? `${parseInt(recipe.fillAmount).toFixed(0)}${recipe.fillUnit}/Unit`
-                  : recipe.containerPackaging?.name || "Loose"}
-              </Badge>
+                  ? `${Number(recipe.fillAmount)} ${recipe.fillUnit}`
+                  : "Not set"}
+              </dd>
             </div>
-          </CardHeader>
-
-          <CardContent className="space-y-3"> {/* Changed space-y-4 to space-y-3 */}
-            {/* Production Info */}
-            <div className="grid grid-cols-2 gap-2 text-sm">
-              <div>
-                <span className="text-muted-foreground">Batch Size</span> {/* Changed p to span */}
-                <p className="font-bold"> {/* Changed font-medium to font-bold */}
-                  {recipe.batchSize}
-                  {recipe.batchUnit} {/* Changed unit display */}
-                </p>
-              </div>
-              <div>
-                <span className="text-muted-foreground">Units</span> {/* Changed p to span */}
-                <p className="font-bold">{totalContainers.toLocaleString()}</p> {/* Changed font-medium to font-bold and added toLocaleString */}
-              </div>
-              <div>
-                <span className="text-muted-foreground">Per Carton</span> {/* Changed p to span */}
-                <p className="font-bold"> {/* Changed font-medium to font-bold */}
-                  {recipe.containersPerCarton || "N/A"} {/* Changed "Loose" to "N/A" */}
-                </p>
-              </div>
-              <div>
-                <span className="text-muted-foreground">Total Cartons</span> {/* Changed p to span */}
-                <p className="font-bold"> {/* Changed font-medium to font-bold */}
-                  {recipe.containersPerCarton
-                    ? Math.ceil(totalContainers / recipe.containersPerCarton)
-                    : 0}
-                </p>
-              </div>
+            <div>
+              <dt className="text-sm text-muted-foreground">Carton setup</dt>
+              <dd className="mt-1 font-semibold">
+                {hasCartons
+                  ? `${recipe.containersPerCarton} packs / carton`
+                  : "Loose packs only"}
+              </dd>
             </div>
-
-            <Separator /> {/* Added Separator */}
-
-            {/* Cost Info */}
-            {/* Removed conditional rendering for the whole block */}
-            <div className="grid grid-cols-2 gap-2 text-sm"> {/* Changed div structure */}
-              <div>
-                <span className="text-muted-foreground"> {/* Changed span to span */}
-                  Est. Cost/Unit
-                </span>
-                <p className="font-bold text-red-600"> {/* Changed span to p, added font-bold and text-red-600 */}
-                  PKR{" "}
-                  {parseFloat(recipe.estimatedCostPerContainer || "0").toFixed(2)} {/* Added || "0" */}
-                </p>
-              </div>
-              <div>
-                <span className="text-muted-foreground"> {/* Changed span to span */}
-                  Est. Batch Cost
-                </span>
-                <p className="font-bold"> {/* Changed span to p, added font-bold */}
-                  PKR {parseFloat(recipe.estimatedCostPerBatch || "0").toLocaleString()} {/* Added || "0" and toLocaleString */}
-                </p>
-              </div>
-            </div>
-
-            {/* Ingredients Summary */}
-            <div className="text-xs text-muted-foreground">
-              {recipe.ingredients?.length || 0} Ingredients •{" "} {/* Added optional chaining and default 0 */}
-              {(recipe.packaging?.length || 0) +
-                (recipe.containerPackagingId ? 1 : 0) +
-                (recipe.cartonPackagingId ? 1 : 0)}{" "} {/* Updated packaging count logic */}
-              packaging items
-            </div>
-
-            <Button
-              variant="default" // Changed variant
-              className="w-full"
-              size="sm" // Added size
-              onClick={() => setInitiateOpen(true)}
-            >
-              <Play className="size-3 mr-2" /> {/* Changed PlayIcon to Play and size */}
-              Initiate Production
-            </Button>
-          </CardContent>
-        </div>
-
-        <div className="px-6 pb-6 flex gap-2"> {/* Changed p-4 pt-0 space-y-3 to px-6 pb-6 flex gap-2 */}
-          {/* Secondary Actions */}
+          </dl>
+          <p className="mt-4 text-sm text-muted-foreground break-words">
+            Pack material: {recipe.containerPackaging?.name || "Not set"}
+          </p>
+        </CardContent>
+        <CardFooter className="flex flex-wrap gap-2 border-t pt-4">
           <Button
             variant="outline"
-            size="sm"
-            className="flex-1"
-            onClick={onEdit}
-          >
-            <Edit className="size-4 mr-2" />
-            Edit
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="flex-1"
             onClick={() =>
-              navigate({ to: `/manufacturing/recipes/${recipe.id}` })
+              navigate({
+                to: "/manufacturing/recipes/$recipeId",
+                params: { recipeId: recipe.id },
+              })
             }
           >
-            <Eye className="size-4 mr-2" />
-            View
+            View details
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="flex-1 text-destructive hover:text-destructive hover:bg-destructive/10"
-            onClick={() => {
-              setDeleteDialogOpen(true);
-              setForceDeleteMode(false); // Reset force delete mode when opening dialog
-            }}
-          >
-            <Trash2 className="size-4 mr-2" />
-            Delete
-          </Button>
-        </div>
+          {canManage && (
+            <>
+              <Button variant="outline" onClick={onEdit}>
+                Edit
+              </Button>
+              <Button
+                variant="ghost"
+                className="ml-auto"
+                onClick={() => setRemoving(true)}
+              >
+                Remove
+              </Button>
+            </>
+          )}
+        </CardFooter>
       </Card>
-
-      <InitiateProductionSheet
-        open={initiateOpen}
-        onOpenChange={setInitiateOpen}
-        recipe={recipe}
-      />
-
-      <AlertDialog open={deleteDialogOpen} onOpenChange={(open) => {
-        setDeleteDialogOpen(open);
-        if (!open) setForceDeleteMode(false); // Reset force delete mode when dialog closes
-      }}>
+      <AlertDialog
+        open={removing}
+        onOpenChange={(open) => {
+          if (!mutation.isPending) setRemoving(open);
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle className="flex items-center gap-2"> {/* Added flex and gap */}
-              <Trash2 className="size-5 text-destructive" /> {/* Added icon */}
-              {forceDeleteMode ? "Force Delete Recipe?" : "Delete Recipe?"} {/* Dynamic title */}
-            </AlertDialogTitle>
+            <AlertDialogTitle>Remove {recipe.name}?</AlertDialogTitle>
             <AlertDialogDescription>
-              {forceDeleteMode
-                ? "This recipe has associated production runs. Force deleting will remove all related data permanently."
-                : `This will permanently delete the recipe "${recipe.name}" and all its associated data. This action cannot be undone.`}
+              This format will leave the active list. If it has stock, packing
+              or sales history, it will be archived and those records will be
+              kept. An unused format is deleted.
             </AlertDialogDescription>
-            {forceDeleteMode && (
-              <div className="space-y-3 mt-2">
-                <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-sm">
-                  <strong>⚠ Warning:</strong> Force deleting will permanently remove:
-                </div>
-                <ul className="text-sm space-y-1 ml-4 list-disc text-muted-foreground">
-                  <li>All production run records for this recipe</li>
-                  <li>Material usage logs from those runs</li>
-                  <li>Finished goods stock entries</li>
-                  <li>The recipe itself and its ingredients/packaging</li>
-                </ul>
-                <p className="text-sm text-destructive font-semibold">
-                  This action cannot be undone.
-                </p>
-              </div>
-            )}
           </AlertDialogHeader>
+          {mutation.error && (
+            <Alert variant="destructive">
+              <AlertDescription>{mutation.error.message}</AlertDescription>
+            </Alert>
+          )}
           <AlertDialogFooter>
-            <AlertDialogCancel
-              onClick={() => {
-                setDeleteDialogOpen(false);
-                setForceDeleteMode(false); // Reset force delete mode on cancel
-              }}
-              disabled={deleteRecipeMutation.isPending} // Disable while deleting
-            >
-              Cancel
+            <AlertDialogCancel disabled={mutation.isPending}>
+              Keep format
             </AlertDialogCancel>
-            {forceDeleteMode ? (
-              <AlertDialogAction
-                onClick={() => handleDelete(true)}
-                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                disabled={deleteRecipeMutation.isPending}
-              >
-                {deleteRecipeMutation.isPending ? "Deleting..." : "Force Delete Everything"}
-              </AlertDialogAction>
-            ) : (
-              <Button
-                onClick={() => handleDelete(false)}
-                variant="destructive"
-                disabled={deleteRecipeMutation.isPending}
-              >
-                {deleteRecipeMutation.isPending ? "Deleting..." : "Delete Recipe"}
-              </Button>
-            )}
+            <Button
+              variant="destructive"
+              disabled={mutation.isPending}
+              onClick={async () => {
+                try {
+                  await mutation.mutateAsync({
+                    data: { id: recipe.id, force: false },
+                  });
+                  setRemoving(false);
+                } catch {
+                  /* Mutation error remains visible. */
+                }
+              }}
+            >
+              {mutation.isPending ? "Removing…" : "Remove format"}
+            </Button>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

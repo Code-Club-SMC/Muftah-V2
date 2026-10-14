@@ -9,8 +9,8 @@ export type PriceResolution = {
 };
 
 export function resolvePrice(
-  customerId: string,
-  productId: string,
+  _customerId: string,
+  _productId: string,
   requestedPackSize: number,
   basePackSize: number,
   defaultUnitPrice: number,

@@ -5,14 +5,15 @@ import { expenses, expenseCategories, wallets } from "@/db/schemas/finance-schem
 import {
   chemicals,
   failedProductionChemicalRecoveries,
-  productionRuns,
   recipes,
   products,
   warehouses,
+  productionRuns,
 } from "@/db/schemas/inventory-schema";
+import { packagingAllocations, mixingRuns, formulas } from "@/db/schemas/production-schema";
 import { z } from "zod";
 import { and, eq, gte, lte, sql, desc } from "drizzle-orm";
-import { parseISO, isValid, endOfDay } from "date-fns";
+import { reportDateBounds } from "@/lib/report-dates";
 
 export const getExpensesReportFn = createServerFn()
   .middleware([requireReportsViewMiddleware])
@@ -23,15 +24,14 @@ export const getExpensesReportFn = createServerFn()
     }).parse(input),
   )
   .handler(async ({ data }) => {
+    const { fromDate, toDate } = reportDateBounds(data);
     const conditions = [];
 
-    if (data.dateFrom) {
-      const from = parseISO(data.dateFrom);
-      if (isValid(from)) conditions.push(gte(expenses.expenseDate, from));
+    if (fromDate) {
+      conditions.push(gte(expenses.expenseDate, fromDate));
     }
-    if (data.dateTo) {
-      const to = parseISO(data.dateTo);
-      if (isValid(to)) conditions.push(lte(expenses.expenseDate, endOfDay(to)));
+    if (toDate) {
+      conditions.push(lte(expenses.expenseDate, toDate));
     }
 
     // Finance expenses
@@ -56,50 +56,45 @@ export const getExpensesReportFn = createServerFn()
 
     // Production costs (filter by actualStartDate with fallback to createdAt)
     const prodConditions = [];
-    if (data.dateFrom) {
-      const from = parseISO(data.dateFrom);
-      if (isValid(from)) {
-        prodConditions.push(
-          gte(sql`COALESCE(${productionRuns.actualStartDate}, ${productionRuns.createdAt})`, from),
-        );
-      }
+    if (fromDate) {
+      prodConditions.push(
+        gte(sql`COALESCE(${packagingAllocations.completedAt}, ${packagingAllocations.createdAt})`, fromDate),
+      );
     }
-    if (data.dateTo) {
-      const to = parseISO(data.dateTo);
-      if (isValid(to)) {
-        prodConditions.push(
-          lte(sql`COALESCE(${productionRuns.actualStartDate}, ${productionRuns.createdAt})`, endOfDay(to)),
-        );
-      }
+    if (toDate) {
+      prodConditions.push(
+        lte(sql`COALESCE(${packagingAllocations.completedAt}, ${packagingAllocations.createdAt})`, toDate),
+      );
     }
 
     const productionRows = await db
       .select({
-        runId: productionRuns.id,
-        batchId: productionRuns.batchId,
-        actualCompletionDate: productionRuns.actualCompletionDate,
-        status: productionRuns.status,
-        totalChemicalCost: productionRuns.totalChemicalCost,
-        totalPackagingCost: productionRuns.totalPackagingCost,
-        totalProductionCost: productionRuns.totalProductionCost,
-        costPerContainer: productionRuns.costPerContainer,
-        actualCostPerPack: productionRuns.actualCostPerPack,
-        actualCostPerCarton: productionRuns.actualCostPerCarton,
-        plannedCartonsProduced: productionRuns.plannedCartonsProduced,
-        actualCartonsProduced: productionRuns.actualCartonsProduced,
-        actualPacksProduced: productionRuns.actualPacksProduced,
-        yieldVarianceCartons: productionRuns.yieldVarianceCartons,
-        containersProduced: productionRuns.containersProduced,
+        runId: packagingAllocations.id,
+        batchId: mixingRuns.batchId,
+        actualCompletionDate: packagingAllocations.completedAt,
+        status: packagingAllocations.status,
+        totalChemicalCost: packagingAllocations.allocatedChemicalCost,
+        totalPackagingCost: packagingAllocations.totalPackagingCost,
+        totalProductionCost: packagingAllocations.totalProductionCost,
+        costPerContainer: packagingAllocations.actualCostPerPack,
+        actualCostPerPack: packagingAllocations.actualCostPerPack,
+        actualCostPerCarton: packagingAllocations.actualCostPerCarton,
+        plannedCartonsProduced: packagingAllocations.targetCartons,
+        actualCartonsProduced: packagingAllocations.actualCartonsProduced,
+        actualPacksProduced: packagingAllocations.actualPacksProduced,
+        yieldVarianceCartons: packagingAllocations.yieldVarianceCartons,
+        containersProduced: packagingAllocations.completedContainers,
         productName: products.name,
         recipeName: recipes.name,
         warehouseName: warehouses.name,
       })
-      .from(productionRuns)
-      .innerJoin(recipes, eq(productionRuns.recipeId, recipes.id))
+      .from(packagingAllocations)
+      .innerJoin(mixingRuns, eq(packagingAllocations.mixingRunId, mixingRuns.id))
+      .innerJoin(recipes, eq(packagingAllocations.recipeId, recipes.id))
       .innerJoin(products, eq(recipes.productId, products.id))
-      .innerJoin(warehouses, eq(productionRuns.warehouseId, warehouses.id))
-      .where(and(eq(productionRuns.status, "completed"), ...prodConditions))
-      .orderBy(desc(productionRuns.actualCompletionDate));
+      .innerJoin(warehouses, eq(packagingAllocations.warehouseId, warehouses.id))
+      .where(and(eq(packagingAllocations.status, "completed"), ...prodConditions))
+      .orderBy(desc(packagingAllocations.completedAt));
 
     const totalProductionCosts = productionRows.reduce(
       (s, r) => s + Number(r.totalProductionCost),
@@ -107,30 +102,24 @@ export const getExpensesReportFn = createServerFn()
     );
 
     const failedBatchLossConditions = [];
-    if (data.dateFrom) {
-      const from = parseISO(data.dateFrom);
-      if (isValid(from)) {
-        failedBatchLossConditions.push(
-          gte(failedProductionChemicalRecoveries.createdAt, from),
-        );
-      }
+    if (fromDate) {
+      failedBatchLossConditions.push(
+        gte(failedProductionChemicalRecoveries.createdAt, fromDate),
+      );
     }
-    if (data.dateTo) {
-      const to = parseISO(data.dateTo);
-      if (isValid(to)) {
-        failedBatchLossConditions.push(
-          lte(failedProductionChemicalRecoveries.createdAt, endOfDay(to)),
-        );
-      }
+    if (toDate) {
+      failedBatchLossConditions.push(
+        lte(failedProductionChemicalRecoveries.createdAt, toDate),
+      );
     }
 
     const failedBatchLossRows = await db
       .select({
         settlementId: failedProductionChemicalRecoveries.id,
         settledAt: failedProductionChemicalRecoveries.createdAt,
-        batchId: productionRuns.batchId,
+        batchId: sql<string>`COALESCE(${productionRuns.batchId}, ${mixingRuns.batchId})`,
         productName: products.name,
-        recipeName: recipes.name,
+        recipeName: sql<string>`COALESCE(${recipes.name}, ${formulas.name})`,
         chemicalName: chemicals.name,
         expectedQuantity: failedProductionChemicalRecoveries.expectedQuantity,
         recoveredQuantity: failedProductionChemicalRecoveries.recoveredQuantity,
@@ -139,12 +128,14 @@ export const getExpensesReportFn = createServerFn()
         lossAmount: failedProductionChemicalRecoveries.lossAmount,
       })
       .from(failedProductionChemicalRecoveries)
-      .innerJoin(
+      .leftJoin(
         productionRuns,
         eq(failedProductionChemicalRecoveries.productionRunId, productionRuns.id),
       )
-      .innerJoin(recipes, eq(productionRuns.recipeId, recipes.id))
-      .innerJoin(products, eq(recipes.productId, products.id))
+      .leftJoin(mixingRuns, eq(failedProductionChemicalRecoveries.mixingRunId, mixingRuns.id))
+      .leftJoin(recipes, eq(productionRuns.recipeId, recipes.id))
+      .leftJoin(formulas, eq(mixingRuns.formulaId, formulas.id))
+      .leftJoin(products, sql`${products.id} = COALESCE(${recipes.productId}, ${formulas.productId})`)
       .innerJoin(chemicals, eq(failedProductionChemicalRecoveries.chemicalId, chemicals.id))
       .where(and(...failedBatchLossConditions))
       .orderBy(desc(failedProductionChemicalRecoveries.createdAt));
@@ -161,6 +152,7 @@ export const getExpensesReportFn = createServerFn()
       })),
       productionCosts: productionRows.map((r) => ({
         ...r,
+        containersProduced: r.containersProduced ?? 0,
         totalChemicalCost: Number(r.totalChemicalCost),
         totalPackagingCost: Number(r.totalPackagingCost),
         totalProductionCost: Number(r.totalProductionCost),

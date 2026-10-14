@@ -1,7 +1,7 @@
 import { createId } from "@paralleldrive/cuid2";
 import { createServerFn } from "@tanstack/react-start";
 import { logActivityQuiet } from "@/lib/activity-logger.server";
-import { and, eq, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import {
 	chemicals,
 	db,
@@ -19,6 +19,8 @@ import {
 import { expenseCategories } from "@/db/schemas/finance-schema";
 import { requireInventoryManageMiddleware } from "@/lib/middlewares";
 import { addStockSchema } from "@/lib/validators/validators";
+import { z } from "zod";
+import Big from "big.js";
 
 type FinanceWriter = Pick<typeof db, "query" | "select" | "insert" | "update">;
 
@@ -72,15 +74,19 @@ async function ensureSupplierPurchaseCategory(tx: FinanceWriter) {
 
 export const addStockFn = createServerFn()
 	.middleware([requireInventoryManageMiddleware])
-	.inputValidator(addStockSchema)
+	.inputValidator(addStockSchema.extend({
+		quantity: z.string().trim().refine(value => /^\d+(?:\.\d+)?$/.test(value) &&
+			Number(value) > 0 && Number(value) <= 999_999_999.999 && new Big(value).round(3).eq(value),
+			"Quantity must be positive and use at most three decimal places"),
+	}))
 	.handler(async ({ data, context }) => {
 		return await db.transaction(async (tx) => {
 			// Validate Warehouse Type
-			const warehouse = await tx.query.warehouses.findFirst({
-				where: eq(warehouses.id, data.warehouseId),
-			});
+			const [warehouse] = await tx.select().from(warehouses)
+				.where(eq(warehouses.id, data.warehouseId)).for("share");
 
 			if (!warehouse) throw new Error("Warehouse not found");
+			if (!warehouse.isActive) throw new Error("Factory floor facility is inactive");
 
 			// STRICT ENFORCEMENT: Raw materials only in Factory Floor
 			if (warehouse.type !== "factory_floor") {
@@ -91,52 +97,18 @@ export const addStockFn = createServerFn()
 
 			const targetWarehouseId = warehouse.id;
 
-			// Check if stock already exists
-			const existingStock = await tx.query.materialStock.findFirst({
-				where: and(
-					eq(materialStock.warehouseId, targetWarehouseId),
-					data.materialType === "chemical"
-						? eq(materialStock.chemicalId, data.materialId)
-						: eq(materialStock.packagingMaterialId, data.materialId),
-				),
-			});
-
-			type Result = {
-				createdAt: Date;
-				updatedAt: Date;
-				id: string;
-				warehouseId: string;
-				chemicalId: string | null;
-				packagingMaterialId: string | null;
-				quantity: string;
-			};
-
-			let result: Result;
-
-			if (existingStock) {
-				// Update existing stock
-				const newQuantity = (
-					parseFloat(existingStock.quantity) + parseFloat(data.quantity)
-				).toString();
-
-				[result] = await tx
-					.update(materialStock)
-					.set({ quantity: newQuantity, updatedAt: new Date() })
-					.where(eq(materialStock.id, existingStock.id))
-					.returning();
-			} else {
-				// Create new stock entry
-				[result] = await tx
-					.insert(materialStock)
-					.values({
-						warehouseId: targetWarehouseId,
-						[data.materialType === "chemical"
-							? "chemicalId"
-							: "packagingMaterialId"]: data.materialId,
-						quantity: data.quantity,
-					})
-					.returning();
-			}
+			const materialColumn = data.materialType === "chemical"
+				? materialStock.chemicalId : materialStock.packagingMaterialId;
+			// A relative upsert also serializes concurrent first receipts on the partial unique index.
+			const [result] = await tx.insert(materialStock).values({
+				warehouseId: targetWarehouseId,
+				[data.materialType === "chemical" ? "chemicalId" : "packagingMaterialId"]: data.materialId,
+				quantity: data.quantity,
+			}).onConflictDoUpdate({
+				target: [materialStock.warehouseId, materialColumn],
+				targetWhere: sql`${materialColumn} IS NOT NULL`,
+				set: { quantity: sql`${materialStock.quantity} + ${data.quantity}`, updatedAt: new Date() },
+			}).returning();
 
 			// Auto-calculate payment amount based on payment status
 			let amountToRecord = 0;

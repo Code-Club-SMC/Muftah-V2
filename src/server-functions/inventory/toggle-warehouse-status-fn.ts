@@ -1,8 +1,23 @@
 import { createServerFn } from "@tanstack/react-start";
-import { eq } from "drizzle-orm";
-import { db, finishedGoodsStock, materialStock, warehouses } from "@/db";
+import { and, eq, inArray } from "drizzle-orm";
+import {
+  db,
+  finishedGoodsStock,
+  inventoryAuditLog,
+  materialStock,
+  warehouses,
+} from "@/db";
+import {
+  mixingRuns,
+  packagingAllocations,
+} from "@/db/schemas/production-schema";
 import { requireInventoryManageMiddleware } from "@/lib/middlewares";
+import { lockCartonStock } from "@/lib/cartons/stock-adjustment.server";
 import { z } from "zod";
+import {
+  transferFinishedStock,
+  transferMaterialStock,
+} from "./stock/transfer-stock-core.server";
 
 const toggleWarehouseStatusSchema = z.object({
   warehouseId: z.string().min(1),
@@ -14,109 +29,122 @@ export const toggleWarehouseStatusFn = createServerFn()
   .middleware([requireInventoryManageMiddleware])
   .inputValidator(toggleWarehouseStatusSchema)
   .handler(
-    async ({ data: { warehouseId, isActive, transferToWarehouseId } }) => {
-      try {
-        await db.transaction(async (tx) => {
-          // If Deactivating AND Transfer requested
-          if (!isActive && transferToWarehouseId) {
-            // --- Transfer Material Stock ---
-            const sourceMaterials = await tx.query.materialStock.findMany({
-              where: eq(materialStock.warehouseId, warehouseId),
+    async ({
+      data: { warehouseId, isActive, transferToWarehouseId },
+      context,
+    }) => {
+      if (!isActive && transferToWarehouseId === warehouseId)
+        throw new Error("Source and destination warehouses must be different");
+      return db.transaction(async (tx) => {
+        const locations = await tx
+          .select()
+          .from(warehouses)
+          .where(
+            inArray(
+              warehouses.id,
+              !isActive && transferToWarehouseId
+                ? [warehouseId, transferToWarehouseId]
+                : [warehouseId],
+            ),
+          )
+          .orderBy(warehouses.id)
+          // Blocks SHARE admission checks, while allowing audit foreign keys'
+          // KEY SHARE locks from stock mutations that already hold stock locks.
+          .for("no key update");
+        const warehouse = locations.find((row) => row.id === warehouseId);
+        if (!warehouse) throw new Error("Warehouse not found");
+        if (!isActive) {
+          const mixing = await tx.query.mixingRuns.findFirst({
+            where: and(
+              eq(mixingRuns.warehouseId, warehouseId),
+              inArray(mixingRuns.status, ["scheduled", "in_progress"]),
+            ),
+          });
+          const packaging = await tx.query.packagingAllocations.findFirst({
+            where: and(
+              eq(packagingAllocations.warehouseId, warehouseId),
+              inArray(packagingAllocations.status, [
+                "allocated",
+                "in_progress",
+              ]),
+            ),
+          });
+          if (mixing || packaging)
+            throw new Error(
+              "Cannot deactivate a warehouse with live manufacturing work",
+            );
+        }
+        if (!isActive && transferToWarehouseId) {
+          const target = locations.find(
+            (row) => row.id === transferToWarehouseId,
+          );
+          if (!target?.isActive)
+            throw new Error("An active destination warehouse is required");
+          const sourceMaterials = await tx
+            .select()
+            .from(materialStock)
+            .where(eq(materialStock.warehouseId, warehouseId))
+            .orderBy(materialStock.id)
+            .for("update");
+          if (
+            sourceMaterials.some((item) => Number(item.quantity) > 0) &&
+            target.type !== "factory_floor"
+          )
+            throw new Error(
+              "Raw materials can only be transferred to a Factory Floor facility",
+            );
+          for (const item of sourceMaterials) {
+            if (Number(item.quantity) <= 0) continue;
+            await transferMaterialStock(tx, {
+              fromWarehouseId: warehouseId,
+              toWarehouseId: transferToWarehouseId,
+              materialType: item.chemicalId ? "chemical" : "packaging",
+              materialId: item.chemicalId ?? item.packagingMaterialId!,
+              quantity: item.quantity,
             });
-            const targetMaterials = await tx.query.materialStock.findMany({
-              where: eq(materialStock.warehouseId, transferToWarehouseId),
-            });
-
-            for (const sourceItem of sourceMaterials) {
-              // Find matching item in target warehouse
-              const targetItem = targetMaterials.find((t) => {
-                if (sourceItem.chemicalId) {
-                  return t.chemicalId === sourceItem.chemicalId;
-                }
-                if (sourceItem.packagingMaterialId) {
-                  return (
-                    t.packagingMaterialId === sourceItem.packagingMaterialId
-                  );
-                }
-                return false;
-              });
-
-              if (targetItem) {
-                // Update target quantity and delete source
-                const newQuantity =
-                  Number(targetItem.quantity) + Number(sourceItem.quantity);
-
-                await tx
-                  .update(materialStock)
-                  .set({ quantity: newQuantity.toString() })
-                  .where(eq(materialStock.id, targetItem.id));
-
-                await tx
-                  .delete(materialStock)
-                  .where(eq(materialStock.id, sourceItem.id));
-              } else {
-                // Move source item to target warehouse
-                await tx
-                  .update(materialStock)
-                  .set({ warehouseId: transferToWarehouseId })
-                  .where(eq(materialStock.id, sourceItem.id));
-              }
-            }
-
-            // --- Transfer Finished Goods Stock ---
-            const sourceFG = await tx.query.finishedGoodsStock.findMany({
-              where: eq(finishedGoodsStock.warehouseId, warehouseId),
-            });
-            const targetFG = await tx.query.finishedGoodsStock.findMany({
-              where: eq(finishedGoodsStock.warehouseId, transferToWarehouseId),
-            });
-
-            for (const sourceItem of sourceFG) {
-              const targetItem = targetFG.find(
-                (t) => t.recipeId === sourceItem.recipeId,
-              );
-
-              if (targetItem) {
-                // Update target quantities
-                const newCartons =
-                  (targetItem.quantityCartons || 0) +
-                  (sourceItem.quantityCartons || 0);
-                const newContainers =
-                  (targetItem.quantityContainers || 0) +
-                  (sourceItem.quantityContainers || 0);
-
-                await tx
-                  .update(finishedGoodsStock)
-                  .set({
-                    quantityCartons: newCartons,
-                    quantityContainers: newContainers,
-                  })
-                  .where(eq(finishedGoodsStock.id, targetItem.id));
-
-                await tx
-                  .delete(finishedGoodsStock)
-                  .where(eq(finishedGoodsStock.id, sourceItem.id));
-              } else {
-                // Move source item to target warehouse
-                await tx
-                  .update(finishedGoodsStock)
-                  .set({ warehouseId: transferToWarehouseId })
-                  .where(eq(finishedGoodsStock.id, sourceItem.id));
-              }
-            }
+            const audit = {
+              materialType: item.chemicalId ? "chemical" : "packaging",
+              materialId: item.chemicalId ?? item.packagingMaterialId!,
+              amount: item.quantity,
+              referenceId: warehouseId,
+              performedById: context.session.user.id,
+              reason: "Warehouse deactivation stock transfer",
+            };
+            await tx.insert(inventoryAuditLog).values([
+              { ...audit, warehouseId, type: "debit" },
+              { ...audit, warehouseId: transferToWarehouseId, type: "credit" },
+            ]);
           }
-
-          // Update Warehouse Status
-          await tx
-            .update(warehouses)
-            .set({ isActive })
-            .where(eq(warehouses.id, warehouseId));
-        });
-
+          const sourceFinished = await tx
+            .select()
+            .from(finishedGoodsStock)
+            .where(eq(finishedGoodsStock.warehouseId, warehouseId));
+          // Lock all recipes across both warehouses before moving any one recipe.
+          // Bulk carton operations use this same global warehouse/recipe order.
+          await lockCartonStock(
+            tx,
+            sourceFinished.flatMap((item) => [
+              { warehouseId, recipeId: item.recipeId },
+              { warehouseId: transferToWarehouseId, recipeId: item.recipeId },
+            ]),
+          );
+          for (const item of sourceFinished.sort((a, b) =>
+            a.recipeId.localeCompare(b.recipeId),
+          ))
+            await transferFinishedStock(tx, {
+              fromWarehouseId: warehouseId,
+              toWarehouseId: transferToWarehouseId,
+              recipeId: item.recipeId,
+              relocateAll: true,
+              userId: context.session.user.id,
+              referenceId: warehouseId,
+            });
+        }
+        await tx
+          .update(warehouses)
+          .set({ isActive, updatedAt: new Date() })
+          .where(eq(warehouses.id, warehouseId));
         return { success: true };
-      } catch (error) {
-        console.error("Failed to toggle warehouse status:", error);
-        throw new Error("Failed to update warehouse status");
-      }
+      });
     },
   );

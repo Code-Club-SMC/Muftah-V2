@@ -8,7 +8,7 @@ import {
 } from "@/lib/middlewares";
 import { toPKTDate } from "@/lib/attendance/time";
 import { syncDriverAttendanceForDate } from "@/server-functions/hr/attendance/driver-attendance-sync";
-import { eq, and, gte, lte, desc } from "drizzle-orm";
+import { eq, and, gte, lte, desc, isNull, } from "drizzle-orm";
 import { z } from "zod";
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -113,11 +113,26 @@ export const createDriverTripFn = createServerFn()
     const userId = context.authContext?.session?.user?.id;
 
     return await db.transaction(async (tx) => {
-      // Query system-wide active TA/DA rate from sales/configuration
-      const activeRate = await tx.query.tadaRates.findFirst({
-        where: eq(tadaRates.isActive, true),
-        orderBy: [desc(tadaRates.effectiveFrom)],
+      // Get the driver's employee ID
+      const driver = await tx.query.drivers.findFirst({
+        where: eq(drivers.id, data.driverId)
       });
+      const employeeId = driver?.employeeId;
+
+      // Query active TA/DA rate (employee-specific fallback to global)
+      let activeRate = null;
+      if (employeeId) {
+        activeRate = await tx.query.tadaRates.findFirst({
+          where: and(eq(tadaRates.isActive, true), eq(tadaRates.employeeId, employeeId)),
+          orderBy: [desc(tadaRates.effectiveFrom)],
+        });
+      }
+      if (!activeRate) {
+        activeRate = await tx.query.tadaRates.findFirst({
+          where: and(eq(tadaRates.isActive, true), isNull(tadaRates.employeeId)),
+          orderBy: [desc(tadaRates.effectiveFrom)],
+        });
+      }
 
       if (!activeRate) {
         throw new Error(

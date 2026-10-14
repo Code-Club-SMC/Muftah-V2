@@ -102,7 +102,7 @@ export const getActivityTimelineFn = createServerFn({ method: "GET" })
     const total = totalResult[0]?.total ?? 0;
 
     return {
-      events,
+      events: events.map(e => ({ ...e, metadata: (e.metadata as Record<string, any> | null) })),
       total,
       page,
       pageSize,

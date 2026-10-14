@@ -554,6 +554,8 @@ export const tadaRates = pgTable("tada_rates", {
     .primaryKey()
     .$defaultFn(() => createId()),
 
+  employeeId: text("employee_id").references(() => employees.id),
+  
   ratePerKm: decimal("rate_per_km", { precision: 8, scale: 2 }).notNull(),
 
   effectiveFrom: date("effective_from").notNull(),
@@ -818,6 +820,10 @@ export const nightShiftRateRelations = relations(nightShiftRates, ({ one }) => (
 }));
 
 export const tadaRateRelations = relations(tadaRates, ({ one }) => ({
+  employee: one(employees, {
+    fields: [tadaRates.employeeId],
+    references: [employees.id],
+  }),
   setter: one(user, {
     fields: [tadaRates.setBy],
     references: [user.id],

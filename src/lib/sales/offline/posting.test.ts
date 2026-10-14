@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 const posting = readFileSync(resolve(process.cwd(), "src/lib/sales/offline/posting.server.ts"), "utf8");
 const service = readFileSync(resolve(process.cwd(), "src/server-functions/sales/invoice-posting-service.ts"), "utf8");
+const stockAdjustment = readFileSync(resolve(process.cwd(), "src/lib/cartons/stock-adjustment.server.ts"), "utf8");
 const commission = readFileSync(resolve(process.cwd(), "src/server-functions/sales/order-booker-commission-calc.ts"), "utf8");
 
 describe("offline sales atomic posting", () => {
@@ -17,7 +18,12 @@ describe("offline sales atomic posting", () => {
     expect(service).toContain('pricingPolicy: "live" | "signed_snapshot"');
     expect(service).toContain('stockPolicy: "strict" | "offline_reconcile"');
     expect(service).toContain("Math.min(");
-    expect(service).toContain("Math.max(0, currentRemainingUnits - r.deductedUnits)");
+    expect(service).toContain("-r.deductedUnits, userId, invoice.id)");
+    expect(stockAdjustment).toContain("if (units < 0)");
+    expect(stockAdjustment).toContain("oldValue.minus(movement)");
+    expect(stockAdjustment).toContain("return movement.toFixed(2)");
+    expect(service).toMatch(/if \(input\.source === "online"\) \{\s*r\.cogsTotal = Number\(debitedValue\)/);
+    expect(service).toContain("cogsPerUnit: signedLine.wacPerPack");
     expect(service).toContain("stockReconciliationIssues");
     expect(service).toContain("resolveInvoiceStockWarehouse");
     expect(service).toContain("Signed offline factory warehouse");

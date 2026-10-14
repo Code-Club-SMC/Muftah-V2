@@ -3,15 +3,26 @@ import { eq } from "drizzle-orm";
 import { db, inventoryAuditLog, materialStock } from "@/db";
 import { requireInventoryManageMiddleware } from "@/lib/middlewares";
 import { updateStockSchema } from "@/lib/validators/validators";
+import { z } from "zod";
+import Big from "big.js";
+import { updateOutsidePackStockCore, updateOutsidePackStockSchema } from "./update-outside-pack-stock-core.server";
+
+export const updateOutsidePackStockFn = createServerFn({ method: "POST" })
+  .middleware([requireInventoryManageMiddleware])
+  .inputValidator(updateOutsidePackStockSchema)
+  .handler(({ data, context }) => db.transaction(tx => updateOutsidePackStockCore(tx, data, context.session.user.id)));
 
 export const updateStockFn = createServerFn()
   .middleware([requireInventoryManageMiddleware])
-  .inputValidator(updateStockSchema)
+  .inputValidator(updateStockSchema.extend({
+    quantity: z.string().trim().refine(value => /^\d+(?:\.\d+)?$/.test(value) &&
+      Number(value) <= 999_999_999.999 && new Big(value).round(3).eq(value),
+      "Quantity must be nonnegative and use at most three decimal places"),
+  }))
   .handler(async ({ data, context }) => {
     return await db.transaction(async (tx) => {
-      const stock = await tx.query.materialStock.findFirst({
-        where: eq(materialStock.id, data.stockId),
-      });
+      const [stock] = await tx.select().from(materialStock)
+        .where(eq(materialStock.id, data.stockId)).for("update");
 
       if (!stock) throw new Error("Stock not found");
 

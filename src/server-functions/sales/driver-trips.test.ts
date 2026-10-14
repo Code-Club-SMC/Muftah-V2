@@ -25,7 +25,7 @@ const SALES_PEOPLE_PAGE_SOURCE = readFileSync(
 describe("Driver Trips & Global System TA/DA Contract", () => {
   it("queries active system tadaRates instead of hardcoding or defaulting to PKR 20", () => {
     expect(DRIVER_TRIPS_SOURCE).toContain("tadaRates");
-    expect(DRIVER_TRIPS_SOURCE).toContain("where: eq(tadaRates.isActive, true)");
+    expect(DRIVER_TRIPS_SOURCE).toContain("eq(tadaRates.isActive, true)");
     expect(DRIVER_TRIPS_SOURCE).toContain("orderBy: [desc(tadaRates.effectiveFrom)]");
     expect(DRIVER_TRIPS_SOURCE).not.toContain("default(20)");
     expect(DRIVER_TRIPS_SOURCE).not.toContain("= 20;");

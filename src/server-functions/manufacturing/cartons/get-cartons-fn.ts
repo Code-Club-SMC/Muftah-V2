@@ -6,7 +6,6 @@ import {
   requireManufacturingViewMiddleware,
 } from "@/lib/middlewares";
 import * as repo from "@/lib/cartons/carton.repository";
-import { productionRuns } from "@/db/schemas/inventory-schema";
 import { notInArray } from "drizzle-orm";
 
 export const getCartonByIdFn = createServerFn()
@@ -22,13 +21,13 @@ export const getCartonByIdFn = createServerFn()
 
 export const getCartonsByBatchFn = createServerFn()
   .middleware([requireManufacturingViewMiddleware])
-  .inputValidator(z.object({ productionRunId: z.string().min(1) }))
+  .inputValidator(z.object({ packagingAllocationId: z.string().min(1) }))
   .handler(async ({ data }) => {
     const { db } = await import("@/db");
     const { recipes } = await import("@/db/schemas/inventory-schema");
     const { eq } = await import("drizzle-orm");
 
-    const cartonsData = await repo.findCartonsByProductionRunId(data.productionRunId);
+    const cartonsData = await repo.findCartonsByProductionRunId(data.packagingAllocationId);
     
     if (cartonsData.length === 0) return [];
     
@@ -47,9 +46,9 @@ export const getCartonsByBatchFn = createServerFn()
 
 export const getBatchKpisFn = createServerFn()
   .middleware([requireManufacturingViewMiddleware])
-  .inputValidator(z.object({ productionRunId: z.string().min(1) }))
+  .inputValidator(z.object({ packagingAllocationId: z.string().min(1) }))
   .handler(async ({ data }) => {
-    return repo.getBatchKpis(data.productionRunId);
+    return repo.getBatchKpis(data.packagingAllocationId);
   });
 
 export const getCartonAuditLogFn = createServerFn()
@@ -82,17 +81,17 @@ export const getCartonAuditLogFn = createServerFn()
 export const getBatchAuditLogFn = createServerFn()
   .middleware([requireManufacturingViewMiddleware])
   .inputValidator(z.object({
-    productionRunId: z.string().min(1),
+    packagingAllocationId: z.string().min(1),
     page: z.coerce.number().int().min(1).default(1),
     limit: z.coerce.number().int().min(1).max(100).default(20),
   }))
   .handler(async ({ data }) => {
     const [logs, total] = await Promise.all([
-      repo.findAdjustmentLogsByBatchId(data.productionRunId, {
+      repo.findAdjustmentLogsByBatchId(data.packagingAllocationId, {
         limit: data.limit,
         offset: (data.page - 1) * data.limit,
       }),
-      repo.countAdjustmentLogsByBatchId(data.productionRunId),
+      repo.countAdjustmentLogsByBatchId(data.packagingAllocationId),
     ]);
 
     return {
@@ -164,11 +163,12 @@ export const getCartonsByRecipeFn = createServerFn()
       conditions.push(eq(cartons.status, data.status));
     }
     if (data.sku) {
-      const { ilike } = await import("drizzle-orm");
+      const { ilike, or, eq } = await import("drizzle-orm");
       conditions.push(ilike(cartons.sku, `%${data.sku}%`));
     }
+      const { or } = await import("drizzle-orm");
     if (data.batchId) {
-      conditions.push(eq(cartons.productionRunId, data.batchId));
+      conditions.push(or(eq(cartons.packagingAllocationId, data.batchId), eq(cartons.productionRunId, data.batchId))!);
     }
 
     // Get total count for pagination
@@ -287,48 +287,40 @@ export const getProductionRunsByRecipeFn = createServerFn()
   .handler(async ({ data }) => {
     const { db } = await import("@/db");
     const { cartons } = await import("@/db/schemas/manufacturing-schema");
+    const { packagingAllocations, mixingRuns } = await import("@/db/schemas/production-schema");
     const { recipes } = await import("@/db/schemas/inventory-schema");
     const { eq, and, sql } = await import("drizzle-orm");
 
-    // Exclude cancelled/failed runs — they can never receive cartons
-    const excludedStatuses = ["cancelled", "failed"];
-
     const conditions = [
-      eq(productionRuns.recipeId, data.recipeId),
-      notInArray(productionRuns.status, excludedStatuses),
+      eq(packagingAllocations.recipeId, data.recipeId),
+      notInArray(packagingAllocations.status, ["cancelled"]),
     ];
     if (data.warehouseId) {
-      conditions.push(eq(productionRuns.warehouseId, data.warehouseId));
+      conditions.push(eq(packagingAllocations.warehouseId, data.warehouseId));
     }
 
     const runs = await db
       .select({
-        id: productionRuns.id,
-        batchId: productionRuns.batchId,
-        status: productionRuns.status,
-        warehouseId: productionRuns.warehouseId,
-        recipeId: productionRuns.recipeId,
-        createdAt: productionRuns.createdAt,
-      })
-      .from(productionRuns)
-      .where(and(...conditions))
-      .orderBy(sql`${productionRuns.createdAt} DESC`);
-
-    const [recipe] = await db
-      .select({
+        id: packagingAllocations.id,
+        batchId: mixingRuns.batchId,
+        status: packagingAllocations.status,
+        warehouseId: packagingAllocations.warehouseId,
+        recipeId: packagingAllocations.recipeId,
+        targetUnits: packagingAllocations.targetContainers,
+        targetCartons: packagingAllocations.targetCartons,
         containersPerCarton: recipes.containersPerCarton,
-        targetUnitsPerBatch: recipes.targetUnitsPerBatch,
+        createdAt: packagingAllocations.createdAt,
       })
-      .from(recipes)
-      .where(eq(recipes.id, data.recipeId));
-
-    const capacity = recipe?.containersPerCarton ?? 0;
-    const recipeTargetUnits = recipe?.targetUnitsPerBatch ?? 0;
+      .from(packagingAllocations)
+      .innerJoin(mixingRuns, eq(packagingAllocations.mixingRunId, mixingRuns.id))
+      .innerJoin(recipes, eq(packagingAllocations.recipeId, recipes.id))
+      .where(and(...conditions))
+      .orderBy(sql`${packagingAllocations.createdAt} DESC`);
 
     // Get carton counts per run
     const cartonCounts = await db
       .select({
-        productionRunId: cartons.productionRunId,
+        packagingAllocationId: cartons.packagingAllocationId,
         count: sql<number>`count(*)::int`,
       })
       .from(cartons)
@@ -342,26 +334,17 @@ export const getProductionRunsByRecipeFn = createServerFn()
           ),
         ),
       )
-      .groupBy(cartons.productionRunId);
+      .groupBy(cartons.packagingAllocationId);
 
     const cartonCountMap = new Map(
-      cartonCounts.map((c) => [c.productionRunId, c.count]),
+      cartonCounts.map((c) => [c.packagingAllocationId, c.count]),
     );
 
     const enriched = runs.map((run) => {
       const currentCartons = cartonCountMap.get(run.id) ?? 0;
-      const targetUnits = recipeTargetUnits;
-      const targetCartons =
-        targetUnits > 0 && capacity > 0 ? Math.ceil(targetUnits / capacity) : 0;
+      const targetUnits = run.targetUnits;
+      const targetCartons = run.targetCartons ?? 0;
       const shortfall = Math.max(0, targetCartons - currentCartons);
-      // Mirror backend rules from addCartonsToBatch:
-      // - Block cancelled/failed outright
-      // - Block completed batches with no target
-      // - Block any batch that has already met its target (shortfall = 0)
-      const canAddCartons =
-        !["cancelled", "failed"].includes(run.status) &&
-        !(run.status === "completed" && targetCartons === 0) &&
-        !(targetCartons > 0 && shortfall === 0);
 
       return {
         id: run.id,
@@ -369,11 +352,11 @@ export const getProductionRunsByRecipeFn = createServerFn()
         status: run.status,
         warehouseId: run.warehouseId,
         targetUnitsPerBatch: targetUnits,
-        containersPerCarton: capacity,
+        containersPerCarton: run.containersPerCarton ?? 0,
         targetCartons,
         currentCartons,
         shortfall,
-        canAddCartons,
+        canAddCartons: false,
         createdAt: run.createdAt,
       };
     });

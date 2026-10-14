@@ -1,9 +1,10 @@
+import { datePickerKey, formatReportDate } from "@/lib/report-dates";
+import { formatReportMoney, reportGenerationAction } from "@/lib/report-format";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import type { DateRange } from "react-day-picker";
 import { ReportPageShell } from "@/components/reports/report-page-shell";
-import { OfflineReportPendingBanner } from "@/components/reports/offline-report-pending-banner";
 import { ReportSourceSelect } from "@/components/reports/report-source-select";
 import {
   ReportCell,
@@ -13,7 +14,6 @@ import {
   SummaryCard,
 } from "@/components/reports/report-primitives";
 import { Badge } from "@/components/ui/badge";
-import { formatPKR } from "@/lib/currency-format";
 import { reportSourceLabel, type ReportSource } from "@/lib/report-source";
 import { getCollectionsReportFn } from "@/server-functions/reports/collections-report-fn";
 
@@ -24,11 +24,7 @@ export const Route = createFileRoute("/_protected/reports/collections/")({
 });
 
 function displayDate(value: string) {
-  return new Date(value).toLocaleDateString("en-GB", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
+  return formatReportDate(value);
 }
 
 function displayMethod(value: string) {
@@ -51,29 +47,31 @@ function CollectionsReportPage() {
     source: ReportSource;
   } | null>(null);
 
-  const { data, isLoading } = useQuery({
-    queryKey: [
-      "reports",
-      "collections",
-      params?.dateFrom,
-      params?.dateTo,
-      params?.source,
-    ],
+  const {
+    data,
+    isFetching: isLoading,
+    error,
+    dataUpdatedAt,
+    refetch,
+  } = useQuery({
+    queryKey: ["reports", "collections", params],
     queryFn: () => getCollectionsReportFn({ data: params ?? {} }),
     enabled: Boolean(params),
   });
 
   const handleGenerate = (range: DateRange | undefined) => {
-    setParams({
-      dateFrom: range?.from?.toISOString(),
-      dateTo: range?.to?.toISOString(),
+    if (!range?.from || !range?.to) return;
+    const next = {
+      dateFrom: datePickerKey(range.from),
+      dateTo: datePickerKey(range.to),
       source,
-    });
+    };
+    if (reportGenerationAction(params, next) === "refetch") void refetch();
+    else setParams(next);
   };
 
   const handleSourceChange = (next: ReportSource) => {
     setSource(next);
-    setParams((current) => (current ? { ...current, source: next } : current));
   };
 
   const rowCount = data
@@ -82,11 +80,17 @@ function CollectionsReportPage() {
 
   return (
     <div className="space-y-4">
-      <OfflineReportPendingBanner />
       <ReportPageShell
         title="Collections Report"
         subtitle="Confirmed money, payments waiting for finance, and payment exceptions."
         onGenerate={handleGenerate}
+        source={params ? reportSourceLabel(params.source) : undefined}
+        sourceDraft={Boolean(params && source !== params.source)}
+        applied={params}
+        generatedAt={dataUpdatedAt}
+        error={error}
+        basis="Confirmed receipts use effective date. Pending and exception sections use payment date. Non-cash expense offsets are excluded from receipts."
+        periodLabel="Receipt / payment date range"
         isLoading={isLoading}
         isEmpty={!data || rowCount === 0}
         accentColor={ACCENT}
@@ -104,22 +108,22 @@ function CollectionsReportPage() {
               <div className="grid grid-cols-2 gap-3 md:grid-cols-4 print:grid-cols-4">
                 <SummaryCard
                   label="Cash"
-                  value={formatPKR(data.summary.cash, false)}
+                  value={formatReportMoney(data.summary.cash)}
                   accentColor={ACCENT}
                 />
                 <SummaryCard
                   label="Bank Transfer"
-                  value={formatPKR(data.summary.bankTransfer, false)}
+                  value={formatReportMoney(data.summary.bankTransfer)}
                   accentColor={ACCENT}
                 />
                 <SummaryCard
                   label="Cheque Cleared"
-                  value={formatPKR(data.summary.cheque, false)}
+                  value={formatReportMoney(data.summary.cheque)}
                   accentColor={ACCENT}
                 />
                 <SummaryCard
                   label="Pending Verification"
-                  value={formatPKR(data.summary.pending, false)}
+                  value={formatReportMoney(data.summary.pending)}
                   accentColor={ACCENT}
                 />
               </div>
@@ -138,6 +142,7 @@ function CollectionsReportPage() {
                   "Method",
                   "Amount",
                 ]}
+                alignRight={[5]}
               >
                 {data.confirmed.map((payment) => (
                   <ReportTableRow key={payment.paymentId} accentColor={ACCENT}>
@@ -151,10 +156,22 @@ function CollectionsReportPage() {
                     <ReportCell bold>{payment.customerName}</ReportCell>
                     <ReportCell>{displayMethod(payment.method)}</ReportCell>
                     <ReportCell align="right" mono bold>
-                      {formatPKR(payment.amount, false)}
+                      {formatReportMoney(payment.amount)}
                     </ReportCell>
                   </ReportTableRow>
                 ))}
+                <ReportTableRow>
+                  <ReportCell bold>Total</ReportCell>
+                  <ReportCell />
+                  <ReportCell />
+                  <ReportCell />
+                  <ReportCell />
+                  <ReportCell align="right" mono bold>
+                    {formatReportMoney(
+                      data.confirmed.reduce((s, p) => s + p.amount, 0),
+                    )}
+                  </ReportCell>
+                </ReportTableRow>
               </ReportTable>
             </section>
 
@@ -172,6 +189,7 @@ function CollectionsReportPage() {
                     "Method",
                     "Amount",
                   ]}
+                  alignRight={[5]}
                 >
                   {data.pending.map((payment) => (
                     <ReportTableRow
@@ -188,10 +206,22 @@ function CollectionsReportPage() {
                       <ReportCell bold>{payment.customerName}</ReportCell>
                       <ReportCell>{displayMethod(payment.method)}</ReportCell>
                       <ReportCell align="right" mono bold>
-                        {formatPKR(payment.amount, false)}
+                        {formatReportMoney(payment.amount)}
                       </ReportCell>
                     </ReportTableRow>
                   ))}
+                  <ReportTableRow>
+                    <ReportCell bold>Total</ReportCell>
+                    <ReportCell />
+                    <ReportCell />
+                    <ReportCell />
+                    <ReportCell />
+                    <ReportCell align="right" mono bold>
+                      {formatReportMoney(
+                        data.pending.reduce((s, p) => s + p.amount, 0),
+                      )}
+                    </ReportCell>
+                  </ReportTableRow>
                 </ReportTable>
               </section>
             )}
@@ -211,6 +241,7 @@ function CollectionsReportPage() {
                     "Reason",
                     "Amount",
                   ]}
+                  alignRight={[6]}
                 >
                   {data.exceptions.map((payment) => (
                     <ReportTableRow
@@ -232,10 +263,23 @@ function CollectionsReportPage() {
                       </ReportCell>
                       <ReportCell muted>{payment.reason}</ReportCell>
                       <ReportCell align="right" mono bold>
-                        {formatPKR(payment.amount, false)}
+                        {formatReportMoney(payment.amount)}
                       </ReportCell>
                     </ReportTableRow>
                   ))}
+                  <ReportTableRow>
+                    <ReportCell bold>Total</ReportCell>
+                    <ReportCell />
+                    <ReportCell />
+                    <ReportCell />
+                    <ReportCell />
+                    <ReportCell />
+                    <ReportCell align="right" mono bold>
+                      {formatReportMoney(
+                        data.exceptions.reduce((s, p) => s + p.amount, 0),
+                      )}
+                    </ReportCell>
+                  </ReportTableRow>
                 </ReportTable>
               </section>
             )}

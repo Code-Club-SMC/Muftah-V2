@@ -1,0 +1,4 @@
+ALTER TABLE "integrity_alerts" ADD COLUMN "packaging_allocation_id" text;--> statement-breakpoint
+ALTER TABLE "stock_count_sessions" ADD COLUMN "packaging_allocation_id" text;--> statement-breakpoint
+ALTER TABLE "integrity_alerts" ADD CONSTRAINT "integrity_alerts_packaging_allocation_id_packaging_allocations_id_fk" FOREIGN KEY ("packaging_allocation_id") REFERENCES "public"."packaging_allocations"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "stock_count_sessions" ADD CONSTRAINT "stock_count_sessions_packaging_allocation_id_packaging_allocations_id_fk" FOREIGN KEY ("packaging_allocation_id") REFERENCES "public"."packaging_allocations"("id") ON DELETE no action ON UPDATE no action;

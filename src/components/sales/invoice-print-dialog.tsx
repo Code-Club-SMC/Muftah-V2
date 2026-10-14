@@ -165,7 +165,7 @@ const calculateInvoiceProfit = (items: any[]): number => {
   return roundMoney((items ?? []).reduce((sum: number, item: any) => {
     const amount = Number(item.amount) || 0;
     const cogs = Number(item.costOfGoodsSold) || 0;
-    if (cogs > 0) return sum + (amount - cogs);
+    if (item.costOfGoodsSold != null && Number.isFinite(Number(item.costOfGoodsSold))) return sum + (amount - cogs);
 
     // Fallback for legacy invoices: invoice cost as COGS proxy
     const packsPerCarton = Number(item.actualPackSize || item.packsPerCarton) || 0;

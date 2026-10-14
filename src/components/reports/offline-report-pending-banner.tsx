@@ -11,10 +11,25 @@ export function OfflineReportPendingBanner() {
     refetchInterval: 30_000,
   });
 
+  if (status.isError)
+    return (
+      <Alert role="alert" className="mb-4">
+        <AlertTitle>Offline invoice status unavailable</AlertTitle>
+        <AlertDescription>
+          The status check failed. Report completeness could not be verified.
+        </AlertDescription>
+      </Alert>
+    );
+  if (status.isPending)
+    return (
+      <p role="status" className="mb-4 text-sm">
+        Offline invoice posting status has not yet been verified.
+      </p>
+    );
   if (!status.data?.hasUnpostedOfflineInvoices) return null;
 
   return (
-    <Alert className="border-amber-500/50 bg-amber-500/10 print:hidden">
+    <Alert className="border-amber-500/50 bg-amber-500/10 mb-4">
       <AlertTriangle className="size-4 text-amber-500" />
       <AlertTitle>Reports may be incomplete</AlertTitle>
       <AlertDescription>

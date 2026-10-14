@@ -1,3 +1,5 @@
+import { datePickerKey } from "@/lib/report-dates";
+import { formatReportMoney } from "@/lib/report-format";
 import { Link } from "@tanstack/react-router";
 import {
   ArrowRight,
@@ -45,12 +47,13 @@ import {
 import {
   Table,
   TableBody,
+  TableFooter,
   TableCell,
   TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { formatNumber, formatPKR } from "@/lib/currency-format";
+import { formatNumber } from "@/lib/currency-format";
 import { cn } from "@/lib/utils";
 
 export interface CompanyBreadcrumbItem {
@@ -73,6 +76,7 @@ export interface CompanyReportPageHeaderProps {
   onDateRangeChange: (range: DateRange | undefined) => void;
   onApply: () => void;
   isPending: boolean;
+  exportDisabled?: boolean;
   dateFrom: string;
   dateTo: string;
   onPrint: () => void;
@@ -89,6 +93,7 @@ export function CompanyReportPageHeader({
   onDateRangeChange,
   onApply,
   isPending,
+  exportDisabled,
   dateFrom,
   dateTo,
   onPrint,
@@ -102,7 +107,7 @@ export function CompanyReportPageHeader({
     .toUpperCase();
 
   return (
-    <header className="space-y-4">
+    <header className="space-y-4 print:hidden">
       <nav className="flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
         {breadcrumbs.map((item, index) => {
           const isLast = index === breadcrumbs.length - 1;
@@ -182,7 +187,12 @@ export function CompanyReportPageHeader({
             </div>
             <Button
               onClick={onApply}
-              disabled={!dateRange?.from || isPending}
+              disabled={
+                !dateRange?.from ||
+                !dateRange?.to ||
+                datePickerKey(dateRange.from) > datePickerKey(dateRange.to) ||
+                isPending
+              }
               className="h-9 min-w-[120px] gap-1.5 bg-blue-600 px-3 text-xs text-white hover:bg-blue-700"
             >
               {isPending ? (
@@ -200,6 +210,7 @@ export function CompanyReportPageHeader({
           </div>
           <div className="flex flex-wrap items-center justify-end gap-2">
             <PnlExportBar
+              disabled={exportDisabled}
               dateFrom={dateFrom}
               dateTo={dateTo}
               source={source}
@@ -209,6 +220,7 @@ export function CompanyReportPageHeader({
             <Button
               variant="outline"
               onClick={onPrint}
+              disabled={exportDisabled}
               className="h-9 gap-1.5 border-slate-300 bg-white px-3 text-xs hover:bg-slate-50"
             >
               <Printer className="size-3.5" />
@@ -299,7 +311,7 @@ export function ProfitStatusHero({
                 valueColor,
               )}
             >
-              {formatPKR(netProfit, false)}
+              {formatReportMoney(netProfit)}
             </div>
             <p className="max-w-md text-sm leading-relaxed text-muted-foreground">
               {description}
@@ -311,20 +323,23 @@ export function ProfitStatusHero({
                 {
                   icon: <DollarSign className="size-3.5" />,
                   label: "Collected Revenue",
-                  value: formatPKR(collectedRevenue, false),
+                  value: formatReportMoney(collectedRevenue),
                   accent: "blue",
                 },
                 {
                   icon: <Receipt className="size-3.5" />,
                   label: "Operating Expenses",
-                  value: formatPKR(operatingExpenses, false),
+                  value: formatReportMoney(operatingExpenses),
                   accent: "orange",
                 },
               ]}
             />
             <StatusMetricRow
               items={[
-                { label: "Gross Profit", value: formatPKR(grossProfit, false) },
+                {
+                  label: "Gross Profit",
+                  value: formatReportMoney(grossProfit),
+                },
                 {
                   label: "Reported Invoices",
                   value: formatNumber(invoiceCount),
@@ -418,17 +433,17 @@ export function FinanceSnapshotCard({
       <CardContent className="space-y-3 px-6 py-5">
         <SnapshotRow
           label="Account Balance Now"
-          value={formatPKR(accountBalanceNow, false)}
+          value={formatReportMoney(accountBalanceNow)}
         />
         <div className="h-px bg-slate-200" />
         <SnapshotRow
           label="Balance at Period End"
-          value={formatPKR(balanceAtPeriodEnd, false)}
+          value={formatReportMoney(balanceAtPeriodEnd)}
         />
         <div className="h-px bg-slate-200" />
         <SnapshotRow
           label="Period Wallet Movement"
-          value={formatPKR(periodWalletMovement, false)}
+          value={formatReportMoney(periodWalletMovement)}
           valueClassName={walletPositive ? "text-emerald-600" : "text-rose-600"}
         />
       </CardContent>
@@ -649,7 +664,7 @@ export function OperatingExpensesSection({
                     {metric.label}
                   </div>
                   <div className="font-mono text-sm font-semibold tabular-nums text-foreground">
-                    {formatPKR(metric.value, false)}
+                    {formatReportMoney(metric.value)}
                   </div>
                 </div>
               </div>
@@ -666,7 +681,7 @@ export function OperatingExpensesSection({
               Total Operating Expenses
             </div>
             <div className="font-mono text-base font-semibold tabular-nums text-foreground">
-              {formatPKR(total, false)}
+              {formatReportMoney(total)}
             </div>
           </div>
         </div>
@@ -705,10 +720,10 @@ export function OperatingExpensesSection({
                       {row.description}
                     </TableCell>
                     <TableCell className="text-right font-mono tabular-nums text-foreground">
-                      {formatNumber(row.amount)}
+                      {formatReportMoney(row.amount)}
                     </TableCell>
                     <TableCell className="text-right font-mono tabular-nums text-rose-600">
-                      {formatPKR(row.impact, false)}
+                      {formatReportMoney(row.impact)}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -773,7 +788,7 @@ export function FinanceReconciliationSection({
                     {item.label}
                   </div>
                   <div className="font-mono text-base font-semibold tabular-nums text-foreground">
-                    {formatPKR(item.value, false)}
+                    {formatReportMoney(item.value)}
                   </div>
                 </div>
               </div>
@@ -814,7 +829,7 @@ export function FinanceReconciliationSection({
                     )}
                   >
                     {row.direction === "negative" ? "-" : ""}
-                    {formatPKR(row.amount, false)}
+                    {formatReportMoney(row.amount)}
                   </TableCell>
                 </TableRow>
               ))}
@@ -913,7 +928,6 @@ export function ProductBreakdownTable({
   const safePage = Math.min(Math.max(1, page), totalPages);
   const start = total === 0 ? 0 : (safePage - 1) * pageSize;
   const end = Math.min(start + pageSize, total);
-  const paginated = rows.slice(start, end);
 
   return (
     <ChartCard number={number} title={title} description={description}>
@@ -959,14 +973,21 @@ export function ProductBreakdownTable({
                   <TableHead className="text-right text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                     Units
                   </TableHead>
-                  <TableHead className="text-right text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  <TableHead className="text-right text-[11px] font-semibold uppercase tracking-wide text-muted-foreground print:hidden">
                     Action
                   </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {paginated.map((product) => (
-                  <TableRow key={product.productId}>
+                {rows.map((product, index) => (
+                  <TableRow
+                    key={product.productId}
+                    className={
+                      index < start || index >= end
+                        ? "hidden print:table-row"
+                        : undefined
+                    }
+                  >
                     <TableCell className="font-medium text-foreground">
                       {product.productName}
                     </TableCell>
@@ -974,10 +995,10 @@ export function ProductBreakdownTable({
                       {product.productCategory ?? "Unassigned"}
                     </TableCell>
                     <TableCell className="text-right font-mono tabular-nums text-foreground">
-                      {formatPKR(product.revenue, false)}
+                      {formatReportMoney(product.revenue)}
                     </TableCell>
                     <TableCell className="text-right font-mono tabular-nums text-foreground">
-                      {formatPKR(product.cogs, false)}
+                      {formatReportMoney(product.cogs)}
                     </TableCell>
                     <TableCell
                       className={cn(
@@ -987,7 +1008,7 @@ export function ProductBreakdownTable({
                           : "text-emerald-600",
                       )}
                     >
-                      {formatPKR(product.profit, false)}
+                      {formatReportMoney(product.profit)}
                     </TableCell>
                     <TableCell
                       className={cn(
@@ -1005,7 +1026,7 @@ export function ProductBreakdownTable({
                     <TableCell className="text-right font-mono tabular-nums text-foreground">
                       {formatNumber(product.units)}
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-right print:hidden">
                       {product.productId === "unmapped" ? (
                         <span className="text-xs text-muted-foreground">
                           No product mapping
@@ -1025,9 +1046,38 @@ export function ProductBreakdownTable({
                   </TableRow>
                 ))}
               </TableBody>
+              <TableFooter>
+                <TableRow className="report-total">
+                  <TableCell colSpan={2}>Total for all products</TableCell>
+                  {["revenue", "cogs", "profit"].map((field) => (
+                    <TableCell key={field} className="text-right">
+                      {formatReportMoney(
+                        rows.reduce(
+                          (sum, row) =>
+                            sum + row[field as "revenue" | "cogs" | "profit"],
+                          0,
+                        ),
+                      )}
+                    </TableCell>
+                  ))}
+                  <TableCell className="text-right">—</TableCell>
+                  <TableCell
+                    className="text-right"
+                    title="Invoice counts overlap across products"
+                  >
+                    —
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {formatNumber(
+                      rows.reduce((sum, row) => sum + row.units, 0),
+                    )}
+                  </TableCell>
+                  <TableCell className="print:hidden" />
+                </TableRow>
+              </TableFooter>
             </Table>
           </div>
-          <div className="flex flex-col items-center justify-between gap-3 px-1 pt-1 text-xs text-muted-foreground sm:flex-row">
+          <div className="flex flex-col items-center justify-between gap-3 px-1 pt-1 text-xs text-muted-foreground sm:flex-row print:hidden">
             <div>
               Showing{" "}
               <span className="font-medium text-foreground">

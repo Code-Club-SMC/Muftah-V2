@@ -25,6 +25,9 @@ import {
   YieldShortfallError,
 } from "./carton.errors";
 import * as repo from "./carton.repository";
+import { adjustCartonStock } from "./stock-adjustment.server";
+import { completePackagingAllocationCore } from "@/server-functions/manufacturing/packaging/complete-packaging-allocation-core.server";
+import { packagingAllocations } from "@/db/schemas/production-schema";
 
 // ---------------------------------------------------------------------------
 // Scenario 1 — Top-Up a Partial Carton
@@ -60,6 +63,7 @@ export async function topUpCarton(
       id: createId(),
       cartonId,
       batchId: carton.productionRunId,
+      packagingAllocationId: carton.packagingAllocationId,
       sku: carton.sku,
       type: "TOP_UP" as AdjustmentType,
       packsBefore: carton.currentPacks,
@@ -70,6 +74,7 @@ export async function topUpCarton(
       performedAt: new Date(),
     });
 
+    await adjustCartonStock(tx, carton, delta, userId, carton.id);
     return { carton: updated, changed: true };
   });
 }
@@ -95,6 +100,7 @@ export async function removePacksFromCarton(
         id: createId(),
         cartonId,
         batchId: carton.productionRunId,
+      packagingAllocationId: carton.packagingAllocationId,
         sku: carton.sku,
         type: "UNSEALED" as AdjustmentType,
         packsBefore: carton.currentPacks,
@@ -127,6 +133,7 @@ export async function removePacksFromCarton(
       id: createId(),
       cartonId,
       batchId: carton.productionRunId,
+      packagingAllocationId: carton.packagingAllocationId,
       sku: carton.sku,
       type: "REMOVAL" as AdjustmentType,
       packsBefore: carton.currentPacks,
@@ -137,6 +144,7 @@ export async function removePacksFromCarton(
       performedAt: new Date(),
     });
 
+    await adjustCartonStock(tx, carton, -delta, userId, carton.id);
     return { carton: updated };
   });
 }
@@ -164,7 +172,7 @@ export async function setCartonCount(
       );
     }
 
-    assertNotDispatched(carton);
+    assertCartonIsEditable(carton);
 
     const delta = newCount - carton.currentPacks;
     const newStatus = deriveCartonStatus(
@@ -186,6 +194,7 @@ export async function setCartonCount(
       id: createId(),
       cartonId,
       batchId: carton.productionRunId,
+      packagingAllocationId: carton.packagingAllocationId,
       sku: carton.sku,
       type: "MANUAL_OVERRIDE" as AdjustmentType,
       packsBefore: carton.currentPacks,
@@ -196,6 +205,7 @@ export async function setCartonCount(
       performedAt: new Date(),
     });
 
+    await adjustCartonStock(tx, carton, delta, userId, carton.id);
     return { carton: updated, changed: true };
   });
 }
@@ -215,11 +225,7 @@ export async function bulkAdjustCartons(
 
   return db.transaction(async (tx) => {
     const sortedIds = [...cartonIds].sort();
-    const lockedCartons = await tx
-      .select()
-      .from(cartons)
-      .where(inArray(cartons.id, sortedIds))
-      .for("update");
+    const lockedCartons = await repo.findCartonsByIdsForUpdate(sortedIds, tx);
 
     const updated: Array<{
       cartonId: string;
@@ -230,6 +236,7 @@ export async function bulkAdjustCartons(
 
     for (const carton of lockedCartons) {
       try {
+        await tx.transaction(async (tx) => {
         assertCartonIsEditable(carton);
 
         let effectiveDelta = delta;
@@ -240,7 +247,7 @@ export async function bulkAdjustCartons(
               cartonId: carton.id,
               reason: "CAPACITY_EXCEEDED",
             });
-            continue;
+            return;
           }
           if (strategy === "CAP") {
             effectiveDelta = Math.min(delta, available);
@@ -249,7 +256,7 @@ export async function bulkAdjustCartons(
                 cartonId: carton.id,
                 reason: "CAPACITY_EXCEEDED",
               });
-              continue;
+              return;
             }
           }
         } else {
@@ -259,7 +266,7 @@ export async function bulkAdjustCartons(
               cartonId: carton.id,
               reason: "INSUFFICIENT_PACKS",
             });
-            continue;
+            return;
           }
           if (strategy === "CAP") {
             effectiveDelta = Math.max(delta, -maxRemovable);
@@ -268,7 +275,7 @@ export async function bulkAdjustCartons(
                 cartonId: carton.id,
                 reason: "INSUFFICIENT_PACKS",
               });
-              continue;
+              return;
             }
           }
         }
@@ -292,6 +299,7 @@ export async function bulkAdjustCartons(
           id: createId(),
           cartonId: carton.id,
           batchId: carton.productionRunId,
+      packagingAllocationId: carton.packagingAllocationId,
           sku: carton.sku,
           type: "BULK_ADJUST" as AdjustmentType,
           packsBefore: carton.currentPacks,
@@ -303,10 +311,12 @@ export async function bulkAdjustCartons(
           performedAt: new Date(),
         });
 
+        await adjustCartonStock(tx, carton, effectiveDelta, userId, carton.id);
         updated.push({
           cartonId: carton.id,
           packsBefore: carton.currentPacks,
           packsAfter,
+        });
         });
       } catch (error) {
         skipped.push({
@@ -330,12 +340,9 @@ export async function mergeCartons(
   userId: string,
 ) {
   return db.transaction(async (tx) => {
+    if (sourceCartonIds.includes(destinationCartonId) || new Set(sourceCartonIds).size !== sourceCartonIds.length) throw new Error("Merge sources must be unique and different from the destination");
     const allIds = [...sourceCartonIds, destinationCartonId].sort();
-    const lockedCartons = await tx
-      .select()
-      .from(cartons)
-      .where(inArray(cartons.id, allIds))
-      .for("update");
+    const lockedCartons = await repo.findCartonsByIdsForUpdate(allIds, tx);
 
     const cartonMap = new Map(lockedCartons.map((c) => [c.id, c]));
     const destination = cartonMap.get(destinationCartonId);
@@ -351,7 +358,9 @@ export async function mergeCartons(
     }
 
     for (const source of sources) {
+      assertCartonIsEditable(source);
       assertSameSku(source, destination);
+      if (source.recipeId !== destination.recipeId) throw new Error("Cannot merge different recipes");
     }
 
     const totalSourcePacks = sources.reduce(
@@ -380,6 +389,7 @@ export async function mergeCartons(
         id: createId(),
         cartonId: source!.id,
         batchId: source!.productionRunId,
+        packagingAllocationId: source!.packagingAllocationId,
         sku: source!.sku,
         type: "MERGE_OUT" as AdjustmentType,
         packsBefore: source!.currentPacks,
@@ -413,6 +423,7 @@ export async function mergeCartons(
       id: createId(),
       cartonId: destinationCartonId,
       batchId: destination.productionRunId,
+      packagingAllocationId: destination.packagingAllocationId,
       sku: destination.sku,
       type: "MERGE_IN" as AdjustmentType,
       packsBefore: destination.currentPacks,
@@ -423,6 +434,12 @@ export async function mergeCartons(
       performedAt: new Date(),
     });
 
+    for (const source of sources) {
+      if (source.warehouseId !== destination.warehouseId && source.currentPacks > 0) {
+        const value = await adjustCartonStock(tx, source, -source.currentPacks, userId, source.id);
+        await adjustCartonStock(tx, destination, source.currentPacks, userId, destination.id, undefined, value);
+      }
+    }
     return {
       destination: updatedDest,
       archivedSources: sourceCartonIds,
@@ -470,6 +487,7 @@ export async function repackCarton(
       id: createId(),
       cartonId,
       batchId: carton.productionRunId,
+      packagingAllocationId: carton.packagingAllocationId,
       sku: carton.sku,
       type: "REPACK" as AdjustmentType,
       packsBefore: carton.currentPacks,
@@ -533,6 +551,7 @@ export async function retireCarton(
       id: createId(),
       cartonId,
       batchId: carton.productionRunId,
+      packagingAllocationId: carton.packagingAllocationId,
       sku: carton.sku,
       type: "RETIRE" as AdjustmentType,
       packsBefore: carton.currentPacks,
@@ -543,6 +562,7 @@ export async function retireCarton(
       performedAt: new Date(),
     });
 
+    await adjustCartonStock(tx, carton, -writeOffPacks, userId, carton.id);
     return { carton: updated };
   });
 }
@@ -552,119 +572,33 @@ export async function retireCarton(
 // ---------------------------------------------------------------------------
 
 export async function addCartonsToBatch(
-  productionRunId: string,
+  packagingAllocationId: string,
   count: number,
   _userId: string,
   zone?: string,
 ) {
   return db.transaction(async (tx) => {
-    const run = await repo.findProductionRunByIdForUpdate(productionRunId, tx);
-
-    // Block cancelled/failed outright
-    if (["cancelled", "failed"].includes(run.status)) {
-      throw new BatchClosedError(
-        "Cannot add cartons to a cancelled or failed production run.",
-      );
-    }
-
-    const recipe = await repo.findRecipeById(run.recipeId, tx);
-    if (!recipe) throw new Error("Recipe not found");
-
-    const capacity = recipe.containersPerCarton || 0;
-    if (!capacity || capacity <= 0) {
-      throw new Error(
-        `Cannot add cartons: recipe "${recipe.name}" has no containersPerCarton defined. Set the carton capacity on the recipe first.`,
-      );
-    }
-
-    // Calculate current cartons and target (exclude archived/retired)
-    const [existingCount] = await tx
-      .select({ count: sql<number>`count(*)::int` })
-      .from(cartons)
-      .where(
-        and(
-          eq(cartons.productionRunId, productionRunId),
-          sql`${cartons.status} NOT IN ('ARCHIVED', 'RETIRED')`,
-        ),
-      );
-
-    const currentCartons = existingCount.count;
-    const targetUnits = recipe.targetUnitsPerBatch ?? 0;
-    const targetCartons = targetUnits > 0 && capacity > 0 ? Math.ceil(targetUnits / capacity) : 0;
-    const shortfall = Math.max(0, targetCartons - currentCartons);
-
-    // Enforce hard cap against shortfall when target is defined
-    if (targetCartons > 0) {
-      if (count > shortfall) {
-        throw new BatchClosedError(
-          shortfall === 0
-            ? "This batch has already met its production target. No additional cartons can be added."
-            : `Cannot add ${count} cartons. This batch is short by only ${shortfall} carton${shortfall !== 1 ? "s" : ""}.`,
-        );
-      }
-    }
-
-    // Completed batches with no target can't be verified for shortfall — block them
-    if (run.status === "completed" && targetCartons === 0) {
-      throw new BatchClosedError(
-        "Cannot add cartons to a completed batch with no production target defined.",
-      );
-    }
-
-    // If completed but shortfall exists, reopen to in_progress so downstream ops work
-    if (run.status === "completed" && shortfall > 0) {
-      await tx
-        .update(productionRuns)
-        .set({
-          status: "in_progress",
-          actualCompletionDate: null,
-          reopenedAt: new Date(),
-          reopenedBy: _userId,
-          reopenReason: "Auto-reopened: adding cartons to meet production shortfall",
-        })
-        .where(eq(productionRuns.id, productionRunId));
-    }
-
-    const newCartons: (typeof cartons.$inferInsert)[] = [];
-
-    for (let i = 0; i < count; i++) {
-      newCartons.push({
-        id: createId(),
-        recipeId: run.recipeId,
-        productionRunId: run.id,
-        warehouseId: run.warehouseId,
-        sku: recipe.name,
-        capacity,
-        currentPacks: 0,
-        status: "PARTIAL" as CartonStatus,
-        zone: zone ?? null,
-      });
-    }
-
-    const created = await tx.insert(cartons).values(newCartons).returning();
-
-    // Re-calculate after insert (exclude archived/retired)
-    const [newExistingCount] = await tx
-      .select({ count: sql<number>`count(*)::int` })
-      .from(cartons)
-      .where(
-        and(
-          eq(cartons.productionRunId, productionRunId),
-          sql`${cartons.status} NOT IN ('ARCHIVED', 'RETIRED')`,
-        ),
-      );
-
-    let exceedsTarget = false;
-    if (targetUnits > 0 && capacity > 0) {
-      exceedsTarget = newExistingCount.count > targetCartons;
-    }
-
-    return {
-      created,
-      exceedsTarget,
-      totalCartons: newExistingCount.count,
-      shortfallCartons: Math.max(0, targetCartons - newExistingCount.count),
-    };
+    const [allocation] = await tx.select().from(packagingAllocations).where(eq(packagingAllocations.id, packagingAllocationId)).for("update");
+    if (!allocation) throw new Error("Packaging allocation not found");
+    if (allocation.status !== "completed") throw new BatchClosedError("Complete packaging before adding replacement carton records");
+    const recipe = await repo.findRecipeById(allocation.recipeId, tx);
+    const capacity = allocation.formatSnapshot
+      ? allocation.formatSnapshot.usesCartons ? allocation.formatSnapshot.containersPerCarton : 0
+      : recipe?.cartonPackagingId ? recipe.containersPerCarton ?? 0 : 0;
+    if (!recipe || capacity <= 0) throw new Error("Recipe has no carton packaging configured");
+    if (!Number.isInteger(count) || count <= 0) throw new Error("Carton count must be a positive whole number");
+    const [existing] = await tx.select({ count: sql<number>`count(*)::int` }).from(cartons)
+      .where(and(eq(cartons.packagingAllocationId, allocation.id), sql`${cartons.status} NOT IN ('ARCHIVED', 'RETIRED')`));
+    const targetCartons = allocation.packingReceiptId
+      ? (allocation.fullCartonsRecorded ?? 0) + Number((allocation.partialPacksRecorded ?? 0) > 0)
+      : Math.ceil((allocation.completedContainers ?? 0) / capacity);
+    const shortfall = Math.max(0, targetCartons - existing.count);
+    if (count > shortfall) throw new BatchClosedError("Additional cartons exceed the received allocation's carton count");
+    const created = await tx.insert(cartons).values(Array.from({ length: count }, () => ({
+      recipeId: recipe.id, packagingAllocationId: allocation.id, warehouseId: allocation.warehouseId,
+      sku: recipe.name, capacity, currentPacks: 0, status: "PARTIAL" as const, zone: zone ?? null,
+    }))).returning();
+    return { created, exceedsTarget: false, totalCartons: existing.count + count, shortfallCartons: shortfall - count };
   });
 }
 
@@ -679,17 +613,13 @@ export async function transferPacks(
   userId: string,
 ) {
   return db.transaction(async (tx) => {
-    const sortedIds = [sourceCartonId, destinationCartonId].sort();
-    const [source, destination] = await tx
-      .select()
-      .from(cartons)
-      .where(inArray(cartons.id, sortedIds))
-      .for("update");
-
-    if (!source || source.id !== sourceCartonId)
-      throw new CartonNotFoundError(sourceCartonId);
-    if (!destination || destination.id !== destinationCartonId)
-      throw new CartonNotFoundError(destinationCartonId);
+    if (sourceCartonId === destinationCartonId) throw new Error("Source and destination must be different cartons");
+    const locked = await repo.findCartonsByIdsForUpdate([sourceCartonId, destinationCartonId], tx);
+    const source = locked.find(carton => carton.id === sourceCartonId);
+    const destination = locked.find(carton => carton.id === destinationCartonId);
+    if (!source) throw new CartonNotFoundError(sourceCartonId);
+    if (!destination) throw new CartonNotFoundError(destinationCartonId);
+    if (source.recipeId !== destination.recipeId) throw new Error("Cannot transfer across different recipes");
 
     assertCartonIsEditable(source);
     assertCartonIsEditable(destination);
@@ -728,6 +658,7 @@ export async function transferPacks(
       id: createId(),
       cartonId: sourceCartonId,
       batchId: source.productionRunId,
+      packagingAllocationId: source.packagingAllocationId,
       sku: source.sku,
       type: "TRANSFER_OUT" as AdjustmentType,
       packsBefore: source.currentPacks,
@@ -760,6 +691,7 @@ export async function transferPacks(
       id: createId(),
       cartonId: destinationCartonId,
       batchId: destination.productionRunId,
+      packagingAllocationId: destination.packagingAllocationId,
       sku: destination.sku,
       type: "TRANSFER_IN" as AdjustmentType,
       packsBefore: destination.currentPacks,
@@ -771,6 +703,10 @@ export async function transferPacks(
       performedAt: new Date(),
     });
 
+    if (source.warehouseId !== destination.warehouseId) {
+      const value = await adjustCartonStock(tx, source, -packCount, userId, source.id);
+      await adjustCartonStock(tx, destination, packCount, userId, destination.id, undefined, value);
+    }
     return { source: { id: sourceCartonId, packsAfter: sourcePacksAfter }, destination: updatedDest };
   });
 }
@@ -817,6 +753,7 @@ export async function applyQcHold(
       id: createId(),
       cartonId,
       batchId: carton.productionRunId,
+      packagingAllocationId: carton.packagingAllocationId,
       sku: carton.sku,
       type: "QC_HOLD_APPLIED" as AdjustmentType,
       packsBefore: carton.currentPacks,
@@ -850,7 +787,8 @@ export async function releaseQcHold(
     }
 
     if (outcome === "CLEARED") {
-      const restoredStatus = carton.preHoldStatus ?? "PARTIAL";
+      const restoredStatus = carton.preHoldStatus === "SEALED" && carton.currentPacks === carton.capacity
+        ? "SEALED" : deriveCartonStatus(carton.currentPacks, carton.capacity);
       const [updated] = await tx
         .update(cartons)
         .set({
@@ -869,6 +807,7 @@ export async function releaseQcHold(
         id: createId(),
         cartonId,
         batchId: carton.productionRunId,
+      packagingAllocationId: carton.packagingAllocationId,
         sku: carton.sku,
         type: "QC_HOLD_CLEARED" as AdjustmentType,
         packsBefore: carton.currentPacks,
@@ -906,6 +845,7 @@ export async function releaseQcHold(
       id: createId(),
       cartonId,
       batchId: carton.productionRunId,
+      packagingAllocationId: carton.packagingAllocationId,
       sku: carton.sku,
       type: "QC_HOLD_CONDEMNED" as AdjustmentType,
       packsBefore: carton.currentPacks,
@@ -916,6 +856,7 @@ export async function releaseQcHold(
       performedAt: new Date(),
     });
 
+    await adjustCartonStock(tx, carton, -writeOffPacks, userId, carton.id);
     return { carton: updated };
   });
 }
@@ -925,70 +866,27 @@ export async function releaseQcHold(
 // ---------------------------------------------------------------------------
 
 export async function closeBatch(
-  productionRunId: string,
+  packagingAllocationId: string,
   userId: string,
   acknowledgeShortfall: boolean = false,
 ) {
-  return db.transaction(async (tx) => {
-    const run = await repo.findProductionRunByIdForUpdate(productionRunId, tx);
-
-    if (!["scheduled", "in_progress"].includes(run.status)) {
-      throw new BatchClosedError("Production run must be scheduled or in_progress to close.");
+  return db.transaction(async tx => {
+    const [current] = await tx.select().from(packagingAllocations).where(eq(packagingAllocations.id, packagingAllocationId)).for("no key update");
+    if (!current) throw new Error("Packaging allocation not found");
+    let allocation = current;
+    if (allocation.status === "in_progress") {
+      allocation = (await completePackagingAllocationCore(tx, allocation.id, userId,
+        acknowledgeShortfall ? "Shortfall acknowledged when closing allocation" : undefined)).allocation;
     }
-
-    const recipe = await repo.findRecipeById(run.recipeId, tx);
-    if (!recipe) throw new Error("Recipe not found");
-
-    const batchCartons = await repo.findCartonsByIdsForUpdate(
-      (await tx.select({ id: cartons.id }).from(cartons).where(eq(cartons.productionRunId, productionRunId))).map((c) => c.id),
-      tx,
-    );
-
-    const totalPacks = batchCartons.reduce(
-      (sum: number, c: any) => sum + (c.status !== "ARCHIVED" && c.status !== "RETIRED" ? c.currentPacks : 0),
-      0,
-    );
-    const targetPacks =
-      (recipe.containersPerCarton ?? 0) * (recipe.targetUnitsPerBatch ?? 0);
-    const yieldPct = targetPacks > 0 ? (totalPacks / targetPacks) * 100 : 100;
-
-    if (yieldPct < MIN_YIELD_THRESHOLD && !acknowledgeShortfall) {
-      throw new YieldShortfallError(yieldPct, MIN_YIELD_THRESHOLD);
-    }
-
-    // Seal all non-hold, non-dispatched, non-retired, non-archived cartons
-    for (const c of batchCartons) {
-      if (["PARTIAL", "COMPLETE"].includes(c.status)) {
-        await tx
-          .update(cartons)
-          .set({ status: "SEALED" as CartonStatus, updatedAt: new Date() })
-          .where(eq(cartons.id, c.id));
-      }
-    }
-
-    // Mark ON_HOLD cartons as still on hold (they stay)
-
-    await tx
-      .update(productionRuns)
-      .set({
-        status: "completed",
-        actualCompletionDate: new Date(),
-        closedBy: userId,
-      })
-      .where(eq(productionRuns.id, productionRunId));
-
-    const updatedRun = await repo.findProductionRunById(productionRunId);
-
-    return {
-      productionRun: updatedRun,
-      yieldPct,
-      totalPacks,
-      targetPacks,
-      cartonsSealed: batchCartons.filter((c: any) =>
-        ["PARTIAL", "COMPLETE"].includes(c.status),
-      ).length,
-      cartonsOnHold: batchCartons.filter((c: any) => c.status === "ON_HOLD").length,
-    };
+    if (allocation.status !== "completed") throw new BatchClosedError("Allocation must be in progress or completed to close carton tracking");
+    const ids = await tx.select({ id: cartons.id }).from(cartons).where(eq(cartons.packagingAllocationId, allocation.id));
+    const locked = await repo.findCartonsByIdsForUpdate(ids.map(carton => carton.id), tx);
+    const full = locked.filter(carton => carton.status === "COMPLETE" && carton.currentPacks === carton.capacity);
+    for (const carton of full) await tx.update(cartons).set({ status: "SEALED", updatedAt: new Date() }).where(eq(cartons.id, carton.id));
+    return { productionRun: allocation,
+      yieldPct: allocation.targetContainers > 0 ? (allocation.completedContainers ?? 0) / allocation.targetContainers * 100 : 100,
+      totalPacks: allocation.completedContainers, targetPacks: allocation.targetContainers,
+      cartonsSealed: full.length, cartonsOnHold: locked.filter(carton => carton.status === "ON_HOLD").length };
   });
 }
 
@@ -997,67 +895,28 @@ export async function closeBatch(
 // ---------------------------------------------------------------------------
 
 export async function reopenBatch(
-  productionRunId: string,
+  packagingAllocationId: string,
   userId: string,
   reopenReason: string,
   force: boolean = false,
 ) {
-  return db.transaction(async (tx) => {
-    const run = await repo.findProductionRunByIdForUpdate(productionRunId, tx);
-
-    if (run.status !== "completed") {
-      throw new BatchNotClosedError("Production run is not closed. Only completed runs can be reopened.");
+  return db.transaction(async tx => {
+    const [allocation] = await tx.select().from(packagingAllocations).where(eq(packagingAllocations.id, packagingAllocationId)).for("no key update");
+    if (!allocation) throw new Error("Packaging allocation not found");
+    if (allocation.status !== "completed") throw new BatchNotClosedError("Only completed allocations have received carton tracking to reopen");
+    const ids = await tx.select({ id: cartons.id }).from(cartons).where(eq(cartons.packagingAllocationId, allocation.id));
+    const locked = await repo.findCartonsByIdsForUpdate(ids.map(carton => carton.id), tx);
+    const dispatched = locked.filter(carton => carton.status === "DISPATCHED");
+    if (dispatched.length && !force) return { requiresForce: true, dispatchedCartonIds: dispatched.map(carton => carton.id),
+      message: "Some cartons are dispatched. Confirm to unseal the remaining cartons." };
+    const sealed = locked.filter(carton => carton.status === "SEALED");
+    for (const carton of sealed) {
+      await tx.update(cartons).set({ status: deriveCartonStatus(carton.currentPacks, carton.capacity), updatedAt: new Date() }).where(eq(cartons.id, carton.id));
+      await tx.insert(adjustmentLog).values({ cartonId: carton.id, packagingAllocationId: allocation.id,
+        sku: carton.sku, type: "UNSEALED", packsBefore: carton.currentPacks, delta: 0,
+        packsAfter: carton.currentPacks, reason: reopenReason, performedBy: userId });
     }
-
-    const batchCartons = await repo.findCartonsByIdsForUpdate(
-      (await tx.select({ id: cartons.id }).from(cartons).where(eq(cartons.productionRunId, productionRunId))).map((c: any) => c.id),
-      tx,
-    );
-
-    const dispatchedCartons = batchCartons.filter(
-      (c: any) => c.status === "DISPATCHED",
-    );
-
-    if (dispatchedCartons.length > 0 && !force) {
-      return {
-        requiresForce: true,
-        dispatchedCartonIds: dispatchedCartons.map((c: any) => c.id),
-        message:
-          "Some cartons are already dispatched. Re-submit with force=true to proceed (dispatched cartons will remain locked).",
-      };
-    }
-
-    // Unseal all SEALED cartons back to their derived status
-    for (const c of batchCartons) {
-      if (c.status === "SEALED") {
-        const derivedStatus =
-          c.currentPacks === c.capacity ? "COMPLETE" : "PARTIAL";
-        await tx
-          .update(cartons)
-          .set({
-            status: derivedStatus as CartonStatus,
-            updatedAt: new Date(),
-          })
-          .where(eq(cartons.id, c.id));
-      }
-    }
-
-    await tx
-      .update(productionRuns)
-      .set({
-        status: "in_progress",
-        reopenedAt: new Date(),
-        reopenedBy: userId,
-        reopenReason,
-      })
-      .where(eq(productionRuns.id, productionRunId));
-
-    const updatedRun = await repo.findProductionRunById(productionRunId);
-
-    return {
-      productionRun: updatedRun,
-      reopenedCartons: batchCartons.filter((c: any) => c.status === "SEALED").length,
-      lockedDispatchedCartons: dispatchedCartons.length,
-    };
+    // Receiving the allocation is irreversible; unsealing cartons must not enable a second receipt.
+    return { productionRun: allocation, reopenedCartons: sealed.length, lockedDispatchedCartons: dispatched.length };
   });
 }

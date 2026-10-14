@@ -20,11 +20,7 @@ export const closeBatchFn = createServerFn()
 
     const result = await service.closeBatch(data.productionRunId, context.session.user.id, data.acknowledgeShortfall);
 
-    const run = await db.query.productionRuns.findFirst({
-      where: (pr, { eq }) => eq(pr.id, data.productionRunId),
-      columns: { batchId: true }
-    });
-    const batchLabel = run?.batchId || data.productionRunId;
+    const batchLabel = data.productionRunId;
 
     logActivityQuiet({
       module: "manufacturing",

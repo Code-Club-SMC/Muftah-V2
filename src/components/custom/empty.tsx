@@ -1,4 +1,5 @@
 import { type LucideIcon, PlusIcon } from "lucide-react";
+import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Empty,
@@ -10,12 +11,13 @@ import {
 } from "@/components/ui/empty";
 
 type Props = {
-  icon: LucideIcon | React.ElementType;
+  icon?: LucideIcon | React.ElementType;
   title: string;
   description: string;
   ctaText?: string;
   onAddChange?: (open: boolean) => void;
   className?: string;
+  action?: ReactNode;
 };
 
 export function GenericEmpty({
@@ -25,15 +27,14 @@ export function GenericEmpty({
   ctaText,
   onAddChange,
   className,
+  action,
 }: Props) {
   return (
     <Empty
       className={`flex-1 h-full flex flex-col items-center justify-center ${className}`}
     >
       <EmptyHeader className="space-y-2">
-        <EmptyMedia variant="default">
-          <Icon className="" />
-        </EmptyMedia>
+        {Icon && <EmptyMedia variant="default"><Icon className="" /></EmptyMedia>}
         <EmptyTitle>{title}</EmptyTitle>
         <EmptyDescription>{description}</EmptyDescription>
       </EmptyHeader>
@@ -45,6 +46,7 @@ export function GenericEmpty({
           </Button>
         </EmptyContent>
       )}
+      {action && <EmptyContent className="flex-row justify-center">{action}</EmptyContent>}
     </Empty>
   );
 }

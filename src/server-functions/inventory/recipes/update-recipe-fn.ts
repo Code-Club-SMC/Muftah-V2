@@ -2,28 +2,51 @@ import { createServerFn } from "@tanstack/react-start";
 import { db } from "@/db";
 import {
   recipes,
-  recipeIngredients,
+  finishedGoodsStock,
   recipePackaging,
-  chemicals,
   packagingMaterials,
 } from "@/db/schemas/inventory-schema";
 import { requireManufacturingManageMiddleware } from "@/lib/middlewares";
 import { updateRecipeSchema } from "@/lib/validators/validators";
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, gt, inArray, or } from "drizzle-orm";
 import { getPlannedPackagingQuantity, normalizePackagingUsageBasis } from "@/lib/recipe-packaging";
+import { getPackagingTarget } from "@/lib/production/packaging-quantity";
+import { formulas, packagingAllocations } from "@/db/schemas/production-schema";
 
-export const updateRecipeFn = createServerFn()
+export const updateRecipeFn = createServerFn({ method: "POST" })
   .middleware([requireManufacturingManageMiddleware])
   .inputValidator(updateRecipeSchema)
   .handler(async ({ data }) => {
     return await db.transaction(async (tx) => {
-      // 1. Get packaging materials to calculate costs
+      const [existing] = await tx.select().from(recipes).where(eq(recipes.id, data.id)).for("update");
+      if (!existing) throw new Error("Packaging Format not found");
+      const allocation = await tx.query.packagingAllocations.findFirst({
+        where: (allocation, { and, eq, ne }) => and(eq(allocation.recipeId, data.id), ne(allocation.status, "cancelled")),
+      });
+      if (allocation) throw new Error("This packaging format has packing jobs. Create a new packaging format to change its packaging definition");
+      const stock = await tx.query.finishedGoodsStock.findFirst({ where: and(eq(finishedGoodsStock.recipeId, data.id), or(gt(finishedGoodsStock.quantityCartons, 0), gt(finishedGoodsStock.quantityContainers, 0), gt(finishedGoodsStock.quantityOutsidePacks, 0))) });
+      if (stock) throw new Error("This packaging format has finished stock. Create a new format to change its packaging definition");
+      const formulaId = data.formulaId ?? existing.formulaId;
+      const [linkedFormula] = await tx.select().from(formulas).where(eq(formulas.id, formulaId)).for("share");
+      if (!linkedFormula || !linkedFormula.isActive || linkedFormula.productId !== data.productId) {
+        throw new Error("An active mixing formula for the same product is required");
+      }
+      // The stored formula is authoritative for bulk compatibility.
+      updateRecipeSchema.parse({ ...data, batchSize: linkedFormula.batchSize, batchUnit: linkedFormula.batchUnit });
+      const targetUnits = getPackagingTarget(linkedFormula.batchSize, data.fillAmount, data.fillUnit, linkedFormula.batchUnit);
+      if (!Number.isSafeInteger(targetUnits) || targetUnits > 2_147_483_647) {
+        throw new Error("The number of packs per batch exceeds the supported limit");
+      }
+      if (targetUnits < 1) throw new Error("Packaging Format fill exceeds the mixing formula batch size");
+      const usesCartons = !!data.cartonPackagingId && data.cartonPackagingId !== "_none";
+      // Get packaging materials to calculate costs
       const containerPackaging = await tx
         .select()
         .from(packagingMaterials)
         .where(eq(packagingMaterials.id, data.containerPackagingId))
         .then((res) => res[0]);
 
+      if (!containerPackaging) throw new Error("Container packaging material not found");
       let cartonPackaging = null;
       if (data.cartonPackagingId && data.cartonPackagingId !== "_none") {
         cartonPackaging = await tx
@@ -33,28 +56,13 @@ export const updateRecipeFn = createServerFn()
           .then((res) => res[0]);
       }
 
-      // 2. Get Chemicals used in ingredients to calculate costs
-      const chemicalIds = data.ingredients.map((ing) => ing.chemicalId);
-      const chemicalsData =
-        chemicalIds.length > 0
-          ? await tx
-            .select()
-            .from(chemicals)
-            .where(inArray(chemicals.id, chemicalIds))
-          : [];
+      if (usesCartons && !cartonPackaging) throw new Error("Carton packaging material not found");
 
-      // 3. Calculate costs
+      // Calculate costs
       
-      const targetUnits = data.targetUnitsPerBatch || 0;
 
       // Calculate ingredients cost
-      const ingredientsCost = data.ingredients.reduce((total, ing) => {
-        const material = chemicalsData.find((m) => m.id === ing.chemicalId);
-        if (!material) return total;
-        const costPerUnit = parseFloat(material.costPerUnit?.toString() || "0");
-        const quantity = parseFloat(ing.quantityPerBatch || "0");
-        return total + costPerUnit * quantity;
-      }, 0);
+      const ingredientsCost = Number(linkedFormula?.estimatedIngredientsCost ?? 0);
 
       // Calculate packaging cost (containers)
       const containerCost = parseFloat(
@@ -88,7 +96,7 @@ export const updateRecipeFn = createServerFn()
             const material = additionalPackagingData.find(
               (m) => m.id === pkg.packagingMaterialId,
             );
-            if (!material) return total;
+            if (!material) throw new Error("Additional packaging material not found");
             const costPerUnit = parseFloat(
               material.costPerUnit?.toString() || "0",
             );
@@ -115,9 +123,10 @@ export const updateRecipeFn = createServerFn()
         .update(recipes)
         .set({
           productId: data.productId,
+          formulaId,
           name: data.name,
-          batchSize: data.batchSize,
-          batchUnit: data.batchUnit,
+          batchSize: linkedFormula.batchSize,
+          batchUnit: linkedFormula.batchUnit,
           targetUnitsPerBatch: targetUnits,
           fillAmount: data.fillAmount || null,
           fillUnit: data.fillUnit || null,
@@ -136,20 +145,6 @@ export const updateRecipeFn = createServerFn()
         })
         .where(eq(recipes.id, data.id))
         .returning();
-
-      // 5. Update recipe ingredients (Delete and recreate)
-      await tx
-        .delete(recipeIngredients)
-        .where(eq(recipeIngredients.recipeId, data.id));
-      if (data.ingredients.length > 0) {
-        await tx.insert(recipeIngredients).values(
-          data.ingredients.map((ing) => ({
-            recipeId: data.id,
-            chemicalId: ing.chemicalId,
-            quantityPerBatch: ing.quantityPerBatch,
-          })),
-        );
-      }
 
       // 6. Update additional packaging (Delete and recreate)
       await tx

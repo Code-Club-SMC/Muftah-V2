@@ -62,17 +62,32 @@ export const navigations: NavigationItem[] = [
     ],
   },
   {
-    title: "Manufacturing",
+    title: "Production",
     url: "/manufacturing",
     icon: ManufacturingIcon,
     items: [
       {
-        title: "Production Run",
-        url: "/manufacturing/productions",
+        title: "Mixing Batches",
+        url: "/manufacturing/mixing",
         icon: ProductionRunIcon,
       },
       {
-        title: "Recipes",
+        title: "Packing records",
+        url: "/manufacturing/packaging",
+        icon: FactoryFloorIcon,
+      },
+      {
+        title: "Production QC",
+        url: "/manufacturing/qc",
+        icon: ReportsIcon,
+      },
+      {
+        title: "Mixing Formulas",
+        url: "/manufacturing/formulas",
+        icon: RecipesIcon,
+      },
+      {
+        title: "Packaging Formats",
         url: "/manufacturing/recipes",
         icon: RecipesIcon,
       },
@@ -232,7 +247,7 @@ export const navigations: NavigationItem[] = [
     ],
   },
   {
-    title: "Operator Interface",
+    title: "Production Workstation",
     url: "/operator",
     icon: OperatorIcon,
   },

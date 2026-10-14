@@ -54,7 +54,6 @@ DB_NAME="${POSTGRES_DB:-main}"
 DB_USER="${POSTGRES_USER:-postgres}"
 DB_PASS="${POSTGRES_PASSWORD:-postgres}"
 DB_PORT="${POSTGRES_PORT:-5433}"
-CONTAINER_NAME="titan-new-postgres-1"
 
 # Runtime flags
 FORCE_MODE=false
@@ -664,15 +663,44 @@ check_env_file() {
     return 0
 }
 
-# Check if psql is available (optional but useful)
-check_psql_client() {
-    if command -v psql &> /dev/null; then
-        log_verbose "PostgreSQL client (psql) available"
-        return 0
+# Use the reset's local database for generation, migration and seeding, even
+# when .env or the parent shell specifies another DATABASE_URL.
+configure_database_target() {
+    # Keep Compose's container credentials and port aligned with these values;
+    # inherited .env settings must not select a different reset database.
+    export POSTGRES_DB="$DB_NAME" POSTGRES_USER="$DB_USER" \
+        POSTGRES_PASSWORD="$DB_PASS" POSTGRES_PORT="$DB_PORT"
+    local runtime
+    if command -v node > /dev/null 2>&1; then
+        runtime=node
+    elif command -v bun > /dev/null 2>&1; then
+        runtime=bun
     else
-        log_verbose "psql client not found - will skip direct DB tests"
+        log_error "Node.js or Bun is required to configure the reset database"
         return 1
     fi
+
+    if ! DATABASE_URL=$(TITAN_DB_USER="$DB_USER" TITAN_DB_PASS="$DB_PASS" \
+        TITAN_DB_NAME="$DB_NAME" TITAN_DB_PORT="$DB_PORT" "$runtime" -e '
+            const url = new URL("postgresql://127.0.0.1");
+            url.username = encodeURIComponent(process.env.TITAN_DB_USER);
+            url.password = encodeURIComponent(process.env.TITAN_DB_PASS);
+            url.port = process.env.TITAN_DB_PORT;
+            url.pathname = "/" + encodeURIComponent(process.env.TITAN_DB_NAME);
+            process.stdout.write(url.toString());
+        '); then
+        log_error "Could not configure the reset database connection"
+        return 1
+    fi
+    export DATABASE_URL
+    log_info "Reset database: $DB_NAME on 127.0.0.1:$DB_PORT"
+}
+
+# The PostgreSQL image includes psql, so a host psql installation is unnecessary.
+# Stop on SQL errors and ignore any personal psql startup configuration.
+db_query() {
+    docker compose -f "$DOCKER_COMPOSE_FILE" exec -T -e PGPASSWORD="$DB_PASS" \
+        postgres psql -X -v ON_ERROR_STOP=1 -U "$DB_USER" -d "$DB_NAME" "$@"
 }
 
 # ============================================================================
@@ -747,27 +775,13 @@ stop_containers() {
 drop_all_tables() {
     log_step "Dropping all database objects"
     
-    if ! check_psql_client; then
-        log_error "psql client required to drop tables"
-        log_info "Please install postgresql-client package"
-        exit 1
+    # A full reset must discard application objects and Drizzle's history
+    # together, including when public is already empty but history remains.
+    if ! db_query --single-transaction -c \
+        "DROP SCHEMA IF EXISTS public CASCADE; DROP SCHEMA IF EXISTS drizzle CASCADE; CREATE SCHEMA public;"; then
+        log_error "Database cleanup failed; migrations will not run"
+        return 1
     fi
-    
-    log_info "Generating DROP script..."
-    
-    # Generate and execute DROP statements for all tables
-    PGPASSWORD="$DB_PASS" psql -h localhost -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -t -c \
-        "SELECT 'DROP TABLE IF EXISTS \"' || tablename || '\" CASCADE;' FROM pg_tables WHERE schemaname = 'public';" | \
-        PGPASSWORD="$DB_PASS" psql -h localhost -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" > /dev/null 2>&1
-    
-    # Drop all custom types
-    PGPASSWORD="$DB_PASS" psql -h localhost -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -t -c \
-        "SELECT 'DROP TYPE IF EXISTS \"' || typname || '\" CASCADE;' FROM pg_type WHERE typtype = 'e';" | \
-        PGPASSWORD="$DB_PASS" psql -h localhost -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" > /dev/null 2>&1
-    
-    # Drop Drizzle migrations table if exists
-    PGPASSWORD="$DB_PASS" psql -h localhost -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -c \
-        "DROP TABLE IF EXISTS \"__drizzle_migrations\" CASCADE;" > /dev/null 2>&1
     
     log_success "All database objects dropped"
 }
@@ -789,39 +803,12 @@ destroy_volumes() {
     docker compose -f "$DOCKER_COMPOSE_FILE" down -v --remove-orphans > /dev/null 2>&1
     log_success "All volumes destroyed"
     
-    # Cleanup radioactive fallout
-    log_info "Purging dangling volumes..."
-    docker volume prune -f > /dev/null 2>&1
-    log_success "Radioactive waste cleaned"
-    
     # Start fresh and drop tables (double nuke)
     log_info "Starting fresh database for table cleanup..."
     docker compose -f "$DOCKER_COMPOSE_FILE" up -d > /dev/null 2>&1
     
-    # Wait for DB
-    local max_retries=15
-    local retry_count=0
-    while [ $retry_count -lt $max_retries ]; do
-        if docker exec "$CONTAINER_NAME" pg_isready -U "$DB_USER" > /dev/null 2>&1; then
-            break
-        fi
-        retry_count=$((retry_count + 1))
-        sleep 1
-    done
-    
-    # Drop all tables if any exist
-    if check_psql_client; then
-        local table_count
-        table_count=$(PGPASSWORD="$DB_PASS" psql -h localhost -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -t -c \
-            "SELECT COUNT(*) FROM pg_tables WHERE schemaname = 'public';" 2>/dev/null | tr -d ' ')
-        
-        if [ "$table_count" != "0" ] && [ -n "$table_count" ]; then
-            log_warn "Found $table_count existing tables - dropping them all..."
-            drop_all_tables
-        else
-            log_info "Database is already clean"
-        fi
-    fi
+    wait_for_db
+    drop_all_tables
     
     # Stop again for clean restart
     docker compose -f "$DOCKER_COMPOSE_FILE" down > /dev/null 2>&1
@@ -844,12 +831,9 @@ wait_for_db() {
     local max_retries=30
     local retry_count=0
     
-    # Get actual container name
-    local actual_container
-    actual_container=$(docker compose -f "$DOCKER_COMPOSE_FILE" ps -q postgres 2>/dev/null | head -1)
-    
     while [ $retry_count -lt $max_retries ]; do
-        if docker exec "$actual_container" pg_isready -U "$DB_USER" > /dev/null 2>&1 2>&1; then
+        if docker compose -f "$DOCKER_COMPOSE_FILE" exec -T postgres \
+            pg_isready -h 127.0.0.1 -U "$DB_USER" -d "$DB_NAME" > /dev/null 2>&1; then
             log_success "Database is operational"
             return 0
         fi
@@ -868,16 +852,11 @@ wait_for_db() {
 verify_connection() {
     log_step "Validating database connectivity"
     
-    if check_psql_client; then
-        if PGPASSWORD="$DB_PASS" psql -h localhost -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -c "SELECT 1;" > /dev/null 2>&1; then
-            log_success "Connection verified - database responding"
-        else
-            log_error "Connection test failed"
-            exit 1
-        fi
-    else
-        log_info "Skipping direct connection test (psql not available)"
+    if ! db_query -c "SELECT 1;" > /dev/null; then
+        log_error "Connection test failed"
+        return 1
     fi
+    log_success "Connection verified - database responding"
 }
 
 # Generate migrations if needed
@@ -908,18 +887,50 @@ generate_migrations() {
 # Apply migrations
 run_migrations() {
     log_step "Applying database migrations"
+    configure_database_target || return 1
     
     cd "$PROJECT_ROOT"
     if command -v bun &> /dev/null; then
-        bun run db:migrate
+        if ! bun run db:migrate; then
+            log_error "Migration command failed"
+            return 1
+        fi
     elif command -v npx &> /dev/null; then
-        npx drizzle-kit migrate
+        if ! npx drizzle-kit migrate; then
+            log_error "Migration command failed"
+            return 1
+        fi
     else
         log_error "Package manager not found (bun/npx)"
         exit 1
     fi
     
-    log_success "All migrations applied successfully"
+    verify_migrations || return 1
+    log_success "All migrations applied and application tables verified"
+}
+
+verify_migrations() {
+    local table_count missing_tables
+    if ! table_count=$(db_query -At -c "SELECT count(*) FROM pg_tables WHERE schemaname = 'public';"); then
+        log_error "Could not verify migrated tables"
+        return 1
+    fi
+    if [[ ! "$table_count" =~ ^[0-9]+$ ]] || [[ "$table_count" == "0" ]]; then
+        log_error "Migration command finished but no application tables exist"
+        return 1
+    fi
+    if ! missing_tables=$(db_query -At -c "
+        SELECT string_agg(name, ', ' ORDER BY name)
+        FROM (VALUES ('user'), ('warehouses'), ('formulas'), ('mixing_runs'), ('packaging_allocations')) AS required(name)
+        WHERE to_regclass(format('public.%I', name)) IS NULL;"); then
+        log_error "Could not verify required application tables"
+        return 1
+    fi
+    if [[ -n "$missing_tables" ]]; then
+        log_error "Migration verification failed; missing tables: $missing_tables"
+        return 1
+    fi
+    log_info "Verified $table_count application tables"
 }
 
 # Seed database (optional)
@@ -1075,6 +1086,7 @@ main() {
     check_docker
     check_docker_compose
     check_env_file || true
+    configure_database_target
     
     # Safety confirmation
     confirm_destruction
@@ -1102,4 +1114,6 @@ main() {
 }
 
 # Execute main function
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    main "$@"
+fi

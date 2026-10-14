@@ -22,6 +22,8 @@ export interface KpiData {
   totalRevenue: number;
   invoiceCount: number;
   activeProductionRuns: number;
+  activeMixingRuns: number;
+  activePackagingAllocations: number;
   completedProductionRuns: number;
   totalCartonsProduced: number;
   rawStockValue: number;
@@ -69,7 +71,7 @@ export function DashboardKpiCards({ data }: { data: KpiData }) {
           Illustration={IsoBottlingLine}
           tooltip={
             data.activeProductionRuns > 0 || data.completedProductionRuns > 0
-              ? `${data.activeProductionRuns} active · ${data.completedProductionRuns} completed`
+              ? `${data.activeProductionRuns} active (${data.activeMixingRuns} mixing, ${data.activePackagingAllocations} packaging) · ${data.completedProductionRuns} completed`
               : undefined
           }
         />

@@ -1,0 +1,25 @@
+--- src/server-functions/manufacturing/packaging/get-packaging-allocations-fn.ts
++++ src/server-functions/manufacturing/packaging/get-packaging-allocations-fn.ts
+@@ -8,11 +8,17 @@
+ 
+ export const getPackagingAllocationsFn = createServerFn()
+   .middleware([requireManufacturingViewMiddleware])
+-  .inputValidator(z.object({ mixingRunId: z.string().optional() }).optional())
++  .inputValidator(z.object({ mixingRunId: z.string().optional(), status: z.string().optional() }).optional())
+   .handler(async ({ data, context }) => {
+     return await db.transaction(async (tx) => {
+       let query = tx.select().from(packagingAllocations);
++      let conditions = [];
+       if (data?.mixingRunId) {
+-        query = query.where(eq(packagingAllocations.mixingRunId, data.mixingRunId)) as any;
++        conditions.push(eq(packagingAllocations.mixingRunId, data.mixingRunId));
++      }
++      if (data?.status) {
++        conditions.push(eq(packagingAllocations.status, data.status as any));
++      }
++      if (conditions.length > 0) {
++        const { and } = await import("drizzle-orm");
++        query = query.where(and(...conditions)) as any;
+       }
+       return { allocations: await query };
+     });

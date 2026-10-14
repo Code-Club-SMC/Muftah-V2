@@ -1,3 +1,4 @@
+import { reportDateBounds } from "./report-dates";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -82,29 +83,24 @@ describe("P&L reporting formulas", () => {
 
 	it("builds a previous comparison period with equal duration", () => {
 		const current = {
-			fromDate: new Date(2024, 4, 1),
-			toDate: new Date(2024, 4, 31, 23, 59, 59, 999),
+			fromDate: new Date("2024-04-30T19:00:00Z"),
+			toDate: new Date("2024-05-31T18:59:59.999Z"),
 		};
 
 		const previous = createPreviousRange(current);
 
-		expect(previous.fromDate.getFullYear()).toBe(2024);
-		expect(previous.fromDate.getMonth()).toBe(3);
-		expect(previous.fromDate.getDate()).toBe(1);
-		expect(previous.toDate.getFullYear()).toBe(2024);
-		expect(previous.toDate.getMonth()).toBe(3);
-		expect(previous.toDate.getDate()).toBe(30);
+		expect(previous).toEqual(reportDateBounds({ dateFrom: "2024-04-01", dateTo: "2024-04-30" }));
 	});
 
 	it("uses month labels for like-for-like monthly comparisons", () => {
 		const label = createComparisonLabel(
 			{
-				fromDate: new Date(2024, 4, 1),
-				toDate: new Date(2024, 4, 31, 23, 59, 59, 999),
+				fromDate: new Date("2024-04-30T19:00:00Z"),
+				toDate: new Date("2024-05-31T18:59:59.999Z"),
 			},
 			{
-				fromDate: new Date(2024, 3, 1),
-				toDate: new Date(2024, 3, 30, 23, 59, 59, 999),
+				fromDate: new Date("2024-03-31T19:00:00Z"),
+				toDate: new Date("2024-04-30T18:59:59.999Z"),
 			},
 		);
 
@@ -268,11 +264,11 @@ describe("P&L reporting UI contract", () => {
 			expect(recipeRouteSource).toContain("Current Inventory WAC / Pack");
 			expect(recipeRouteSource).toContain("currentInventoryWacPerPack");
 			expect(recipeRouteSource).toContain("not the current inventory WAC");
-			expect(recipeRouteSource).toContain("formatPKRPrecise(data.summary.cogsPerUnit)");
+			expect(recipeRouteSource).toContain("formatReportMoney(data.summary.cogsPerUnit)");
 			expect(recipeRouteSource).toContain(
-				"formatPKRPrecise(data.currentInventoryWacPerPack)",
+				"formatReportMoney(data.currentInventoryWacPerPack)",
 			);
-			expect(costTrendSource).toContain("formatPKRPrecise(d.avgCostPerUnit)");
+			expect(costTrendSource).toContain("formatReportMoney(d.avgCostPerUnit)");
 		expect(recipeRouteSource).not.toContain("Contribution");
 		expect(recipeRouteSource).not.toContain("Cost Composition");
 	});

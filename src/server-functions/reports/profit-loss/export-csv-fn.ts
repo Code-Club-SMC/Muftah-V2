@@ -1,19 +1,24 @@
+import { reportDateKey } from "@/lib/report-dates";
+import { createReportDateRange } from "./reporting-math";
 import { createServerFn } from "@tanstack/react-start";
 import { and, eq, gte, lte, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { products, recipes } from "@/db/schemas/inventory-schema";
 import { requireReportsViewMiddleware } from "@/lib/middlewares";
-import { REPORT_SOURCES } from "@/lib/report-source";
+import { formatReportMoney } from "@/lib/report-format";
+import { formatReportTimestamp } from "@/lib/report-dates";
+import { reportSourceLabel, REPORT_SOURCES } from "@/lib/report-source";
 import { customers, invoiceItems, invoices } from "@/db/schemas/sales-schema";
 import { getCompanyReportData } from "./company-reporting-core";
 import { fetchScopedInvoiceRows } from "./reporting-core";
 
 function escapeCsv(value: string | number | null | undefined): string {
-  const str = String(value ?? "");
-  if (/^[+=@-]/.test(str)) return `"'${str}"`;
-  if (/[",\n\r]/.test(str)) return `"${str.replace(/"/g, '""')}"`;
-  return str;
+  let str = String(value ?? "");
+  // Preserve signed financial values; neutralize formula-leading text before CSV quoting.
+  if (/^[+=@-]/.test(str) && !/^-?\d[\d,]*(?:\.\d+)?$/.test(str))
+    str = "'" + str;
+  return /[",\n\r]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
 }
 
 export const exportPnlCsvFn = createServerFn()
@@ -32,11 +37,40 @@ export const exportPnlCsvFn = createServerFn()
       .parse(input),
   )
   .handler(async ({ data }) => {
-    const fromDate = data.dateFrom
-      ? new Date(data.dateFrom)
-      : new Date(new Date().getFullYear(), new Date().getMonth(), 1);
-    const toDate = data.dateTo ? new Date(data.dateTo) : new Date();
-    toDate.setHours(23, 59, 59, 999);
+    const { fromDate, toDate } = createReportDateRange(data);
+    const metadata = [
+      ["Application", "Titan ERP"],
+      ["Currency", "PKR"],
+      ["Date from", reportDateKey(fromDate)],
+      ["Date to", reportDateKey(toDate)],
+      ["Invoice Source", reportSourceLabel(data.source)],
+      [
+        "CSV detail basis",
+        "Invoice contribution rows; failed-batch losses are not included in scoped CSV direct profit.",
+      ],
+      [
+        "Scope",
+        data.recipeId
+          ? `Recipe ${data.recipeId}`
+          : data.productId
+            ? `Product ${data.productId}`
+            : "Company-wide",
+      ],
+      ["Generated", formatReportTimestamp(new Date())],
+      [
+        "Basis",
+        "Operational payment-based realized profitability. Product and recipe direct profit excludes shared company overhead.",
+      ],
+      ...(data.source !== "all"
+        ? [
+            [
+              "Source scope",
+              "Shared payroll, factory expenses, failed-batch losses, and wallet reconciliation are excluded from this invoice-source contribution.",
+            ],
+          ]
+        : []),
+      [],
+    ].map((row) => row.map(escapeCsv).join(","));
 
     if (!data.productId && !data.recipeId) {
       const report = await getCompanyReportData({
@@ -50,20 +84,23 @@ export const exportPnlCsvFn = createServerFn()
         ["Period", report.reportPeriod.label],
         ["Invoice Source", report.source],
         ["Status", report.status.label],
-        ["Collected Revenue", report.summary.totalRevenue.toFixed(2)],
-        ["COGS", report.summary.totalCogs.toFixed(2)],
-        ["Gross Profit", report.summary.grossProfit.toFixed(2)],
-        ["Invoice Expenses", report.summary.invoiceExpenses.toFixed(2)],
-        ["Payroll", report.summary.payroll.toFixed(2)],
-        ["Commissions", report.summary.commissions.toFixed(2)],
-        ["TA/DA", report.summary.tada.toFixed(2)],
-        ["General Expenses", report.summary.generalExpenses.toFixed(2)],
+        ["Collected Revenue", formatReportMoney(report.summary.totalRevenue)],
+        ["COGS", formatReportMoney(report.summary.totalCogs)],
+        ["Gross Profit", formatReportMoney(report.summary.grossProfit)],
+        ["Invoice Expenses", formatReportMoney(report.summary.invoiceExpenses)],
+        ["Payroll", formatReportMoney(report.summary.payroll)],
+        ["Commissions", formatReportMoney(report.summary.commissions)],
+        ["TA/DA", formatReportMoney(report.summary.tada)],
+        ["General Expenses", formatReportMoney(report.summary.generalExpenses)],
         [
           "Total Operating Expenses",
-          report.summary.totalOperatingExpenses.toFixed(2),
+          formatReportMoney(report.summary.totalOperatingExpenses),
         ],
-        ["Net Profit", report.summary.netProfit.toFixed(2)],
-        ["Wallet Movement", report.reconciliation.periodNetMovement.toFixed(2)],
+        ["Net Profit", formatReportMoney(report.summary.netProfit)],
+        [
+          "Wallet Movement",
+          formatReportMoney(report.reconciliation.periodNetMovement),
+        ],
         [],
       ];
 
@@ -86,21 +123,21 @@ export const exportPnlCsvFn = createServerFn()
       ];
 
       const lineRows = report.realizedLines.map((row) => [
-        escapeCsv(row.invoiceDate.toISOString().split("T")[0]),
-        escapeCsv(row.invoiceId),
-        escapeCsv(row.invoiceNumber),
-        escapeCsv(row.customerName),
-        escapeCsv(row.productName ?? "Unmapped Sales"),
-        escapeCsv(row.recipeName ?? ""),
-        escapeCsv(row.pack),
-        escapeCsv((row.realizedRatio * 100).toFixed(2)),
-        escapeCsv(row.paymentToDate.toFixed(2)),
-        escapeCsv(row.adjustedLineRevenue.toFixed(2)),
-        escapeCsv(row.adjustedLineCogs.toFixed(2)),
-        escapeCsv(row.realizedRevenue.toFixed(2)),
-        escapeCsv(row.realizedCogs.toFixed(2)),
-        escapeCsv(row.realizedInvoiceExpenses.toFixed(2)),
-        escapeCsv((row.realizedRevenue - row.realizedCogs).toFixed(2)),
+        reportDateKey(row.invoiceDate),
+        row.invoiceId,
+        row.invoiceNumber,
+        row.customerName,
+        row.productName ?? "Unmapped Sales",
+        row.recipeName ?? "",
+        row.pack,
+        (row.realizedRatio * 100).toFixed(2),
+        formatReportMoney(row.paymentToDate),
+        formatReportMoney(row.adjustedLineRevenue),
+        formatReportMoney(row.adjustedLineCogs),
+        formatReportMoney(row.realizedRevenue),
+        formatReportMoney(row.realizedCogs),
+        formatReportMoney(row.realizedInvoiceExpenses),
+        formatReportMoney(row.realizedRevenue - row.realizedCogs),
       ]);
 
       const reconciliationRows = [
@@ -108,23 +145,24 @@ export const exportPnlCsvFn = createServerFn()
         ["Finance Reconciliation"],
         ["Label", "Amount", "Direction", "Description"],
         ...report.reconciliation.bridgeRows.map((row) => [
-          escapeCsv(row.label),
-          escapeCsv(row.amount.toFixed(2)),
-          escapeCsv(row.direction),
-          escapeCsv(row.description),
+          row.label,
+          formatReportMoney(row.amount),
+          row.direction,
+          row.description,
         ]),
       ];
 
       const csv = [
+        ...metadata,
         ...headerRows.map((row) => row.map(escapeCsv).join(",")),
         lineHeaders.join(","),
-        ...lineRows.map((row) => row.join(",")),
+        ...lineRows.map((row) => row.map(escapeCsv).join(",")),
         ...reconciliationRows.map((row) => row.map(escapeCsv).join(",")),
       ].join("\n");
 
       return {
         csv,
-        filename: `company-profit-loss-${fromDate.toISOString().split("T")[0]}-${toDate.toISOString().split("T")[0]}.csv`,
+        filename: `company-profit-loss-${reportDateKey(fromDate)}-${reportDateKey(toDate)}.csv`,
         rowCount: report.realizedLines.length,
       };
     }
@@ -160,27 +198,29 @@ export const exportPnlCsvFn = createServerFn()
       ];
 
       const csvRows = rows.map((row) => [
-        escapeCsv(row.invoiceDate.split("T")[0]),
-        escapeCsv(row.invoiceId),
-        escapeCsv(row.invoiceNumber),
-        escapeCsv(row.customerName),
-        escapeCsv(row.recipeName),
-        escapeCsv(row.variantLabel),
-        escapeCsv(row.pack),
-        escapeCsv((row.realizedRatio * 100).toFixed(2)),
-        escapeCsv(row.paymentToDate.toFixed(2)),
-        escapeCsv(row.adjustedLineRevenue.toFixed(2)),
-        escapeCsv(row.adjustedLineCogs.toFixed(2)),
-        escapeCsv(row.realizedRevenue.toFixed(2)),
-        escapeCsv(row.realizedCogs.toFixed(2)),
-        escapeCsv(row.realizedProfit.toFixed(2)),
+        reportDateKey(row.invoiceDate),
+        row.invoiceId,
+        row.invoiceNumber,
+        row.customerName,
+        row.recipeName,
+        row.variantLabel,
+        row.pack,
+        (row.realizedRatio * 100).toFixed(2),
+        formatReportMoney(row.paymentToDate),
+        formatReportMoney(row.adjustedLineRevenue),
+        formatReportMoney(row.adjustedLineCogs),
+        formatReportMoney(row.realizedRevenue),
+        formatReportMoney(row.realizedCogs),
+        formatReportMoney(row.realizedProfit),
       ]);
 
       return {
-        csv: [headers.join(","), ...csvRows.map((row) => row.join(","))].join(
-          "\n",
-        ),
-        filename: `profit-loss-report-${fromDate.toISOString().split("T")[0]}-${toDate.toISOString().split("T")[0]}.csv`,
+        csv: [
+          ...metadata,
+          headers.join(","),
+          ...csvRows.map((row) => row.map(escapeCsv).join(",")),
+        ].join("\n"),
+        filename: `profit-loss-report-${reportDateKey(fromDate)}-${reportDateKey(toDate)}.csv`,
         rowCount: rows.length,
       };
     }
@@ -254,29 +294,31 @@ export const exportPnlCsvFn = createServerFn()
     ];
 
     const csvRows = rows.map((row) => [
-      escapeCsv(row.date.toISOString().split("T")[0]),
-      escapeCsv(row.invoiceId),
-      escapeCsv(row.invoiceNumber),
-      escapeCsv(row.customerName),
-      escapeCsv(row.customerType),
-      escapeCsv(row.productName),
-      escapeCsv(row.recipeName),
-      escapeCsv(row.pack),
-      escapeCsv(row.cartons ?? 0),
-      escapeCsv(row.units ?? 0),
-      escapeCsv(row.perCartonPrice ?? "0"),
-      escapeCsv(row.revenue ?? "0"),
-      escapeCsv(row.cogs ?? "0"),
-      escapeCsv(row.cogsPerUnit ?? "0"),
-      escapeCsv(Number(row.profit ?? 0).toFixed(2)),
-      escapeCsv(Number(row.margin ?? 0).toFixed(2)),
+      reportDateKey(row.date),
+      row.invoiceId,
+      row.invoiceNumber,
+      row.customerName,
+      row.customerType,
+      row.productName,
+      row.recipeName,
+      row.pack,
+      row.cartons ?? 0,
+      row.units ?? 0,
+      formatReportMoney(row.perCartonPrice ?? 0),
+      formatReportMoney(row.revenue ?? 0),
+      formatReportMoney(row.cogs ?? 0),
+      formatReportMoney(row.cogsPerUnit ?? 0),
+      formatReportMoney(row.profit ?? 0),
+      Number(row.margin ?? 0).toFixed(2),
     ]);
 
     return {
-      csv: [headers.join(","), ...csvRows.map((row) => row.join(","))].join(
-        "\n",
-      ),
-      filename: `profit-loss-report-${fromDate.toISOString().split("T")[0]}-${toDate.toISOString().split("T")[0]}.csv`,
+      csv: [
+        ...metadata,
+        headers.join(","),
+        ...csvRows.map((row) => row.map(escapeCsv).join(",")),
+      ].join("\n"),
+      filename: `profit-loss-report-${reportDateKey(fromDate)}-${reportDateKey(toDate)}.csv`,
       rowCount: rows.length,
     };
   });

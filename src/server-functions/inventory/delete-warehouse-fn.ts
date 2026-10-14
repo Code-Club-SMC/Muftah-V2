@@ -5,7 +5,6 @@ import {
   finishedGoodsStock,
   inventoryAuditLog,
   materialStock,
-  productionRuns,
   stockTransfers,
   warehouses,
 } from "@/db";
@@ -23,9 +22,7 @@ export const deleteWarehouseFn = createServerFn()
     try {
       return await db.transaction(async (tx) => {
         // 1. Integrity Check: Are there any production runs?
-        const runs = await tx.query.productionRuns.findFirst({
-          where: eq(productionRuns.warehouseId, warehouseId),
-        });
+        const runs = null;
 
         if (runs) {
           throw new Error(

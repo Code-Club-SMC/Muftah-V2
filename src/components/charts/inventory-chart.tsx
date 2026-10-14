@@ -63,7 +63,7 @@ export function InventoryPieChart({ data }: InventoryChartProps) {
                 ))}
               </Pie>
               <Tooltip
-                formatter={(value: number) => `Rs. ${value.toLocaleString()}`}
+                formatter={(value: any) => `Rs. ${value.toLocaleString()}`}
                 contentStyle={{
                   borderRadius: "8px",
                   border: "none",

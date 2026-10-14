@@ -41,160 +41,69 @@ describe("production packaging quantity math", () => {
   });
 });
 
-describe("production run regression guards", () => {
-  const productionDir = resolve(
-    process.cwd(),
-    "src/server-functions/inventory/production",
-  );
-  const productionProgressCore = resolve(
-    productionDir,
-    "production-progress-core.ts",
-  );
-  const componentsDir = resolve(process.cwd(), "src/components/productions");
-  const inventoryComponentsDir = resolve(
-    process.cwd(),
-    "src/components/inventory",
-  );
-  const factoryFloorStocksFn = resolve(
-    process.cwd(),
-    "src/server-functions/inventory/factory-floor/get-factory-floor-stocks-fn.ts",
-  );
-  const operatorRoute = resolve(
-    process.cwd(),
-    "src/routes/_protected/operator/$runId.tsx",
-  );
-  const manufacturingRunRoute = resolve(
-    process.cwd(),
-    "src/routes/_protected/manufacturing/productions/$runId/index.tsx",
-  );
-  const recipeForm = resolve(
-    process.cwd(),
-    "src/components/recipes/create-recipe-from.tsx",
-  );
+describe("two phase production regression guards", () => {
+  const read = (path: string) => readFileSync(resolve(process.cwd(), path), "utf8");
 
-  it("does not re-deduct packaging on completion after progress has already consumed it", () => {
-    const source = readFileSync(
-      resolve(productionDir, "complete-production-fn.ts"),
-      "utf8",
-    );
-
-    expect(source).toContain("shouldDeductPackagingOnCompletion");
-    expect(source).toContain("(productionRun.completedUnits || 0) === 0");
+  it("deducts packaging only during progress and attaches each debit to its log", () => {
+    const progress = read("src/server-functions/manufacturing/packaging/log-packaging-progress-fn.ts");
+    const completion = read("src/server-functions/manufacturing/packaging/complete-packaging-allocation-core.server.ts");
+    expect(progress).toContain("progressLogId: progressLog.id");
+    expect(progress).toContain(".update(materialStock)");
+    expect(completion).not.toContain(".update(materialStock)");
+    expect(completion).toContain('type: "PRODUCTION_RECEIPT"');
   });
 
-  it("deducts master cartons as whole cartons during progress logging", () => {
-    const source = readFileSync(
-      productionProgressCore,
-      "utf8",
-    );
-
-    expect(source).toContain("Math.floor(");
-    expect(source).toContain("getActualPackagingQuantity");
+  it("keeps allocation references out of legacy batch foreign keys", () => {
+    for (const path of ["src/lib/cartons/carton.service.ts", "src/lib/cartons/bulk.service.ts", "src/lib/cartons/carton-extended.service.ts", "src/lib/cartons/invoice-stock.server.ts"]) {
+      const source = read(path);
+      expect(source).not.toMatch(/batchId:\s*[^,\n]*packagingAllocationId/);
+      expect(source).toContain("packagingAllocationId:");
+    }
+    expect(read("src/server-functions/sales/invoice-posting-service.ts")).toContain("await dispatchInvoiceCartons(tx,");
   });
 
-  it("tracks operator progress as latest-log-editable entries", () => {
-    const logSource = readFileSync(
-      resolve(productionDir, "log-production-progress-fn.ts"),
-      "utf8",
-    );
-    const editSource = readFileSync(
-      resolve(productionDir, "edit-latest-production-progress-log-fn.ts"),
-      "utf8",
-    );
-
-    expect(logSource).toContain("productionProgressLogs");
-    expect(logSource).toContain("progressLogId: progressLog.id");
-    expect(editSource).toContain("Only latest log can be edited.");
-    expect(editSource).toContain('run.status !== "in_progress"');
+  it("shows the names and units that current list functions return", () => {
+    expect(read("src/components/mixing/mixing-runs-table.tsx")).toContain('accessorKey: "formulaName"');
+    expect(read("src/components/operator/mixing-operator-interface.tsx")).toContain("run.formulaName");
+    expect(read("src/components/packaging/packaging-allocations-table.tsx")).toContain("row.original.allocatedBulkUnit");
   });
 
-  it("stores recipe additional packaging usage basis instead of only normalizing to per-unit", () => {
-    const source = readFileSync(recipeForm, "utf8");
-
-    expect(source).toContain("usageBasis: tempPkgUnit");
-    expect(source).toContain('pkg.usageBasis === "per_carton"');
+  it("prefetches paginated active mixing work and the packaging status rendered by operators", () => {
+    const route = read("src/routes/_protected/operator/index.tsx");
+    const mixing = read("src/components/operator/mixing-operator-interface.tsx");
+    const packaging = read("src/components/operator/packaging-operator-interface.tsx");
+    expect(route).toContain('["operator-mixing-runs", "list", { page: 1, search: "" }]');
+    expect(mixing).toContain('["operator-mixing-runs", "list", { page, search }]');
+    for (const source of [route, mixing]) {
+      expect(source).toContain('statuses: ["in_progress", "scheduled"]');
+      expect(source).toContain('limit: 10');
+    }
+    expect(route).toContain('["operator-packaging", "list", "in_progress"]');
+    expect(packaging).toContain('["operator-packaging", "list", "in_progress"]');
+    const mutations = read("src/hooks/manufacturing/mixing/use-mixing-mutations.ts");
+    expect(mutations).toContain("variables.data.mixingRunId");
+    expect(mutations).toContain('queryKey: ["operator-mixing-run",');
+    expect(mutations).not.toContain("as any");
   });
 
-  it("shows actual completion efficiency instead of a hardcoded 100 percent", () => {
-    const source = readFileSync(operatorRoute, "utf8");
-
-    expect(source).toContain("Math.round(efficiency)");
-    expect(source).not.toContain(
-      '<p className="text-4xl font-bold text-foreground">100%</p>',
-    );
+  it("requires a single formula selection for packaging recipes", () => {
+    const form = read("src/components/recipes/create-recipe-from.tsx");
+    expect(form.match(/<form.Field name="formulaId">/g)).toHaveLength(1);
+    expect(form).not.toContain('title="Chemical Formulation"');
+    expect(form).toContain("usageBasis: tempPkgUnit");
   });
 
-  it("shows produced cartons as full cartons plus loose units in the runs table", () => {
-    const source = readFileSync(
-      resolve(componentsDir, "production-runs-table.tsx"),
-      "utf8",
-    );
-
-    expect(source).toContain("Math.floor(produced / perCarton)");
-    expect(source).not.toContain("Math.ceil(produced / perCarton)");
+  it("routes current manufacturing navigation to existing two phase pages", () => {
+    const navigation = read("src/lib/constants.ts");
+    expect(navigation).not.toContain('url: "/manufacturing/productions"');
+    expect(navigation).toContain('url: "/manufacturing/mixing"');
+    expect(navigation).toContain('url: "/manufacturing/packaging"');
   });
 
-  it("removes fail and finish controls from the runs table list surface", () => {
-    const source = readFileSync(
-      resolve(componentsDir, "production-runs-table.tsx"),
-      "utf8",
-    );
-
-    expect(source).not.toContain("Mark Failed");
-    expect(source).not.toContain("Finish Run");
-    expect(source).toContain("Manage in operator screen");
-  });
-
-  it("blocks failed status once operator logs exist and routes active management to operator flow", () => {
-    const failSource = readFileSync(
-      resolve(productionDir, "fail-production-fn.ts"),
-      "utf8",
-    );
-    const manufacturingSource = readFileSync(manufacturingRunRoute, "utf8");
-    const operatorSource = readFileSync(operatorRoute, "utf8");
-
-    expect(failSource).toContain("hasOperatorProductionLogs");
-    expect(failSource).toContain("Complete it with shortfall instead");
-    expect(manufacturingSource).toContain("Open Operator Screen");
-    expect(operatorSource).toContain("Logs exist. Close with shortfall, not failed.");
-    expect(operatorSource).toContain("Edit Latest Log");
-    expect(operatorSource).toContain("Type batch ID to confirm");
-  });
-
-  it("uses failed-batch chemical recovery instead of auto-reversal", () => {
-    const recoverySource = readFileSync(
-      resolve(
-        process.cwd(),
-        "src/server-functions/inventory/stock/recover-failed-production-chemical-fn.ts",
-      ),
-      "utf8",
-    );
-    const dialogSource = readFileSync(
-      resolve(
-        process.cwd(),
-        "src/components/inventory/adjust-stock-dialog.tsx",
-      ),
-      "utf8",
-    );
-
-    expect(recoverySource).toContain("failedProductionChemicalRecoveries");
-    expect(recoverySource).toContain("[FAILED BATCH RECOVERY]");
-    expect(recoverySource).toContain("[FAILED BATCH LOSS]");
-    expect(dialogSource).toContain("Failed Batch Recovery");
-    expect(dialogSource).toContain("Search batch ID");
-    expect(dialogSource).toContain("Any quantity not returned to stock is posted as a");
-  });
-
-  it("keeps factory-floor finished-goods KPI aligned with carton-ledger totals", () => {
-    const stocksSource = readFileSync(factoryFloorStocksFn, "utf8");
-    const containerSource = readFileSync(
-      resolve(inventoryComponentsDir, "factory-floor-container.tsx"),
-      "utf8",
-    );
-
-    expect(stocksSource).toContain("quantityCartons: stats.total");
-    expect(containerSource).toContain(
-      "fg.cartonStats?.total ?? fg.quantityCartons ?? 0",
-    );
+  it("connects allocation cartons and integrity to a current route", () => {
+    const route = read("src/routes/_protected/manufacturing/packaging/$allocationId/cartons.tsx");
+    expect(route).toContain('/_protected/manufacturing/packaging/$allocationId/cartons');
+    expect(route).toContain('<BatchDetailContainer allocationId={allocationId}');
+    expect(read("src/components/packaging/packaging-allocations-table.tsx")).toContain('to="/manufacturing/packaging/$allocationId/cartons"');
   });
 });

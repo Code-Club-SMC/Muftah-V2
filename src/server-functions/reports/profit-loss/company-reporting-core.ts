@@ -1,14 +1,15 @@
-import { addMonths, endOfMonth, format, startOfMonth } from "date-fns";
-import { and, eq, gt, gte, inArray, isNull, lte, ne, or } from "drizzle-orm";
+import { formatReportMonth, reportDateBounds, reportDateKey, reportMonth } from "@/lib/report-dates";
+import { and, eq, gt, gte, inArray, isNull, lte, ne, or, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { expenses, transactions, wallets } from "@/db/schemas/finance-schema";
 import {
   chemicals,
   failedProductionChemicalRecoveries,
   products,
-  productionRuns,
   recipes,
+  productionRuns,
 } from "@/db/schemas/inventory-schema";
+import { mixingRuns, formulas } from "@/db/schemas/production-schema";
 import {
   employees,
   payrolls,
@@ -101,9 +102,10 @@ interface ExpenseRecord {
 
 interface FailedProductionLossRecord {
   id: string;
-  productionRunId: string;
+  productionRunId: string | null;
+  mixingRunId: string | null;
   batchId: string;
-  recipeId: string;
+  recipeId: string | null;
   recipeName: string;
   productId: string;
   productName: string;
@@ -580,10 +582,11 @@ export async function loadContext(
       .select({
         id: failedProductionChemicalRecoveries.id,
         productionRunId: failedProductionChemicalRecoveries.productionRunId,
-        batchId: productionRuns.batchId,
+        mixingRunId: failedProductionChemicalRecoveries.mixingRunId,
+        batchId: sql<string>`COALESCE(${productionRuns.batchId}, ${mixingRuns.batchId})`,
         recipeId: recipes.id,
-        recipeName: recipes.name,
-        productId: products.id,
+        recipeName: sql<string>`COALESCE(${recipes.name}, ${formulas.name})`,
+        productId: sql<string>`COALESCE(${recipes.productId}, ${formulas.productId})`,
         productName: products.name,
         chemicalId: chemicals.id,
         chemicalName: chemicals.name,
@@ -595,15 +598,14 @@ export async function loadContext(
         settledAt: failedProductionChemicalRecoveries.createdAt,
       })
       .from(failedProductionChemicalRecoveries)
-      .innerJoin(
+      .leftJoin(
         productionRuns,
-        eq(
-          failedProductionChemicalRecoveries.productionRunId,
-          productionRuns.id,
-        ),
+        eq(failedProductionChemicalRecoveries.productionRunId, productionRuns.id),
       )
-      .innerJoin(recipes, eq(productionRuns.recipeId, recipes.id))
-      .innerJoin(products, eq(recipes.productId, products.id))
+      .leftJoin(mixingRuns, eq(failedProductionChemicalRecoveries.mixingRunId, mixingRuns.id))
+      .leftJoin(recipes, eq(productionRuns.recipeId, recipes.id))
+      .leftJoin(formulas, eq(mixingRuns.formulaId, formulas.id))
+      .leftJoin(products, sql`${products.id} = COALESCE(${recipes.productId}, ${formulas.productId})`)
       .innerJoin(
         chemicals,
         eq(failedProductionChemicalRecoveries.chemicalId, chemicals.id),
@@ -618,11 +620,12 @@ export async function loadContext(
         rows.map((row) => ({
           id: row.id,
           productionRunId: row.productionRunId,
+          mixingRunId: row.mixingRunId,
           batchId: row.batchId,
           recipeId: row.recipeId,
           recipeName: row.recipeName,
           productId: row.productId,
-          productName: row.productName,
+          productName: row.productName ?? "Unknown product",
           chemicalId: row.chemicalId,
           chemicalName: row.chemicalName,
           expectedQuantity: toNumber(row.expectedQuantity),
@@ -694,7 +697,7 @@ export async function loadContext(
       ? new Date(
           Math.min(
             ...payrollRows.map((row) =>
-              new Date(row.payrollStartDate).getTime(),
+              reportDateBounds({ dateFrom: row.payrollStartDate }).fromDate!.getTime(),
             ),
           ),
         )
@@ -703,7 +706,7 @@ export async function loadContext(
     payrollRows.length > 0
       ? new Date(
           Math.max(
-            ...payrollRows.map((row) => new Date(row.payrollEndDate).getTime()),
+            ...payrollRows.map((row) => reportDateBounds({ dateTo: row.payrollEndDate }).toDate!.getTime()),
           ),
         )
       : null;
@@ -828,8 +831,8 @@ export async function loadContext(
           .findMany({
             where: and(
               inArray(travelLogs.employeeId, payrollEmployeeIds),
-              gte(travelLogs.date, format(tripWindowFrom, "yyyy-MM-dd")),
-              lte(travelLogs.date, format(tripWindowTo, "yyyy-MM-dd")),
+              gte(travelLogs.date, reportDateKey(tripWindowFrom)),
+              lte(travelLogs.date, reportDateKey(tripWindowTo)),
             ),
           })
           .then((rows) =>
@@ -1169,10 +1172,9 @@ export function buildSnapshot(
   let tadaExpense = 0;
 
   for (const slip of payrollRows) {
-    const payrollStart = new Date(slip.payrollStartDate);
-    const payrollEnd = new Date(slip.payrollEndDate);
+    const { fromDate: payrollStart, toDate: payrollEnd } = createReportDateRange({ dateFrom: slip.payrollStartDate, dateTo: slip.payrollEndDate });
     const payrollTravelLogs = context.travelLogs.filter((log) => {
-      const logDate = new Date(log.date);
+      const logDate = reportDateBounds({ dateFrom: log.date }).fromDate!;
       return (
         log.employeeId === slip.employeeId &&
         logDate >= payrollStart &&
@@ -1618,9 +1620,8 @@ export async function getCompanyReportData(input?: {
   const source = input?.source ?? "all";
   const range = createReportDateRange(input);
   const previousRange = createPreviousRange(range);
-  const trendFromDate = startOfMonth(
-    addMonths(range.toDate, -TREND_MONTHS + 1),
-  );
+  const firstMonth = reportMonth(range.toDate, -TREND_MONTHS + 1);
+  const trendFromDate = createReportDateRange({ dateFrom: firstMonth.from, dateTo: firstMonth.to }).fromDate;
   const preloadFromDate =
     previousRange.fromDate < trendFromDate
       ? previousRange.fromDate
@@ -1632,16 +1633,13 @@ export async function getCompanyReportData(input?: {
   const monthlyTrend: CompanyTrendPoint[] = [];
 
   for (let monthIndex = 0; monthIndex < TREND_MONTHS; monthIndex += 1) {
-    const bucketDate = addMonths(trendFromDate, monthIndex);
-    const bucketRange = createReportDateRange({
-      dateFrom: format(startOfMonth(bucketDate), "yyyy-MM-dd"),
-      dateTo: format(endOfMonth(bucketDate), "yyyy-MM-dd"),
-    });
+    const month = reportMonth(firstMonth.from, monthIndex);
+    const bucketRange = createReportDateRange({ dateFrom: month.from, dateTo: month.to });
     const snapshot = buildSnapshot(context, bucketRange);
 
     monthlyTrend.push({
-      monthKey: format(bucketDate, "yyyy-MM-01"),
-      monthLabel: format(bucketDate, "MMM yyyy"),
+      monthKey: month.from,
+      monthLabel: formatReportMonth(month.from),
       ...snapshot.summary,
     });
   }

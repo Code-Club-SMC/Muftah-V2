@@ -10,7 +10,10 @@ import {
   salesReturns,
 } from "@/db/schemas/sales-erp-schema";
 import { finishedGoodsStock, warehouses } from "@/db/schemas/inventory-schema";
-import { cartons } from "@/db/schemas/manufacturing-schema";
+import { cartons, adjustmentLog, returnRecords } from "@/db/schemas/manufacturing-schema";
+import { dispatchInvoiceCartons, reverseInvoiceStock } from "@/lib/cartons/invoice-stock.server";
+import { lockCartonReturnOrder } from "@/lib/cartons/sales-return.server";
+import { adjustCartonStock, lockCartonStock } from "@/lib/cartons/stock-adjustment.server";
 import { AppError } from "@/lib/errors";
 import { GENERAL_RECIPE_RATE_ENTITY_ID } from "@/lib/sales/entity-recipe-rate-config";
 import { getApplicableDistributorFreeCartons } from "@/lib/sales/distributor-discount-rules";
@@ -19,7 +22,6 @@ import {
   calculateInvoiceLinePricing,
   type InvoicePricingMode,
 } from "@/lib/sales/invoice-line-pricing";
-import { calculateTotalUnits, calculateTotalInventoryValue } from "@/lib/wac";
 import { postInvoice } from "./invoice-posting-service";
 import { recordInvoiceTimelineEvent } from "./invoice-timeline-log";
 import { addPaymentsToInvoice, recalculateInvoiceSettlement } from "./settlement-service";
@@ -99,7 +101,7 @@ const getInvoicePricingMode = (
 
 const resolveFactoryFloorWarehouse = async (tx: any) => {
   const factoryFloorWarehouse = await tx.query.warehouses.findFirst({
-    where: eq(warehouses.type, "factory_floor"),
+    where: and(eq(warehouses.type, "factory_floor"), eq(warehouses.isActive, true)),
     columns: { id: true, name: true },
   });
 
@@ -179,6 +181,15 @@ const assertInvoiceMutationAllowed = async ({
       400,
     );
   }
+  const [cartonReturnAgg] = await tx.select({ count: count() }).from(returnRecords)
+    .where(eq(returnRecords.dispatchOrderId, invoiceId));
+  if (Number(cartonReturnAgg?.count) > 0) {
+    throw new AppError(
+      `Cannot ${action} an invoice that already has carton return activity recorded.`,
+      "INVOICE_HAS_CARTON_RETURNS",
+      400,
+    );
+  }
 };
 
 const OPERATIONAL_CARTON_STATUSES = [
@@ -193,7 +204,6 @@ const UNSALEABLE_CARTON_STATUSES = [
   "DISPATCHED",
   "ARCHIVED",
   "ON_HOLD",
-  "SEALED",
 ] as const;
 
 type CartonInventorySnapshot = {
@@ -207,10 +217,12 @@ const getCartonInventorySnapshot = async ({
   tx,
   warehouseId,
   recipeId,
+  containersPerCarton,
 }: {
   tx: any;
   warehouseId: string;
   recipeId: string;
+  containersPerCarton: number;
 }): Promise<CartonInventorySnapshot> => {
   const [physicalRow] = await tx
     .select({
@@ -231,7 +243,7 @@ const getCartonInventorySnapshot = async ({
 
   const [sellableRow] = await tx
     .select({
-      sellableCompleteCartons: sql<number>`COALESCE(SUM(CASE WHEN ${cartons.status} = 'COMPLETE' THEN 1 ELSE 0 END), 0)::int`,
+      sellableCompleteCartons: sql<number>`COALESCE(SUM(CASE WHEN ${cartons.status} IN ('COMPLETE', 'SEALED') AND ${cartons.capacity} = ${containersPerCarton} AND ${cartons.currentPacks} = ${containersPerCarton} THEN 1 ELSE 0 END), 0)::int`,
       sellableTotalPacks: sql<number>`COALESCE(SUM(${cartons.currentPacks}), 0)::int`,
     })
     .from(cartons)
@@ -279,8 +291,8 @@ const buildFinishedGoodsAvailability = ({
   }
 
   return {
-    physicalTotalUnits: cartonSnapshot.physicalTotalPacks + looseUnits,
-    sellableTotalUnits: cartonSnapshot.sellableTotalPacks + looseUnits,
+    physicalTotalUnits: cartonSnapshot.physicalTotalPacks + Number(stock.quantityOutsidePacks ?? 0),
+    sellableTotalUnits: cartonSnapshot.sellableTotalPacks + Number(stock.quantityOutsidePacks ?? 0),
     sellableCompleteCartons: cartonSnapshot.sellableCompleteCartons,
   };
 };
@@ -298,8 +310,14 @@ const resolveStockUnitCostPerPack = ({
   fallbackPerCartonPrice: number;
   containersPerCarton: number;
 }): number => {
-  const weightedAverageCost = Number(weightedAverageCostPerPack ?? 0);
-  if (weightedAverageCost > 0) return weightedAverageCost;
+  const weightedAverageCost = Number(weightedAverageCostPerPack);
+  if (
+    weightedAverageCostPerPack != null &&
+    Number.isFinite(weightedAverageCost) &&
+    weightedAverageCost >= 0
+  ) {
+    return weightedAverageCost;
+  }
 
   const configuredPrice = Number(configuredPricePerPack ?? 0);
   if (configuredPrice > 0) return configuredPrice;
@@ -592,10 +610,7 @@ const resolveCanonicalInvoiceLine = ({
     unitCostPerPack,
   });
 
-  const wacPerPack = parseFloat(
-    stock.weightedAverageCostPerPack?.toString() || "0",
-  );
-  const cogsPerUnit = wacPerPack > 0 ? wacPerPack : unitCostPerPack;
+  const cogsPerUnit = unitCostPerPack;
   const cogsTotal = roundMoney(pricingBreakdown.dispatchedUnits * cogsPerUnit);
   const revenuePerUnit =
     pricingBreakdown.chargedUnits > 0
@@ -912,10 +927,12 @@ export const getInvoiceStatsFn = createServerFn()
 export const deleteInvoiceFn = createServerFn()
   .middleware([requireSalesManageMiddleware])
   .inputValidator((input: any) => z.object({ id: z.string() }).parse(input))
-  .handler(async ({ data }) => {
+  .handler(async ({ data, context }) => {
     const { db } = await import("@/db");
 
     return await db.transaction(async (tx) => {
+      await lockCartonReturnOrder(tx, data.id);
+      await tx.select({ id: invoices.id }).from(invoices).where(eq(invoices.id, data.id)).for("update");
       const invoice = await tx.query.invoices.findFirst({
         where: eq(invoices.id, data.id),
         with: { items: true, customer: true },
@@ -931,6 +948,10 @@ export const deleteInvoiceFn = createServerFn()
         action: "delete",
       });
 
+      const stockWarehouseId = invoice.stockWarehouseId ?? invoice.warehouseId;
+      await lockCartonStock(tx, invoice.items.flatMap(item => item.recipeId
+        ? [{ warehouseId: stockWarehouseId, recipeId: item.recipeId }] : []));
+
       // Reverse customer ledger
       await tx
         .update(customers)
@@ -942,83 +963,19 @@ export const deleteInvoiceFn = createServerFn()
         })
         .where(eq(customers.id, invoice.customerId));
 
-      // Restore stock
-      for (const item of invoice.items) {
-        if (!item.recipeId) continue;
-        const stockWarehouseId =
-          invoice.stockWarehouseId ?? invoice.warehouseId;
+      await reverseInvoiceStock(tx, {
+        invoiceId: invoice.id, warehouseId: stockWarehouseId, userId: context.session.user.id,
+        items: invoice.items, dispatchedUnits: getSavedInvoiceItemDispatchedUnits,
+      });
 
-        const stock = await tx.query.finishedGoodsStock.findFirst({
-          where: and(
-            eq(finishedGoodsStock.warehouseId, stockWarehouseId),
-            eq(finishedGoodsStock.recipeId, item.recipeId),
-          ),
-          with: { recipe: true },
-        });
-
-        if (!stock) continue;
-
-        const containersPerCarton = effectiveCPP(
-          stock.recipe.containersPerCarton ?? 0,
-        );
-        const totalUnitsToRestore = getSavedInvoiceItemDispatchedUnits(
-          item,
-          containersPerCarton,
-        );
-        const cartonSnapshot =
-          stock.recipe?.cartonPackagingId != null && containersPerCarton > 0
-            ? await getCartonInventorySnapshot({
-                tx,
-                warehouseId: stockWarehouseId,
-                recipeId: item.recipeId,
-              })
-            : null;
-        const currentUnits = buildFinishedGoodsAvailability({
-          stock,
-          containersPerCarton,
-          cartonSnapshot,
-        }).physicalTotalUnits;
-        const newUnits = currentUnits + totalUnitsToRestore;
-
-        const hasCartons =
-          stock.recipe.cartonPackagingId != null &&
-          stock.recipe.containersPerCarton != null &&
-          stock.recipe.containersPerCarton > 0;
-        const finalQuantityCartons = hasCartons
-          ? Math.floor(newUnits / containersPerCarton)
-          : 0;
-        const finalQuantityContainers = hasCartons
-          ? newUnits % containersPerCarton
-          : newUnits;
-
-        const wacPerPack = parseFloat(
-          stock.weightedAverageCostPerPack?.toString() || "0",
-        );
-        const totalUnits = calculateTotalUnits(
-          finalQuantityCartons,
-          finalQuantityContainers,
-          containersPerCarton,
-        );
-        const newTotalValue = calculateTotalInventoryValue(
-          totalUnits,
-          wacPerPack,
-        );
-
-        await tx
-          .update(finishedGoodsStock)
-          .set({
-            quantityCartons: finalQuantityCartons,
-            quantityContainers: finalQuantityContainers,
-            totalInventoryValue: newTotalValue.toFixed(2),
-            updatedAt: new Date(),
-          })
-          .where(
-            and(
-              eq(finishedGoodsStock.warehouseId, stockWarehouseId),
-              eq(finishedGoodsStock.recipeId, item.recipeId),
-            ),
-          );
-      }
+      // Keep all movement quantities and allocation references after hard deletion.
+      // The stable invoice ID survives in reconciliationId when its FK is detached.
+      await tx.update(adjustmentLog).set({
+        dispatchOrderId: null,
+        reconciliationId: sql`coalesce(${adjustmentLog.reconciliationId}, ${invoice.id})`,
+      }).where(eq(adjustmentLog.dispatchOrderId, invoice.id));
+      await tx.update(cartons).set({ dispatchOrderId: null })
+        .where(eq(cartons.dispatchOrderId, invoice.id));
 
       // Delete related records, then invoice (no cascades on payments/slips)
       await tx
@@ -1042,6 +999,8 @@ export const updateInvoiceFn = createServerFn()
     const userId = context.session.user.id;
 
     return await db.transaction(async (tx) => {
+      await lockCartonReturnOrder(tx, data.id);
+      await tx.select({ id: invoices.id }).from(invoices).where(eq(invoices.id, data.id)).for("update");
       // 1. Fetch existing invoice
       const existing = await tx.query.invoices.findFirst({
         where: eq(invoices.id, data.id),
@@ -1058,81 +1017,18 @@ export const updateInvoiceFn = createServerFn()
 
       const customerId = existing.customerId;
 
-      // 2. Reverse OLD changes
-
-      // Reverse Stock
-      for (const oldItem of existing.items) {
-        if (!oldItem.recipeId) continue;
-        const oldStockWarehouseId =
-          existing.stockWarehouseId ?? existing.warehouseId;
-
-        const stock = await tx.query.finishedGoodsStock.findFirst({
-          where: and(
-            eq(finishedGoodsStock.warehouseId, oldStockWarehouseId),
-            eq(finishedGoodsStock.recipeId, oldItem.recipeId),
-          ),
-          with: { recipe: true },
-        });
-
-        if (!stock) continue;
-
-        const cpp = oldItem.actualPackSize ?? 1;
-        const oldUnits = getSavedInvoiceItemDispatchedUnits(oldItem, cpp);
-
-        const cartonSnapshot =
-          stock.recipe?.cartonPackagingId != null && cpp > 0
-            ? await getCartonInventorySnapshot({
-                tx,
-                warehouseId: oldStockWarehouseId,
-                recipeId: oldItem.recipeId,
-              })
-            : null;
-        const currentUnits = buildFinishedGoodsAvailability({
-          stock,
-          containersPerCarton: cpp,
-          cartonSnapshot,
-        }).physicalTotalUnits;
-        const restoredUnits = currentUnits + oldUnits;
-
-        const hasCartons =
-          stock.recipe.cartonPackagingId != null &&
-          stock.recipe.containersPerCarton != null &&
-          stock.recipe.containersPerCarton > 0;
-        const finalQuantityCartons = hasCartons
-          ? Math.floor(restoredUnits / cpp)
-          : 0;
-        const finalQuantityContainers = hasCartons
-          ? restoredUnits % cpp
-          : restoredUnits;
-
-        const wacPerPack = parseFloat(
-          stock.weightedAverageCostPerPack?.toString() || "0",
-        );
-        const totalUnits = calculateTotalUnits(
-          finalQuantityCartons,
-          finalQuantityContainers,
-          cpp,
-        );
-        const newTotalValue = calculateTotalInventoryValue(
-          totalUnits,
-          wacPerPack,
-        );
-
-        await tx
-          .update(finishedGoodsStock)
-          .set({
-            quantityCartons: finalQuantityCartons,
-            quantityContainers: finalQuantityContainers,
-            totalInventoryValue: newTotalValue.toFixed(2),
-            updatedAt: new Date(),
-          })
-          .where(
-            and(
-              eq(finishedGoodsStock.warehouseId, oldStockWarehouseId),
-              eq(finishedGoodsStock.recipeId, oldItem.recipeId),
-            ),
-          );
-      }
+      const factoryFloorWarehouse = await resolveFactoryFloorWarehouse(tx);
+      const stockWarehouseId = factoryFloorWarehouse.id;
+      const oldStockWarehouseId = existing.stockWarehouseId ?? existing.warehouseId;
+      await lockCartonStock(tx, [
+        ...existing.items.flatMap(item => item.recipeId
+          ? [{ warehouseId: oldStockWarehouseId, recipeId: item.recipeId }] : []),
+        ...data.items.map(item => ({ warehouseId: stockWarehouseId, recipeId: item.recipeId })),
+      ]);
+      await reverseInvoiceStock(tx, {
+        invoiceId: existing.id, warehouseId: oldStockWarehouseId, userId,
+        items: existing.items, dispatchedUnits: getSavedInvoiceItemDispatchedUnits,
+      });
 
       // Reverse Ledger/Customer Stats
       const oldTotalWeight = existing.items.reduce(
@@ -1168,9 +1064,6 @@ export const updateInvoiceFn = createServerFn()
       const pricingMode = getInvoicePricingMode(
         customerRecordUpdate?.customerType,
       );
-      const factoryFloorWarehouse = await resolveFactoryFloorWarehouse(tx);
-      const stockWarehouseId = factoryFloorWarehouse.id;
-
       // Fetch distributor-only active free-unit rules + server-authoritative recipe rates
       const [distributorDiscountRules, recipePriceMap] = await Promise.all([
         tx.query.discountRules.findMany({
@@ -1211,7 +1104,6 @@ export const updateInvoiceFn = createServerFn()
       let totalWeightKg = 0;
       const reservedUnitsByRecipe = new Map<string, number>();
       const reservedCartonsByRecipe = new Map<string, number>();
-      const physicalAvailableUnitsByRecipe = new Map<string, number>();
       const cartonSnapshotByRecipe = new Map<string, CartonInventorySnapshot>();
 
       for (const item of data.items) {
@@ -1239,6 +1131,7 @@ export const updateInvoiceFn = createServerFn()
                 tx,
                 warehouseId: stockWarehouseId,
                 recipeId,
+                containersPerCarton,
               })))
             : null;
 
@@ -1347,10 +1240,6 @@ export const updateInvoiceFn = createServerFn()
         }
 
         if (item.recipeId) {
-          physicalAvailableUnitsByRecipe.set(
-            item.recipeId,
-            availability.physicalTotalUnits,
-          );
           reservedUnitsByRecipe.set(
             item.recipeId,
             alreadyReservedUnits + lineResolution.totalDispatchedUnits,
@@ -1610,61 +1499,26 @@ export const updateInvoiceFn = createServerFn()
       }
 
       // ── Insert NEW line items + deduct stock ──────────────────────────────
-      const remainingUnitsByRecipe = new Map<string, number>();
-
       for (const r of lineResolutions) {
-        const stockKey = r.item.recipeId;
-        const totalAvailableUnits =
-          physicalAvailableUnitsByRecipe.get(r.item.recipeId) ??
-          r.stock.quantityCartons * r.containersPerCarton +
-            r.stock.quantityContainers;
-        const currentRemainingUnits =
-          stockKey && remainingUnitsByRecipe.has(stockKey)
-            ? remainingUnitsByRecipe.get(stockKey)!
-            : totalAvailableUnits;
-        const remainingUnits = currentRemainingUnits - r.totalDispatchedUnits;
-
-        if (stockKey) {
-          remainingUnitsByRecipe.set(stockKey, remainingUnits);
-        }
-
         const hasCartons =
           r.stock.recipe?.cartonPackagingId != null &&
           r.stock.recipe?.containersPerCarton != null &&
           r.stock.recipe?.containersPerCarton > 0;
 
-        const finalQuantityCartons = hasCartons
-          ? Math.floor(remainingUnits / r.containersPerCarton)
-          : 0;
-        const finalQuantityContainers = hasCartons
-          ? remainingUnits % r.containersPerCarton
-          : remainingUnits;
+        {
+          await dispatchInvoiceCartons(tx, {
+            warehouseId: stockWarehouseId, recipeId: r.item.recipeId,
+            invoiceId: data.id, userId, units: r.totalDispatchedUnits,
+            containersPerCarton: hasCartons ? r.containersPerCarton : 0, unitType: r.item.unitType, strict: true,
+          });
+        }
 
-        // Recalculate total inventory value after stock deduction
-        const remainingTotalUnits = calculateTotalUnits(
-          finalQuantityCartons,
-          finalQuantityContainers,
-          r.containersPerCarton,
-        );
-        const newTotalValue = calculateTotalInventoryValue(
-          remainingTotalUnits,
-          r.cogsPerUnit,
-        );
-
-        await tx
-          .update(finishedGoodsStock)
-          .set({
-            quantityCartons: finalQuantityCartons,
-            quantityContainers: finalQuantityContainers,
-            totalInventoryValue: newTotalValue.toFixed(2),
-            updatedAt: new Date(),
-          })
-          .where(
-            and(
-              eq(finishedGoodsStock.warehouseId, stockWarehouseId),
-              eq(finishedGoodsStock.recipeId, r.item.recipeId),
-            ),
-          );
+        const debitedValue = await adjustCartonStock(tx,
+          { warehouseId: stockWarehouseId, recipeId: r.item.recipeId },
+          -r.totalDispatchedUnits, userId, data.id);
+        r.cogsTotal = Number(debitedValue);
+        r.cogsPerUnit = r.totalDispatchedUnits > 0 ? r.cogsTotal / r.totalDispatchedUnits : 0;
+        r.unitMargin = roundMoney((r.chargedUnits > 0 ? r.lineAmount / r.chargedUnits : 0) - r.cogsPerUnit);
 
         await tx.insert(invoiceItems).values({
           id: createId(),

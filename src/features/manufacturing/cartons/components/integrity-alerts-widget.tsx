@@ -11,6 +11,8 @@ import { Button } from "@/components/ui/button";
 import { AlertTriangle, CheckCircle, Clock, Eye, Scale, Database, Box } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { IntegrityAlertStatus } from "@/lib/cartons/carton.types";
+import type { runIntegrityCheckFn } from "@/server-functions/manufacturing/cartons/get-cartons-fn";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 type AlertRow = {
   id: string;
@@ -26,6 +28,7 @@ type AlertRow = {
 
 type Props = {
   alerts: AlertRow[];
+  checkResult?: Pick<Awaited<ReturnType<typeof runIntegrityCheckFn>>, "allBalanced" | "stockMismatches"> & Partial<Pick<Awaited<ReturnType<typeof runIntegrityCheckFn>>, "mismatches" | "checkedAt">>;
   onAcknowledge?: (alertId: string) => void;
   onResolve?: (alertId: string) => void;
   onViewDetails?: (alertId: string) => void;
@@ -44,13 +47,26 @@ const statusConfig: Record<
 
 export function IntegrityAlertsWidget({
   alerts,
+  checkResult,
   onAcknowledge,
   onResolve,
   onViewDetails,
   compact = false,
   className,
 }: Props) {
-  if (!alerts.length) {
+  const stockMismatches = checkResult?.stockMismatches ?? [];
+  const displayedAlerts = [
+    ...alerts.map(alert => ({ ...alert, pending: false })),
+    ...(checkResult?.mismatches ?? []).filter(row => !alerts.some(alert =>
+      alert.sku === (row.sku ?? "") && alert.delta === Number(row.delta),
+    )).map(row => ({
+      id: `check:${row.packaging_allocation_id}:${row.sku ?? ""}`,
+      sku: row.sku ?? "", batchId: null,
+      cartonSum: Number(row.carton_sum), ledgerTotal: Number(row.ledger_total), delta: Number(row.delta),
+      status: "OPEN" as const, detectedAt: checkResult?.checkedAt ?? new Date(), pending: true,
+    })),
+  ];
+  if (!displayedAlerts.length && !stockMismatches.length) {
     return (
       <Card className={cn("border-emerald-500/20 bg-emerald-500/5 shadow-none", className)}>
         <CardContent className="flex items-center gap-4 py-6">
@@ -58,18 +74,34 @@ export function IntegrityAlertsWidget({
             <CheckCircle className="size-6 text-emerald-600" />
           </div>
           <div>
-            <h3 className="text-emerald-800 font-bold text-lg">System Integrity Validated</h3>
-            <p className="text-sm text-emerald-700/80">All physical carton quantities perfectly match the inventory ledger.</p>
+            <h3 className="font-bold text-lg">{checkResult?.allBalanced ? "System Integrity Validated" : checkResult ? "Integrity discrepancies detected" : "No open integrity alerts"}</h3>
+            <p className="text-sm text-muted-foreground">{checkResult?.allBalanced ? "Cartons, ledger and finished stock agree." : "Run an integrity check to reconcile cartons, ledger and finished stock."}</p>
           </div>
         </CardContent>
       </Card>
     );
   }
 
-  const openCount = alerts.filter((a) => a.status === "OPEN").length;
+  const openCount = displayedAlerts.filter((a) => a.status === "OPEN").length;
 
   return (
     <div className={cn("space-y-4", className)}>
+      {stockMismatches.length > 0 && (
+        <div className="flex flex-col gap-3">
+          <h3>Finished stock discrepancies</h3>
+          {stockMismatches.map(row => (
+            <Alert variant="destructive" key={`${row.recipe_id}:${row.warehouse_id}`}>
+              <AlertTriangle />
+              <AlertTitle>{row.recipe_name}</AlertTitle>
+              <AlertDescription>
+                <p>{row.warehouse_name}</p>
+                {row.uses_cartons && <p>{row.stock_units} packs in stock; {row.carton_units} packs in cartons.</p>}
+                <p>Inventory value PKR {Number(row.inventory_value).toFixed(2)}; expected PKR {Number(row.expected_value).toFixed(2)} at the recorded average cost.</p>
+              </AlertDescription>
+            </Alert>
+          ))}
+        </div>
+      )}
       <div className="flex items-center gap-3 pb-2 border-b">
         <div className="p-2 bg-red-500/10 rounded-lg">
           <Scale className="size-5 text-red-600" />
@@ -86,7 +118,7 @@ export function IntegrityAlertsWidget({
       </div>
 
       <div className={cn("grid gap-4", compact ? "grid-cols-1" : "grid-cols-1 xl:grid-cols-2")}>
-        {alerts.map((alert) => {
+        {displayedAlerts.map((alert) => {
           const cfg = statusConfig[alert.status];
           const Icon = cfg.icon;
           
@@ -148,7 +180,7 @@ export function IntegrityAlertsWidget({
               </CardContent>
 
               <CardFooter className="px-5 pb-4 pt-0 justify-end gap-2">
-                {alert.status === "OPEN" && onAcknowledge && (
+                {!alert.pending && alert.status === "OPEN" && onAcknowledge && (
                   <Button
                     variant="outline"
                     size="sm"
@@ -158,7 +190,7 @@ export function IntegrityAlertsWidget({
                     Acknowledge Issue
                   </Button>
                 )}
-                {alert.status === "ACKNOWLEDGED" && onResolve && (
+                {!alert.pending && alert.status === "ACKNOWLEDGED" && onResolve && (
                   <Button
                     variant="default"
                     size="sm"
@@ -168,7 +200,7 @@ export function IntegrityAlertsWidget({
                     Mark as Resolved
                   </Button>
                 )}
-                {onViewDetails && (
+                {!alert.pending && onViewDetails && (
                   <Button
                     variant="secondary"
                     size="sm"

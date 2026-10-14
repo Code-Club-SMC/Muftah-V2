@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { and, desc, eq, gt, gte, lte, ne } from "drizzle-orm";
-import { endOfDay, isValid, parseISO } from "date-fns";
+import { reportDateBounds } from "@/lib/report-dates";
 import { z } from "zod";
 import { db } from "@/db";
 import { slipRecords, salesmen } from "@/db/schemas/sales-erp-schema";
@@ -20,6 +20,7 @@ export const getOutstandingReportFn = createServerFn()
       .parse(input),
   )
   .handler(async ({ data }) => {
+    const { fromDate, toDate } = reportDateBounds(data);
     const conditions = [
       ne(invoices.status, "voided"),
       gt(slipRecords.outstandingAmount, "0"),
@@ -29,13 +30,11 @@ export const getOutstandingReportFn = createServerFn()
       conditions.push(eq(invoices.source, data.source));
     }
 
-    if (data.dateFrom) {
-      const from = parseISO(data.dateFrom);
-      if (isValid(from)) conditions.push(gte(invoices.date, from));
+    if (fromDate) {
+      conditions.push(gte(invoices.date, fromDate));
     }
-    if (data.dateTo) {
-      const to = parseISO(data.dateTo);
-      if (isValid(to)) conditions.push(lte(invoices.date, endOfDay(to)));
+    if (toDate) {
+      conditions.push(lte(invoices.date, toDate));
     }
 
     const rows = await db

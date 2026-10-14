@@ -60,7 +60,7 @@ export const WarehouseDetailsDialog = ({
                 Facility Profile
               </Badge>
               <Badge
-                variant={warehouse.isActive ? "healthy" : "secondary"}
+                variant={warehouse.isActive ? "default" : "secondary"}
                 className="text-[10px] font-bold uppercase "
               >
                 {warehouse.isActive ? "Operational" : "Archived"}

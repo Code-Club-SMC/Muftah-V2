@@ -14,8 +14,10 @@ import { GenericEmpty } from "../custom/empty";
 import { InventoryEmptyIllustration } from "@/components/illustrations/InventoryEmptyIllustration";
 import { DataTable } from "../custom/data-table";
 import type { ColumnDef } from "@tanstack/react-table";
+import { AdjustOutsidePacksDialog } from "./adjust-outside-packs-dialog";
 import { TransferStockDialog } from "./transfer-stock-dialog";
 import { getInventoryFn } from "@/server-functions/inventory/get-inventory-fn";
+import { calculateTotalUnits } from "@/lib/wac";
 import {
   Select,
   SelectContent,
@@ -28,6 +30,7 @@ type FinishedGood = {
   id: string;
   quantityCartons: number;
   quantityContainers: number;
+  quantityOutsidePacks?: number;
   cartonStats: {
     total: number;
     complete: number;
@@ -45,6 +48,7 @@ type FinishedGood = {
     id: string;
     name: string;
     containersPerCarton: number | null;
+    cartonPackagingId?: string | null;
     estimatedCostPerContainer: string | null;
     batchUnit: string;
     minimumStockLevel: number | null;
@@ -67,6 +71,7 @@ interface FinishedGoodsTableProps {
   canTransfer?: boolean;
   canManageCartons?: boolean;
   canViewDetails?: boolean;
+  canAdjustOutside?: boolean;
 }
 
 export const FinishedGoodsTable = ({
@@ -76,8 +81,10 @@ export const FinishedGoodsTable = ({
   canTransfer = true,
   canManageCartons = true,
   canViewDetails = true,
+  canAdjustOutside = false,
 }: FinishedGoodsTableProps) => {
   const navigate = useNavigate();
+  const [adjustItem, setAdjustItem] = useState<FinishedGood | null>(null);
   const [transferOpen, setTransferOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<FinishedGood | null>(null);
   const [selectedProductId, setSelectedProductId] = useState("all");
@@ -135,7 +142,7 @@ export const FinishedGoodsTable = ({
       },
       {
         id: "cartons",
-        accessorKey: "quantityCartons",
+        accessorFn: (row) => row.cartonStats?.total ?? 0,
         header: ({ column }) => {
           return (
             <Button
@@ -192,13 +199,12 @@ export const FinishedGoodsTable = ({
       },
       {
         id: "totalUnits",
-        header: "Total & Loose Units",
+        header: "Total & Loose Packs",
           cell: ({ row }) => {
             const fg = row.original;
             const stats = fg.cartonStats || { total: 0, complete: 0, partial: 0, totalPacks: 0 };
-            const totalPacks = stats.totalPacks;
-            const loose = fg.quantityContainers;
-            const totalUnits = totalPacks + loose;
+            const loose = fg.recipe.cartonPackagingId && (fg.recipe.containersPerCarton ?? 0) > 0 ? fg.quantityOutsidePacks ?? 0 : calculateTotalUnits(fg.quantityCartons, fg.quantityContainers, fg.recipe.containersPerCarton ?? 0);
+            const totalUnits = calculateTotalUnits(fg.quantityCartons, fg.quantityContainers, fg.recipe.containersPerCarton ?? 0);
             return (
               <div className="flex flex-col gap-0.5">
                 <span className="font-mono font-bold text-foreground">
@@ -231,7 +237,7 @@ export const FinishedGoodsTable = ({
         cell: ({ row }) => {
           const fg = row.original;
           const totalUnits =
-            (fg.cartonStats?.totalPacks ?? 0) + fg.quantityContainers;
+            calculateTotalUnits(fg.quantityCartons, fg.quantityContainers, fg.recipe.containersPerCarton ?? 0);
 
           if (totalUnits <= 0) {
             return <Badge variant="destructive">Out of Stock</Badge>;
@@ -301,6 +307,7 @@ export const FinishedGoodsTable = ({
         id: "actions",
         cell: ({ row }) => (
           <div className="flex justify-end gap-1">
+            {canAdjustOutside && <Button variant="outline" size="sm" onClick={() => setAdjustItem(row.original)}>Correct loose packs</Button>}
             {canTransfer ? (
               <Button
                 variant="ghost"
@@ -341,7 +348,7 @@ export const FinishedGoodsTable = ({
         ),
       },
     ],
-    [navigate, canManageCartons, canTransfer, canViewDetails],
+    [navigate, canManageCartons, canTransfer, canViewDetails, canAdjustOutside],
   );
 
   const productOptions = useMemo(
@@ -363,7 +370,7 @@ export const FinishedGoodsTable = ({
         : item.recipe.product.id === selectedProductId,
     )
     .filter(
-      (item) => item.quantityCartons > 0 || item.quantityContainers > 0,
+      (item) => canAdjustOutside || item.quantityCartons > 0 || item.quantityContainers > 0,
     );
 
   if (filteredData.length === 0 && data.length === 0) {
@@ -452,6 +459,9 @@ export const FinishedGoodsTable = ({
         searchPlaceholder="Filter recipe names..."
       />
 
+      {adjustItem && <AdjustOutsidePacksDialog stockId={adjustItem.id} name={adjustItem.recipe.name}
+        currentCount={adjustItem.recipe.cartonPackagingId && (adjustItem.recipe.containersPerCarton ?? 0) > 0 ? adjustItem.quantityOutsidePacks ?? 0 : calculateTotalUnits(adjustItem.quantityCartons, adjustItem.quantityContainers, adjustItem.recipe.containersPerCarton ?? 0)}
+        onClose={() => setAdjustItem(null)} />}
       {/* Transfer Dialog */}
       {selectedItem && transferOpen && (
         <TransferStockDialog

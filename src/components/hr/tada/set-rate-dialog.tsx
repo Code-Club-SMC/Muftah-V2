@@ -2,8 +2,9 @@ import { useState, useEffect } from "react";
 import { ResponsiveDialog } from "@/components/custom/responsive-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { useSetTadaRate, useTadaRateHistory, useActiveTadaRate } from "@/hooks/hr/use-tada";
+import { useSetTadaRate, useTadaRateHistory, useActiveTadaRate, useEmployeesForTada } from "@/hooks/hr/use-tada";
 import { Settings2, History, TrendingUp, User as UserIcon, Calendar as CalendarIcon, Loader2 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { DatePicker } from "@/components/custom/date-picker";
@@ -19,12 +20,14 @@ type Props = {
 
 export function SetRateDialog({ open, onOpenChange }: Props) {
     const [rate, setRate] = useState<string>("");
+    const [employeeId, setEmployeeId] = useState<string | "all">("all");
     const [date, setDate] = useState<Date>(new Date());
     const [remarks, setRemarks] = useState<string>("");
 
     const mutate = useSetTadaRate();
     const { data: history, isLoading: isHistoryLoading } = useTadaRateHistory();
     const { data: activeRate } = useActiveTadaRate();
+    const { data: employees } = useEmployeesForTada();
 
     useEffect(() => {
         if (open) {
@@ -39,6 +42,7 @@ export function SetRateDialog({ open, onOpenChange }: Props) {
 
         await mutate.mutateAsync(
             {
+                employeeId: employeeId === "all" ? undefined : employeeId,
                 ratePerKm: Number(rate),
                 effectiveFrom: format(date, "yyyy-MM-dd"),
                 remarks: remarks.trim() || undefined,
@@ -81,6 +85,24 @@ export function SetRateDialog({ open, onOpenChange }: Props) {
                     )}
 
                     <div className="space-y-4">
+                        <div className="flex flex-col gap-2">
+                            <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                                Employee
+                            </label>
+                            <Select value={employeeId} onValueChange={setEmployeeId}>
+                                <SelectTrigger>
+                                    <SelectValue placeholder="All Employees (Global)" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="all">All Employees (Global)</SelectItem>
+                                    {employees?.map((emp) => (
+                                        <SelectItem key={emp.id} value={emp.id}>
+                                            {emp.firstName} {emp.lastName} ({emp.employeeCode})
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
                         <div className="flex flex-col gap-2">
                             <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
                                 New Rate (PKR / KM)

@@ -8,12 +8,21 @@ export const useUpdateRecipe = () => {
   const updateMutation = useMutation({
     mutationFn: updateRecipeFn,
     onSuccess: () => {
-      toast.success("Recipe updated successfully");
+      toast.success("Packaging Format updated successfully");
       queryClient.invalidateQueries({ queryKey: ["recipes"] });
+      queryClient.invalidateQueries({ queryKey: ["batch-packing"] });
+      queryClient.invalidateQueries({ queryKey: ["packaging-format-options"] });
+      queryClient.invalidateQueries({ queryKey: ["recipe"] });
+      queryClient.invalidateQueries({ queryKey: ["formula"] });
+      queryClient.invalidateQueries({ queryKey: ["mixing-run"] });
+      queryClient.invalidateQueries({ queryKey: ["operator-mixing-run"] });
+      queryClient.invalidateQueries({ queryKey: ["operator-mixing-runs"] });
+      queryClient.invalidateQueries({ queryKey: ["operator-packaging"] });
+      queryClient.invalidateQueries({ queryKey: ["packaging-allocations"] });
       queryClient.invalidateQueries({ queryKey: ["products"] });
     },
     onError: (error) => {
-      toast.error(error.message || "Failed to update recipe");
+      toast.error(error.message || "Failed to update packaging format");
     },
   });
 

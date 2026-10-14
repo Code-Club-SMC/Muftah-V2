@@ -1,7 +1,8 @@
 import { createId } from "@paralleldrive/cuid2";
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import {
   boolean,
+  check,
   decimal,
   index,
   integer,
@@ -13,6 +14,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { user } from "./auth-schema";
 import { suppliers } from "./core-suppliers";
+import { formulas, mixingRuns, mixingMaterialsUsed, packagingAllocations } from "./production-schema";
 
 const timestamps = {
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -118,6 +120,10 @@ export const materialStock = pgTable(
   },
   (t) => ({
     warehouseIdx: index("stock_warehouse_idx").on(t.warehouseId),
+    warehouseChemicalUniqueIdx: uniqueIndex("stock_warehouse_chemical_unique_idx")
+      .on(t.warehouseId, t.chemicalId).where(sql`${t.chemicalId} IS NOT NULL`),
+    warehousePackagingUniqueIdx: uniqueIndex("stock_warehouse_packaging_unique_idx")
+      .on(t.warehouseId, t.packagingMaterialId).where(sql`${t.packagingMaterialId} IS NOT NULL`),
   }),
 );
 
@@ -186,7 +192,6 @@ export const recipes = pgTable("recipes", {
   }),
 
   // Quality control
-  minBatchYield: decimal("min_batch_yield", { precision: 5, scale: 2 }), // Minimum acceptable yield %
   targetShelfLife: integer("target_shelf_life"), // Days
 
   // Inventory
@@ -195,6 +200,9 @@ export const recipes = pgTable("recipes", {
   // Production notes
   notes: text("notes"),
   productionInstructions: text("production_instructions"),
+
+  // Formula linkage (two-phase production)
+  formulaId: text("formula_id").references(() => formulas.id),
 
   isActive: boolean("is_active").default(true).notNull(),
   ...timestamps,
@@ -266,7 +274,8 @@ export const finishedGoodsStock = pgTable(
       .notNull()
       .references(() => recipes.id),
     quantityCartons: integer("quantity_cartons").notNull().default(0),
-    quantityContainers: integer("quantity_containers").notNull().default(0), // Loose units
+    quantityContainers: integer("quantity_containers").notNull().default(0), // Residual pack units in aggregate stock
+    quantityOutsidePacks: integer("quantity_outside_packs").notNull().default(0), // Sealed packs outside physical cartons
     weightedAverageCostPerPack: decimal("weighted_average_cost_per_pack", {
       precision: 10,
       scale: 4,
@@ -282,7 +291,7 @@ export const finishedGoodsStock = pgTable(
     ...timestamps,
   },
   (t) => ({
-    warehouseRecipeIdx: index("fg_warehouse_recipe_idx").on(
+    warehouseRecipeIdx: uniqueIndex("fg_warehouse_recipe_idx").on(
       t.warehouseId,
       t.recipeId,
     ),
@@ -420,30 +429,23 @@ export const productionRuns = pgTable(
   }),
 );
 
+
+
 export const productionProgressLogs = pgTable(
   "production_progress_logs",
   {
-    id: text("id")
-      .primaryKey()
-      .$defaultFn(() => createId()),
-    productionRunId: text("production_run_id")
-      .notNull()
-      .references(() => productionRuns.id, { onDelete: "cascade" }),
+    id: text("id").primaryKey().$defaultFn(() => createId()),
+    productionRunId: text("production_run_id").notNull().references(() => productionRuns.id, { onDelete: "cascade" }),
     unitsProduced: integer("units_produced").notNull(),
     originalUnitsProduced: integer("original_units_produced"),
-    createdById: text("created_by_id")
-      .notNull()
-      .references(() => user.id),
+    createdById: text("created_by_id").notNull().references(() => user.id),
     editedById: text("edited_by_id").references(() => user.id),
     editReason: text("edit_reason"),
     editedAt: timestamp("edited_at"),
     ...timestamps,
   },
   (t) => ({
-    runCreatedAtIdx: index("prod_progress_log_run_created_at_idx").on(
-      t.productionRunId,
-      t.createdAt,
-    ),
+    runCreatedAtIdx: index("prod_progress_log_run_created_at_idx").on(t.productionRunId, t.createdAt),
   }),
 );
 
@@ -472,52 +474,32 @@ export const failedProductionChemicalRecoveries = pgTable(
     id: text("id")
       .primaryKey()
       .$defaultFn(() => createId()),
-    productionRunId: text("production_run_id")
-      .notNull()
-      .references(() => productionRuns.id, { onDelete: "cascade" }),
-    productionMaterialUsedId: text("production_material_used_id")
-      .notNull()
-      .references(() => productionMaterialsUsed.id, { onDelete: "cascade" }),
+    productionRunId: text("production_run_id").references(() => productionRuns.id, { onDelete: "cascade" }),
+    productionMaterialUsedId: text("production_material_used_id").references(() => productionMaterialsUsed.id, { onDelete: "cascade" }),
+    mixingRunId: text("mixing_run_id").references(() => mixingRuns.id, { onDelete: "cascade" }),
+    mixingMaterialUsedId: text("mixing_material_used_id").references(() => mixingMaterialsUsed.id, { onDelete: "cascade" }),
     warehouseId: text("warehouse_id")
       .notNull()
       .references(() => warehouses.id),
     chemicalId: text("chemical_id")
       .notNull()
       .references(() => chemicals.id),
-    expectedQuantity: decimal("expected_quantity", {
-      precision: 12,
-      scale: 3,
-    }).notNull(),
-    recoveredQuantity: decimal("recovered_quantity", {
-      precision: 12,
-      scale: 3,
-    }).notNull(),
-    lossQuantity: decimal("loss_quantity", {
-      precision: 12,
-      scale: 3,
-    }).notNull(),
-    costPerUnit: decimal("cost_per_unit", {
-      precision: 10,
-      scale: 2,
-    }).notNull(),
-    lossAmount: decimal("loss_amount", {
-      precision: 12,
-      scale: 2,
-    }).notNull(),
+    expectedQuantity: decimal("expected_quantity", { precision: 12, scale: 3 }).notNull(),
+    recoveredQuantity: decimal("recovered_quantity", { precision: 12, scale: 3 }).notNull(),
+    lossQuantity: decimal("loss_quantity", { precision: 12, scale: 3 }).notNull(),
+    costPerUnit: decimal("cost_per_unit", { precision: 10, scale: 2 }).notNull(),
+    lossAmount: decimal("loss_amount", { precision: 12, scale: 2 }).notNull(),
     notes: text("notes"),
-    settledById: text("settled_by_id")
-      .notNull()
-      .references(() => user.id),
+    settledById: text("settled_by_id").notNull().references(() => user.id),
     ...timestamps,
   },
   (t) => ({
-    runChemicalUniqueIdx: uniqueIndex(
-      "failed_prod_recovery_run_chemical_unique_idx",
-    ).on(t.productionRunId, t.chemicalId),
-    runChemicalIdx: index("failed_prod_recovery_run_chemical_idx").on(
-      t.productionRunId,
-      t.chemicalId,
-    ),
+    oneRunSource: check("failed_prod_recovery_one_run_source_ck", sql`(${t.productionRunId} IS NOT NULL) <> (${t.mixingRunId} IS NOT NULL)`),
+    matchingMaterialSource: check("failed_prod_recovery_material_source_ck", sql`(${t.productionRunId} IS NOT NULL) = (${t.productionMaterialUsedId} IS NOT NULL) AND (${t.mixingRunId} IS NOT NULL) = (${t.mixingMaterialUsedId} IS NOT NULL)`),
+    runChemicalUniqueIdx: uniqueIndex("failed_prod_recovery_run_chemical_unique_idx").on(t.productionRunId, t.chemicalId),
+    mixingChemicalUniqueIdx: uniqueIndex("failed_prod_recovery_mixing_chemical_unique_idx")
+      .on(t.mixingRunId, t.chemicalId).where(sql`${t.mixingRunId} IS NOT NULL`),
+    runChemicalIdx: index("failed_prod_recovery_run_chemical_idx").on(t.productionRunId, t.chemicalId),
     settledAtIdx: index("failed_prod_recovery_created_at_idx").on(t.createdAt),
   }),
 );
@@ -541,9 +523,10 @@ export const wacHistory = pgTable(
       precision: 14,
       scale: 2,
     }).default("0"),
-    productionRunId: text("production_run_id").references(
-      () => productionRuns.id,
-    ),
+    productionRunId: text("production_run_id").references(() => productionRuns.id),
+    // Two-phase production references (set in relations)
+    packagingAllocationId: text("packaging_allocation_id").references(() => packagingAllocations.id),
+    mixingRunId: text("mixing_run_id").references(() => mixingRuns.id),
     effectiveDate: timestamp("effective_date").defaultNow().notNull(),
     ...timestamps,
   },
@@ -660,8 +643,9 @@ export const productionRunLabReports = pgTable(
       .primaryKey()
       .$defaultFn(() => createId()),
     productionRunId: text("production_run_id")
-      .notNull()
       .references(() => productionRuns.id, { onDelete: "cascade" }),
+    // Two-phase production: lab reports attach to mixing runs
+    mixingRunId: text("mixing_run_id").references(() => mixingRuns.id),
 
     // Certificate Details
     productName: text("product_name").notNull(),
@@ -698,6 +682,8 @@ export const productionRunLabReports = pgTable(
   },
   (t) => ({
     productionRunIdx: index("lab_report_production_run_idx").on(t.productionRunId),
+    mixingRunIdx: index("lab_report_mixing_run_idx").on(t.mixingRunId),
+    oneRunSource: check("production_lab_report_one_run_source_ck", sql`(${t.productionRunId} IS NOT NULL) <> (${t.mixingRunId} IS NOT NULL)`),
     dateIdx: index("prod_lab_report_date_idx").on(t.reportDate),
   }),
 );
@@ -735,19 +721,6 @@ export const chemicalLabReportsRelations = relations(
   }),
 );
 
-export const productionRunLabReportsRelations = relations(
-  productionRunLabReports,
-  ({ one }) => ({
-    productionRun: one(productionRuns, {
-      fields: [productionRunLabReports.productionRunId],
-      references: [productionRuns.id],
-    }),
-    createdBy: one(user, {
-      fields: [productionRunLabReports.createdById],
-      references: [user.id],
-    }),
-  }),
-);
 
 export const packagingMaterialsRelations = relations(
   packagingMaterials,
@@ -767,10 +740,15 @@ export const productsRelations = relations(products, ({ many }) => ({
   recipes: many(recipes),
 }));
 
+
 export const recipesRelations = relations(recipes, ({ one, many }) => ({
   product: one(products, {
     fields: [recipes.productId],
     references: [products.id],
+  }),
+  formula: one(formulas, {
+    fields: [recipes.formulaId],
+    references: [formulas.id],
   }),
   containerPackaging: one(packagingMaterials, {
     fields: [recipes.containerPackagingId],
@@ -829,6 +807,14 @@ export const wacHistoryRelations = relations(wacHistory, ({ one }) => ({
     fields: [wacHistory.productionRunId],
     references: [productionRuns.id],
   }),
+  packagingAllocation: one(packagingAllocations, {
+    fields: [wacHistory.packagingAllocationId],
+    references: [packagingAllocations.id],
+  }),
+  mixingRun: one(mixingRuns, {
+    fields: [wacHistory.mixingRunId],
+    references: [mixingRuns.id],
+  }),
 }));
 
 export const productionRunsRelations = relations(
@@ -869,26 +855,24 @@ export const productionRunsRelations = relations(
   }),
 );
 
-export const productionProgressLogsRelations = relations(
-  productionProgressLogs,
-  ({ one, many }) => ({
-    productionRun: one(productionRuns, {
-      fields: [productionProgressLogs.productionRunId],
-      references: [productionRuns.id],
-    }),
-    createdBy: one(user, {
-      fields: [productionProgressLogs.createdById],
-      references: [user.id],
-      relationName: "productionProgressCreatedBy",
-    }),
-    editedBy: one(user, {
-      fields: [productionProgressLogs.editedById],
-      references: [user.id],
-      relationName: "productionProgressEditedBy",
-    }),
-    materialsUsed: many(productionMaterialsUsed),
-  }),
-);
+export const productionProgressLogsRelations = relations(productionProgressLogs, ({ one, many }) => ({
+  productionRun: one(productionRuns, { fields: [productionProgressLogs.productionRunId], references: [productionRuns.id] }),
+  createdBy: one(user, { fields: [productionProgressLogs.createdById], references: [user.id], relationName: "productionProgressCreatedBy" }),
+  editedBy: one(user, { fields: [productionProgressLogs.editedById], references: [user.id], relationName: "productionProgressEditedBy" }),
+  materialsUsed: many(productionMaterialsUsed),
+}));
+
+export const productionMaterialsUsedRelations = relations(productionMaterialsUsed, ({ one }) => ({
+  productionRun: one(productionRuns, { fields: [productionMaterialsUsed.productionRunId], references: [productionRuns.id] }),
+  progressLog: one(productionProgressLogs, { fields: [productionMaterialsUsed.progressLogId], references: [productionProgressLogs.id] }),
+}));
+
+export const productionRunLabReportsRelations = relations(productionRunLabReports, ({ one }) => ({
+  productionRun: one(productionRuns, { fields: [productionRunLabReports.productionRunId], references: [productionRuns.id] }),
+  mixingRun: one(mixingRuns, { fields: [productionRunLabReports.mixingRunId], references: [mixingRuns.id] }),
+  createdBy: one(user, { fields: [productionRunLabReports.createdById], references: [user.id] }),
+}));
+
 
 export const materialStockRelations = relations(materialStock, ({ one }) => ({
   warehouse: one(warehouses, {
@@ -933,39 +917,14 @@ export const returnedFinishedGoodsStockRelations = relations(
   }),
 );
 
-export const productionMaterialsUsedRelations = relations(
-  productionMaterialsUsed,
-  ({ one }) => ({
-    productionRun: one(productionRuns, {
-      fields: [productionMaterialsUsed.productionRunId],
-      references: [productionRuns.id],
-    }),
-    chemical: one(chemicals, {
-      fields: [productionMaterialsUsed.materialId],
-      references: [chemicals.id],
-    }),
-    packagingMaterial: one(packagingMaterials, {
-      fields: [productionMaterialsUsed.materialId],
-      references: [packagingMaterials.id],
-    }),
-    progressLog: one(productionProgressLogs, {
-      fields: [productionMaterialsUsed.progressLogId],
-      references: [productionProgressLogs.id],
-    }),
-  }),
-);
 
 export const failedProductionChemicalRecoveriesRelations = relations(
   failedProductionChemicalRecoveries,
   ({ one }) => ({
-    productionRun: one(productionRuns, {
-      fields: [failedProductionChemicalRecoveries.productionRunId],
-      references: [productionRuns.id],
-    }),
-    productionMaterialUsed: one(productionMaterialsUsed, {
-      fields: [failedProductionChemicalRecoveries.productionMaterialUsedId],
-      references: [productionMaterialsUsed.id],
-    }),
+    productionRun: one(productionRuns, { fields: [failedProductionChemicalRecoveries.productionRunId], references: [productionRuns.id] }),
+    productionMaterialUsed: one(productionMaterialsUsed, { fields: [failedProductionChemicalRecoveries.productionMaterialUsedId], references: [productionMaterialsUsed.id] }),
+    mixingRun: one(mixingRuns, { fields: [failedProductionChemicalRecoveries.mixingRunId], references: [mixingRuns.id] }),
+    mixingMaterialUsed: one(mixingMaterialsUsed, { fields: [failedProductionChemicalRecoveries.mixingMaterialUsedId], references: [mixingMaterialsUsed.id] }),
     warehouse: one(warehouses, {
       fields: [failedProductionChemicalRecoveries.warehouseId],
       references: [warehouses.id],

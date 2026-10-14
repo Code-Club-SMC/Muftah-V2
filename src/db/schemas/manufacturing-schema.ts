@@ -14,6 +14,7 @@ import {
   recipes,
   warehouses,
 } from "./inventory-schema";
+import { packagingAllocations } from "./production-schema";
 
 const timestamps = {
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -35,9 +36,9 @@ export const cartons = pgTable(
     recipeId: text("recipe_id")
       .notNull()
       .references(() => recipes.id),
-    productionRunId: text("production_run_id")
-      .notNull()
-      .references(() => productionRuns.id),
+    productionRunId: text("production_run_id").references(() => productionRuns.id),
+    // Two-phase production: cartons created from packaging allocations
+    packagingAllocationId: text("packaging_allocation_id").references(() => packagingAllocations.id),
     warehouseId: text("warehouse_id")
       .notNull()
       .references(() => warehouses.id),
@@ -74,6 +75,8 @@ export const cartons = pgTable(
   (t) => ({
     recipeIdx: index("cartons_recipe_idx").on(t.recipeId),
     productionRunIdx: index("cartons_production_run_idx").on(t.productionRunId),
+    packagingAllocationIdx: index("cartons_packaging_allocation_idx").on(t.packagingAllocationId),
+    
     warehouseIdx: index("cartons_warehouse_idx").on(t.warehouseId),
     statusIdx: index("cartons_status_idx").on(t.status),
     skuIdx: index("cartons_sku_idx").on(t.sku),
@@ -93,6 +96,8 @@ export const adjustmentLog = pgTable(
       .notNull()
       .references(() => cartons.id),
     batchId: text("batch_id").references(() => productionRuns.id),
+    // Two-phase production
+    packagingAllocationId: text("packaging_allocation_id").references(() => packagingAllocations.id),
     sku: text("sku"),
 
     // Adjustment type:
@@ -143,6 +148,7 @@ export const stockCountSessions = pgTable(
       .primaryKey()
       .$defaultFn(() => createId()),
     batchId: text("batch_id").references(() => productionRuns.id),
+    packagingAllocationId: text("packaging_allocation_id").references(() => packagingAllocations.id),
     sku: text("sku"),
     status: text("status").notNull().default("OPEN"),
     // OPEN | PENDING_APPROVAL | APPROVED | REJECTED
@@ -242,6 +248,7 @@ export const integrityAlerts = pgTable(
       .$defaultFn(() => createId()),
     sku: text("sku").notNull(),
     batchId: text("batch_id").references(() => productionRuns.id),
+    packagingAllocationId: text("packaging_allocation_id").references(() => packagingAllocations.id),
     cartonSum: integer("carton_sum").notNull(),
     ledgerTotal: integer("ledger_total").notNull(),
     delta: integer("delta").notNull().default(0),
@@ -271,6 +278,11 @@ export const cartonsRelations = relations(cartons, ({ one, many }) => ({
   productionRun: one(productionRuns, {
     fields: [cartons.productionRunId],
     references: [productionRuns.id],
+  }),
+  
+  packagingAllocation: one(packagingAllocations, {
+    fields: [cartons.packagingAllocationId],
+    references: [packagingAllocations.id],
   }),
   warehouse: one(warehouses, {
     fields: [cartons.warehouseId],
@@ -311,6 +323,10 @@ export const adjustmentLogRelations = relations(
     batch: one(productionRuns, {
       fields: [adjustmentLog.batchId],
       references: [productionRuns.id],
+    }),
+    packagingAllocation: one(packagingAllocations, {
+      fields: [adjustmentLog.packagingAllocationId],
+      references: [packagingAllocations.id],
     }),
     relatedCarton: one(cartons, {
       fields: [adjustmentLog.relatedCartonId],

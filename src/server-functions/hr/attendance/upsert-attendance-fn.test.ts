@@ -10,7 +10,7 @@ describe("upsert attendance server source", () => {
   it("recomputes punch-driven present rows instead of trusting form values", () => {
     expect(source).toContain("usesPunchDrivenPresentRow");
     expect(source).toContain(
-      "!employee.isOrderBooker && rest.status === \"present\" && hasPunches",
+      "!isFieldWorker && rest.status === \"present\" && hasPunches",
     );
     expect(source).toContain("await lockEmployeePunchWrites(tx, employeeId)");
     expect(source).toContain("await recomputeAttendanceRow");

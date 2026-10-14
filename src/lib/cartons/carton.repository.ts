@@ -10,11 +10,12 @@ import {
   productionRuns,
   recipes,
 } from "@/db";
-import { eq, and, sql, inArray, desc } from "drizzle-orm";
+import { eq, or, and, sql, inArray, desc } from "drizzle-orm";
 import { CartonNotFoundError, BatchNotFoundError } from "./carton.errors";
+import { lockCartonStock } from "./stock-adjustment.server";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type DbOrTx = any;
+type DbOrTx = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 // ---------------------------------------------------------------------------
 // Carton CRUD
@@ -29,29 +30,46 @@ export async function findCartonById(id: string) {
 }
 
 export async function findCartonByIdForUpdate(id: string, tx: DbOrTx) {
+  const [ref] = await tx.select().from(cartons).where(eq(cartons.id, id));
+  if (!ref) throw new CartonNotFoundError(id);
+  await lockCartonStock(tx as Parameters<Parameters<typeof db.transaction>[0]>[0], [ref]);
   const [carton] = await tx
     .select()
     .from(cartons)
     .where(eq(cartons.id, id))
     .for("update");
   if (!carton) throw new CartonNotFoundError(id);
+  if (ref.warehouseId !== carton.warehouseId || ref.recipeId !== carton.recipeId) {
+    throw new Error("Carton stock location changed while locking; retry the action");
+  }
   return carton;
 }
 
-export async function findCartonsByProductionRunId(productionRunId: string) {
+export async function findCartonsByProductionRunId(packagingAllocationId: string) {
   return db
     .select()
     .from(cartons)
-    .where(eq(cartons.productionRunId, productionRunId));
+    .where(or(eq(cartons.packagingAllocationId, packagingAllocationId), eq(cartons.productionRunId, packagingAllocationId)));
 }
 
 export async function findCartonsByIdsForUpdate(ids: string[], tx: DbOrTx) {
   const sortedIds = [...ids].sort();
-  return tx
+  if (!sortedIds.length) return [];
+  const refs = await tx.select().from(cartons).where(inArray(cartons.id, sortedIds));
+  await lockCartonStock(tx as Parameters<Parameters<typeof db.transaction>[0]>[0], refs);
+  const locked = await tx
     .select()
     .from(cartons)
     .where(inArray(cartons.id, sortedIds))
+    .orderBy(cartons.id)
     .for("update");
+  for (const carton of locked) {
+    const ref = refs.find(row => row.id === carton.id);
+    if (!ref || ref.warehouseId !== carton.warehouseId || ref.recipeId !== carton.recipeId) {
+      throw new Error("Carton stock location changed while locking; retry the action");
+    }
+  }
+  return locked;
 }
 
 export async function insertCarton(
@@ -129,7 +147,7 @@ export async function findAdjustmentLogsByBatchId(
   return db
     .select()
     .from(adjustmentLog)
-    .where(eq(adjustmentLog.batchId, batchId))
+    .where(or(eq(adjustmentLog.batchId, batchId), eq(adjustmentLog.packagingAllocationId, batchId)))
     .orderBy(desc(adjustmentLog.performedAt))
     .limit(limit)
     .offset(offset);
@@ -139,7 +157,7 @@ export async function countAdjustmentLogsByBatchId(batchId: string) {
   const [result] = await db
     .select({ count: sql<number>`count(*)::int` })
     .from(adjustmentLog)
-    .where(eq(adjustmentLog.batchId, batchId));
+    .where(or(eq(adjustmentLog.batchId, batchId), eq(adjustmentLog.packagingAllocationId, batchId)));
   return result.count;
 }
 
@@ -178,7 +196,7 @@ export async function findRecipeById(id: string, tx?: DbOrTx) {
 // Batch KPIs
 // ---------------------------------------------------------------------------
 
-export async function getBatchKpis(productionRunId: string) {
+export async function getBatchKpis(packagingAllocationId: string) {
   const result = await db.execute(sql`
     SELECT
       c.total_cartons,
@@ -192,8 +210,11 @@ export async function getBatchKpis(productionRunId: string) {
       c.total_capacity,
       c.fill_rate_pct,
       p.status AS run_status,
-      r.target_units_per_batch,
-      r.containers_per_carton
+      p.target_containers AS target_units_per_batch,
+      p.packing_receipt_id,
+      p.full_cartons_recorded,
+      p.partial_packs_recorded,
+      COALESCE((p.format_snapshot->>'containersPerCarton')::integer, r.containers_per_carton) AS containers_per_carton
     FROM (
       SELECT
         COUNT(*) FILTER (WHERE status NOT IN ('ARCHIVED', 'RETIRED')) AS total_cartons,
@@ -210,17 +231,19 @@ export async function getBatchKpis(productionRunId: string) {
           / NULLIF(SUM(capacity) FILTER (WHERE status NOT IN ('ARCHIVED', 'RETIRED')), 0) * 100, 2
         ) AS fill_rate_pct
       FROM cartons
-      WHERE production_run_id = ${productionRunId}
+      WHERE packaging_allocation_id = ${packagingAllocationId}
     ) c
-    CROSS JOIN production_runs p
+    CROSS JOIN packaging_allocations p
     CROSS JOIN recipes r
-    WHERE p.id = ${productionRunId}
+    WHERE p.id = ${packagingAllocationId}
       AND r.id = p.recipe_id
   `);
   const row = result.rows[0];
   const capacity = Number(row?.containers_per_carton ?? 0);
   const targetUnits = Number(row?.target_units_per_batch ?? 0);
-  const targetCartons = capacity > 0 && targetUnits > 0 ? Math.ceil(targetUnits / capacity) : 0;
+  const targetCartons = row?.packing_receipt_id
+    ? Number(row.full_cartons_recorded ?? 0) + Number(Number(row.partial_packs_recorded ?? 0) > 0)
+    : capacity > 0 && targetUnits > 0 ? Math.ceil(targetUnits / capacity) : 0;
   const currentCartons = Number(row?.total_cartons ?? 0);
   return {
     totalCartons: currentCartons,
@@ -359,16 +382,16 @@ export async function updateIntegrityAlertById(
   return result;
 }
 
-export async function findExistingOpenAlert(sku: string, batchId: string | null, delta: number) {
+export async function findExistingOpenAlert(sku: string, batchId: string | null, delta: number, tx?: DbOrTx) {
   const conditions = [
     eq(integrityAlerts.sku, sku),
     sql`${integrityAlerts.status} IN ('OPEN', 'ACKNOWLEDGED')`,
     eq(integrityAlerts.delta, delta),
   ];
   if (batchId) {
-    conditions.push(eq(integrityAlerts.batchId, batchId));
+    conditions.push(eq(integrityAlerts.packagingAllocationId, batchId));
   }
-  const [existing] = await db
+  const [existing] = await (tx ?? db)
     .select()
     .from(integrityAlerts)
     .where(and(...conditions));

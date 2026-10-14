@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { and, eq, inArray, lte, sql } from "drizzle-orm";
+import { and, eq, lte, sql } from "drizzle-orm";
 import {
   chemicals,
   db,
@@ -9,14 +9,13 @@ import {
   warehouses,
 } from "@/db";
 import { requireFactoryFloorViewMiddleware } from "@/lib/middlewares";
-
-const ACTIVE_CARTON_STATUSES = ["PARTIAL", "COMPLETE", "SEALED", "ON_HOLD"] as const;
+import { calculateTotalUnits } from "@/lib/wac";
 
 export const getLowStockAlertsFn = createServerFn()
   .middleware([requireFactoryFloorViewMiddleware])
   .handler(async () => {
     const factoryFloor = await db.query.warehouses.findFirst({
-      where: eq(warehouses.type, "factory_floor"),
+      where: and(eq(warehouses.type, "factory_floor"), eq(warehouses.isActive, true)),
     });
 
     if (!factoryFloor) {
@@ -79,31 +78,11 @@ export const getLowStockAlertsFn = createServerFn()
       },
     });
 
-    const { cartons } = await import("@/db/schemas/manufacturing-schema");
-
-    const cartonCounts = await db
-      .select({
-        recipeId: cartons.recipeId,
-        totalPacks: sql<number>`coalesce(sum(${cartons.currentPacks}), 0)::int`,
-      })
-      .from(cartons)
-      .where(
-        and(
-          eq(cartons.warehouseId, factoryFloor.id),
-          inArray(cartons.status, [...ACTIVE_CARTON_STATUSES]),
-        ),
-      )
-      .groupBy(cartons.recipeId);
-
-    const totalPacksByRecipe = new Map(
-      cartonCounts.map((row) => [row.recipeId, Number(row.totalPacks ?? 0)]),
-    );
-
     const finishedGoodsAlerts = finishedGoodsRows
       .filter((row) => (row.recipe.minimumStockLevel ?? 0) > 0)
       .map((row) => {
         const totalUnits =
-          (totalPacksByRecipe.get(row.recipeId) ?? 0) + row.quantityContainers;
+          calculateTotalUnits(row.quantityCartons, row.quantityContainers, row.recipe.containersPerCarton ?? 0);
 
         return {
           id: row.id,

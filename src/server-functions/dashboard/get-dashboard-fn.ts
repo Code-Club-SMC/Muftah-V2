@@ -1,20 +1,21 @@
+import { mixingRuns, packagingAllocations, mixingMaterialsUsed, packagingMaterialsUsed } from "@/db/schemas/production-schema";
 import { createServerFn } from "@tanstack/react-start";
 import { requireDashboardViewMiddleware } from "@/lib/middlewares";
 import { z } from "zod";
 import { db } from "@/db";
 import { invoices } from "@/db/schemas/sales-schema";
 import {
-  productionRuns,
+
   materialStock,
   finishedGoodsStock,
   chemicals,
   packagingMaterials,
   recipes,
-  productionMaterialsUsed,
+
 } from "@/db/schemas/inventory-schema";
 import { payslips, payrolls, employees } from "@/db/schemas/hr-schema";
 import { expenses } from "@/db/schemas/finance-schema";
-import { sql, and, gte, lte, eq, desc, inArray } from "drizzle-orm";
+import { sql, and, or, gte, lte, eq, desc, inArray } from "drizzle-orm";
 import {
   format,
   startOfMonth,
@@ -49,6 +50,7 @@ async function computePeriodMetrics(
   const [
     revenueRow,
     materialConsumptionRow,
+    packagingConsumptionRow,
     expensesRow,
     payrollsInRange,
   ] = await Promise.all([
@@ -66,18 +68,24 @@ async function computePeriodMetrics(
 
     db
       .select({
-        totalMaterialCost: sql<string>`coalesce(sum(${productionMaterialsUsed.totalCost}), 0)`,
+        totalMaterialCost: sql<string>`coalesce(sum(${mixingMaterialsUsed.totalCost}), 0)`,
       })
-      .from(productionMaterialsUsed)
-      .innerJoin(productionRuns, eq(productionMaterialsUsed.productionRunId, productionRuns.id))
+      .from(mixingMaterialsUsed)
+      .innerJoin(mixingRuns, eq(mixingMaterialsUsed.mixingRunId, mixingRuns.id))
       .where(
         and(
-          eq(productionRuns.status, "completed"),
-          gte(productionRuns.actualCompletionDate, rangeStart),
-          lte(productionRuns.actualCompletionDate, rangeEnd),
+          eq(mixingRuns.status, "completed"),
+          gte(mixingRuns.actualCompletionDate, rangeStart),
+          lte(mixingRuns.actualCompletionDate, rangeEnd),
         ),
       )
       .then((r) => r[0]),
+
+    db
+      .select({ total: sql<string>`coalesce(sum(${packagingAllocations.totalPackagingCost}), 0)` })
+      .from(packagingAllocations)
+      .where(and(eq(packagingAllocations.status, "completed"), gte(packagingAllocations.completedAt, rangeStart), lte(packagingAllocations.completedAt, rangeEnd)))
+      .then(r => r[0]),
 
     db
       .select({ total: sql<string>`coalesce(sum(${expenses.amount}), 0)` })
@@ -95,7 +103,7 @@ async function computePeriodMetrics(
   ]);
 
   const totalRevenue = toFloat(revenueRow?.total);
-  const materialConsumptionCost = toFloat(materialConsumptionRow?.totalMaterialCost);
+  const materialConsumptionCost = toFloat(materialConsumptionRow?.totalMaterialCost) + toFloat(packagingConsumptionRow?.total);
   const operationalExpenses = toFloat(expensesRow?.total);
   const totalExpenses = operationalExpenses + materialConsumptionCost;
   const totalPayrollCost = await getPayrollCostForIds(
@@ -144,7 +152,8 @@ export const getDashboardStatsFn = createServerFn()
     const [
       currentMetrics,
       previousMetrics,
-      productionRow,
+      mixingRow,
+      packagingRow,
       chemicalStockRow,
       packagingStockRow,
       finishedGoodsRow,
@@ -154,12 +163,26 @@ export const getDashboardStatsFn = createServerFn()
       computePeriodMetrics(prevPeriod.start, prevPeriod.end),
       db
         .select({
-          activeCount: sql<number>`count(*) filter (where ${productionRuns.status} = 'in_progress')`,
-          completedCount: sql<number>`count(*) filter (where ${productionRuns.status} = 'completed')`,
-          totalCartons: sql<string>`coalesce(sum(${productionRuns.cartonsProduced}) filter (where ${productionRuns.status} = 'completed'), 0)`,
+          activeCount: sql<number>`count(*) filter (where ${mixingRuns.status} = 'in_progress' and ${mixingRuns.createdAt} between ${rangeStart} and ${rangeEnd})`,
+          completedCount: sql<number>`count(*) filter (where ${mixingRuns.status} = 'completed' and ${mixingRuns.actualCompletionDate} between ${rangeStart} and ${rangeEnd})`,
         })
-        .from(productionRuns)
-        .where(and(gte(productionRuns.createdAt, rangeStart), lte(productionRuns.createdAt, rangeEnd)))
+        .from(mixingRuns)
+        .where(or(
+          and(gte(mixingRuns.createdAt, rangeStart), lte(mixingRuns.createdAt, rangeEnd)),
+          and(gte(mixingRuns.actualCompletionDate, rangeStart), lte(mixingRuns.actualCompletionDate, rangeEnd)),
+        ))
+        .then((r) => r[0]),
+      db
+        .select({
+          activeCount: sql<number>`count(*) filter (where ${packagingAllocations.status} = 'in_progress' and ${packagingAllocations.createdAt} between ${rangeStart} and ${rangeEnd})`,
+          completedCount: sql<number>`count(*) filter (where ${packagingAllocations.status} = 'completed' and ${packagingAllocations.completedAt} between ${rangeStart} and ${rangeEnd})`,
+          totalCartons: sql<string>`coalesce(sum(${packagingAllocations.actualCartonsProduced}) filter (where ${packagingAllocations.status} = 'completed' and ${packagingAllocations.completedAt} between ${rangeStart} and ${rangeEnd}), 0)`,
+        })
+        .from(packagingAllocations)
+        .where(or(
+          and(gte(packagingAllocations.createdAt, rangeStart), lte(packagingAllocations.createdAt, rangeEnd)),
+          and(gte(packagingAllocations.completedAt, rangeStart), lte(packagingAllocations.completedAt, rangeEnd)),
+        ))
         .then((r) => r[0]),
 
       db
@@ -210,21 +233,23 @@ export const getDashboardStatsFn = createServerFn()
       .then((r) => r[0]);
 
     const { totalRevenue, operationalExpenses, materialConsumptionCost, totalExpenses, totalPayrollCost } = currentMetrics;
-    const invoiceCount = invoiceCountRow?.count ?? 0;
-    const activeProductionRuns = productionRow?.activeCount ?? 0;
-    const completedProductionRuns = productionRow?.completedCount ?? 0;
-    const totalCartonsProduced = toFloat(productionRow?.totalCartons);
+    const invoiceCount = Number(invoiceCountRow?.count ?? 0);
+    const activeMixingRuns = Number(mixingRow?.activeCount ?? 0);
+    const activePackagingAllocations = Number(packagingRow?.activeCount ?? 0);
+    const activeProductionRuns = activeMixingRuns + activePackagingAllocations;
+    const completedProductionRuns = Number(mixingRow?.completedCount ?? 0) + Number(packagingRow?.completedCount ?? 0);
+    const totalCartonsProduced = toFloat(packagingRow?.totalCartons);
     const rawStockValue = toFloat(chemicalStockRow?.value) + toFloat(packagingStockRow?.value);
     const finishedStockValue = toFloat(finishedGoodsRow?.value);
     const totalStockValue = rawStockValue + finishedStockValue;
-    const activeEmployees = empCountRow?.count ?? 0;
+    const activeEmployees = Number(empCountRow?.count ?? 0);
 
     // ── Chart: single GROUP BY query per source — filtered by date range ──
     // Calculate the chart window: from rangeStart to rangeEnd, grouped by month
 
     const chartWindowStart = rangeStart;
 
-    const [chartRevenue, chartExpenses, chartPayrolls, chartMaterialCosts] = await Promise.all([
+    const [chartRevenue, chartExpenses, chartPayrolls, chartMaterialCosts, chartPackagingCosts] = await Promise.all([
       // Revenue by month — only paid and partially_paid
       db
         .select({
@@ -268,20 +293,26 @@ export const getDashboardStatsFn = createServerFn()
       // Material consumption cost by month (for chart expense series)
       db
         .select({
-          month: sql<string>`to_char(date_trunc('month', ${productionRuns.actualCompletionDate}), 'YYYY-MM-01')`,
-          total: sql<string>`coalesce(sum(${productionMaterialsUsed.totalCost}), 0)`,
+          month: sql<string>`to_char(date_trunc('month', ${mixingRuns.actualCompletionDate}), 'YYYY-MM-01')`,
+          total: sql<string>`coalesce(sum(${mixingMaterialsUsed.totalCost}), 0)`,
         })
-        .from(productionMaterialsUsed)
-        .innerJoin(productionRuns, eq(productionMaterialsUsed.productionRunId, productionRuns.id))
+        .from(mixingMaterialsUsed)
+        .innerJoin(mixingRuns, eq(mixingMaterialsUsed.mixingRunId, mixingRuns.id))
         .where(
           and(
-            eq(productionRuns.status, "completed"),
-            gte(productionRuns.actualCompletionDate, chartWindowStart),
-            lte(productionRuns.actualCompletionDate, rangeEnd),
+            eq(mixingRuns.status, "completed"),
+            gte(mixingRuns.actualCompletionDate, chartWindowStart),
+            lte(mixingRuns.actualCompletionDate, rangeEnd),
           ),
         )
-        .groupBy(sql`date_trunc('month', ${productionRuns.actualCompletionDate})`)
-        .orderBy(sql`date_trunc('month', ${productionRuns.actualCompletionDate})`),
+        .groupBy(sql`date_trunc('month', ${mixingRuns.actualCompletionDate})`)
+        .orderBy(sql`date_trunc('month', ${mixingRuns.actualCompletionDate})`),
+      db.select({
+        month: sql<string>`to_char(date_trunc('month', ${packagingAllocations.completedAt}), 'YYYY-MM-01')`,
+        total: sql<string>`coalesce(sum(${packagingAllocations.totalPackagingCost}), 0)`,
+      }).from(packagingAllocations)
+        .where(and(eq(packagingAllocations.status, "completed"), gte(packagingAllocations.completedAt, chartWindowStart), lte(packagingAllocations.completedAt, rangeEnd)))
+        .groupBy(sql`date_trunc('month', ${packagingAllocations.completedAt})`),
     ]);
 
     // Build lookup maps for O(1) merge
@@ -289,6 +320,9 @@ export const getDashboardStatsFn = createServerFn()
     const expensesByMonth = new Map(chartExpenses.map((r) => [r.month, toFloat(r.total)]));
     const payrollByMonth = new Map(chartPayrolls.map((r) => [r.month, toFloat(r.total)]));
     const materialCostByMonth = new Map(chartMaterialCosts.map((r) => [r.month, toFloat(r.total)]));
+    for (const row of chartPackagingCosts) {
+      materialCostByMonth.set(row.month, (materialCostByMonth.get(row.month) ?? 0) + toFloat(row.total));
+    }
 
     // Generate month keys from chartWindowStart to rangeEnd
     // Use endOfMonth to ensure we capture the full range
@@ -307,27 +341,33 @@ export const getDashboardStatsFn = createServerFn()
     });
 
     // ── Recent activity — only 5 most recent ─────────────────────────────
-    const recentRuns = await db.query.productionRuns.findMany({
-      with: {
-        recipe: { with: { product: true } },
-        operator: true,
-      },
-      orderBy: [desc(productionRuns.updatedAt)],
-      limit: 5,
-    });
-
-    const recentActivity = recentRuns.map((run) => ({
-      id: run.id,
-      batchId: run.batchId,
-      productName: run.recipe?.product?.name ?? "Unknown Product",
-      recipeName: run.recipe?.name ?? "Unknown Recipe",
-      cartonsProduced: run.cartonsProduced ?? 0,
-      containersProduced: run.containersProduced ?? 0,
-      status: run.status,
-      operatorName: (run.operator as { name?: string } | null)?.name ?? "Unassigned",
-      date: run.updatedAt,
-      totalProductionCost: toFloat(run.totalProductionCost),
-    }));
+    const [recentMixing, recentPackaging] = await Promise.all([
+      db.query.mixingRuns.findMany({
+        with: { formula: { with: { product: true } }, operator: true },
+        orderBy: (run, { desc }) => [desc(run.updatedAt)], limit: 5,
+      }),
+      db.query.packagingAllocations.findMany({
+        with: { recipe: { with: { product: true } }, mixingRun: true, operator: true },
+        orderBy: (allocation, { desc }) => [desc(allocation.updatedAt)], limit: 5,
+      }),
+    ]);
+    const recentActivity = [
+      ...recentMixing.map(run => ({
+        id: run.id, batchId: run.batchId,
+        productName: run.formula.product.name, recipeName: run.formula.name,
+        cartonsProduced: 0, containersProduced: 0, status: run.status,
+        operatorName: run.operator.name, date: run.updatedAt,
+        totalProductionCost: Number(run.totalChemicalCost ?? 0),
+      })),
+      ...recentPackaging.map(allocation => ({
+        id: allocation.id, batchId: allocation.mixingRun.batchId,
+        productName: allocation.recipe.product.name, recipeName: allocation.recipe.name,
+        cartonsProduced: allocation.actualCartonsProduced ?? 0,
+        containersProduced: allocation.completedContainers ?? 0,
+        status: allocation.status, operatorName: allocation.operator.name,
+        date: allocation.updatedAt, totalProductionCost: Number(allocation.totalProductionCost ?? 0),
+      })),
+    ].sort((a, b) => b.date.getTime() - a.date.getTime()).slice(0, 5);
 
     // ── Previous period totals for chart "vs previous period" comparison ─
     const prevTotalRevenue = previousMetrics.totalRevenue;
@@ -339,6 +379,8 @@ export const getDashboardStatsFn = createServerFn()
       totalRevenue,
       invoiceCount,
       activeProductionRuns,
+      activeMixingRuns,
+      activePackagingAllocations,
       completedProductionRuns,
       totalCartonsProduced,
       rawStockValue,
@@ -365,47 +407,5 @@ export const getDashboardStatsFn = createServerFn()
         totalExpenses: prevTotalExpenses,
         net: prevNet,
       },
-    };
-  });
-
-// ── Paginated production runs for the dedicated logs page ─────────────────────
-export const getProductionRunsFn = createServerFn()
-  .middleware([requireDashboardViewMiddleware])
-  .inputValidator(
-    z.object({
-      page: z.number().int().positive().default(1),
-      limit: z.number().int().positive().default(15),
-      status: z.enum(["all", "scheduled", "in_progress", "completed", "cancelled"]).default("all"),
-    }),
-  )
-  .handler(async ({ data }) => {
-    const offset = (data.page - 1) * data.limit;
-
-    const whereClause =
-      data.status !== "all"
-        ? eq(productionRuns.status, data.status)
-        : undefined;
-
-    const [{ total }] = await db
-      .select({ total: sql<number>`count(*)` })
-      .from(productionRuns)
-      .where(whereClause);
-
-    const runs = await db.query.productionRuns.findMany({
-      where: whereClause,
-      with: {
-        recipe: { with: { product: true } },
-        operator: true,
-      },
-      orderBy: [desc(productionRuns.updatedAt)],
-      limit: data.limit,
-      offset,
-    });
-
-    return {
-      data: runs,
-      total,
-      pageCount: Math.ceil(total / data.limit),
-      page: data.page,
     };
   });

@@ -295,7 +295,7 @@ const InvoiceDetailContent = ({
     const chargedUnits = getChargedUnits(item);
     const unitMargin = Number(item.margin);
     const fallbackProfit = (Number(item.amount) || 0) - (Number(item.costOfGoodsSold) || 0);
-    const lineProfit = Number(item.costOfGoodsSold) > 0
+    const lineProfit = item.costOfGoodsSold != null && Number.isFinite(Number(item.costOfGoodsSold))
       ? fallbackProfit
       : (Number.isFinite(unitMargin) ? chargedUnits * unitMargin : fallbackProfit);
 
@@ -516,7 +516,7 @@ const InvoiceDetailContent = ({
                 const chargedUnits = getChargedUnits(item);
                 const lineSaleMeasure = getLineSaleMeasure(item);
                 const unitMargin = Number(item.margin);
-                const lineProfit = roundMoney(Number(item.costOfGoodsSold) > 0
+                const lineProfit = roundMoney(item.costOfGoodsSold != null && Number.isFinite(Number(item.costOfGoodsSold))
                   ? (Number(item.amount) || 0) - (Number(item.costOfGoodsSold) || 0)
                   : (Number.isFinite(unitMargin)
                     ? chargedUnits * unitMargin

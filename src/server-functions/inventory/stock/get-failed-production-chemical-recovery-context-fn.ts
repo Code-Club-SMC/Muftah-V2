@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { db } from "@/db";
 import { requireFactoryFloorViewMiddleware } from "@/lib/middlewares";
+import { hasPermission } from "@/lib/rbac";
 import {
   calculateRecoveryLoss,
   loadFailedProductionRecoveryContext,
@@ -15,9 +16,13 @@ export const getFailedProductionChemicalRecoveryContextFn = createServerFn()
       chemicalId: z.string().min(1, "Chemical is required"),
     }),
   )
-  .handler(async ({ data }) =>
+  .handler(async ({ data, context: auth }) =>
     db.transaction(async (tx) => {
       const context = await loadFailedProductionRecoveryContext(tx, data);
+      if (context.run.operatorId !== auth.session.user.id &&
+          !hasPermission(auth.authContext.permissions, "inventory.view")) {
+        throw new Error("This failed mixing run is assigned to another operator");
+      }
 
       if (context.settlement) {
         const recoveredQuantity = Number(context.settlement.recoveredQuantity);
@@ -26,8 +31,8 @@ export const getFailedProductionChemicalRecoveryContextFn = createServerFn()
 
         return {
           batchId: context.run.batchId,
-          recipeName: context.run.recipe.name,
-          productName: context.run.recipe.product.name,
+          recipeName: context.run.formula.name,
+          productName: context.run.formula.product.name,
           chemicalId: context.chemical.id,
           chemicalName: context.chemical.name,
           chemicalUnit: context.chemical.unit,
@@ -50,8 +55,8 @@ export const getFailedProductionChemicalRecoveryContextFn = createServerFn()
 
       return {
         batchId: context.run.batchId,
-        recipeName: context.run.recipe.name,
-        productName: context.run.recipe.product.name,
+        recipeName: context.run.formula.name,
+        productName: context.run.formula.product.name,
         chemicalId: context.chemical.id,
         chemicalName: context.chemical.name,
         chemicalUnit: context.chemical.unit,

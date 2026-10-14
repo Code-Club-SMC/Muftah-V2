@@ -24,10 +24,10 @@ const history = read("src/components/sales/offline/import-history.tsx");
 
 describe("offline sales reporting boundaries", () => {
   it("places sales and outstanding amounts on invoice business time", () => {
-    expect(sales).toContain("gte(invoices.date, from)");
-    expect(sales).toContain("lte(invoices.date, endOfDay(to))");
-    expect(outstanding).toContain("gte(invoices.date, from)");
-    expect(outstanding).toContain("lte(invoices.date, endOfDay(to))");
+    expect(sales).toContain("gte(invoices.date, fromDate)");
+    expect(sales).toContain("lte(invoices.date, toDate)");
+    expect(outstanding).toContain("gte(invoices.date, fromDate)");
+    expect(outstanding).toContain("lte(invoices.date, toDate)");
     expect(sales).not.toContain("gte(invoices.createdAt");
     expect(outstanding).not.toContain("gte(invoices.createdAt");
   });

@@ -444,7 +444,7 @@ describe("invoice create/edit regressions", () => {
     expect(source).toContain("getReservedCartonsForRecipe");
     expect(source).toContain("currentItem.numberOfCartons || 0) + autoFreeCartons + manualFreeCartons");
     expect(source).toContain("remainingCompleteCartons");
-    expect(source).toContain("(rawCartonInfo.completeCartons || 0) - otherReservedCartons");
+    expect(source).toContain("getInvoiceStockAvailability(stock, rawCartonInfo, otherReservedUnits, otherReservedCartons)");
     expect(source).not.toContain("form.setFieldValue(`items[${index}].discountCartons`, autoFreeCartons);");
   });
 
@@ -522,7 +522,7 @@ describe("invoice create/edit regressions", () => {
     expect(source).toContain("const getLineGrossAmount = (item: any) => {");
     expect(source).toContain("const totalProfit = roundMoney(totalProfitBeforeDiscount - invoiceDiscount);");
     expect(source).toContain("{PKR(roundedDisplayProfit)}");
-    expect(source).toContain("Number(item.costOfGoodsSold) > 0");
+    expect(source).toContain("item.costOfGoodsSold != null && Number.isFinite(Number(item.costOfGoodsSold))");
     expect(source).not.toContain("const totalProfit = totalProfitBeforeExpenses - expenses;");
     expect(source).not.toContain("TableHead className=\"text-[11px] text-right\">Amount</TableHead>");
   });

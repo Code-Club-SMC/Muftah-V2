@@ -68,7 +68,8 @@ describe("sales workflow regressions", () => {
     );
 
     expect(invoiceSource).toContain("const reservedUnitsByRecipe = new Map<string, number>()");
-    expect(invoiceSource).toContain("const remainingUnitsByRecipe = new Map<string, number>()");
+    expect(invoiceSource).toContain("await adjustCartonStock(tx,");
+    expect(invoiceSource).toContain("r.cogsTotal = Number(debitedValue)");
     expect(invoiceSource).toContain("if (lineResolution.totalDispatchedUnits > remainingAvailableUnits)");
     expect(invoiceSource).toContain("alreadyReservedUnits + lineResolution.totalDispatchedUnits");
     expect(invoiceSource).toContain("getSavedInvoiceItemDispatchedUnits");
@@ -98,9 +99,10 @@ describe("sales workflow regressions", () => {
     expect(invoiceSource).toContain("getCartonInventorySnapshot");
     expect(invoiceSource).toContain("sellableCompleteCartons");
     expect(invoiceSource).toContain("physicalTotalUnits");
-    expect(invoiceSource).toContain("remainingUnitsByRecipe = new Map<string, number>()");
-    expect(invoiceItemsSource).toContain("const sellableCartonPacks = rawCartonInfo.totalPacks || 0;");
-    expect(invoiceItemsSource).toContain("const totalStockU = sellableCartonPacks + stockU;");
+    expect(invoiceSource).toContain("await reverseInvoiceStock(tx,");
+    expect(invoiceSource).toContain("await dispatchInvoiceCartons(tx,");
+    expect(invoiceItemsSource).toContain("getInvoiceStockAvailability(stock, rawCartonInfo, otherReservedUnits, otherReservedCartons)");
+    expect(invoiceItemsSource).not.toContain("sellableCartonPacks + stockU");
   });
 
   it("caps retailer discount at the server boundary and rounds payable totals to currency precision", () => {

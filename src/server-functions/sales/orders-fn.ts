@@ -1,9 +1,9 @@
 import { createServerFn } from "@tanstack/react-start";
 import { db } from "@/db";
-import { orders, orderItems, commissionRecords, salesmen, orderBookerTrips } from "@/db/schemas/sales-erp-schema";
+import { orders, orderItems, commissionRecords, salesmen, orderBookerTrips, orderBookers } from "@/db/schemas/sales-erp-schema";
 import { customers } from "@/db/schemas/sales-schema";
 import { tadaRates } from "@/db/schemas/hr-schema";
-import { eq, and, gte, lte, desc, or, ilike } from "drizzle-orm";
+import { eq, and, gte, lte, desc, or, ilike, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { createId } from "@paralleldrive/cuid2";
 import {
@@ -158,10 +158,24 @@ export const createOrderFn = createServerFn()
             });
             assertOrderBookerTripAllowed(eligibility);
 
-            const activeRate = await tx.query.tadaRates.findFirst({
-              where: eq(tadaRates.isActive, true),
-              orderBy: [desc(tadaRates.effectiveFrom)],
+            const booker = await tx.query.orderBookers.findFirst({
+              where: eq(orderBookers.id, data.orderBookerId)
             });
+            const employeeId = booker?.employeeId;
+
+            let activeRate = null;
+            if (employeeId) {
+              activeRate = await tx.query.tadaRates.findFirst({
+                where: and(eq(tadaRates.isActive, true), eq(tadaRates.employeeId, employeeId)),
+                orderBy: [desc(tadaRates.effectiveFrom)],
+              });
+            }
+            if (!activeRate) {
+              activeRate = await tx.query.tadaRates.findFirst({
+                where: and(eq(tadaRates.isActive, true), isNull(tadaRates.employeeId)),
+                orderBy: [desc(tadaRates.effectiveFrom)],
+              });
+            }
             const ratePerKm = activeRate ? parseFloat(activeRate.ratePerKm) : 0;
             const tadaAmount = data.trip.distanceKm * ratePerKm;
 

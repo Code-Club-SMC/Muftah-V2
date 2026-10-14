@@ -4,6 +4,7 @@
 
 import { createServerFn } from "@tanstack/react-start";
 import { createId } from "@paralleldrive/cuid2";
+import Big from "big.js";
 import {
   finishedGoodsStock,
   returnedFinishedGoodsStock,
@@ -22,6 +23,8 @@ import {
 import { z } from "zod";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { recalculateInvoiceSettlement } from "./settlement-service";
+import { lockFinishedGoods } from "@/lib/production/finished-goods-lock.server";
+import { lockCartonReturnOrder, recordSalesReturnCartons } from "@/lib/cartons/sales-return.server";
 
 function getUnitsPerCarton(item: {
   packsPerCarton?: number | null;
@@ -41,25 +44,25 @@ function getTotalUnits(
 function calculateInboundStockState(params: {
   existingCartons: number;
   existingContainers: number;
-  existingTotalInventoryValue: number;
+  existingTotalInventoryValue: string;
   unitsPerCarton: number;
   inboundCartons: number;
   inboundContainers: number;
-  inboundCostPerUnit: number;
+  inboundInventoryValue: string;
+  usesCartons: boolean;
 }) {
   const existingUnits =
     params.existingCartons * params.unitsPerCarton + params.existingContainers;
   const inboundUnits =
     params.inboundCartons * params.unitsPerCarton + params.inboundContainers;
   const nextUnits = existingUnits + inboundUnits;
-  const nextTotalInventoryValue =
-    params.existingTotalInventoryValue +
-    inboundUnits * params.inboundCostPerUnit;
-  const nextCartons = Math.floor(nextUnits / params.unitsPerCarton);
-  const nextContainers = nextUnits % params.unitsPerCarton;
+  const nextTotalInventoryValue = new Big(params.existingTotalInventoryValue)
+    .plus(params.inboundInventoryValue);
+  const nextCartons = params.usesCartons ? Math.floor(nextUnits / params.unitsPerCarton) : 0;
+  const nextContainers = params.usesCartons ? nextUnits % params.unitsPerCarton : nextUnits;
   const nextWacPerPack =
-    nextUnits > 0 ? nextTotalInventoryValue / nextUnits : 0;
-  const nextWacPerCarton = nextWacPerPack * params.unitsPerCarton;
+    nextUnits > 0 ? nextTotalInventoryValue.div(nextUnits) : new Big(0);
+  const nextWacPerCarton = params.usesCartons ? nextWacPerPack.times(params.unitsPerCarton) : new Big(0);
 
   return {
     nextCartons,
@@ -233,6 +236,7 @@ export const createSalesReturnFn = createServerFn()
     const userId = context.session.user.id;
 
     return await db.transaction(async (tx) => {
+      await tx.select({ id: invoices.id }).from(invoices).where(eq(invoices.id, data.invoiceId)).for("update");
       const invoice = await tx.query.invoices.findFirst({
         where: eq(invoices.id, data.invoiceId),
         with: { items: true, customer: true },
@@ -378,6 +382,7 @@ export const processSalesReturnFn = createServerFn()
     const userId = context.session.user.id;
 
     return await db.transaction(async (tx) => {
+      await tx.select({ id: salesReturns.id }).from(salesReturns).where(eq(salesReturns.id, data.returnId)).for("update");
       const salesReturn = await tx.query.salesReturns.findFirst({
         where: eq(salesReturns.id, data.returnId),
         with: { items: true, invoice: true },
@@ -386,6 +391,8 @@ export const processSalesReturnFn = createServerFn()
       if (salesReturn.status !== "pending") {
         throw new Error("Return has already been processed");
       }
+      await lockCartonReturnOrder(tx, salesReturn.invoiceId);
+      await tx.select({ id: invoices.id }).from(invoices).where(eq(invoices.id, salesReturn.invoiceId)).for("update");
 
       const newStatus = data.action === "approve" ? "approved" : "rejected";
       const [updated] = await tx
@@ -401,12 +408,6 @@ export const processSalesReturnFn = createServerFn()
         .returning();
 
       if (data.action === "approve" && salesReturn.invoice) {
-        const returnAmount = Number(salesReturn.totalAmount);
-        if (returnAmount > Number(salesReturn.invoice.outstandingAmount)) {
-          throw new Error(
-            "Returned Amount cannot exceed this invoice's Outstanding Amount",
-          );
-        }
         const invoiceItemIds = salesReturn.items.map(
           (item) => item.invoiceItemId,
         );
@@ -419,10 +420,14 @@ export const processSalesReturnFn = createServerFn()
         );
         const invoiceItemRows = await tx.query.invoiceItems.findMany({
           where: inArray(invoiceItems.id, invoiceItemIds),
+          with: { recipe: true },
         });
         const invoiceItemMap = new Map(
           invoiceItemRows.map((item) => [item.id, item]),
         );
+        const warehouseId = salesReturn.invoice.stockWarehouseId ?? salesReturn.invoice.warehouseId;
+        if (!warehouseId) throw new Error("Invoice warehouse is required to restock approved returns");
+        await lockFinishedGoods(tx, warehouseId, invoiceItemRows.flatMap(item => item.recipeId ? [item.recipeId] : []));
 
         for (const returnItem of salesReturn.items) {
           const invoiceItem = invoiceItemMap.get(returnItem.invoiceItemId);
@@ -463,10 +468,26 @@ export const processSalesReturnFn = createServerFn()
             );
           }
 
+          const recordedUnitCost = Number(invoiceItem.costOfGoodsSoldPerUnit);
           const inboundCostPerUnit =
-            Number(invoiceItem.costOfGoodsSoldPerUnit || 0) > 0
-              ? Number(invoiceItem.costOfGoodsSoldPerUnit)
+            invoiceItem.costOfGoodsSoldPerUnit != null &&
+            Number.isFinite(recordedUnitCost) && recordedUnitCost >= 0
+              ? recordedUnitCost
               : Number(invoiceItem.perCartonPrice || 0) / unitsPerCarton;
+          const totalDispatchedUnits = Number(invoiceItem.dispatchedUnits) > 0
+            ? Number(invoiceItem.dispatchedUnits) : totalUnitsInvoiced;
+          const recordedTotalCost = Number(invoiceItem.costOfGoodsSold);
+          const historicalTotalCost = invoiceItem.costOfGoodsSold != null &&
+            Number.isFinite(recordedTotalCost) && recordedTotalCost >= 0
+              ? new Big(invoiceItem.costOfGoodsSold)
+              : new Big(inboundCostPerUnit).times(totalDispatchedUnits);
+          // Allocate recorded cents cumulatively so split returns retain the
+          // residual, while the per-unit field stays the historical snapshot.
+          const allocatedBefore = historicalTotalCost.times(alreadyApprovedUnits)
+            .div(totalDispatchedUnits).round(2);
+          const inboundInventoryValue = historicalTotalCost
+            .times(alreadyApprovedUnits + requestedUnits)
+            .div(totalDispatchedUnits).round(2).minus(allocatedBefore).toFixed(2);
           const inboundCartons = returnItem.cartonsReturned ?? 0;
           const inboundContainers = returnItem.quantityReturned ?? 0;
           const totalUnitsMoved = getTotalUnits(
@@ -478,6 +499,11 @@ export const processSalesReturnFn = createServerFn()
             salesReturn.condition === "good"
               ? "sellable"
               : salesReturn.condition;
+          await recordSalesReturnCartons(tx, {
+            invoiceId: salesReturn.invoiceId, salesReturnId: salesReturn.id,
+            recipeId: invoiceItem.recipeId, warehouseId: stockWarehouseId,
+            units: totalUnitsMoved, good: salesReturn.condition === "good", userId,
+          });
 
           if (salesReturn.condition === "good") {
             const existingSellableStock =
@@ -492,13 +518,12 @@ export const processSalesReturnFn = createServerFn()
               existingCartons: existingSellableStock?.quantityCartons ?? 0,
               existingContainers:
                 existingSellableStock?.quantityContainers ?? 0,
-              existingTotalInventoryValue: Number(
-                existingSellableStock?.totalInventoryValue ?? 0,
-              ),
+              existingTotalInventoryValue: existingSellableStock?.totalInventoryValue ?? "0",
               unitsPerCarton,
               inboundCartons,
               inboundContainers,
-              inboundCostPerUnit,
+              inboundInventoryValue,
+              usesCartons: !!invoiceItem.recipe?.cartonPackagingId && (invoiceItem.recipe.containersPerCarton ?? 0) > 0,
             });
 
             if (existingSellableStock) {
@@ -547,13 +572,12 @@ export const processSalesReturnFn = createServerFn()
               existingCartons: existingReturnedStock?.quantityCartons ?? 0,
               existingContainers:
                 existingReturnedStock?.quantityContainers ?? 0,
-              existingTotalInventoryValue: Number(
-                existingReturnedStock?.totalInventoryValue ?? 0,
-              ),
+              existingTotalInventoryValue: existingReturnedStock?.totalInventoryValue ?? "0",
               unitsPerCarton,
               inboundCartons,
               inboundContainers,
-              inboundCostPerUnit,
+              inboundInventoryValue,
+              usesCartons: !!invoiceItem.recipe?.cartonPackagingId && (invoiceItem.recipe.containersPerCarton ?? 0) > 0,
             });
 
             if (existingReturnedStock) {
@@ -604,8 +628,9 @@ export const processSalesReturnFn = createServerFn()
             quantityMoved: inboundContainers,
             totalUnitsMoved,
             costPerUnit: inboundCostPerUnit.toFixed(4),
-            totalCost: (totalUnitsMoved * inboundCostPerUnit).toFixed(2),
+            totalCost: inboundInventoryValue,
           });
+          approvedUnitsByItem.set(returnItem.invoiceItemId, alreadyApprovedUnits + requestedUnits);
         }
 
         // NOTE: Invoice totals are intentionally NOT mutated here.

@@ -18,11 +18,11 @@ export const CreateRecipeSheet = ({
 }: CreateRecipeSheetProps) => {
   return (
     <ResponsiveSheet
-      title={initialRecipe ? "Edit Recipe" : "Create Recipe"}
+      title={initialRecipe ? "Edit Packaging Format" : "Create Packaging Format"}
       description={
         initialRecipe
-          ? "Update the details of your production recipe."
-          : "Define a production recipe with batch size, packaging, and formula details."
+          ? "Update the details of your packaging format."
+          : "Choose a mixing formula, container size, labels, and carton setup."
       }
       open={open}
       onOpenChange={onOpenChange}

@@ -291,7 +291,7 @@ export const slipRecords = pgTable("slip_records", {
   invoiceUnique: uniqueIndex("slip_records_invoice_unique").on(table.invoiceId),
   settlementAmountsCheck: check(
     "slip_records_settlement_amounts_check",
-    sql`${table.invoiceAmount} >= 0 and ${table.paidAmount} >= 0 and ${table.returnedAmount} >= 0 and ${table.outstandingAmount} >= 0 and ${table.paidAmount} + ${table.returnedAmount} + ${table.outstandingAmount} = ${table.invoiceAmount}`,
+    sql`${table.invoiceAmount} >= 0 and ${table.paidAmount} >= 0 and ${table.returnedAmount} >= 0 and ${table.paidAmount} + ${table.returnedAmount} + ${table.outstandingAmount} = ${table.invoiceAmount}`,
   ),
 }));
 

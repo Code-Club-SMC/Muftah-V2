@@ -3,7 +3,7 @@ import { db } from "@/db";
 import { requireManufacturingViewMiddleware } from "@/lib/middlewares";
 import { z } from "zod";
 import { eq, and, sql, desc, gte, inArray } from "drizzle-orm";
-import { products, recipes, finishedGoodsStock, productionRuns, warehouses } from "@/db/schemas/inventory-schema";
+import { products, recipes, finishedGoodsStock, warehouses } from "@/db/schemas/inventory-schema";
 import { invoices, invoiceItems } from "@/db/schemas/sales-schema";
 import {
   priceChangeLog,
@@ -12,6 +12,7 @@ import {
   orderBookers,
 } from "@/db/schemas/sales-erp-schema";
 import { subMonths, startOfMonth } from "date-fns";
+import { packagingAllocations } from "@/db/schemas/production-schema";
 
 const getProductDetailParams = z.object({ id: z.string() });
 
@@ -73,9 +74,9 @@ export const getProductDetailFn = createServerFn()
 
       // 4. Production history
       recipeIds.length > 0
-        ? db.query.productionRuns.findMany({
-            where: inArray(productionRuns.recipeId, recipeIds),
-            orderBy: [desc(productionRuns.createdAt)],
+        ? db.query.packagingAllocations.findMany({
+            where: inArray(packagingAllocations.recipeId, recipeIds),
+            orderBy: [desc(packagingAllocations.createdAt)],
             with: {
               recipe: { columns: { name: true, batchSize: true, batchUnit: true } },
               warehouse: { columns: { name: true } },

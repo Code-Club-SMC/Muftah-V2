@@ -1,6 +1,14 @@
+import { formatReportMoney } from "@/lib/report-format";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { endOfMonth, format, parseISO, startOfMonth } from "date-fns";
+import { parseISO } from "date-fns";
+import {
+  currentReportMonth,
+  datePickerKey,
+  formatReportDate,
+  reportDateBounds,
+} from "@/lib/report-dates";
+import { Button as RetryButton } from "@/components/ui/button";
 import {
   ArrowDownLeft,
   ArrowUpRight,
@@ -47,7 +55,7 @@ import {
   PnlPrintStyles,
 } from "@/components/reports/profit-loss/pnl-report-primitives";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { formatPKR } from "@/lib/currency-format";
+
 import {
   parseReportSource,
   reportSourceLabel,
@@ -56,10 +64,6 @@ import {
 import { getCompanyProfitLossFn } from "@/server-functions/reports/profit-loss/company-pnl-fn";
 
 export { PnlTerminologyDialog } from "@/components/reports/profit-loss/pnl-terminology-dialog";
-
-const today = new Date();
-const defaultFrom = format(startOfMonth(today), "yyyy-MM-dd");
-const defaultTo = format(endOfMonth(today), "yyyy-MM-dd");
 
 function searchToRange(from: string, to: string): DateRange {
   return {
@@ -70,8 +74,8 @@ function searchToRange(from: string, to: string): DateRange {
 
 export const Route = createFileRoute("/_protected/reports/profit-loss/")({
   validateSearch: (search: Record<string, unknown>) => ({
-    from: String(search.from ?? defaultFrom),
-    to: String(search.to ?? defaultTo),
+    from: String(search.from ?? currentReportMonth().from),
+    to: String(search.to ?? currentReportMonth().to),
     source: parseReportSource(search.source),
   }),
   component: CompanyProfitabilityReportPage,
@@ -88,7 +92,7 @@ function CompanyProfitabilityReportPage() {
     setDateRange(searchToRange(search.from, search.to));
   }, [search.from, search.to]);
 
-  const { data, isLoading, isError, error, isFetching } = useQuery({
+  const { data, isLoading, isError, error, isFetching, refetch } = useQuery({
     queryKey: [
       "reports",
       "profit-loss",
@@ -107,6 +111,13 @@ function CompanyProfitabilityReportPage() {
       }),
   });
 
+  const draft =
+    !dateRange?.from ||
+    !dateRange?.to ||
+    datePickerKey(dateRange.from) !== search.from ||
+    datePickerKey(dateRange.to) !== search.to;
+  const exportDisabled = !data || isFetching || isError || draft;
+
   const handleApply = () => {
     const fromDate = dateRange?.from;
     const toDate = dateRange?.to;
@@ -114,12 +125,22 @@ function CompanyProfitabilityReportPage() {
       return;
     }
 
+    if (dateRange?.from && dateRange?.to) {
+      reportDateBounds({
+        dateFrom: datePickerKey(dateRange.from),
+        dateTo: datePickerKey(dateRange.to),
+      });
+      if (!draft) {
+        void refetch();
+        return;
+      }
+    }
     startTransition(() => {
       navigate({
         to: "/reports/profit-loss",
         search: {
-          from: format(fromDate, "yyyy-MM-dd"),
-          to: format(toDate, "yyyy-MM-dd"),
+          from: datePickerKey(fromDate),
+          to: datePickerKey(toDate),
           source: search.source,
         },
       });
@@ -136,7 +157,7 @@ function CompanyProfitabilityReportPage() {
   };
 
   const handlePrint = () => {
-    window.print();
+    if (!exportDisabled) window.print();
   };
 
   if (isError) {
@@ -147,17 +168,22 @@ function CompanyProfitabilityReportPage() {
           title="Unable to load Company Profitability"
           description={error instanceof Error ? error.message : "Unknown error"}
         />
+        <RetryButton onClick={() => void refetch()}>Retry</RetryButton>
       </main>
     );
   }
 
   return (
-    <main data-pnl-report className="space-y-5 pb-8">
+    <main
+      data-pnl-report
+      data-report-document={data ? true : undefined}
+      className="space-y-5 pb-8"
+    >
       <PnlPrintStyles />
 
-      <div className="space-y-3 print:hidden">
+      <div className="space-y-3">
         <OfflineReportPendingBanner />
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 print:hidden">
           <span className="text-sm text-muted-foreground">Invoice source</span>
           <ReportSourceSelect
             value={search.source}
@@ -181,10 +207,13 @@ function CompanyProfitabilityReportPage() {
       {data ? (
         <PnlPrintHeader
           title="Company Profitability Overview"
-          productName="CleanPro Detergent ERP"
+          productName="Company-wide"
           productCode="Company-wide"
           category="Broad business profitability"
           periodLabel={data.reportPeriod.label}
+          source={reportSourceLabel(search.source)}
+          dateFrom={search.from}
+          dateTo={search.to}
           generatedAt={data.generatedAt}
         />
       ) : null}
@@ -215,6 +244,7 @@ function CompanyProfitabilityReportPage() {
         dateRange={dateRange}
         onDateRangeChange={setDateRange}
         onApply={handleApply}
+        exportDisabled={exportDisabled}
         isPending={isFetching}
         dateFrom={search.from}
         dateTo={search.to}
@@ -428,7 +458,7 @@ function CompanyProfitabilityContent({
       <MetricCardRow>
         <MetricCard
           label="Collected Revenue"
-          value={formatPKR(data.summary.totalRevenue, false)}
+          value={formatReportMoney(data.summary.totalRevenue)}
           delta={data.deltas.revenuePercent}
           deltaLabel={data.comparisonLabel}
           icon={DollarSign}
@@ -436,7 +466,7 @@ function CompanyProfitabilityContent({
         />
         <MetricCard
           label="Gross Profit"
-          value={formatPKR(data.summary.grossProfit, false)}
+          value={formatReportMoney(data.summary.grossProfit)}
           delta={data.deltas.grossProfitPercent}
           deltaLabel={data.comparisonLabel}
           icon={TrendingUp}
@@ -453,7 +483,7 @@ function CompanyProfitabilityContent({
         />
         <MetricCard
           label="Operating Expenses"
-          value={formatPKR(data.summary.totalOperatingExpenses, false)}
+          value={formatReportMoney(data.summary.totalOperatingExpenses)}
           delta={data.deltas.operatingExpensesPercent}
           deltaLabel={data.comparisonLabel}
           icon={Receipt}
@@ -461,7 +491,7 @@ function CompanyProfitabilityContent({
         />
         <MetricCard
           label="Net Profit"
-          value={formatPKR(data.summary.netProfit, false)}
+          value={formatReportMoney(data.summary.netProfit)}
           delta={data.deltas.netProfitPercent}
           deltaLabel={data.comparisonLabel}
           icon={data.summary.netProfit < 0 ? TrendingDown : Wallet}

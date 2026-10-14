@@ -10,6 +10,10 @@ const readSalesSource = (fileName: string) =>
 
 describe("shared invoice posting contract", () => {
 	const postingSource = readSalesSource("invoice-posting-service.ts");
+	const stockAdjustmentSource = readFileSync(
+		resolve(process.cwd(), "src/lib/cartons/stock-adjustment.server.ts"),
+		"utf8",
+	);
 	const invoiceFnSource = readSalesSource("invoices-fn.ts");
 	const commissionSource = readSalesSource("order-booker-commission-calc.ts");
 	const schemaSource = readFileSync(
@@ -29,7 +33,11 @@ describe("shared invoice posting contract", () => {
 		expect(postingSource).toContain("allocateOnlineInvoiceNumber(tx)");
 		expect(postingSource).toContain(".insert(invoices)");
 		expect(postingSource).toContain(".insert(invoiceItems)");
-		expect(postingSource).toContain(".update(finishedGoodsStock)");
+		expect(postingSource).toMatch(
+			/await adjustCartonStock\(tx,[\s\S]*?-r\.deductedUnits, userId, invoice\.id\)/,
+		);
+		expect(stockAdjustmentSource).toContain(".update(finishedGoodsStock)");
+		expect(postingSource).toContain("r.cogsTotal = Number(debitedValue)");
 		expect(postingSource).toContain(".update(orders)");
 		expect(postingSource).toContain("calculateCommissionForOrder(");
 		expect(postingSource).toContain(".insert(slipRecords)");

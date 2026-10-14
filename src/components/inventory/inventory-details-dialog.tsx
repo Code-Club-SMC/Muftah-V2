@@ -29,6 +29,7 @@ import { useQuery } from "@tanstack/react-query";
 import { getTransferHistoryFn } from "@/server-functions/inventory/stock/get-transfer-history-fn";
 import { LabReportsList } from "./lab-reports/lab-reports-list";
 import { Separator } from "@/components/ui/separator";
+import { calculateTotalUnits } from "@/lib/wac";
 
 type DetailsProps = {
   open: boolean;
@@ -57,8 +58,7 @@ export const InventoryDetailsDialog = ({
   const updatedAt = new Date(item.updatedAt);
 
   const currentQty = isFinished
-    ? item.quantityCartons * (item.recipe.containersPerCarton || 0) +
-    item.quantityContainers
+    ? calculateTotalUnits(item.quantityCartons, item.quantityContainers, item.recipe.containersPerCarton ?? 0)
     : parseFloat(item.quantity);
   const minLevel = isFinished
     ? 0
@@ -136,12 +136,12 @@ export const InventoryDetailsDialog = ({
                   <div className="flex flex-col gap-1">
                     <span className="text-3xl font-black text-foreground leading-none tracking-tighter">
                       {isFinished
-                        ? item.quantityCartons
+                        ? currentQty
                         : currentQty.toFixed(0)}
                     </span>
                     <span className="text-[10px] font-bold text-emerald-500 bg-emerald-500/10 px-2 py-1 rounded-md border border-emerald-500/20 uppercase w-fit">
                       {isFinished
-                        ? "Cartons"
+                        ? "Packs"
                         : material.unit ||
                         (type === "packaging" ? "pcs" : "kg")}
                     </span>
@@ -158,7 +158,7 @@ export const InventoryDetailsDialog = ({
                       <span className="text-3xl font-black text-foreground leading-none tracking-tighter">
                         {isFinished
                           ? parseFloat(
-                            (material as any).weightedAverageCostPerPack || material.estimatedCostPerContainer,
+                            item.weightedAverageCostPerPack ?? material.estimatedCostPerContainer ?? "0",
                           ).toFixed(2)
                           : parseFloat(material.costPerUnit).toFixed(2)}
                       </span>

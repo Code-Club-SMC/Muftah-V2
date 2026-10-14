@@ -13,3 +13,9 @@ export function formatDuration(hours: number) {
   const mins = Math.round(absHours * 60);
   return `${mins} mins`;
 }
+export function formatNum(num: number | string | null | undefined): string {
+  if (num === null || num === undefined) return "0";
+  const parsed = typeof num === 'string' ? parseFloat(num) : num;
+  if (isNaN(parsed)) return "0";
+  return new Intl.NumberFormat("en-US").format(parsed);
+}

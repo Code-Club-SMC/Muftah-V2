@@ -5,11 +5,11 @@ import { describe, expect, it } from "vitest";
 describe("auth hardening guardrails", () => {
   it("does not leave the operator lookup endpoint auth-only", () => {
     const source = readFileSync(
-      resolve(process.cwd(), "src/server-functions/inventory/production/get-operators-fn.ts"),
+      resolve(process.cwd(), "src/server-functions/manufacturing/get-assignment-options-fn.ts"),
       "utf8",
     );
 
-    expect(source).toContain("requireManufacturingViewMiddleware");
+    expect(source).toContain(".middleware([requireManufacturingRunManageMiddleware])");
     expect(source).not.toContain(".middleware([requireAuthMiddleware])");
   });
 

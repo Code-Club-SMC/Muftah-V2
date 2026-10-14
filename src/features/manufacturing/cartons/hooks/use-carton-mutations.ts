@@ -326,7 +326,7 @@ export function useReleaseQcHold(cartonId: string, batchId: string) {
 export function useBatchKpis(productionRunId: string) {
   return useQuery({
     queryKey: cartonKeys.batchKpis(productionRunId),
-    queryFn: () => getBatchKpisFn({ data: { productionRunId } }),
+    queryFn: () => getBatchKpisFn({ data: { packagingAllocationId: productionRunId } }),
     refetchInterval: 30_000,
   });
 }
@@ -401,10 +401,11 @@ export function useApproveStockCount() {
 // ---------------------------------------------------------------------------
 // Scenario 19 — Integrity Alerts
 // ---------------------------------------------------------------------------
-export function useIntegrityAlerts() {
+export function useIntegrityAlerts(enabled = true) {
   return useQuery({
     queryKey: cartonKeys.integrityAlerts(),
     queryFn: () => getIntegrityAlertsFn({ data: {} }),
+    enabled,
   });
 }
 
@@ -412,9 +413,10 @@ export function useRunIntegrityCheck() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (batchId?: string) => runIntegrityCheckFn({ data: { batchId } }),
-    onSuccess: () => {
+    onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: cartonKeys.integrityAlerts() });
-      toast.success("Integrity check completed.");
+      if (result.allBalanced) toast.success("Integrity check passed.");
+      else toast.error(`Integrity check found ${result.mismatchCount} discrepancies, including ${result.stockMismatches.length} finished stock discrepancies.`);
     },
     onError: (error: Error) => {
       toast.error(error.message || "Integrity check failed.");
@@ -451,7 +453,7 @@ export function useCartonAuditLog(cartonId: string, page = 1, limit = 20) {
 export function useBatchAuditLog(productionRunId: string, page = 1, limit = 50) {
   return useQuery({
     queryKey: [...cartonKeys.batchAuditLog(productionRunId), { page, limit }],
-    queryFn: () => getBatchAuditLogFn({ data: { productionRunId, page, limit } }),
+    queryFn: () => getBatchAuditLogFn({ data: { packagingAllocationId: productionRunId, page, limit } }),
     enabled: !!productionRunId,
   });
 }
@@ -470,7 +472,7 @@ export function useCartonDetail(cartonId: string) {
 export function useBatchCartons(productionRunId: string) {
   return useQuery({
     queryKey: cartonKeys.byBatch(productionRunId),
-    queryFn: () => getCartonsByBatchFn({ data: { productionRunId } }),
+    queryFn: () => getCartonsByBatchFn({ data: { packagingAllocationId: productionRunId } }),
     enabled: !!productionRunId,
   });
 }

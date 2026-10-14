@@ -15,7 +15,7 @@ export const Route = createFileRoute(
   component: RecipeDetailComponent,
   errorComponent: () => (
     <div className="p-8 text-center text-destructive">
-      Failed to load recipe.
+      Failed to load packaging format.
     </div>
   ),
   pendingComponent: () => (
@@ -29,9 +29,9 @@ function RecipeDetailComponent() {
   const recipe = Route.useLoaderData();
 
   return (
-    <main className="min-h-screen p-8">
+    <main className="min-h-screen p-4 sm:p-6 lg:p-8">
       <div className="max-w-7xl mx-auto">
-        <RecipeDetailView recipe={recipe as any} />
+        <RecipeDetailView recipe={recipe} />
       </div>
     </main>
   );

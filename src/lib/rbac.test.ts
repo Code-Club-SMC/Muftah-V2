@@ -8,6 +8,14 @@ import {
 } from "./rbac";
 
 describe("rbac route rules", () => {
+  it("allows assigned-work readers and run managers into the current operator consoles", () => {
+    for (const path of ["/operator/mixing/run-id", "/operator/packaging/allocation-id"]) {
+      expect(canAccessPath(path, ["operator.run.read"])).toBe(true);
+      expect(canAccessPath(path, ["manufacturing.run.manage"])).toBe(true);
+      expect(canAccessPath(path, ["sales.view"])).toBe(false);
+    }
+    expect(canAccessPath("/operator", ["manufacturing.run.manage"])).toBe(true);
+  });
   it("checks specific sales routes before the generic sales matcher", () => {
     expect(canAccessPath("/sales/orders", ["sales.view"])).toBe(false);
     expect(canAccessPath("/sales/orders", ["sales.orders.view"])).toBe(true);

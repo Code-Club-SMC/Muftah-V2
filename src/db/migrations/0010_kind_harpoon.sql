@@ -1,0 +1,7 @@
+ALTER TABLE "production_run_lab_reports" ADD CONSTRAINT "production_run_lab_reports_mixing_run_id_mixing_runs_id_fk" FOREIGN KEY ("mixing_run_id") REFERENCES "public"."mixing_runs"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "recipes" ADD CONSTRAINT "recipes_formula_id_formulas_id_fk" FOREIGN KEY ("formula_id") REFERENCES "public"."formulas"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "wac_history" ADD CONSTRAINT "wac_history_packaging_allocation_id_packaging_allocations_id_fk" FOREIGN KEY ("packaging_allocation_id") REFERENCES "public"."packaging_allocations"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "wac_history" ADD CONSTRAINT "wac_history_mixing_run_id_mixing_runs_id_fk" FOREIGN KEY ("mixing_run_id") REFERENCES "public"."mixing_runs"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "adjustment_log" ADD CONSTRAINT "adjustment_log_packaging_allocation_id_packaging_allocations_id_fk" FOREIGN KEY ("packaging_allocation_id") REFERENCES "public"."packaging_allocations"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "cartons" ADD CONSTRAINT "cartons_packaging_allocation_id_packaging_allocations_id_fk" FOREIGN KEY ("packaging_allocation_id") REFERENCES "public"."packaging_allocations"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "cartons_packaging_allocation_idx" ON "cartons" USING btree ("packaging_allocation_id");

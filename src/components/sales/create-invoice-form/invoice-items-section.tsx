@@ -18,6 +18,7 @@ import {
     findStock, CartonCompositionBadge, blankItem,
     getLinePricingBreakdown,
     getLineUnitCostPerPack, getLiveUnitCostPerPack,
+    getInvoiceStockAvailability,
     getPreviewPerCartonPrice,
     getCartonRateHoverLines,
     type RecipePriceEntry,
@@ -235,12 +236,11 @@ export const InvoiceItemsSection = ({
                             ? getReservedCartonsForRecipe(items, item.recipeId, index, discountRuleMap)
                             : 0;
 
-                        const stockU = stock?.quantityContainers ?? 0;
                         const rawCartonInfo = getCartonInfo(item.recipeId);
-                        const sellableCartonPacks = rawCartonInfo.totalPacks || 0;
-                        const totalStockU = sellableCartonPacks + stockU;
-                        const remainingUnitsForLine = Math.max(0, totalStockU - otherReservedUnits);
-                        const remainingCompleteCartons = Math.max(0, (rawCartonInfo.completeCartons || 0) - otherReservedCartons);
+                        const { units: remainingUnitsForLine, cartons: remainingCompleteCartons } = getInvoiceStockAvailability(stock, rawCartonInfo, otherReservedUnits, otherReservedCartons);
+                        const availabilityFor = (candidate: StockItem) => getInvoiceStockAvailability(candidate, getCartonInfo(candidate.recipeId),
+                            getReservedUnitsForRecipe(items, availableStock, candidate.recipeId, index, discountRuleMap),
+                            getReservedCartonsForRecipe(items, candidate.recipeId, index, discountRuleMap));
 
                         const recipeRules = isDistributor && item.recipeId
                             ? (discountRuleMap.get(item.recipeId) ?? [])
@@ -267,11 +267,11 @@ export const InvoiceItemsSection = ({
                             autoFreeCartons,
                             isDistributor ? customerDefaultMargin : 0,
                         );
-                        const unitMargin = pricingBreakdown.chargedUnits > 0 && unitCostForProfit > 0
+                        const unitMargin = pricingBreakdown.chargedUnits > 0
                             ? pricingBreakdown.effectiveUnitRate - unitCostForProfit
                             : null;
 
-                        const stockExceeded = stock !== null && requestedU > remainingUnitsForLine && totalStockU > 0;
+                        const stockExceeded = stock !== null && (requestedU > remainingUnitsForLine || (item.unitType === "carton" && requestedU / eCPP > remainingCompleteCartons));
 
                         const distributorRateAdjusted = isDistributor
                             && !item.isPriceOverride
@@ -342,20 +342,18 @@ export const InvoiceItemsSection = ({
                                                     <SelectContent>
                                                         {availableStock
                                                             .filter((s) => {
-                                                                const cInfo = getCartonInfo(s.recipeId);
-                                                                const reservedCartons = getReservedCartonsForRecipe(items, s.recipeId, index, discountRuleMap);
-                                                                return Math.max(0, (cInfo.completeCartons || 0) - reservedCartons) > 0;
+                                                                const available = availabilityFor(s);
+                                                                return item.unitType === "carton" ? available.cartons > 0 : available.units > 0;
                                                             })
                                                             .map((s) => {
-                                                                const cInfo = getCartonInfo(s.recipeId);
-                                                                const reservedCartons = getReservedCartonsForRecipe(items, s.recipeId, index, discountRuleMap);
-                                                                const remainingCartons = Math.max(0, (cInfo.completeCartons || 0) - reservedCartons);
+                                                                const available = availabilityFor(s);
+                                                                const remaining = item.unitType === "carton" ? available.cartons : available.units;
                                                                 return (
                                                                     <SelectItem key={s.id} value={s.recipeId}>
                                                                         <div className="flex items-center gap-2">
                                                                             <span className="font-medium text-sm">{s.recipe?.name}</span>
                                                                             <Badge variant="secondary" className="text-[9px] px-1 h-4">
-                                                                                {remainingCartons}C avail
+                                                                                {remaining}{item.unitType === "carton" ? "C" : "U"} avail
                                                                             </Badge>
                                                                         </div>
                                                                     </SelectItem>
@@ -371,13 +369,14 @@ export const InvoiceItemsSection = ({
                                                             <AlertCircle className="size-3" aria-hidden="true" /> Exceeds stock
                                                         </span>
                                                     ) : stock ? (() => {
-                                                        const hasComplete = remainingCompleteCartons > 0;
+                                                        const remaining = item.unitType === "carton" ? remainingCompleteCartons : remainingUnitsForLine;
+                                                        const hasComplete = remaining > 0;
                                                         return (
                                                             <span className={cn("flex items-center gap-0.5", hasComplete ? "text-emerald-600" : "text-amber-600")}>
                                                                 {hasComplete ? <CheckCircle2 className="size-3" aria-hidden="true" /> : <AlertCircle className="size-3" aria-hidden="true" />}
                                                                 {hasComplete
-                                                                    ? `${remainingCompleteCartons} complete carton${remainingCompleteCartons !== 1 ? "s" : ""} available`
-                                                                    : "No complete cartons available"}
+                                                                    ? item.unitType === "carton" ? `${remaining} complete carton${remaining !== 1 ? "s" : ""} available` : `${remaining} units available`
+                                                                    : item.unitType === "carton" ? "No complete cartons available" : "No units available"}
                                                                 {totalFreeCartons > 0 && (
                                                                     <span className="ml-1 text-purple-600 font-medium">+ {totalFreeCartons} scheme</span>
                                                                 )}
@@ -652,9 +651,8 @@ export const InvoiceItemsSection = ({
                                                         <SelectContent>
                                                             {availableStock
                                                                 .filter((s) => {
-                                                                    const cInfo = getCartonInfo(s.recipeId);
-                                                                    const reservedCartons = getReservedCartonsForRecipe(items, s.recipeId, index, discountRuleMap);
-                                                                    return Math.max(0, (cInfo.completeCartons || 0) - reservedCartons) > 0;
+                                                                    const available = availabilityFor(s);
+                                                                    return item.unitType === "carton" ? available.cartons > 0 : available.units > 0;
                                                                 })
                                                                 .map((s) => (
                                                                     <SelectItem key={s.id} value={s.recipeId}>{s.recipe?.name}</SelectItem>

@@ -64,7 +64,7 @@ describe("hr payroll regressions", () => {
 
     expect(salesPerformanceSource).toContain("const monthEndExclusive = addMonths(monthStart, 1)");
     expect(salesPerformanceSource).not.toContain('new Date(`${yearMonth}-31T23:59:59`)');
-    expect(tadaSource).toContain("where: lte(tadaRates.effectiveFrom, data.date)");
+    expect(tadaSource).toContain("lte(tadaRates.effectiveFrom, data.date)");
     expect(deleteEmployeeSource).toContain("await reversePayslipSideEffects(tx, payslip.id)");
     expect(deleteEmployeeSource).toContain("approved or paid payroll history");
     expect(attendanceSource).toContain("checkIn: null");

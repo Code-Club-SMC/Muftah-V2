@@ -7,13 +7,14 @@ import { getFactoryFloorStockFn } from "@/server-functions/inventory/factory-flo
 import { getConsumptionHistoryFn } from "@/server-functions/inventory/factory-floor/get-consumption-history-fn";
 import { getWarehousesFn } from "@/server-functions/inventory/get-warehouses-fn";
 import { useViewerAccess } from "@/hooks/use-viewer-access";
-import { hasPermission } from "@/lib/rbac";
+import { canAccessPath, hasPermission } from "@/lib/rbac";
 
 import { Tabs, TabsList, TabsTrigger } from "../ui/tabs";
 import { GenericEmpty } from "../custom/empty";
 import { AddWarehouseDialog } from "./add-warehouse-dialog";
 import { StockTable } from "./stock-table";
 import { FinishedGoodsTable } from "./finished-goods-table";
+import { MixedBulkTable } from "./mixed-bulk-table";
 import { LowStockAlerts } from "./low-stocks-alert";
 import { ConsumptionTable } from "./consumption-table";
 import { AdjustStockDialog } from "./adjust-stock-dialog";
@@ -135,7 +136,7 @@ export const FactoryFloorContainer = () => {
     0,
   );
   const totalFinishedLooseUnits = finishedGoods.reduce(
-    (sum, fg) => sum + Number(fg.quantityContainers ?? 0),
+    (sum, fg) => sum + Number(fg.recipe.cartonPackagingId && (fg.recipe.containersPerCarton ?? 0) > 0 ? fg.quantityOutsidePacks ?? 0 : fg.quantityContainers),
     0,
   );
 
@@ -176,17 +177,18 @@ export const FactoryFloorContainer = () => {
           value={`${totalFinishedCartons} Cartons`}
           icon={Box}
           theme="emerald"
-          subtext={`+ ${totalFinishedLooseUnits} Loose Units`}
+          subtext={`+ ${totalFinishedLooseUnits} Loose Packs`}
         />
       </motion.div>
 
       {/* ── Filter Tabs and Header Actions ────────────────────────────────── */}
       <motion.div variants={itemVariants} className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b pb-4">
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-fit">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="max-w-full overflow-x-auto">
           <TabsList className="bg-muted/50 rounded-none border border-border">
             <TabsTrigger className="rounded-none" value="raw">Chemicals</TabsTrigger>
             <TabsTrigger className="rounded-none" value="packaging">Packaging</TabsTrigger>
             <TabsTrigger className="rounded-none" value="stickers">Stickers</TabsTrigger>
+            <TabsTrigger className="rounded-none" value="mixed">Mixed Bulk</TabsTrigger>
             <TabsTrigger className="rounded-none" value="finished">Finished Goods</TabsTrigger>
             <TabsTrigger className="rounded-none" value="consumption">Consumption</TabsTrigger>
           </TabsList>
@@ -206,6 +208,16 @@ export const FactoryFloorContainer = () => {
           exit="exit"
           className="pt-2"
         >
+          {activeTab === "mixed" && (
+            <MixedBulkTable
+              data={factoryFloor.mixedBulk}
+              canOpenBatch={!!viewerAccess && canAccessPath(
+                "/manufacturing/mixing/batch",
+                viewerAccess.permissions,
+              )}
+            />
+          )}
+
           {activeTab === "finished" && (
             <FinishedGoodsTable
               data={finishedGoods as any}
@@ -213,6 +225,7 @@ export const FactoryFloorContainer = () => {
               preselectedWarehouse={factoryFloor.id}
               canTransfer={canManageInventory}
               canManageCartons={canManageInventory}
+              canAdjustOutside={canManageInventory}
               canViewDetails={canOpenInventoryDetail}
             />
           )}

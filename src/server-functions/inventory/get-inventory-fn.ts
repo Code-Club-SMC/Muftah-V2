@@ -71,8 +71,7 @@ export const getInventoryFn = createServerFn()
         };
         return {
           ...fg,
-          quantityCartons: stats.total, // Replace stale aggregate with accurate total
-          cartonStats: stats, // Provide rich breakdown
+          cartonStats: { ...stats, totalPacks: stats.totalPacks + (fg.quantityOutsidePacks ?? 0), outsidePacks: fg.quantityOutsidePacks }, // Provide rich breakdown
         };
       }),
     }));

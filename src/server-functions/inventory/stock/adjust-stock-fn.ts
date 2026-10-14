@@ -11,11 +11,13 @@ import {
 import { requireInventoryManageMiddleware } from "@/lib/middlewares";
 import { eq, and } from "drizzle-orm";
 import { z } from "zod";
+import Big from "big.js";
 
 const adjustStockSchema = z.object({
   materialType: z.enum(["chemical", "packaging"]),
   materialId: z.string().min(1),
-  adjustment: z.number(), // positive = add back, negative = remove
+  adjustment: z.number().finite().min(-999_999_999.999).max(999_999_999.999)
+    .refine(value => new Big(value).round(3).eq(value), "Use at most three decimal places"), // positive = add back, negative = remove
   reason: z.string().min(1, "Reason is required for stock adjustments"),
 });
 
@@ -25,21 +27,20 @@ export const adjustStockFn = createServerFn()
   .handler(async ({ data, context }) => {
     return await db.transaction(async (tx) => {
       // Get factory floor
-      const factoryFloor = await tx.query.warehouses.findFirst({
-        where: eq(warehouses.type, "factory_floor"),
-      });
+      const [factoryFloor] = await tx.select().from(warehouses)
+        .where(and(eq(warehouses.type, "factory_floor"), eq(warehouses.isActive, true)))
+        .limit(1).for("share");
 
       if (!factoryFloor) throw new Error("Factory floor not found");
 
       // Find existing stock record
-      const existingStock = await tx.query.materialStock.findFirst({
-        where: and(
+      const [existingStock] = await tx.select().from(materialStock)
+        .where(and(
           eq(materialStock.warehouseId, factoryFloor.id),
           data.materialType === "chemical"
             ? eq(materialStock.chemicalId, data.materialId)
             : eq(materialStock.packagingMaterialId, data.materialId),
-        ),
-      });
+        )).for("update");
 
       if (!existingStock) {
         throw new Error(

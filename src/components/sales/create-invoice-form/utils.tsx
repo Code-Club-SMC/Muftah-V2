@@ -41,6 +41,7 @@ export type StockItem = {
         hsnCode?: string;
         productId?: string | null | undefined;
         containersPerCarton?: number | string | null | undefined;
+        cartonPackagingId?: string | null;
         estimatedCostPerContainer?: number | string | null | undefined;
     };
     quantityCartons?: number;
@@ -122,6 +123,22 @@ const toNumber = (value: number | string | null | undefined): number => {
 export const getRecipeContainersPerCarton = (stock: StockItem | null, fallback = 1): number =>
     safeEffectiveCPP(toNumber(stock?.recipe?.containersPerCarton) || fallback);
 
+export function getInvoiceStockAvailability(
+    stock: StockItem | null,
+    cartonInfo: { completeCartons?: number; totalPacks?: number },
+    reservedUnits = 0,
+    reservedCartons = 0,
+) {
+    const capacity = toNumber(stock?.recipe?.containersPerCarton);
+    const usesCartons = capacity > 0 && stock?.recipe?.cartonPackagingId !== null;
+    const canonicalUnits = toNumber(stock?.quantityContainers) + (usesCartons ? toNumber(stock?.quantityCartons) * capacity : 0);
+    // Partial packs are already included in both the ledger and canonical stock.
+    const sellableUnits = usesCartons ? Math.min(canonicalUnits, toNumber(cartonInfo.totalPacks)) : canonicalUnits;
+    const units = Math.max(0, sellableUnits - reservedUnits);
+    const cartons = usesCartons ? Math.min(Math.max(0, toNumber(cartonInfo.completeCartons) - reservedCartons), Math.floor(units / capacity)) : 0;
+    return { units, cartons };
+}
+
 export function getConfiguredBaseUnitRate(
     recipePricing?: RecipePriceEntry | null,
 ): number {
@@ -167,7 +184,7 @@ export function getLiveUnitCostPerPack(
     recipePricing?: RecipePriceEntry | null,
 ): number {
     const weightedAverageCostPerPack = toNumber(stock?.weightedAverageCostPerPack);
-    if (weightedAverageCostPerPack > 0) {
+    if (stock?.weightedAverageCostPerPack != null && Number.isFinite(Number(stock.weightedAverageCostPerPack)) && weightedAverageCostPerPack >= 0) {
         return weightedAverageCostPerPack;
     }
 

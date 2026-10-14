@@ -1,6 +1,8 @@
 import { db } from "@/db";
 import { cartons, adjustmentLog } from "@/db";
 import { eq, inArray } from "drizzle-orm";
+import * as repo from "./carton.repository";
+import { adjustCartonStock } from "./stock-adjustment.server";
 import { createId } from "@paralleldrive/cuid2";
 import type { CartonStatus, AdjustmentType } from "./carton.types";
 import {
@@ -22,10 +24,7 @@ export async function executeBulkOperation(
     const bulkOperationId = createId();
     const results: string[] = [];
 
-    const targetCartons = await tx
-      .select()
-      .from(cartons)
-      .where(inArray(cartons.id, cartonIds));
+    const targetCartons = await repo.findCartonsByIdsForUpdate(cartonIds, tx);
 
     if (targetCartons.length === 0) {
       throw new Error("No valid cartons found for the bulk operation.");
@@ -41,7 +40,9 @@ export async function executeBulkOperation(
       if (operationType === "RETIRE") {
         assertNotDispatched(carton);
         statusAfter = "RETIRED";
-        adjType = "REMOVAL";
+        packsAfter = 0;
+        delta = -carton.currentPacks;
+        adjType = "RETIRE";
       } else if (operationType === "TOP_UP") {
         delta = payload.delta || 0;
         assertCanTopUp(carton, delta);
@@ -60,14 +61,14 @@ export async function executeBulkOperation(
         if (packsAfter < 0 || packsAfter > carton.capacity) {
           throw new Error(`Invalid pack count for carton ${carton.id}.`);
         }
-        assertNotDispatched(carton);
+        assertCartonIsEditable(carton);
         delta = packsAfter - carton.currentPacks;
         statusAfter = deriveCartonStatus(packsAfter, carton.capacity);
         adjType = "MANUAL_OVERRIDE";
       } else if (operationType === "REPACK") {
         const newCapacity = payload.newCapacity || carton.capacity;
         assertNewCapacityValid(carton, newCapacity);
-        assertNotDispatched(carton);
+        assertCartonIsEditable(carton);
         statusAfter = deriveCartonStatus(carton.currentPacks, newCapacity);
         adjType = "MANUAL_OVERRIDE";
         
@@ -80,9 +81,9 @@ export async function executeBulkOperation(
           })
           .where(eq(cartons.id, carton.id));
       } else if (operationType === "QC_HOLD") {
-        assertNotDispatched(carton);
+        assertCartonIsEditable(carton);
         statusAfter = "ON_HOLD";
-        adjType = "MANUAL_OVERRIDE";
+        adjType = "QC_HOLD_APPLIED";
         
         await tx
           .update(cartons)
@@ -99,13 +100,16 @@ export async function executeBulkOperation(
         if (carton.status !== "ON_HOLD") {
           throw new Error(`Carton ${carton.id} is not on QC hold.`);
         }
-        statusAfter = payload.outcome === "CLEARED" ? (carton.preHoldStatus as CartonStatus) || "PARTIAL" : "RETIRED";
-        adjType = "MANUAL_OVERRIDE";
-        
+        statusAfter = payload.outcome === "CLEARED"
+          ? (carton.preHoldStatus === "SEALED" && carton.currentPacks === carton.capacity ? "SEALED" : deriveCartonStatus(carton.currentPacks, carton.capacity))
+          : "RETIRED";
+        adjType = payload.outcome === "CLEARED" ? "QC_HOLD_CLEARED" : "QC_HOLD_CONDEMNED";
+        if (payload.outcome !== "CLEARED") { packsAfter = 0; delta = -carton.currentPacks; }
         await tx
           .update(cartons)
           .set({
             status: statusAfter,
+            currentPacks: packsAfter,
             holdReason: null,
             holdStartedAt: null,
             holdExpiresAt: null,
@@ -131,6 +135,7 @@ export async function executeBulkOperation(
         id: createId(),
         cartonId: carton.id,
         batchId: carton.productionRunId,
+        packagingAllocationId: carton.packagingAllocationId,
         sku: carton.sku,
         type: adjType,
         packsBefore: carton.currentPacks,
@@ -142,6 +147,7 @@ export async function executeBulkOperation(
         bulkOperationId,
       });
 
+      await adjustCartonStock(tx, carton, delta, userId, carton.id);
       results.push(carton.id);
     }
 

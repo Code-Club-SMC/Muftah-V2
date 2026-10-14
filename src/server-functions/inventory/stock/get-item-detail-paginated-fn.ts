@@ -125,6 +125,13 @@ export const getItemDetailPaginatedFn = createServerFn()
         (sum, fg) => sum + fg.quantityContainers,
         0,
       );
+      const capacity = result.cartonPackagingId ? result.containersPerCarton ?? 0 : 0;
+      const totalUnits = totalCartons * capacity + totalContainers;
+      const totalInventoryValue = result.finishedGoods.reduce(
+        (sum, fg) => sum + Number(fg.totalInventoryValue ?? 0),
+        0,
+      );
+      const weightedAverageCostPerPack = totalUnits > 0 ? totalInventoryValue / totalUnits : null;
 
       item = {
         id: result.id,
@@ -136,25 +143,10 @@ export const getItemDetailPaginatedFn = createServerFn()
         totalCartons,
         totalContainers,
         // WAC values aggregated across all warehouse stock records
-        weightedAverageCostPerPack: result.finishedGoods.reduce(
-          (sum: number, fg: any) => sum + parseFloat(fg.weightedAverageCostPerPack?.toString() || "0"),
-          0,
-        ) > 0
-          ? result.finishedGoods.reduce(
-              (sum: number, fg: any) => sum + parseFloat(fg.weightedAverageCostPerPack?.toString() || "0"),
-              0,
-            ) / (result.finishedGoods.filter((fg: any) => parseFloat(fg.weightedAverageCostPerPack?.toString() || "0") > 0).length || 1)
-          : null,
-        weightedAverageCostPerCarton: result.containersPerCarton && result.containersPerCarton > 0
-          ? (result.finishedGoods.reduce(
-              (sum: number, fg: any) => sum + parseFloat(fg.weightedAverageCostPerPack?.toString() || "0"),
-              0,
-            ) / (result.finishedGoods.filter((fg: any) => parseFloat(fg.weightedAverageCostPerPack?.toString() || "0") > 0).length || 1)) * result.containersPerCarton
-          : null,
-        totalInventoryValue: result.finishedGoods.reduce(
-          (sum: number, fg: any) => sum + parseFloat(fg.totalInventoryValue?.toString() || "0"),
-          0,
-        ),
+        weightedAverageCostPerPack,
+        weightedAverageCostPerCarton: weightedAverageCostPerPack !== null && capacity > 0
+          ? weightedAverageCostPerPack * capacity : null,
+        totalInventoryValue,
         stockByWarehouse: result.finishedGoods.map((fg: any) => ({
           warehouseId: fg.warehouseId,
           warehouseName: fg.warehouse.name,

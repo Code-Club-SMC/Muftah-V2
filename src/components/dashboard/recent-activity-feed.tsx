@@ -119,7 +119,7 @@ export function RecentActivityFeed({
             </div>
           </div>
           <Link
-            to="/manufacturing/productions"
+            to="/manufacturing/mixing"
             className="flex items-center gap-1 text-[12px] font-medium text-violet-600 hover:text-violet-700 transition-colors"
           >
             All runs
@@ -261,7 +261,7 @@ export function RecentActivityFeed({
       {hasData && (
         <div className="px-5 py-3 border-t border-slate-100">
           <Link
-            to="/manufacturing/productions"
+            to="/manufacturing/mixing"
             className="flex items-center justify-center gap-1.5 text-[12px] font-medium text-violet-600 hover:text-violet-700 transition-colors py-1"
           >
             View all production runs

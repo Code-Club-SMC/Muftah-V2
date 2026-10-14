@@ -13,6 +13,8 @@ export const useToggleWarehouseStatus = () => {
       queryClient.invalidateQueries({ queryKey: ["inventory-overview"] });
       queryClient.invalidateQueries({ queryKey: ["warehouses"] });
       queryClient.invalidateQueries({ queryKey: ["inventory"] });
+      queryClient.invalidateQueries({ queryKey: ["factory-floor"] });
+      queryClient.invalidateQueries({ queryKey: ["low-stock-alerts"] });
     },
     onError: (error) => {
       toast.error(error.message || "Failed to update warehouse status");

@@ -146,6 +146,43 @@ export const requireManufacturingRunReadMiddleware = createPermissionMiddleware(
 );
 export const requireManufacturingRunManageMiddleware =
   createPermissionMiddleware("manufacturing.run.manage");
+export const requireProductionWorkReadMiddleware = createAnyPermissionMiddleware([
+  "manufacturing.run.manage",
+  "manufacturing.run.read",
+  "manufacturing.view",
+  "operator.run.read",
+]);
+export const requireProductionQCReadMiddleware = createAnyPermissionMiddleware([
+  "manufacturing.qc.read",
+  "manufacturing.qc.manage",
+  "manufacturing.view",
+  "manufacturing.manage",
+]);
+export const requireProductionQCManageMiddleware = createAnyPermissionMiddleware([
+  "manufacturing.qc.manage",
+  "manufacturing.manage",
+]);
+export const requireMixingLabReportReadMiddleware = createAnyPermissionMiddleware([
+  "manufacturing.qc.read",
+  "manufacturing.qc.manage",
+  "manufacturing.manage",
+  "manufacturing.run.manage",
+  "manufacturing.run.read",
+  "manufacturing.view",
+  "operator.run.read",
+]);
+export const requireProductionWorkLogMiddleware = createAnyPermissionMiddleware([
+  "manufacturing.run.manage",
+  "operator.run.log",
+]);
+export const requireProductionWorkCompleteMiddleware = createAnyPermissionMiddleware([
+  "manufacturing.run.manage",
+  "operator.run.complete",
+]);
+export const requireProductionWorkFailMiddleware = createAnyPermissionMiddleware([
+  "manufacturing.run.manage",
+  "operator.run.fail",
+]);
 export const requireInventoryViewMiddleware = createPermissionMiddleware(
   "inventory.view",
 );

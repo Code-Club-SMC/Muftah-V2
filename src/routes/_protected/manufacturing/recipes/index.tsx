@@ -23,21 +23,20 @@ export const Route = createFileRoute("/_protected/manufacturing/recipes/")({
 function RouteComponent() {
   return (
     <main className="flex-1 overflow-y-auto">
-      <div className="flex flex-col min-h-full p-8">
+      <div className="flex flex-col min-h-full p-4 sm:p-6 lg:p-8">
         <header className="border-b pb-8">
-          <h1 className="font-bold text-3xl uppercase tracking-tighter">
-            Production Recipes
+          <h1 className="font-semibold text-2xl tracking-tight sm:text-3xl">
+            Packaging Formats
           </h1>
           <p className="mt-2 text-muted-foreground">
-            Manage product recipes with ingredient formulas, packaging
-            configurations, and cost estimates.
+            Choose a pack by name, size and carton setup. Managers can add or update formats.
           </p>
         </header>
         <div className="flex-1 py-8 flex flex-col">
           <Suspense
             fallback={
               <GenericLoader
-                title="Loading recipes"
+                title="Loading packaging formats"
                 description="Please wait..."
               />
             }

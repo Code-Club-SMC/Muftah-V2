@@ -6,7 +6,7 @@ import {
     requireHrViewMiddleware,
 } from "@/lib/middlewares";
 import { z } from "zod";
-import { eq, desc, and, gte, lte } from "drizzle-orm";
+import { eq, desc, and, gte, lte, isNull, } from "drizzle-orm";
 
 // ────────────────────────────────────────────────────────────────────────────
 // TA/DA RATE CONFIG
@@ -17,11 +17,21 @@ import { eq, desc, and, gte, lte } from "drizzle-orm";
  */
 export const getActiveTadaRateFn = createServerFn()
     .middleware([requireHrViewMiddleware])
-    .handler(async () => {
-        const rate = await db.query.tadaRates.findFirst({
-            where: eq(tadaRates.isActive, true),
-            orderBy: [desc(tadaRates.effectiveFrom)],
-        });
+    .inputValidator(z.object({ employeeId: z.string().optional() }).optional())
+    .handler(async ({ data }) => {
+        let rate = null;
+        if (data?.employeeId) {
+            rate = await db.query.tadaRates.findFirst({
+                where: and(eq(tadaRates.isActive, true), eq(tadaRates.employeeId, data.employeeId)),
+                orderBy: [desc(tadaRates.effectiveFrom)],
+            });
+        }
+        if (!rate) {
+            rate = await db.query.tadaRates.findFirst({
+                where: and(eq(tadaRates.isActive, true), isNull(tadaRates.employeeId)),
+                orderBy: [desc(tadaRates.effectiveFrom)],
+            });
+        }
         return rate ?? null;
     });
 
@@ -30,8 +40,10 @@ export const getActiveTadaRateFn = createServerFn()
  */
 export const listTadaRatesFn = createServerFn()
     .middleware([requireHrViewMiddleware])
-    .handler(async () => {
+    .inputValidator(z.object({ employeeId: z.string().optional() }).optional())
+    .handler(async ({ data }) => {
         return await db.query.tadaRates.findMany({
+            where: data?.employeeId ? eq(tadaRates.employeeId, data.employeeId) : isNull(tadaRates.employeeId),
             with: {
                 setter: { columns: { id: true, name: true } },
             },
@@ -46,6 +58,7 @@ export const setTadaRateFn = createServerFn()
     .middleware([requireHrManageMiddleware])
     .inputValidator(
         z.object({
+            employeeId: z.string().optional(),
             ratePerKm: z.number().positive("Rate must be positive"),
             effectiveFrom: z.string(), // YYYY-MM-DD
             remarks: z.string().optional(),
@@ -53,15 +66,21 @@ export const setTadaRateFn = createServerFn()
     )
     .handler(async ({ data, context }) => {
         return await db.transaction(async (tx) => {
-            // Deactivate all existing rates
+            // Deactivate existing active rate for this employee (or global if null)
+            const targetCondition = data.employeeId 
+                ? eq(tadaRates.employeeId, data.employeeId) 
+                : isNull(tadaRates.employeeId);
+                
             await tx
                 .update(tadaRates)
-                .set({ isActive: false });
+                .set({ isActive: false })
+                .where(and(eq(tadaRates.isActive, true), targetCondition));
 
             // Insert the new active rate
             const [inserted] = await tx
                 .insert(tadaRates)
                 .values({
+                    employeeId: data.employeeId || null,
                     ratePerKm: data.ratePerKm.toString(),
                     effectiveFrom: data.effectiveFrom,
                     remarks: data.remarks || null,
@@ -128,11 +147,18 @@ export const createTravelLogFn = createServerFn()
         })
     )
     .handler(async ({ data }) => {
-        // Snapshot the rate that was effective on the trip date.
-        const activeRate = await db.query.tadaRates.findFirst({
-            where: lte(tadaRates.effectiveFrom, data.date),
+        // Snapshot the rate that was effective on the trip date for this employee or globally.
+        let activeRate = await db.query.tadaRates.findFirst({
+            where: and(lte(tadaRates.effectiveFrom, data.date), eq(tadaRates.employeeId, data.employeeId)),
             orderBy: [desc(tadaRates.effectiveFrom)],
         });
+        
+        if (!activeRate) {
+            activeRate = await db.query.tadaRates.findFirst({
+                where: and(lte(tadaRates.effectiveFrom, data.date), isNull(tadaRates.employeeId)),
+                orderBy: [desc(tadaRates.effectiveFrom)],
+            });
+        }
 
         if (!activeRate) {
             throw new Error(

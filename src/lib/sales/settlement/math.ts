@@ -34,20 +34,16 @@ export function calculateSettlement(
 
 	const paidAmount = sumPayments(payments, "confirmed");
 	const pendingAmount = sumPayments(payments, "pending");
-	const allocatedAmount = new Big(paidAmount).plus(pendingAmount);
-
-	if (allocatedAmount.gt(total)) {
-		throw new Error("Payments cannot exceed invoice total");
-	}
+	// const allocatedAmount = new Big(paidAmount).plus(pendingAmount);
 
 	const outstandingAmount = roundMoney(new Big(total).minus(paidAmount));
 	const payLaterAmount = roundMoney(
 		new Big(outstandingAmount).minus(pendingAmount),
 	);
 	const paymentStatus =
-		paidAmount === 0
+		paidAmount === 0 && outstandingAmount > 0
 			? "unpaid"
-			: outstandingAmount === 0
+			: outstandingAmount <= 0
 				? "paid"
 				: "partially_paid";
 

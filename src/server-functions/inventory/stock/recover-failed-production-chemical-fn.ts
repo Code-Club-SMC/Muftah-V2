@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   db,
@@ -8,6 +8,7 @@ import {
   materialStock,
 } from "@/db";
 import { requireFailedBatchRecoveryMiddleware } from "@/lib/middlewares";
+import { hasPermission } from "@/lib/rbac";
 import {
   calculateRecoveryLoss,
   loadFailedProductionRecoveryContext,
@@ -16,8 +17,9 @@ import {
 const schema = z.object({
   batchId: z.string().min(1, "Batch ID is required"),
   chemicalId: z.string().min(1, "Chemical is required"),
-  recoveredQuantity: z.number().min(0, "Recovered quantity cannot be negative"),
-  reason: z.string().min(1, "Reason is required"),
+  recoveredQuantity: z.number().finite().min(0, "Recovered quantity cannot be negative")
+    .refine(value => Math.abs(value * 1000 - Math.round(value * 1000)) < 1e-6, "Use at most three decimal places"),
+  reason: z.string().trim().min(1, "Reason is required"),
 });
 
 export const recoverFailedProductionChemicalFn = createServerFn()
@@ -26,6 +28,10 @@ export const recoverFailedProductionChemicalFn = createServerFn()
   .handler(async ({ data, context }) =>
     db.transaction(async (tx) => {
       const recovery = await loadFailedProductionRecoveryContext(tx, data);
+      if (recovery.run.operatorId !== context.session.user.id &&
+          !hasPermission(context.authContext.permissions, "inventory.manage")) {
+        throw new Error("This failed mixing run is assigned to another operator");
+      }
 
       if (recovery.settlement) {
         throw new Error("This failed batch chemical has already been settled.");
@@ -49,13 +55,15 @@ export const recoverFailedProductionChemicalFn = createServerFn()
         if (recovery.currentStock) {
           newQty = recovery.currentStockQty + data.recoveredQuantity;
 
-          await tx
+          const [updatedStock] = await tx
             .update(materialStock)
             .set({
-              quantity: newQty.toString(),
+              quantity: sql`${materialStock.quantity} + ${data.recoveredQuantity.toFixed(3)}`,
               updatedAt: new Date(),
             })
-            .where(eq(materialStock.id, recovery.currentStock.id));
+            .where(eq(materialStock.id, recovery.currentStock.id))
+            .returning({ quantity: materialStock.quantity });
+          newQty = Number(updatedStock.quantity);
         } else {
           newQty = data.recoveredQuantity;
 
@@ -97,8 +105,8 @@ export const recoverFailedProductionChemicalFn = createServerFn()
       }
 
       await tx.insert(failedProductionChemicalRecoveries).values({
-        productionRunId: recovery.run.id,
-        productionMaterialUsedId: recovery.chemicalUsage.id,
+        mixingRunId: recovery.run.id,
+        mixingMaterialUsedId: recovery.chemicalUsage.id,
         warehouseId: recovery.factoryFloor.id,
         chemicalId: recovery.chemical.id,
         expectedQuantity: recovery.expectedQuantity.toString(),

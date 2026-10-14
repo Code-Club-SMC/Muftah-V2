@@ -105,14 +105,14 @@ export const ProductsTable = ({ products }: ProductsTableProps) => {
       },
       {
         id: "recipesCount",
-        header: "RECIPES COUNT",
+        header: "Packaging Formats",
         cell: ({ row }) => {
           const count = row.original.recipes?.length || 0;
           return (
             <div className="flex items-center gap-2">
               <span className="text-sm font-bold font-mono">{count}</span>
               <span className="text-[10px] uppercase text-muted-foreground">
-                Recipes
+                Packaging Formats
               </span>
             </div>
           );
@@ -205,7 +205,7 @@ export const ProductsTable = ({ products }: ProductsTableProps) => {
             <AlertDialogDescription>
               This will permanently delete the product{" "}
               <strong>{selectedProduct?.name}</strong> and all its associated
-              recipes. This action cannot be undone.
+              packaging formats. This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
