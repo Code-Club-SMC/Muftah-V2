@@ -1,46 +1,25 @@
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-
 const SOURCE = readFileSync(
-  resolve(
-    process.cwd(),
-    "src/server-functions/hr/attendance/scan-attendance-fn.ts",
-  ),
+  "src/server-functions/hr/attendance/scan-attendance-fn.ts",
   "utf8",
 );
-
-describe("scanAttendanceFn source safeguards", () => {
-  it("is restricted to the attendance terminal permission", () => {
+const ROUTE = readFileSync("src/routes/attendance/scan.tsx", "utf8");
+describe("retired barcode capture", () => {
+  it("keeps the old RPC permission protected and rejects capture", () => {
     expect(SOURCE).toContain("requireAttendanceTerminalMiddleware");
+    expect(SOURCE).toContain("throw new Error");
+    expect(SOURCE).toContain("Barcode attendance has been replaced");
   });
-
-  it("uses a transaction for accepted scan writes", () => {
-    expect(SOURCE).toContain("db.transaction(async (tx)");
-    expect(SOURCE).toContain("recomputeAttendanceRow(");
+  it("has no database or punch write path", () => {
+    expect(SOURCE).not.toContain('from "@/db"');
+    expect(SOURCE).not.toContain(".insert(");
+    expect(SOURCE).not.toContain(".update(");
+    expect(SOURCE).not.toContain(".delete(");
   });
-
-  it("appends punches and never updates the punch ledger from the scan path", () => {
-    expect(SOURCE).toContain(".insert(attendancePunches)");
-    expect(SOURCE).not.toContain(".update(attendancePunches)");
-    expect(SOURCE).not.toContain(".delete(attendancePunches)");
-  });
-
-  it("audits rejected and duplicate scan attempts", () => {
-    expect(SOURCE).toContain(".insert(attendanceScanAttempts)");
-    expect(SOURCE).toContain("invalid_payload");
-    expect(SOURCE).toContain("unknown_employee");
-    expect(SOURCE).toContain("duplicate_scan");
-  });
-
-  it("can resolve barcode scans by employee code", () => {
-    expect(SOURCE).toContain("parsedPayload.employeeId");
-    expect(SOURCE).toContain("eq(employees.employeeCode, parsedPayload.employeeCode)");
-  });
-
-  it("uses server time instead of client supplied attendance timestamps", () => {
-    expect(SOURCE).toContain("const now = new Date()");
-    expect(SOURCE).not.toContain("data.timestamp");
-    expect(SOURCE).not.toContain("data.attendanceDate");
+  it("routes HR to attendance without mounting the scanner", () => {
+    expect(ROUTE).toContain('to: "/hr/attendance"');
+    expect(ROUTE).not.toContain("ScanTerminal");
+    expect(ROUTE).toContain("getViewerAccessFn");
   });
 });

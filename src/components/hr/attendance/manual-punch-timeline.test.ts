@@ -48,10 +48,19 @@ describe("manual punch timeline UI source", () => {
   });
 
   it("labels offline Excel punches and requires correction reasons", () => {
-    expect(source).toContain('"qr_terminal" | "manual" | "offline_excel"');
+    const flattenedSource = source.replace(/\s+/g, " ");
+    expect(flattenedSource).toContain(
+      '"qr_terminal" | "manual" | "offline_excel"',
+    );
     expect(source).toContain("Offline Excel");
     expect(source).toContain("Offline correction reason");
-    expect(source).toContain("Delete Offline Excel punch");
+    expect(source).toContain(
+      'if (punch.source === "device_import") return "Device import"',
+    );
+    expect(source).toContain("requiresCorrectionReason");
+    expect(flattenedSource).toContain(
+      'punch.source === "offline_excel" || punch.source === "device_import"',
+    );
     expect(source).toContain("editingReason.trim().length < 5");
     expect(source).toContain("deleteReason.trim().length < 5");
     expect(source).toContain("reason:");

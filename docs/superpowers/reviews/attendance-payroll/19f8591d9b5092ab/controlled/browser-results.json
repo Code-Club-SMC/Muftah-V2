@@ -1,0 +1,2372 @@
+{
+  "tier": "browser",
+  "startedAt": "2026-10-20T11:09:03.146Z",
+  "checks": [
+    {
+      "name": "Real Better Auth sign-in and HR route",
+      "caseIds": [],
+      "passed": true
+    },
+    {
+      "name": "Upload source and independently inspect PostgreSQL",
+      "caseIds": [],
+      "passed": true,
+      "actual": {
+        "punches": 574,
+        "claims": 574,
+        "attendance": 286
+      }
+    },
+    {
+      "name": "Submit E2E02 attendance decision",
+      "caseIds": [],
+      "passed": true,
+      "actual": {
+        "id": "onu21beost7z497f88dyj96l",
+        "employee_id": "z2higl0atl1e5fkxteihn978",
+        "date": "2026-09-30T19:00:00.000Z",
+        "check_in": null,
+        "check_out": null,
+        "duty_hours": "0.00",
+        "overtime_hours": "0.00",
+        "status": "leave",
+        "is_late": false,
+        "is_night_shift": false,
+        "overtime_status": "pending",
+        "overtime_remarks": null,
+        "early_departure_status": "none",
+        "check_out_reason": null,
+        "shift_violations": [
+          {
+            "late": false,
+            "actualIn": "09:00:00",
+            "actualOut": "17:00:00",
+            "expectedIn": "09:00",
+            "shiftIndex": 0,
+            "expectedOut": "17:00",
+            "earlyDeparture": false
+          }
+        ],
+        "is_approved_leave": false,
+        "leave_approval_status": "pending",
+        "leave_type": "annual",
+        "entry_source": "biometric",
+        "notes": "Synthetic payroll E2E HR decision; not actual entitlement or device evidence",
+        "area_visited": null,
+        "is_company_vehicle": false,
+        "payment_mode": null,
+        "distance_km": "0.00",
+        "per_km_rate": "0.00",
+        "petrol_amount": "0.00",
+        "sale_amount": "0.00",
+        "recovery_amount": "0.00",
+        "return_amount": "0.00",
+        "shop_type": null,
+        "slip_numbers": null,
+        "created_at": "2026-10-20T06:09:10.871Z",
+        "updated_at": "2026-10-20T06:09:25.970Z",
+        "overtime_compensation_method": "payout",
+        "compensatory_hours_used": "0.00"
+      }
+    },
+    {
+      "name": "Submit E2E03 attendance decision",
+      "caseIds": [],
+      "passed": true,
+      "actual": {
+        "id": "dola7kakurun2swpkefva4rd",
+        "employee_id": "o0lrelfagc3ivfdszklywk5f",
+        "date": "2026-09-30T19:00:00.000Z",
+        "check_in": null,
+        "check_out": null,
+        "duty_hours": "0.00",
+        "overtime_hours": "0.00",
+        "status": "leave",
+        "is_late": false,
+        "is_night_shift": false,
+        "overtime_status": "pending",
+        "overtime_remarks": null,
+        "early_departure_status": "none",
+        "check_out_reason": null,
+        "shift_violations": [
+          {
+            "late": false,
+            "actualIn": "09:00:00",
+            "actualOut": "17:00:00",
+            "expectedIn": "09:00",
+            "shiftIndex": 0,
+            "expectedOut": "17:00",
+            "earlyDeparture": false
+          }
+        ],
+        "is_approved_leave": false,
+        "leave_approval_status": "pending",
+        "leave_type": "sick",
+        "entry_source": "biometric",
+        "notes": "Synthetic payroll E2E HR decision; not actual entitlement or device evidence",
+        "area_visited": null,
+        "is_company_vehicle": false,
+        "payment_mode": null,
+        "distance_km": "0.00",
+        "per_km_rate": "0.00",
+        "petrol_amount": "0.00",
+        "sale_amount": "0.00",
+        "recovery_amount": "0.00",
+        "return_amount": "0.00",
+        "shop_type": null,
+        "slip_numbers": null,
+        "created_at": "2026-10-20T06:09:10.871Z",
+        "updated_at": "2026-10-20T06:09:31.101Z",
+        "overtime_compensation_method": "payout",
+        "compensatory_hours_used": "0.00"
+      }
+    },
+    {
+      "name": "Submit E2E04 attendance decision",
+      "caseIds": [],
+      "passed": true,
+      "actual": {
+        "id": "a2bvbytzadgds3qz12y95ved",
+        "employee_id": "oo0p7yfs8yblfrmaxlrv2sxx",
+        "date": "2026-09-30T19:00:00.000Z",
+        "check_in": null,
+        "check_out": null,
+        "duty_hours": "0.00",
+        "overtime_hours": "0.00",
+        "status": "leave",
+        "is_late": false,
+        "is_night_shift": false,
+        "overtime_status": "pending",
+        "overtime_remarks": null,
+        "early_departure_status": "none",
+        "check_out_reason": null,
+        "shift_violations": [
+          {
+            "late": false,
+            "actualIn": "09:00:00",
+            "actualOut": "17:00:00",
+            "expectedIn": "09:00",
+            "shiftIndex": 0,
+            "expectedOut": "17:00",
+            "earlyDeparture": false
+          }
+        ],
+        "is_approved_leave": false,
+        "leave_approval_status": "pending",
+        "leave_type": "special",
+        "entry_source": "biometric",
+        "notes": "Synthetic payroll E2E HR decision; not actual entitlement or device evidence",
+        "area_visited": null,
+        "is_company_vehicle": false,
+        "payment_mode": null,
+        "distance_km": "0.00",
+        "per_km_rate": "0.00",
+        "petrol_amount": "0.00",
+        "sale_amount": "0.00",
+        "recovery_amount": "0.00",
+        "return_amount": "0.00",
+        "shop_type": null,
+        "slip_numbers": null,
+        "created_at": "2026-10-20T06:09:10.871Z",
+        "updated_at": "2026-10-20T06:09:35.086Z",
+        "overtime_compensation_method": "payout",
+        "compensatory_hours_used": "0.00"
+      }
+    },
+    {
+      "name": "Submit E2E05 attendance decision",
+      "caseIds": [],
+      "passed": true,
+      "actual": {
+        "id": "otivj89awkx5opj1nuimtybg",
+        "employee_id": "lwhk40d7jr8i0cesadoeroz9",
+        "date": "2026-09-30T19:00:00.000Z",
+        "check_in": null,
+        "check_out": null,
+        "duty_hours": "0.00",
+        "overtime_hours": "0.00",
+        "status": "leave",
+        "is_late": false,
+        "is_night_shift": false,
+        "overtime_status": "pending",
+        "overtime_remarks": null,
+        "early_departure_status": "none",
+        "check_out_reason": null,
+        "shift_violations": [
+          {
+            "late": false,
+            "actualIn": "09:00:00",
+            "actualOut": "17:00:00",
+            "expectedIn": "09:00",
+            "shiftIndex": 0,
+            "expectedOut": "17:00",
+            "earlyDeparture": false
+          }
+        ],
+        "is_approved_leave": false,
+        "leave_approval_status": "pending",
+        "leave_type": "compensatory",
+        "entry_source": "biometric",
+        "notes": "Synthetic payroll E2E HR decision; not actual entitlement or device evidence",
+        "area_visited": null,
+        "is_company_vehicle": false,
+        "payment_mode": null,
+        "distance_km": "0.00",
+        "per_km_rate": "0.00",
+        "petrol_amount": "0.00",
+        "sale_amount": "0.00",
+        "recovery_amount": "0.00",
+        "return_amount": "0.00",
+        "shop_type": null,
+        "slip_numbers": null,
+        "created_at": "2026-10-20T06:09:10.871Z",
+        "updated_at": "2026-10-20T06:09:39.254Z",
+        "overtime_compensation_method": "payout",
+        "compensatory_hours_used": "8.00"
+      }
+    },
+    {
+      "name": "Submit E2E06 attendance decision",
+      "caseIds": [],
+      "passed": true,
+      "actual": {
+        "id": "wc2bodx4fadn8ohpzujvhrep",
+        "employee_id": "pj20g8mix38foqf9ki8ee81n",
+        "date": "2026-09-30T19:00:00.000Z",
+        "check_in": null,
+        "check_out": null,
+        "duty_hours": "0.00",
+        "overtime_hours": "0.00",
+        "status": "leave",
+        "is_late": false,
+        "is_night_shift": false,
+        "overtime_status": "pending",
+        "overtime_remarks": null,
+        "early_departure_status": "none",
+        "check_out_reason": null,
+        "shift_violations": [
+          {
+            "late": false,
+            "actualIn": "09:00:00",
+            "actualOut": "17:00:00",
+            "expectedIn": "09:00",
+            "shiftIndex": 0,
+            "expectedOut": "17:00",
+            "earlyDeparture": false
+          }
+        ],
+        "is_approved_leave": false,
+        "leave_approval_status": "pending",
+        "leave_type": "compensatory",
+        "entry_source": "biometric",
+        "notes": "Synthetic payroll E2E HR decision; not actual entitlement or device evidence",
+        "area_visited": null,
+        "is_company_vehicle": false,
+        "payment_mode": null,
+        "distance_km": "0.00",
+        "per_km_rate": "0.00",
+        "petrol_amount": "0.00",
+        "sale_amount": "0.00",
+        "recovery_amount": "0.00",
+        "return_amount": "0.00",
+        "shop_type": null,
+        "slip_numbers": null,
+        "created_at": "2026-10-20T06:09:10.871Z",
+        "updated_at": "2026-10-20T06:09:44.468Z",
+        "overtime_compensation_method": "payout",
+        "compensatory_hours_used": "4.00"
+      }
+    },
+    {
+      "name": "Submit E2E10 attendance decision",
+      "caseIds": [],
+      "passed": true,
+      "actual": {
+        "id": "met4itpvn0qc5cq0vsh0dbbe",
+        "employee_id": "yrv4mlx6vdv8qt1q1dcq2fet",
+        "date": "2026-09-30T19:00:00.000Z",
+        "check_in": null,
+        "check_out": null,
+        "duty_hours": "0.00",
+        "overtime_hours": "0.00",
+        "status": "absent",
+        "is_late": false,
+        "is_night_shift": false,
+        "overtime_status": "pending",
+        "overtime_remarks": null,
+        "early_departure_status": "none",
+        "check_out_reason": null,
+        "shift_violations": [
+          {
+            "late": false,
+            "actualIn": "09:00:00",
+            "actualOut": "17:00:00",
+            "expectedIn": "09:00",
+            "shiftIndex": 0,
+            "expectedOut": "17:00",
+            "earlyDeparture": false
+          }
+        ],
+        "is_approved_leave": false,
+        "leave_approval_status": "none",
+        "leave_type": null,
+        "entry_source": "biometric",
+        "notes": "Synthetic payroll E2E HR decision; not actual entitlement or device evidence",
+        "area_visited": null,
+        "is_company_vehicle": false,
+        "payment_mode": null,
+        "distance_km": "0.00",
+        "per_km_rate": "0.00",
+        "petrol_amount": "0.00",
+        "sale_amount": "0.00",
+        "recovery_amount": "0.00",
+        "return_amount": "0.00",
+        "shop_type": null,
+        "slip_numbers": null,
+        "created_at": "2026-10-20T06:09:10.871Z",
+        "updated_at": "2026-10-20T06:09:49.503Z",
+        "overtime_compensation_method": "payout",
+        "compensatory_hours_used": "0.00"
+      }
+    },
+    {
+      "name": "Exercise pending, approved, rejected and repeated annual",
+      "caseIds": [],
+      "passed": true,
+      "actual": {
+        "pending": {
+          "net": 42800,
+          "unpaidLeave": 1,
+          "components": {
+            "basicSalary": 0,
+            "houseRent": 0,
+            "utilities": 0,
+            "conveyance": 100,
+            "mobile": 0,
+            "bikeMaintenance": 0,
+            "technical": 0,
+            "special": 0
+          },
+          "occasions": {
+            "absent": 0,
+            "undertime": 0,
+            "specialLeave": 0,
+            "sickLeave": 0,
+            "annualLeave": 100,
+            "unapprovedLeave": 0,
+            "notEmployed": 0
+          }
+        },
+        "approved": {
+          "status": "leave",
+          "leave_type": "annual",
+          "leave_approval_status": "approved",
+          "is_approved_leave": true,
+          "duty_hours": "0.00",
+          "compensatory_hours_used": "0.00",
+          "annual_leave_balance": 13,
+          "sick_leave_balance": 10,
+          "compensatory_hours_balance": "0.00"
+        },
+        "rejected": {
+          "status": "leave",
+          "leave_type": "annual",
+          "leave_approval_status": "rejected",
+          "is_approved_leave": false,
+          "duty_hours": "0.00",
+          "compensatory_hours_used": "0.00",
+          "annual_leave_balance": 14,
+          "sick_leave_balance": 10,
+          "compensatory_hours_balance": "0.00"
+        },
+        "rejectedPreview": {
+          "net": 42800,
+          "unpaidLeave": 1,
+          "components": {
+            "basicSalary": 0,
+            "houseRent": 0,
+            "utilities": 0,
+            "conveyance": 100,
+            "mobile": 0,
+            "bikeMaintenance": 0,
+            "technical": 0,
+            "special": 0
+          },
+          "occasions": {
+            "absent": 0,
+            "undertime": 0,
+            "specialLeave": 0,
+            "sickLeave": 0,
+            "annualLeave": 100,
+            "unapprovedLeave": 0,
+            "notEmployed": 0
+          }
+        },
+        "restored": {
+          "status": "leave",
+          "leave_type": "annual",
+          "leave_approval_status": "approved",
+          "is_approved_leave": true,
+          "duty_hours": "0.00",
+          "compensatory_hours_used": "0.00",
+          "annual_leave_balance": 13,
+          "sick_leave_balance": 10,
+          "compensatory_hours_balance": "0.00"
+        }
+      }
+    },
+    {
+      "name": "Exercise pending, approved, rejected and repeated sick",
+      "caseIds": [],
+      "passed": true,
+      "actual": {
+        "pending": {
+          "net": 42900,
+          "unpaidLeave": 1,
+          "components": {
+            "basicSalary": 0,
+            "houseRent": 0,
+            "utilities": 0,
+            "conveyance": 0,
+            "mobile": 0,
+            "bikeMaintenance": 0,
+            "technical": 0,
+            "special": 0
+          },
+          "occasions": {
+            "absent": 0,
+            "undertime": 0,
+            "specialLeave": 0,
+            "sickLeave": 0,
+            "annualLeave": 0,
+            "unapprovedLeave": 0,
+            "notEmployed": 0
+          }
+        },
+        "approved": {
+          "status": "leave",
+          "leave_type": "sick",
+          "leave_approval_status": "approved",
+          "is_approved_leave": true,
+          "duty_hours": "0.00",
+          "compensatory_hours_used": "0.00",
+          "annual_leave_balance": 14,
+          "sick_leave_balance": 10,
+          "compensatory_hours_balance": "0.00"
+        },
+        "rejected": {
+          "status": "leave",
+          "leave_type": "sick",
+          "leave_approval_status": "rejected",
+          "is_approved_leave": false,
+          "duty_hours": "0.00",
+          "compensatory_hours_used": "0.00",
+          "annual_leave_balance": 14,
+          "sick_leave_balance": 10,
+          "compensatory_hours_balance": "0.00"
+        },
+        "rejectedPreview": {
+          "net": 42900,
+          "unpaidLeave": 1,
+          "components": {
+            "basicSalary": 0,
+            "houseRent": 0,
+            "utilities": 0,
+            "conveyance": 0,
+            "mobile": 0,
+            "bikeMaintenance": 0,
+            "technical": 0,
+            "special": 0
+          },
+          "occasions": {
+            "absent": 0,
+            "undertime": 0,
+            "specialLeave": 0,
+            "sickLeave": 0,
+            "annualLeave": 0,
+            "unapprovedLeave": 0,
+            "notEmployed": 0
+          }
+        },
+        "restored": {
+          "status": "leave",
+          "leave_type": "sick",
+          "leave_approval_status": "approved",
+          "is_approved_leave": true,
+          "duty_hours": "0.00",
+          "compensatory_hours_used": "0.00",
+          "annual_leave_balance": 14,
+          "sick_leave_balance": 10,
+          "compensatory_hours_balance": "0.00"
+        }
+      }
+    },
+    {
+      "name": "Exercise pending, approved, rejected and repeated special",
+      "caseIds": [],
+      "passed": true,
+      "actual": {
+        "pending": {
+          "net": 42400,
+          "unpaidLeave": 1,
+          "components": {
+            "basicSalary": 0,
+            "houseRent": 200,
+            "utilities": 100,
+            "conveyance": 100,
+            "mobile": 50,
+            "bikeMaintenance": 50,
+            "technical": 0,
+            "special": 0
+          },
+          "occasions": {
+            "absent": 0,
+            "undertime": 0,
+            "specialLeave": 500,
+            "sickLeave": 0,
+            "annualLeave": 0,
+            "unapprovedLeave": 0,
+            "notEmployed": 0
+          }
+        },
+        "approved": {
+          "status": "leave",
+          "leave_type": "special",
+          "leave_approval_status": "approved",
+          "is_approved_leave": true,
+          "duty_hours": "0.00",
+          "compensatory_hours_used": "0.00",
+          "annual_leave_balance": 14,
+          "sick_leave_balance": 10,
+          "compensatory_hours_balance": "0.00"
+        },
+        "rejected": {
+          "status": "leave",
+          "leave_type": "special",
+          "leave_approval_status": "rejected",
+          "is_approved_leave": false,
+          "duty_hours": "0.00",
+          "compensatory_hours_used": "0.00",
+          "annual_leave_balance": 14,
+          "sick_leave_balance": 10,
+          "compensatory_hours_balance": "0.00"
+        },
+        "rejectedPreview": {
+          "net": 42400,
+          "unpaidLeave": 1,
+          "components": {
+            "basicSalary": 0,
+            "houseRent": 200,
+            "utilities": 100,
+            "conveyance": 100,
+            "mobile": 50,
+            "bikeMaintenance": 50,
+            "technical": 0,
+            "special": 0
+          },
+          "occasions": {
+            "absent": 0,
+            "undertime": 0,
+            "specialLeave": 500,
+            "sickLeave": 0,
+            "annualLeave": 0,
+            "unapprovedLeave": 0,
+            "notEmployed": 0
+          }
+        },
+        "restored": {
+          "status": "leave",
+          "leave_type": "special",
+          "leave_approval_status": "approved",
+          "is_approved_leave": true,
+          "duty_hours": "0.00",
+          "compensatory_hours_used": "0.00",
+          "annual_leave_balance": 14,
+          "sick_leave_balance": 10,
+          "compensatory_hours_balance": "0.00"
+        }
+      }
+    },
+    {
+      "name": "Exercise pending, approved, rejected and repeated compensatory",
+      "caseIds": [],
+      "passed": true,
+      "actual": {
+        "pending": {
+          "net": 42800,
+          "unpaidLeave": 1,
+          "components": {
+            "basicSalary": 0,
+            "houseRent": 0,
+            "utilities": 0,
+            "conveyance": 100,
+            "mobile": 0,
+            "bikeMaintenance": 0,
+            "technical": 0,
+            "special": 0
+          },
+          "occasions": {
+            "absent": 0,
+            "undertime": 0,
+            "specialLeave": 0,
+            "sickLeave": 0,
+            "annualLeave": 0,
+            "unapprovedLeave": 100,
+            "notEmployed": 0
+          }
+        },
+        "approved": {
+          "status": "leave",
+          "leave_type": "compensatory",
+          "leave_approval_status": "approved",
+          "is_approved_leave": true,
+          "duty_hours": "0.00",
+          "compensatory_hours_used": "8.00",
+          "annual_leave_balance": 14,
+          "sick_leave_balance": 10,
+          "compensatory_hours_balance": "8.00"
+        },
+        "rejected": {
+          "status": "leave",
+          "leave_type": "compensatory",
+          "leave_approval_status": "rejected",
+          "is_approved_leave": false,
+          "duty_hours": "0.00",
+          "compensatory_hours_used": "0.00",
+          "annual_leave_balance": 14,
+          "sick_leave_balance": 10,
+          "compensatory_hours_balance": "16.00"
+        },
+        "rejectedPreview": {
+          "net": 42800,
+          "unpaidLeave": 1,
+          "components": {
+            "basicSalary": 0,
+            "houseRent": 0,
+            "utilities": 0,
+            "conveyance": 100,
+            "mobile": 0,
+            "bikeMaintenance": 0,
+            "technical": 0,
+            "special": 0
+          },
+          "occasions": {
+            "absent": 0,
+            "undertime": 0,
+            "specialLeave": 0,
+            "sickLeave": 0,
+            "annualLeave": 0,
+            "unapprovedLeave": 100,
+            "notEmployed": 0
+          }
+        },
+        "restored": {
+          "status": "leave",
+          "leave_type": "compensatory",
+          "leave_approval_status": "approved",
+          "is_approved_leave": true,
+          "duty_hours": "0.00",
+          "compensatory_hours_used": "8.00",
+          "annual_leave_balance": 14,
+          "sick_leave_balance": 10,
+          "compensatory_hours_balance": "8.00"
+        }
+      }
+    },
+    {
+      "name": "Approve E2E06 compensatory",
+      "caseIds": [],
+      "passed": true
+    },
+    {
+      "name": "Request and approve two cash overtime hours",
+      "caseIds": [],
+      "passed": true
+    },
+    {
+      "name": "Preview, save and reload E2E01",
+      "caseIds": [],
+      "passed": true,
+      "actual": {
+        "employee": "E2E01",
+        "expectedNet": 42900,
+        "actualNet": "42900.00",
+        "gross": "42900.00",
+        "deductions": "0.00",
+        "salaryRevision": "filmnxutt1uptk466k5w09cl",
+        "expectedBreakdown": {
+          "standardBreakdown": {
+            "basicSalary": 26000,
+            "houseRent": 5200,
+            "utilities": 2600,
+            "conveyance": 2600,
+            "mobile": 1300,
+            "bikeMaintenance": 1300,
+            "technical": 2600,
+            "special": 1300
+          },
+          "componentDeductions": {
+            "basicSalary": 0,
+            "houseRent": 0,
+            "utilities": 0,
+            "conveyance": 0,
+            "mobile": 0,
+            "bikeMaintenance": 0,
+            "technical": 0,
+            "special": 0
+          },
+          "deductionBreakdownByOccasion": {
+            "absent": 0,
+            "undertime": 0,
+            "specialLeave": 0,
+            "annualLeave": 0,
+            "sickLeave": 0,
+            "unapprovedLeave": 0,
+            "notEmployed": 0
+          }
+        },
+        "actualBreakdown": {
+          "standardBreakdown": {
+            "basicSalary": 26000,
+            "houseRent": 5200,
+            "utilities": 2600,
+            "conveyance": 2600,
+            "mobile": 1300,
+            "bikeMaintenance": 1300,
+            "technical": 2600,
+            "special": 1300
+          },
+          "componentDeductions": {
+            "basicSalary": 0,
+            "houseRent": 0,
+            "utilities": 0,
+            "conveyance": 0,
+            "mobile": 0,
+            "bikeMaintenance": 0,
+            "technical": 0,
+            "special": 0
+          },
+          "deductionBreakdownByOccasion": {
+            "absent": 0,
+            "undertime": 0,
+            "specialLeave": 0,
+            "sickLeave": 0,
+            "annualLeave": 0,
+            "unapprovedLeave": 0,
+            "notEmployed": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "Preview, save and reload E2E02",
+      "caseIds": [],
+      "passed": true,
+      "actual": {
+        "employee": "E2E02",
+        "expectedNet": 42800,
+        "actualNet": "42800.00",
+        "gross": "42900.00",
+        "deductions": "100.00",
+        "salaryRevision": "bbik986xtlazwwy0w76b3ryp",
+        "expectedBreakdown": {
+          "standardBreakdown": {
+            "basicSalary": 26000,
+            "houseRent": 5200,
+            "utilities": 2600,
+            "conveyance": 2600,
+            "mobile": 1300,
+            "bikeMaintenance": 1300,
+            "technical": 2600,
+            "special": 1300
+          },
+          "componentDeductions": {
+            "basicSalary": 0,
+            "houseRent": 0,
+            "utilities": 0,
+            "conveyance": 100,
+            "mobile": 0,
+            "bikeMaintenance": 0,
+            "technical": 0,
+            "special": 0
+          },
+          "deductionBreakdownByOccasion": {
+            "absent": 0,
+            "undertime": 0,
+            "specialLeave": 0,
+            "annualLeave": 100,
+            "sickLeave": 0,
+            "unapprovedLeave": 0,
+            "notEmployed": 0
+          }
+        },
+        "actualBreakdown": {
+          "standardBreakdown": {
+            "basicSalary": 26000,
+            "houseRent": 5200,
+            "utilities": 2600,
+            "conveyance": 2600,
+            "mobile": 1300,
+            "bikeMaintenance": 1300,
+            "technical": 2600,
+            "special": 1300
+          },
+          "componentDeductions": {
+            "basicSalary": 0,
+            "houseRent": 0,
+            "utilities": 0,
+            "conveyance": 100,
+            "mobile": 0,
+            "bikeMaintenance": 0,
+            "technical": 0,
+            "special": 0
+          },
+          "deductionBreakdownByOccasion": {
+            "absent": 0,
+            "undertime": 0,
+            "specialLeave": 0,
+            "sickLeave": 0,
+            "annualLeave": 100,
+            "unapprovedLeave": 0,
+            "notEmployed": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "Preview, save and reload E2E03",
+      "caseIds": [],
+      "passed": true,
+      "actual": {
+        "employee": "E2E03",
+        "expectedNet": 42900,
+        "actualNet": "42900.00",
+        "gross": "42900.00",
+        "deductions": "0.00",
+        "salaryRevision": "aus4l3oy45cyfrn3az2tmfzx",
+        "expectedBreakdown": {
+          "standardBreakdown": {
+            "basicSalary": 26000,
+            "houseRent": 5200,
+            "utilities": 2600,
+            "conveyance": 2600,
+            "mobile": 1300,
+            "bikeMaintenance": 1300,
+            "technical": 2600,
+            "special": 1300
+          },
+          "componentDeductions": {
+            "basicSalary": 0,
+            "houseRent": 0,
+            "utilities": 0,
+            "conveyance": 0,
+            "mobile": 0,
+            "bikeMaintenance": 0,
+            "technical": 0,
+            "special": 0
+          },
+          "deductionBreakdownByOccasion": {
+            "absent": 0,
+            "undertime": 0,
+            "specialLeave": 0,
+            "annualLeave": 0,
+            "sickLeave": 0,
+            "unapprovedLeave": 0,
+            "notEmployed": 0
+          }
+        },
+        "actualBreakdown": {
+          "standardBreakdown": {
+            "basicSalary": 26000,
+            "houseRent": 5200,
+            "utilities": 2600,
+            "conveyance": 2600,
+            "mobile": 1300,
+            "bikeMaintenance": 1300,
+            "technical": 2600,
+            "special": 1300
+          },
+          "componentDeductions": {
+            "basicSalary": 0,
+            "houseRent": 0,
+            "utilities": 0,
+            "conveyance": 0,
+            "mobile": 0,
+            "bikeMaintenance": 0,
+            "technical": 0,
+            "special": 0
+          },
+          "deductionBreakdownByOccasion": {
+            "absent": 0,
+            "undertime": 0,
+            "specialLeave": 0,
+            "sickLeave": 0,
+            "annualLeave": 0,
+            "unapprovedLeave": 0,
+            "notEmployed": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "Preview, save and reload E2E04",
+      "caseIds": [],
+      "passed": true,
+      "actual": {
+        "employee": "E2E04",
+        "expectedNet": 42400,
+        "actualNet": "42400.00",
+        "gross": "42900.00",
+        "deductions": "500.00",
+        "salaryRevision": "rtq9zcbgzed05v1dcsxqqtqy",
+        "expectedBreakdown": {
+          "standardBreakdown": {
+            "basicSalary": 26000,
+            "houseRent": 5200,
+            "utilities": 2600,
+            "conveyance": 2600,
+            "mobile": 1300,
+            "bikeMaintenance": 1300,
+            "technical": 2600,
+            "special": 1300
+          },
+          "componentDeductions": {
+            "basicSalary": 0,
+            "houseRent": 200,
+            "utilities": 100,
+            "conveyance": 100,
+            "mobile": 50,
+            "bikeMaintenance": 50,
+            "technical": 0,
+            "special": 0
+          },
+          "deductionBreakdownByOccasion": {
+            "absent": 0,
+            "undertime": 0,
+            "specialLeave": 500,
+            "annualLeave": 0,
+            "sickLeave": 0,
+            "unapprovedLeave": 0,
+            "notEmployed": 0
+          }
+        },
+        "actualBreakdown": {
+          "standardBreakdown": {
+            "basicSalary": 26000,
+            "houseRent": 5200,
+            "utilities": 2600,
+            "conveyance": 2600,
+            "mobile": 1300,
+            "bikeMaintenance": 1300,
+            "technical": 2600,
+            "special": 1300
+          },
+          "componentDeductions": {
+            "basicSalary": 0,
+            "houseRent": 200,
+            "utilities": 100,
+            "conveyance": 100,
+            "mobile": 50,
+            "bikeMaintenance": 50,
+            "technical": 0,
+            "special": 0
+          },
+          "deductionBreakdownByOccasion": {
+            "absent": 0,
+            "undertime": 0,
+            "specialLeave": 500,
+            "sickLeave": 0,
+            "annualLeave": 0,
+            "unapprovedLeave": 0,
+            "notEmployed": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "Preview, save and reload E2E05",
+      "caseIds": [],
+      "passed": true,
+      "actual": {
+        "employee": "E2E05",
+        "expectedNet": 42900,
+        "actualNet": "42900.00",
+        "gross": "42900.00",
+        "deductions": "0.00",
+        "salaryRevision": "n0nd2bqq5o7xxcmrl8c3metb",
+        "expectedBreakdown": {
+          "standardBreakdown": {
+            "basicSalary": 26000,
+            "houseRent": 5200,
+            "utilities": 2600,
+            "conveyance": 2600,
+            "mobile": 1300,
+            "bikeMaintenance": 1300,
+            "technical": 2600,
+            "special": 1300
+          },
+          "componentDeductions": {
+            "basicSalary": 0,
+            "houseRent": 0,
+            "utilities": 0,
+            "conveyance": 0,
+            "mobile": 0,
+            "bikeMaintenance": 0,
+            "technical": 0,
+            "special": 0
+          },
+          "deductionBreakdownByOccasion": {
+            "absent": 0,
+            "undertime": 0,
+            "specialLeave": 0,
+            "annualLeave": 0,
+            "sickLeave": 0,
+            "unapprovedLeave": 0,
+            "notEmployed": 0
+          }
+        },
+        "actualBreakdown": {
+          "standardBreakdown": {
+            "basicSalary": 26000,
+            "houseRent": 5200,
+            "utilities": 2600,
+            "conveyance": 2600,
+            "mobile": 1300,
+            "bikeMaintenance": 1300,
+            "technical": 2600,
+            "special": 1300
+          },
+          "componentDeductions": {
+            "basicSalary": 0,
+            "houseRent": 0,
+            "utilities": 0,
+            "conveyance": 0,
+            "mobile": 0,
+            "bikeMaintenance": 0,
+            "technical": 0,
+            "special": 0
+          },
+          "deductionBreakdownByOccasion": {
+            "absent": 0,
+            "undertime": 0,
+            "specialLeave": 0,
+            "sickLeave": 0,
+            "annualLeave": 0,
+            "unapprovedLeave": 0,
+            "notEmployed": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "Preview, save and reload E2E06",
+      "caseIds": [],
+      "passed": true,
+      "actual": {
+        "employee": "E2E06",
+        "expectedNet": 42400,
+        "actualNet": "42400.00",
+        "gross": "42900.00",
+        "deductions": "500.00",
+        "salaryRevision": "egpvr96m4n7hm2y355lyslw1",
+        "expectedBreakdown": {
+          "standardBreakdown": {
+            "basicSalary": 26000,
+            "houseRent": 5200,
+            "utilities": 2600,
+            "conveyance": 2600,
+            "mobile": 1300,
+            "bikeMaintenance": 1300,
+            "technical": 2600,
+            "special": 1300
+          },
+          "componentDeductions": {
+            "basicSalary": 500,
+            "houseRent": 0,
+            "utilities": 0,
+            "conveyance": 0,
+            "mobile": 0,
+            "bikeMaintenance": 0,
+            "technical": 0,
+            "special": 0
+          },
+          "deductionBreakdownByOccasion": {
+            "absent": 0,
+            "undertime": 500,
+            "specialLeave": 0,
+            "annualLeave": 0,
+            "sickLeave": 0,
+            "unapprovedLeave": 0,
+            "notEmployed": 0
+          }
+        },
+        "actualBreakdown": {
+          "standardBreakdown": {
+            "basicSalary": 26000,
+            "houseRent": 5200,
+            "utilities": 2600,
+            "conveyance": 2600,
+            "mobile": 1300,
+            "bikeMaintenance": 1300,
+            "technical": 2600,
+            "special": 1300
+          },
+          "componentDeductions": {
+            "basicSalary": 500,
+            "houseRent": 0,
+            "utilities": 0,
+            "conveyance": 0,
+            "mobile": 0,
+            "bikeMaintenance": 0,
+            "technical": 0,
+            "special": 0
+          },
+          "deductionBreakdownByOccasion": {
+            "absent": 0,
+            "undertime": 500,
+            "specialLeave": 0,
+            "sickLeave": 0,
+            "annualLeave": 0,
+            "unapprovedLeave": 0,
+            "notEmployed": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "Preview, save and reload E2E07",
+      "caseIds": [],
+      "passed": true,
+      "actual": {
+        "employee": "E2E07",
+        "expectedNet": 42897,
+        "actualNet": "42897.00",
+        "gross": "42900.00",
+        "deductions": "3.00",
+        "salaryRevision": "ebpfmmlj2bxftfw0nvbayrgl",
+        "expectedBreakdown": {
+          "standardBreakdown": {
+            "basicSalary": 26000,
+            "houseRent": 5200,
+            "utilities": 2600,
+            "conveyance": 2600,
+            "mobile": 1300,
+            "bikeMaintenance": 1300,
+            "technical": 2600,
+            "special": 1300
+          },
+          "componentDeductions": {
+            "basicSalary": 3,
+            "houseRent": 0,
+            "utilities": 0,
+            "conveyance": 0,
+            "mobile": 0,
+            "bikeMaintenance": 0,
+            "technical": 0,
+            "special": 0
+          },
+          "deductionBreakdownByOccasion": {
+            "absent": 0,
+            "undertime": 3,
+            "specialLeave": 0,
+            "annualLeave": 0,
+            "sickLeave": 0,
+            "unapprovedLeave": 0,
+            "notEmployed": 0
+          }
+        },
+        "actualBreakdown": {
+          "standardBreakdown": {
+            "basicSalary": 26000,
+            "houseRent": 5200,
+            "utilities": 2600,
+            "conveyance": 2600,
+            "mobile": 1300,
+            "bikeMaintenance": 1300,
+            "technical": 2600,
+            "special": 1300
+          },
+          "componentDeductions": {
+            "basicSalary": 3,
+            "houseRent": 0,
+            "utilities": 0,
+            "conveyance": 0,
+            "mobile": 0,
+            "bikeMaintenance": 0,
+            "technical": 0,
+            "special": 0
+          },
+          "deductionBreakdownByOccasion": {
+            "absent": 0,
+            "undertime": 3,
+            "specialLeave": 0,
+            "sickLeave": 0,
+            "annualLeave": 0,
+            "unapprovedLeave": 0,
+            "notEmployed": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "Preview, save and reload E2E08",
+      "caseIds": [],
+      "passed": true,
+      "actual": {
+        "employee": "E2E08",
+        "expectedNet": 42775,
+        "actualNet": "42775.00",
+        "gross": "42900.00",
+        "deductions": "125.00",
+        "salaryRevision": "da49t1owyzmmsjkuwz1esox9",
+        "expectedBreakdown": {
+          "standardBreakdown": {
+            "basicSalary": 26000,
+            "houseRent": 5200,
+            "utilities": 2600,
+            "conveyance": 2600,
+            "mobile": 1300,
+            "bikeMaintenance": 1300,
+            "technical": 2600,
+            "special": 1300
+          },
+          "componentDeductions": {
+            "basicSalary": 125,
+            "houseRent": 0,
+            "utilities": 0,
+            "conveyance": 0,
+            "mobile": 0,
+            "bikeMaintenance": 0,
+            "technical": 0,
+            "special": 0
+          },
+          "deductionBreakdownByOccasion": {
+            "absent": 0,
+            "undertime": 125,
+            "specialLeave": 0,
+            "annualLeave": 0,
+            "sickLeave": 0,
+            "unapprovedLeave": 0,
+            "notEmployed": 0
+          }
+        },
+        "actualBreakdown": {
+          "standardBreakdown": {
+            "basicSalary": 26000,
+            "houseRent": 5200,
+            "utilities": 2600,
+            "conveyance": 2600,
+            "mobile": 1300,
+            "bikeMaintenance": 1300,
+            "technical": 2600,
+            "special": 1300
+          },
+          "componentDeductions": {
+            "basicSalary": 125,
+            "houseRent": 0,
+            "utilities": 0,
+            "conveyance": 0,
+            "mobile": 0,
+            "bikeMaintenance": 0,
+            "technical": 0,
+            "special": 0
+          },
+          "deductionBreakdownByOccasion": {
+            "absent": 0,
+            "undertime": 125,
+            "specialLeave": 0,
+            "sickLeave": 0,
+            "annualLeave": 0,
+            "unapprovedLeave": 0,
+            "notEmployed": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "Preview, save and reload E2E09",
+      "caseIds": [],
+      "passed": true,
+      "actual": {
+        "employee": "E2E09",
+        "expectedNet": 42650,
+        "actualNet": "42650.00",
+        "gross": "42900.00",
+        "deductions": "250.00",
+        "salaryRevision": "ighzmtmgh3100fheztjqc5mc",
+        "expectedBreakdown": {
+          "standardBreakdown": {
+            "basicSalary": 26000,
+            "houseRent": 5200,
+            "utilities": 2600,
+            "conveyance": 2600,
+            "mobile": 1300,
+            "bikeMaintenance": 1300,
+            "technical": 2600,
+            "special": 1300
+          },
+          "componentDeductions": {
+            "basicSalary": 250,
+            "houseRent": 0,
+            "utilities": 0,
+            "conveyance": 0,
+            "mobile": 0,
+            "bikeMaintenance": 0,
+            "technical": 0,
+            "special": 0
+          },
+          "deductionBreakdownByOccasion": {
+            "absent": 0,
+            "undertime": 250,
+            "specialLeave": 0,
+            "annualLeave": 0,
+            "sickLeave": 0,
+            "unapprovedLeave": 0,
+            "notEmployed": 0
+          }
+        },
+        "actualBreakdown": {
+          "standardBreakdown": {
+            "basicSalary": 26000,
+            "houseRent": 5200,
+            "utilities": 2600,
+            "conveyance": 2600,
+            "mobile": 1300,
+            "bikeMaintenance": 1300,
+            "technical": 2600,
+            "special": 1300
+          },
+          "componentDeductions": {
+            "basicSalary": 250,
+            "houseRent": 0,
+            "utilities": 0,
+            "conveyance": 0,
+            "mobile": 0,
+            "bikeMaintenance": 0,
+            "technical": 0,
+            "special": 0
+          },
+          "deductionBreakdownByOccasion": {
+            "absent": 0,
+            "undertime": 250,
+            "specialLeave": 0,
+            "sickLeave": 0,
+            "annualLeave": 0,
+            "unapprovedLeave": 0,
+            "notEmployed": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "Preview, save and reload E2E10",
+      "caseIds": [],
+      "passed": true,
+      "actual": {
+        "employee": "E2E10",
+        "expectedNet": 41300,
+        "actualNet": "41300.00",
+        "gross": "42900.00",
+        "deductions": "1600.00",
+        "salaryRevision": "yu1h2ar82ha1i8q4qu4gajsi",
+        "expectedBreakdown": {
+          "standardBreakdown": {
+            "basicSalary": 26000,
+            "houseRent": 5200,
+            "utilities": 2600,
+            "conveyance": 2600,
+            "mobile": 1300,
+            "bikeMaintenance": 1300,
+            "technical": 2600,
+            "special": 1300
+          },
+          "componentDeductions": {
+            "basicSalary": 1000,
+            "houseRent": 200,
+            "utilities": 100,
+            "conveyance": 100,
+            "mobile": 50,
+            "bikeMaintenance": 50,
+            "technical": 100,
+            "special": 0
+          },
+          "deductionBreakdownByOccasion": {
+            "absent": 1600,
+            "undertime": 0,
+            "specialLeave": 0,
+            "annualLeave": 0,
+            "sickLeave": 0,
+            "unapprovedLeave": 0,
+            "notEmployed": 0
+          }
+        },
+        "actualBreakdown": {
+          "standardBreakdown": {
+            "basicSalary": 26000,
+            "houseRent": 5200,
+            "utilities": 2600,
+            "conveyance": 2600,
+            "mobile": 1300,
+            "bikeMaintenance": 1300,
+            "technical": 2600,
+            "special": 1300
+          },
+          "componentDeductions": {
+            "basicSalary": 1000,
+            "houseRent": 200,
+            "utilities": 100,
+            "conveyance": 100,
+            "mobile": 50,
+            "bikeMaintenance": 50,
+            "technical": 100,
+            "special": 0
+          },
+          "deductionBreakdownByOccasion": {
+            "absent": 1600,
+            "undertime": 0,
+            "specialLeave": 0,
+            "sickLeave": 0,
+            "annualLeave": 0,
+            "unapprovedLeave": 0,
+            "notEmployed": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "Preview, save and reload E2E11",
+      "caseIds": [],
+      "passed": true,
+      "actual": {
+        "employee": "E2E11",
+        "expectedNet": 43150,
+        "actualNet": "43150.00",
+        "gross": "43150.00",
+        "deductions": "0.00",
+        "salaryRevision": "k3gffbckvzmq2locu2apnchh",
+        "expectedBreakdown": {
+          "standardBreakdown": {
+            "basicSalary": 26000,
+            "houseRent": 5200,
+            "utilities": 2600,
+            "conveyance": 2600,
+            "mobile": 1300,
+            "bikeMaintenance": 1300,
+            "technical": 2600,
+            "special": 1300
+          },
+          "componentDeductions": {
+            "basicSalary": 0,
+            "houseRent": 0,
+            "utilities": 0,
+            "conveyance": 0,
+            "mobile": 0,
+            "bikeMaintenance": 0,
+            "technical": 0,
+            "special": 0
+          },
+          "deductionBreakdownByOccasion": {
+            "absent": 0,
+            "undertime": 0,
+            "specialLeave": 0,
+            "annualLeave": 0,
+            "sickLeave": 0,
+            "unapprovedLeave": 0,
+            "notEmployed": 0
+          }
+        },
+        "actualBreakdown": {
+          "standardBreakdown": {
+            "basicSalary": 26000,
+            "houseRent": 5200,
+            "utilities": 2600,
+            "conveyance": 2600,
+            "mobile": 1300,
+            "bikeMaintenance": 1300,
+            "technical": 2600,
+            "special": 1300
+          },
+          "componentDeductions": {
+            "basicSalary": 0,
+            "houseRent": 0,
+            "utilities": 0,
+            "conveyance": 0,
+            "mobile": 0,
+            "bikeMaintenance": 0,
+            "technical": 0,
+            "special": 0
+          },
+          "deductionBreakdownByOccasion": {
+            "absent": 0,
+            "undertime": 0,
+            "specialLeave": 0,
+            "sickLeave": 0,
+            "annualLeave": 0,
+            "unapprovedLeave": 0,
+            "notEmployed": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "HR correction recalculates salary and source reupload preserves correction",
+      "caseIds": [
+        "A09"
+      ],
+      "passed": true,
+      "actual": {
+        "beforeNet": 42650,
+        "afterNet": "42900.00",
+        "sourceReplayNet": "42900.00",
+        "finalFixtureNet": 42650,
+        "changed": {
+          "punchId": "y7fglro6euy6ofwjuodm4l45",
+          "raw": "2026-10-01T10:00:00.000Z",
+          "actual": "2026-10-01T12:00:00.000Z",
+          "reason": "Synthetic payroll E2E: supervisor verified complete eight-hour day"
+        },
+        "restored": {
+          "punchId": "nv239y9fdhgwdxy4u2j63jlx",
+          "raw": "2026-10-01T10:00:00.000Z",
+          "actual": "2026-10-01T10:00:00.000Z",
+          "reason": "Synthetic payroll E2E: restore original six-hour test fixture after correction verification"
+        }
+      }
+    },
+    {
+      "name": "Reconcile saved salary totals and test wallet",
+      "caseIds": [
+        "A01",
+        "A02",
+        "A03",
+        "A04",
+        "A13",
+        "L01",
+        "L02",
+        "L03",
+        "L04",
+        "L11",
+        "P01"
+      ],
+      "passed": true,
+      "actual": {
+        "gross": "472150.00",
+        "deductions": "3078.00",
+        "net": "469072.00",
+        "salaries": [
+          {
+            "employee": "E2E01",
+            "expectedNet": 42900,
+            "actualNet": "42900.00",
+            "gross": "42900.00",
+            "deductions": "0.00",
+            "salaryRevision": "filmnxutt1uptk466k5w09cl",
+            "expectedBreakdown": {
+              "standardBreakdown": {
+                "basicSalary": 26000,
+                "houseRent": 5200,
+                "utilities": 2600,
+                "conveyance": 2600,
+                "mobile": 1300,
+                "bikeMaintenance": 1300,
+                "technical": 2600,
+                "special": 1300
+              },
+              "componentDeductions": {
+                "basicSalary": 0,
+                "houseRent": 0,
+                "utilities": 0,
+                "conveyance": 0,
+                "mobile": 0,
+                "bikeMaintenance": 0,
+                "technical": 0,
+                "special": 0
+              },
+              "deductionBreakdownByOccasion": {
+                "absent": 0,
+                "undertime": 0,
+                "specialLeave": 0,
+                "annualLeave": 0,
+                "sickLeave": 0,
+                "unapprovedLeave": 0,
+                "notEmployed": 0
+              }
+            },
+            "actualBreakdown": {
+              "standardBreakdown": {
+                "basicSalary": 26000,
+                "houseRent": 5200,
+                "utilities": 2600,
+                "conveyance": 2600,
+                "mobile": 1300,
+                "bikeMaintenance": 1300,
+                "technical": 2600,
+                "special": 1300
+              },
+              "componentDeductions": {
+                "basicSalary": 0,
+                "houseRent": 0,
+                "utilities": 0,
+                "conveyance": 0,
+                "mobile": 0,
+                "bikeMaintenance": 0,
+                "technical": 0,
+                "special": 0
+              },
+              "deductionBreakdownByOccasion": {
+                "absent": 0,
+                "undertime": 0,
+                "specialLeave": 0,
+                "sickLeave": 0,
+                "annualLeave": 0,
+                "unapprovedLeave": 0,
+                "notEmployed": 0
+              }
+            }
+          },
+          {
+            "employee": "E2E02",
+            "expectedNet": 42800,
+            "actualNet": "42800.00",
+            "gross": "42900.00",
+            "deductions": "100.00",
+            "salaryRevision": "bbik986xtlazwwy0w76b3ryp",
+            "expectedBreakdown": {
+              "standardBreakdown": {
+                "basicSalary": 26000,
+                "houseRent": 5200,
+                "utilities": 2600,
+                "conveyance": 2600,
+                "mobile": 1300,
+                "bikeMaintenance": 1300,
+                "technical": 2600,
+                "special": 1300
+              },
+              "componentDeductions": {
+                "basicSalary": 0,
+                "houseRent": 0,
+                "utilities": 0,
+                "conveyance": 100,
+                "mobile": 0,
+                "bikeMaintenance": 0,
+                "technical": 0,
+                "special": 0
+              },
+              "deductionBreakdownByOccasion": {
+                "absent": 0,
+                "undertime": 0,
+                "specialLeave": 0,
+                "annualLeave": 100,
+                "sickLeave": 0,
+                "unapprovedLeave": 0,
+                "notEmployed": 0
+              }
+            },
+            "actualBreakdown": {
+              "standardBreakdown": {
+                "basicSalary": 26000,
+                "houseRent": 5200,
+                "utilities": 2600,
+                "conveyance": 2600,
+                "mobile": 1300,
+                "bikeMaintenance": 1300,
+                "technical": 2600,
+                "special": 1300
+              },
+              "componentDeductions": {
+                "basicSalary": 0,
+                "houseRent": 0,
+                "utilities": 0,
+                "conveyance": 100,
+                "mobile": 0,
+                "bikeMaintenance": 0,
+                "technical": 0,
+                "special": 0
+              },
+              "deductionBreakdownByOccasion": {
+                "absent": 0,
+                "undertime": 0,
+                "specialLeave": 0,
+                "sickLeave": 0,
+                "annualLeave": 100,
+                "unapprovedLeave": 0,
+                "notEmployed": 0
+              }
+            }
+          },
+          {
+            "employee": "E2E03",
+            "expectedNet": 42900,
+            "actualNet": "42900.00",
+            "gross": "42900.00",
+            "deductions": "0.00",
+            "salaryRevision": "aus4l3oy45cyfrn3az2tmfzx",
+            "expectedBreakdown": {
+              "standardBreakdown": {
+                "basicSalary": 26000,
+                "houseRent": 5200,
+                "utilities": 2600,
+                "conveyance": 2600,
+                "mobile": 1300,
+                "bikeMaintenance": 1300,
+                "technical": 2600,
+                "special": 1300
+              },
+              "componentDeductions": {
+                "basicSalary": 0,
+                "houseRent": 0,
+                "utilities": 0,
+                "conveyance": 0,
+                "mobile": 0,
+                "bikeMaintenance": 0,
+                "technical": 0,
+                "special": 0
+              },
+              "deductionBreakdownByOccasion": {
+                "absent": 0,
+                "undertime": 0,
+                "specialLeave": 0,
+                "annualLeave": 0,
+                "sickLeave": 0,
+                "unapprovedLeave": 0,
+                "notEmployed": 0
+              }
+            },
+            "actualBreakdown": {
+              "standardBreakdown": {
+                "basicSalary": 26000,
+                "houseRent": 5200,
+                "utilities": 2600,
+                "conveyance": 2600,
+                "mobile": 1300,
+                "bikeMaintenance": 1300,
+                "technical": 2600,
+                "special": 1300
+              },
+              "componentDeductions": {
+                "basicSalary": 0,
+                "houseRent": 0,
+                "utilities": 0,
+                "conveyance": 0,
+                "mobile": 0,
+                "bikeMaintenance": 0,
+                "technical": 0,
+                "special": 0
+              },
+              "deductionBreakdownByOccasion": {
+                "absent": 0,
+                "undertime": 0,
+                "specialLeave": 0,
+                "sickLeave": 0,
+                "annualLeave": 0,
+                "unapprovedLeave": 0,
+                "notEmployed": 0
+              }
+            }
+          },
+          {
+            "employee": "E2E04",
+            "expectedNet": 42400,
+            "actualNet": "42400.00",
+            "gross": "42900.00",
+            "deductions": "500.00",
+            "salaryRevision": "rtq9zcbgzed05v1dcsxqqtqy",
+            "expectedBreakdown": {
+              "standardBreakdown": {
+                "basicSalary": 26000,
+                "houseRent": 5200,
+                "utilities": 2600,
+                "conveyance": 2600,
+                "mobile": 1300,
+                "bikeMaintenance": 1300,
+                "technical": 2600,
+                "special": 1300
+              },
+              "componentDeductions": {
+                "basicSalary": 0,
+                "houseRent": 200,
+                "utilities": 100,
+                "conveyance": 100,
+                "mobile": 50,
+                "bikeMaintenance": 50,
+                "technical": 0,
+                "special": 0
+              },
+              "deductionBreakdownByOccasion": {
+                "absent": 0,
+                "undertime": 0,
+                "specialLeave": 500,
+                "annualLeave": 0,
+                "sickLeave": 0,
+                "unapprovedLeave": 0,
+                "notEmployed": 0
+              }
+            },
+            "actualBreakdown": {
+              "standardBreakdown": {
+                "basicSalary": 26000,
+                "houseRent": 5200,
+                "utilities": 2600,
+                "conveyance": 2600,
+                "mobile": 1300,
+                "bikeMaintenance": 1300,
+                "technical": 2600,
+                "special": 1300
+              },
+              "componentDeductions": {
+                "basicSalary": 0,
+                "houseRent": 200,
+                "utilities": 100,
+                "conveyance": 100,
+                "mobile": 50,
+                "bikeMaintenance": 50,
+                "technical": 0,
+                "special": 0
+              },
+              "deductionBreakdownByOccasion": {
+                "absent": 0,
+                "undertime": 0,
+                "specialLeave": 500,
+                "sickLeave": 0,
+                "annualLeave": 0,
+                "unapprovedLeave": 0,
+                "notEmployed": 0
+              }
+            }
+          },
+          {
+            "employee": "E2E05",
+            "expectedNet": 42900,
+            "actualNet": "42900.00",
+            "gross": "42900.00",
+            "deductions": "0.00",
+            "salaryRevision": "n0nd2bqq5o7xxcmrl8c3metb",
+            "expectedBreakdown": {
+              "standardBreakdown": {
+                "basicSalary": 26000,
+                "houseRent": 5200,
+                "utilities": 2600,
+                "conveyance": 2600,
+                "mobile": 1300,
+                "bikeMaintenance": 1300,
+                "technical": 2600,
+                "special": 1300
+              },
+              "componentDeductions": {
+                "basicSalary": 0,
+                "houseRent": 0,
+                "utilities": 0,
+                "conveyance": 0,
+                "mobile": 0,
+                "bikeMaintenance": 0,
+                "technical": 0,
+                "special": 0
+              },
+              "deductionBreakdownByOccasion": {
+                "absent": 0,
+                "undertime": 0,
+                "specialLeave": 0,
+                "annualLeave": 0,
+                "sickLeave": 0,
+                "unapprovedLeave": 0,
+                "notEmployed": 0
+              }
+            },
+            "actualBreakdown": {
+              "standardBreakdown": {
+                "basicSalary": 26000,
+                "houseRent": 5200,
+                "utilities": 2600,
+                "conveyance": 2600,
+                "mobile": 1300,
+                "bikeMaintenance": 1300,
+                "technical": 2600,
+                "special": 1300
+              },
+              "componentDeductions": {
+                "basicSalary": 0,
+                "houseRent": 0,
+                "utilities": 0,
+                "conveyance": 0,
+                "mobile": 0,
+                "bikeMaintenance": 0,
+                "technical": 0,
+                "special": 0
+              },
+              "deductionBreakdownByOccasion": {
+                "absent": 0,
+                "undertime": 0,
+                "specialLeave": 0,
+                "sickLeave": 0,
+                "annualLeave": 0,
+                "unapprovedLeave": 0,
+                "notEmployed": 0
+              }
+            }
+          },
+          {
+            "employee": "E2E06",
+            "expectedNet": 42400,
+            "actualNet": "42400.00",
+            "gross": "42900.00",
+            "deductions": "500.00",
+            "salaryRevision": "egpvr96m4n7hm2y355lyslw1",
+            "expectedBreakdown": {
+              "standardBreakdown": {
+                "basicSalary": 26000,
+                "houseRent": 5200,
+                "utilities": 2600,
+                "conveyance": 2600,
+                "mobile": 1300,
+                "bikeMaintenance": 1300,
+                "technical": 2600,
+                "special": 1300
+              },
+              "componentDeductions": {
+                "basicSalary": 500,
+                "houseRent": 0,
+                "utilities": 0,
+                "conveyance": 0,
+                "mobile": 0,
+                "bikeMaintenance": 0,
+                "technical": 0,
+                "special": 0
+              },
+              "deductionBreakdownByOccasion": {
+                "absent": 0,
+                "undertime": 500,
+                "specialLeave": 0,
+                "annualLeave": 0,
+                "sickLeave": 0,
+                "unapprovedLeave": 0,
+                "notEmployed": 0
+              }
+            },
+            "actualBreakdown": {
+              "standardBreakdown": {
+                "basicSalary": 26000,
+                "houseRent": 5200,
+                "utilities": 2600,
+                "conveyance": 2600,
+                "mobile": 1300,
+                "bikeMaintenance": 1300,
+                "technical": 2600,
+                "special": 1300
+              },
+              "componentDeductions": {
+                "basicSalary": 500,
+                "houseRent": 0,
+                "utilities": 0,
+                "conveyance": 0,
+                "mobile": 0,
+                "bikeMaintenance": 0,
+                "technical": 0,
+                "special": 0
+              },
+              "deductionBreakdownByOccasion": {
+                "absent": 0,
+                "undertime": 500,
+                "specialLeave": 0,
+                "sickLeave": 0,
+                "annualLeave": 0,
+                "unapprovedLeave": 0,
+                "notEmployed": 0
+              }
+            }
+          },
+          {
+            "employee": "E2E07",
+            "expectedNet": 42897,
+            "actualNet": "42897.00",
+            "gross": "42900.00",
+            "deductions": "3.00",
+            "salaryRevision": "ebpfmmlj2bxftfw0nvbayrgl",
+            "expectedBreakdown": {
+              "standardBreakdown": {
+                "basicSalary": 26000,
+                "houseRent": 5200,
+                "utilities": 2600,
+                "conveyance": 2600,
+                "mobile": 1300,
+                "bikeMaintenance": 1300,
+                "technical": 2600,
+                "special": 1300
+              },
+              "componentDeductions": {
+                "basicSalary": 3,
+                "houseRent": 0,
+                "utilities": 0,
+                "conveyance": 0,
+                "mobile": 0,
+                "bikeMaintenance": 0,
+                "technical": 0,
+                "special": 0
+              },
+              "deductionBreakdownByOccasion": {
+                "absent": 0,
+                "undertime": 3,
+                "specialLeave": 0,
+                "annualLeave": 0,
+                "sickLeave": 0,
+                "unapprovedLeave": 0,
+                "notEmployed": 0
+              }
+            },
+            "actualBreakdown": {
+              "standardBreakdown": {
+                "basicSalary": 26000,
+                "houseRent": 5200,
+                "utilities": 2600,
+                "conveyance": 2600,
+                "mobile": 1300,
+                "bikeMaintenance": 1300,
+                "technical": 2600,
+                "special": 1300
+              },
+              "componentDeductions": {
+                "basicSalary": 3,
+                "houseRent": 0,
+                "utilities": 0,
+                "conveyance": 0,
+                "mobile": 0,
+                "bikeMaintenance": 0,
+                "technical": 0,
+                "special": 0
+              },
+              "deductionBreakdownByOccasion": {
+                "absent": 0,
+                "undertime": 3,
+                "specialLeave": 0,
+                "sickLeave": 0,
+                "annualLeave": 0,
+                "unapprovedLeave": 0,
+                "notEmployed": 0
+              }
+            }
+          },
+          {
+            "employee": "E2E08",
+            "expectedNet": 42775,
+            "actualNet": "42775.00",
+            "gross": "42900.00",
+            "deductions": "125.00",
+            "salaryRevision": "da49t1owyzmmsjkuwz1esox9",
+            "expectedBreakdown": {
+              "standardBreakdown": {
+                "basicSalary": 26000,
+                "houseRent": 5200,
+                "utilities": 2600,
+                "conveyance": 2600,
+                "mobile": 1300,
+                "bikeMaintenance": 1300,
+                "technical": 2600,
+                "special": 1300
+              },
+              "componentDeductions": {
+                "basicSalary": 125,
+                "houseRent": 0,
+                "utilities": 0,
+                "conveyance": 0,
+                "mobile": 0,
+                "bikeMaintenance": 0,
+                "technical": 0,
+                "special": 0
+              },
+              "deductionBreakdownByOccasion": {
+                "absent": 0,
+                "undertime": 125,
+                "specialLeave": 0,
+                "annualLeave": 0,
+                "sickLeave": 0,
+                "unapprovedLeave": 0,
+                "notEmployed": 0
+              }
+            },
+            "actualBreakdown": {
+              "standardBreakdown": {
+                "basicSalary": 26000,
+                "houseRent": 5200,
+                "utilities": 2600,
+                "conveyance": 2600,
+                "mobile": 1300,
+                "bikeMaintenance": 1300,
+                "technical": 2600,
+                "special": 1300
+              },
+              "componentDeductions": {
+                "basicSalary": 125,
+                "houseRent": 0,
+                "utilities": 0,
+                "conveyance": 0,
+                "mobile": 0,
+                "bikeMaintenance": 0,
+                "technical": 0,
+                "special": 0
+              },
+              "deductionBreakdownByOccasion": {
+                "absent": 0,
+                "undertime": 125,
+                "specialLeave": 0,
+                "sickLeave": 0,
+                "annualLeave": 0,
+                "unapprovedLeave": 0,
+                "notEmployed": 0
+              }
+            }
+          },
+          {
+            "employee": "E2E09",
+            "expectedNet": 42650,
+            "actualNet": "42650.00",
+            "gross": "42900.00",
+            "deductions": "250.00",
+            "salaryRevision": "ighzmtmgh3100fheztjqc5mc",
+            "expectedBreakdown": {
+              "standardBreakdown": {
+                "basicSalary": 26000,
+                "houseRent": 5200,
+                "utilities": 2600,
+                "conveyance": 2600,
+                "mobile": 1300,
+                "bikeMaintenance": 1300,
+                "technical": 2600,
+                "special": 1300
+              },
+              "componentDeductions": {
+                "basicSalary": 250,
+                "houseRent": 0,
+                "utilities": 0,
+                "conveyance": 0,
+                "mobile": 0,
+                "bikeMaintenance": 0,
+                "technical": 0,
+                "special": 0
+              },
+              "deductionBreakdownByOccasion": {
+                "absent": 0,
+                "undertime": 250,
+                "specialLeave": 0,
+                "annualLeave": 0,
+                "sickLeave": 0,
+                "unapprovedLeave": 0,
+                "notEmployed": 0
+              }
+            },
+            "actualBreakdown": {
+              "standardBreakdown": {
+                "basicSalary": 26000,
+                "houseRent": 5200,
+                "utilities": 2600,
+                "conveyance": 2600,
+                "mobile": 1300,
+                "bikeMaintenance": 1300,
+                "technical": 2600,
+                "special": 1300
+              },
+              "componentDeductions": {
+                "basicSalary": 250,
+                "houseRent": 0,
+                "utilities": 0,
+                "conveyance": 0,
+                "mobile": 0,
+                "bikeMaintenance": 0,
+                "technical": 0,
+                "special": 0
+              },
+              "deductionBreakdownByOccasion": {
+                "absent": 0,
+                "undertime": 250,
+                "specialLeave": 0,
+                "sickLeave": 0,
+                "annualLeave": 0,
+                "unapprovedLeave": 0,
+                "notEmployed": 0
+              }
+            }
+          },
+          {
+            "employee": "E2E10",
+            "expectedNet": 41300,
+            "actualNet": "41300.00",
+            "gross": "42900.00",
+            "deductions": "1600.00",
+            "salaryRevision": "yu1h2ar82ha1i8q4qu4gajsi",
+            "expectedBreakdown": {
+              "standardBreakdown": {
+                "basicSalary": 26000,
+                "houseRent": 5200,
+                "utilities": 2600,
+                "conveyance": 2600,
+                "mobile": 1300,
+                "bikeMaintenance": 1300,
+                "technical": 2600,
+                "special": 1300
+              },
+              "componentDeductions": {
+                "basicSalary": 1000,
+                "houseRent": 200,
+                "utilities": 100,
+                "conveyance": 100,
+                "mobile": 50,
+                "bikeMaintenance": 50,
+                "technical": 100,
+                "special": 0
+              },
+              "deductionBreakdownByOccasion": {
+                "absent": 1600,
+                "undertime": 0,
+                "specialLeave": 0,
+                "annualLeave": 0,
+                "sickLeave": 0,
+                "unapprovedLeave": 0,
+                "notEmployed": 0
+              }
+            },
+            "actualBreakdown": {
+              "standardBreakdown": {
+                "basicSalary": 26000,
+                "houseRent": 5200,
+                "utilities": 2600,
+                "conveyance": 2600,
+                "mobile": 1300,
+                "bikeMaintenance": 1300,
+                "technical": 2600,
+                "special": 1300
+              },
+              "componentDeductions": {
+                "basicSalary": 1000,
+                "houseRent": 200,
+                "utilities": 100,
+                "conveyance": 100,
+                "mobile": 50,
+                "bikeMaintenance": 50,
+                "technical": 100,
+                "special": 0
+              },
+              "deductionBreakdownByOccasion": {
+                "absent": 1600,
+                "undertime": 0,
+                "specialLeave": 0,
+                "sickLeave": 0,
+                "annualLeave": 0,
+                "unapprovedLeave": 0,
+                "notEmployed": 0
+              }
+            }
+          },
+          {
+            "employee": "E2E11",
+            "expectedNet": 43150,
+            "actualNet": "43150.00",
+            "gross": "43150.00",
+            "deductions": "0.00",
+            "salaryRevision": "k3gffbckvzmq2locu2apnchh",
+            "expectedBreakdown": {
+              "standardBreakdown": {
+                "basicSalary": 26000,
+                "houseRent": 5200,
+                "utilities": 2600,
+                "conveyance": 2600,
+                "mobile": 1300,
+                "bikeMaintenance": 1300,
+                "technical": 2600,
+                "special": 1300
+              },
+              "componentDeductions": {
+                "basicSalary": 0,
+                "houseRent": 0,
+                "utilities": 0,
+                "conveyance": 0,
+                "mobile": 0,
+                "bikeMaintenance": 0,
+                "technical": 0,
+                "special": 0
+              },
+              "deductionBreakdownByOccasion": {
+                "absent": 0,
+                "undertime": 0,
+                "specialLeave": 0,
+                "annualLeave": 0,
+                "sickLeave": 0,
+                "unapprovedLeave": 0,
+                "notEmployed": 0
+              }
+            },
+            "actualBreakdown": {
+              "standardBreakdown": {
+                "basicSalary": 26000,
+                "houseRent": 5200,
+                "utilities": 2600,
+                "conveyance": 2600,
+                "mobile": 1300,
+                "bikeMaintenance": 1300,
+                "technical": 2600,
+                "special": 1300
+              },
+              "componentDeductions": {
+                "basicSalary": 0,
+                "houseRent": 0,
+                "utilities": 0,
+                "conveyance": 0,
+                "mobile": 0,
+                "bikeMaintenance": 0,
+                "technical": 0,
+                "special": 0
+              },
+              "deductionBreakdownByOccasion": {
+                "absent": 0,
+                "undertime": 0,
+                "specialLeave": 0,
+                "sickLeave": 0,
+                "annualLeave": 0,
+                "unapprovedLeave": 0,
+                "notEmployed": 0
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "Viewer is refused actual mutation requests",
+      "caseIds": [
+        "P08"
+      ],
+      "passed": true
+    }
+  ],
+  "pageErrors": [],
+  "consoleErrors": [
+    "Error: <ellipse> attribute rx: Expected length, \"undefined\"."
+  ],
+  "inspectionErrors": [
+    "response.text: Protocol error (Network.getResponseBody): No resource with given identifier found\nResponse body is not available for a response that was navigated away from. Read response.body() before triggering any navigation.",
+    "response.text: Protocol error (Network.getResponseBody): No resource with given identifier found\nResponse body is not available for a response that was navigated away from. Read response.body() before triggering any navigation.",
+    "response.text: Protocol error (Network.getResponseBody): No resource with given identifier found\nResponse body is not available for a response that was navigated away from. Read response.body() before triggering any navigation.",
+    "response.text: Protocol error (Network.getResponseBody): No resource with given identifier found\nResponse body is not available for a response that was navigated away from. Read response.body() before triggering any navigation.",
+    "response.text: Protocol error (Network.getResponseBody): No resource with given identifier found\nResponse body is not available for a response that was navigated away from. Read response.body() before triggering any navigation.",
+    "response.text: Protocol error (Network.getResponseBody): No resource with given identifier found\nResponse body is not available for a response that was navigated away from. Read response.body() before triggering any navigation.",
+    "response.text: Protocol error (Network.getResponseBody): No resource with given identifier found\nResponse body is not available for a response that was navigated away from. Read response.body() before triggering any navigation.",
+    "response.text: Protocol error (Network.getResponseBody): No resource with given identifier found\nResponse body is not available for a response that was navigated away from. Read response.body() before triggering any navigation."
+  ],
+  "failedResponses": [],
+  "passed": true,
+  "database": "titan_payroll_e2e_19f8591d9b5092ab_test",
+  "scenario": "controlled",
+  "sourceSha256": "1b10268678ba3c0520a3b9b318eb31c816899517838637a6a7bdd2f404f5d5eb",
+  "cycle": {
+    "month": "2026-10",
+    "storedMonth": "2026-10-01",
+    "start": "2026-09-16",
+    "end": "2026-10-15",
+    "timezone": "Asia/Karachi",
+    "divisor": 26,
+    "dutyHours": 8,
+    "basic": 26000,
+    "gross": 42900,
+    "hourly": 125
+  },
+  "browser": "144.0.7559.132",
+  "tracePrivacy": "Actions, snapshots and images retained; authenticated network traffic and non-image response resources excluded.",
+  "finishedAt": "2026-10-20T11:12:56.338Z"
+}

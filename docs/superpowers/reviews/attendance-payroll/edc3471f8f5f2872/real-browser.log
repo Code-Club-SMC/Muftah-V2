@@ -1,0 +1,100 @@
+START Real Better Auth sign-in and HR route
+PASS Real Better Auth sign-in and HR route
+START Upload source and independently inspect PostgreSQL
+PASS Upload source and independently inspect PostgreSQL
+START Unresolved historical source blocks salary
+PASS Unresolved historical source blocks salary
+START Create 114 supplemental working dates through bulk HR action
+PASS Create 114 supplemental working dates through bulk HR action
+START Resolve source row 9
+PASS Resolve source row 9
+START Resolve source row 10
+PASS Resolve source row 10
+START Resolve source row 13
+PASS Resolve source row 13
+START Resolve source row 21
+PASS Resolve source row 21
+START Resolve source row 31
+PASS Resolve source row 31
+START Resolve source row 36
+PASS Resolve source row 36
+START Resolve source row 38
+PASS Resolve source row 38
+START Resolve source row 39
+PASS Resolve source row 39
+START Resolve source row 42
+PASS Resolve source row 42
+START Resolve source row 46
+PASS Resolve source row 46
+START Resolve source row 51
+PASS Resolve source row 51
+START Resolve source row 54
+PASS Resolve source row 54
+START Approve 112009 annual
+PASS Approve 112009 annual
+START Approve 113016 sick
+PASS Approve 113016 sick
+START Approve 111007 special
+PASS Approve 111007 special
+START Approve 110001 compensatory
+PASS Approve 110001 compensatory
+START Reject automatically suggested rest-day overtime without changing source duty
+AssertionError [ERR_ASSERTION]: Only original completed rest-day intervals create these pending suggestions
++ actual - expected
+
+  [
+    {
+      code: '110001',
++     date: 2026-10-03T19:00:00.000Z,
+-     date: '2026-10-04',
+      hours: 3
+    },
+    {
+      code: '111007',
++     date: 2026-10-03T19:00:00.000Z,
+-     date: '2026-10-04',
+      hours: 7.95
+    },
+    {
+      code: '111007',
++     date: 2026-10-10T19:00:00.000Z,
+-     date: '2026-10-11',
+      hours: 7.35
+    },
+    {
+      code: '111008',
++     date: 2026-10-10T19:00:00.000Z,
+-     date: '2026-10-11',
+      hours: 5.43
+    },
+    {
+      code: '112009',
++     date: 2026-10-03T19:00:00.000Z,
+-     date: '2026-10-04',
+      hours: 10.78
+    },
+    {
+      code: '113016',
++     date: 2026-10-03T19:00:00.000Z,
+-     date: '2026-10-04',
+      hours: 9.03
+    },
+    {
+      code: '113016',
++     date: 2026-10-10T19:00:00.000Z,
+-     date: '2026-10-11',
+      hours: 8.25
+    }
+  ]
+
+    at /home/abdul-rehman/Projects/titan-new/src/__tests__/e2e/attendance-payroll.browser.cjs:424:12
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async step (/home/abdul-rehman/Projects/titan-new/src/__tests__/e2e/attendance-payroll.browser.cjs:37:20)
+    at async main (/home/abdul-rehman/Projects/titan-new/src/__tests__/e2e/attendance-payroll.browser.cjs:419:13) {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: [Array],
+  expected: [Array],
+  operator: 'deepStrictEqual',
+  diff: 'simple'
+}

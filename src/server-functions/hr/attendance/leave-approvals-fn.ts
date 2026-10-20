@@ -8,6 +8,10 @@ import {
 import { eq, and, desc, gte, lte, ne } from "drizzle-orm";
 import { z } from "zod";
 import { logActivityQuiet } from "@/lib/activity-logger.server";
+import { invalidateDeviceAttendanceChanges, lockAttendancePayrollWrites } from "@/lib/attendance/device-import/payroll.server";
+import { lockEmployeePunchWrites } from "./punch-write-lock";
+import { assertWorkingLeaveDate, isWorkingLeaveDate } from "@/lib/attendance/leave-policy";
+import { adjustCompensatoryReservation } from "@/lib/attendance/compensatory-reservation.server";
 
 /**
  * Fetch leave records that need admin approval
@@ -72,8 +76,7 @@ export const getLeaveApprovalsFn = createServerFn()
 
 /**
  * Process (approve/reject) a leave request.
- * When approved, sets isApprovedLeave = true (no salary deduction).
- * When rejected, sets isApprovedLeave = false (salary deduction applied).
+ * Approval and paid eligibility are separate; configured deduction flags still apply.
  */
 export const processLeaveApprovalFn = createServerFn()
     .middleware([requireHrManageMiddleware])
@@ -85,6 +88,7 @@ export const processLeaveApprovalFn = createServerFn()
     )
     .handler(async ({ data: { id, status }, context }) => {
         return await db.transaction(async (tx) => {
+            await lockAttendancePayrollWrites(tx);
             const leave = await tx.query.attendance.findFirst({
                 where: eq(attendance.id, id),
             });
@@ -92,11 +96,21 @@ export const processLeaveApprovalFn = createServerFn()
             if (leave.status !== "leave" || !leave.leaveType) {
                 throw new Error("Only typed leave records can be processed.");
             }
+            await lockEmployeePunchWrites(tx, leave.employeeId);
+            await invalidateDeviceAttendanceChanges(tx, leave.employeeId, [leave.date]);
 
             const employee = await tx.query.employees.findFirst({
                 where: eq(employees.id, leave.employeeId),
             });
             if (!employee) throw new Error("Employee not found");
+            if (status !== "rejected") {
+                assertWorkingLeaveDate(leave.date, employee.restDays);
+            }
+            const compensatoryHoursUsed = status === "rejected" && leave.leaveType === "compensatory"
+                ? "0" : leave.compensatoryHoursUsed;
+            if (leave.leaveType === "compensatory") {
+                await adjustCompensatoryReservation(tx, leave.employeeId, leave.compensatoryHoursUsed, compensatoryHoursUsed);
+            }
 
             let paidApproval = status === "approved";
 
@@ -113,10 +127,10 @@ export const processLeaveApprovalFn = createServerFn()
                         gte(attendance.date, `${leaveYear}-01-01`),
                         lte(attendance.date, `${leaveYear}-12-31`),
                     ),
-                    columns: { id: true },
+                    columns: { id: true, date: true },
                 });
 
-                paidApproval = approvedAnnualLeaves.length < annualAllowance;
+                paidApproval = approvedAnnualLeaves.filter(row => isWorkingLeaveDate(row.date, employee.restDays)).length < annualAllowance;
             }
 
             const [updated] = await tx
@@ -124,6 +138,7 @@ export const processLeaveApprovalFn = createServerFn()
                 .set({
                     leaveApprovalStatus: status,
                     isApprovedLeave: paidApproval,
+                    compensatoryHoursUsed,
                     notes:
                         status === "approved" && leave.leaveType === "annual" && !paidApproval
                             ? [leave.notes, "Annual leave allowance exhausted; approved as unpaid annual leave."]
@@ -146,7 +161,7 @@ export const processLeaveApprovalFn = createServerFn()
                         gte(attendance.date, `${leaveYear}-01-01`),
                         lte(attendance.date, `${leaveYear}-12-31`),
                     ),
-                    columns: { id: true },
+                    columns: { id: true, date: true },
                 });
 
                 await tx
@@ -155,7 +170,7 @@ export const processLeaveApprovalFn = createServerFn()
                         annualLeaveBalance: Math.max(
                             0,
                             (employee.annualLeaveAllowance ?? 14) -
-                            approvedPaidAnnualLeaves.length,
+                            approvedPaidAnnualLeaves.filter(row => isWorkingLeaveDate(row.date, employee.restDays)).length,
                         ),
                         leaveYearStart: `${leaveYear}-01-01`,
                     })

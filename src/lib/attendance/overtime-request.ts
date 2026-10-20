@@ -1,3 +1,17 @@
+import { calculateTotalShiftHours } from "./time";
+
+export function getOvertimeStandardDutyHours(date: string, employee: {
+  standardDutyHours?: number | null;
+  restDays?: number[] | null;
+  shifts?: { start: string; end: string }[] | null;
+}): number {
+  const [year, month, day] = date.split("-").map(Number);
+  const dayOfWeek = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
+  if ((employee.restDays ?? [0]).includes(dayOfWeek)) return 0;
+  const shiftHours = calculateTotalShiftHours(employee.shifts);
+  return shiftHours > 0 ? shiftHours : employee.standardDutyHours || 8;
+}
+
 export type OvertimeRequestState =
   | "none"
   | "valid"

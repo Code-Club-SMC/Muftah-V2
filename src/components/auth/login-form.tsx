@@ -1,5 +1,5 @@
 import { useForm } from "@tanstack/react-form";
-import { Link } from "@tanstack/react-router";
+import { Link, useHydrated } from "@tanstack/react-router";
 import { Loader2, Mail, LockKeyhole } from "lucide-react";
 import { useTransition } from "react";
 import { toast } from "sonner";
@@ -24,6 +24,7 @@ type LoginFormProps = {
 };
 
 export const LoginForm = ({ redirectTo }: LoginFormProps) => {
+  const hydrated = useHydrated();
   const [isPending, startTransition] = useTransition();
 
   const form = useForm({
@@ -74,6 +75,7 @@ export const LoginForm = ({ redirectTo }: LoginFormProps) => {
 
         <CardContent className="px-6 sm:px-10 pb-10">
           <form
+            method="post"
             onSubmit={(e) => {
               e.preventDefault();
               e.stopPropagation();
@@ -92,6 +94,7 @@ export const LoginForm = ({ redirectTo }: LoginFormProps) => {
                         Email Address
                       </FieldLabel>
                       <Input
+                        disabled={!hydrated || isPending}
                         name={field.name}
                         value={field.state.value}
                         onBlur={field.handleBlur}
@@ -126,6 +129,7 @@ export const LoginForm = ({ redirectTo }: LoginFormProps) => {
                         </Link>
                       </div>
                       <PasswordInput
+                        disabled={!hydrated || isPending}
                         name={field.name}
                         value={field.state.value}
                         onBlur={field.handleBlur}
@@ -143,7 +147,7 @@ export const LoginForm = ({ redirectTo }: LoginFormProps) => {
               <div className="pt-1">
                 <Button
                   variant="default"
-                  disabled={isPending}
+                  disabled={!hydrated || isPending}
                   type="submit"
                   className="w-full h-11 font-medium text-[14px] rounded-lg  active:scale-[0.98] transition-all"
                 >

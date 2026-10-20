@@ -10,6 +10,15 @@ export const useUpsertAttendance = () => {
     mutationFn: upsertAttendanceFn,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["daily-attendance"] });
+      queryClient.invalidateQueries({ queryKey: ["employee-attendance-log"] });
+      queryClient.invalidateQueries({ queryKey: ["leave-approvals"] });
+      queryClient.invalidateQueries({ queryKey: ["overtime-approvals"] });
+      queryClient.invalidateQueries({ queryKey: ["employees"] });
+      queryClient.invalidateQueries({ queryKey: ["payrolls"] });
+      queryClient.invalidateQueries({ queryKey: ["payroll"] });
+      queryClient.invalidateQueries({ queryKey: ["payroll-dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["payslip-preview"] });
+      queryClient.invalidateQueries({ queryKey: ["employee-payroll-history"] });
       toast.success("Attendance record saved successfully");
     },
     onError: (error) => {

@@ -278,7 +278,7 @@ export const attendancePunches = pgTable(
     attendanceDate: date("attendance_date").notNull(),
     direction: text("direction", { enum: ["in", "out"] }).notNull(),
     source: text("source", {
-      enum: ["qr_terminal", "manual", "offline_excel"],
+      enum: ["qr_terminal", "manual", "offline_excel", "device_import"],
     })
       .default("qr_terminal")
       .notNull(),

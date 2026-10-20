@@ -1,0 +1,1121 @@
+{
+  "passed": true,
+  "sourceAudit": "../../2026-10-20-payroll-final-review.md",
+  "cases": [
+    {
+      "id": "L01",
+      "passed": true,
+      "evidence": [
+        {
+          "scenario": "controlled",
+          "tier": "browser",
+          "name": "Reconcile saved salary totals and test wallet"
+        },
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "baseline and all four real leave decision paths use exact salaries and repeat safely"
+        },
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "each leave type survives regeneration and payroll approval with exactly one balance charge"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "baseline and all four real leave decision paths use exact salaries and repeat safely"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "each leave type survives regeneration and payroll approval with exactly one balance charge"
+        }
+      ]
+    },
+    {
+      "id": "L02",
+      "passed": true,
+      "evidence": [
+        {
+          "scenario": "controlled",
+          "tier": "browser",
+          "name": "Reconcile saved salary totals and test wallet"
+        },
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "baseline and all four real leave decision paths use exact salaries and repeat safely"
+        },
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "each leave type survives regeneration and payroll approval with exactly one balance charge"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "baseline and all four real leave decision paths use exact salaries and repeat safely"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "each leave type survives regeneration and payroll approval with exactly one balance charge"
+        }
+      ]
+    },
+    {
+      "id": "L03",
+      "passed": true,
+      "evidence": [
+        {
+          "scenario": "controlled",
+          "tier": "browser",
+          "name": "Reconcile saved salary totals and test wallet"
+        },
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "baseline and all four real leave decision paths use exact salaries and repeat safely"
+        },
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "each leave type survives regeneration and payroll approval with exactly one balance charge"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "baseline and all four real leave decision paths use exact salaries and repeat safely"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "each leave type survives regeneration and payroll approval with exactly one balance charge"
+        }
+      ]
+    },
+    {
+      "id": "L04",
+      "passed": true,
+      "evidence": [
+        {
+          "scenario": "controlled",
+          "tier": "browser",
+          "name": "Reconcile saved salary totals and test wallet"
+        },
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "baseline and all four real leave decision paths use exact salaries and repeat safely"
+        },
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "each leave type survives regeneration and payroll approval with exactly one balance charge"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "baseline and all four real leave decision paths use exact salaries and repeat safely"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "each leave type survives regeneration and payroll approval with exactly one balance charge"
+        }
+      ]
+    },
+    {
+      "id": "L05",
+      "passed": true,
+      "evidence": [
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "baseline and all four real leave decision paths use exact salaries and repeat safely"
+        },
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "each pending type can be rejected directly and comp rejection refunds once"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "baseline and all four real leave decision paths use exact salaries and repeat safely"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "each pending type can be rejected directly and comp rejection refunds once"
+        }
+      ]
+    },
+    {
+      "id": "L06",
+      "passed": true,
+      "evidence": [
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "baseline and all four real leave decision paths use exact salaries and repeat safely"
+        },
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "each pending type can be rejected directly and comp rejection refunds once"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "baseline and all four real leave decision paths use exact salaries and repeat safely"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "each pending type can be rejected directly and comp rejection refunds once"
+        }
+      ]
+    },
+    {
+      "id": "L07",
+      "passed": true,
+      "evidence": [
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "annual boundary and concurrent decisions preserve previously approved same-year entitlement"
+        },
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "single excess annual date has the independent default and enabled basic-policy literals"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "annual boundary and concurrent decisions preserve previously approved same-year entitlement"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "single excess annual date has the independent default and enabled basic-policy literals"
+        }
+      ]
+    },
+    {
+      "id": "L08",
+      "passed": true,
+      "evidence": [
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "annual boundary and concurrent decisions preserve previously approved same-year entitlement"
+        },
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "single excess annual date has the independent default and enabled basic-policy literals"
+        },
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "company policy inheritance, enabled and disabled employee overrides and allowance flags"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "annual boundary and concurrent decisions preserve previously approved same-year entitlement"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "single excess annual date has the independent default and enabled basic-policy literals"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "company policy inheritance, enabled and disabled employee overrides and allowance flags"
+        }
+      ]
+    },
+    {
+      "id": "L09",
+      "passed": true,
+      "evidence": [
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "company policy inheritance, enabled and disabled employee overrides and allowance flags"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "company policy inheritance, enabled and disabled employee overrides and allowance flags"
+        }
+      ]
+    },
+    {
+      "id": "L10",
+      "passed": true,
+      "evidence": [
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "comp reservations refund once, reject invalid values, and serialize competing spends/conversions"
+        },
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "each pending type can be rejected directly and comp rejection refunds once"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "comp reservations refund once, reject invalid values, and serialize competing spends/conversions"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "each pending type can be rejected directly and comp rejection refunds once"
+        }
+      ]
+    },
+    {
+      "id": "L11",
+      "passed": true,
+      "evidence": [
+        {
+          "scenario": "controlled",
+          "tier": "browser",
+          "name": "Reconcile saved salary totals and test wallet"
+        },
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "baseline and all four real leave decision paths use exact salaries and repeat safely"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "baseline and all four real leave decision paths use exact salaries and repeat safely"
+        }
+      ]
+    },
+    {
+      "id": "L12",
+      "passed": true,
+      "evidence": [
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "comp reservations refund once, reject invalid values, and serialize competing spends/conversions"
+        },
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "comp conversion competes with two spends without granting or spending hours twice"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "comp reservations refund once, reject invalid values, and serialize competing spends/conversions"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "comp conversion competes with two spends without granting or spending hours twice"
+        }
+      ]
+    },
+    {
+      "id": "L13",
+      "passed": true,
+      "evidence": [
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "December/January entitlement uses leave year; sick usage clamps and ignores nonworking legacy leave"
+        },
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "January payroll excludes prior December usage and overlapping approved coverage counts dates once"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "December/January entitlement uses leave year; sick usage clamps and ignores nonworking legacy leave"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "January payroll excludes prior December usage and overlapping approved coverage counts dates once"
+        }
+      ]
+    },
+    {
+      "id": "L14",
+      "passed": true,
+      "evidence": [
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "comp reservations refund once, reject invalid values, and serialize competing spends/conversions"
+        },
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "comp conversion competes with two spends without granting or spending hours twice"
+        },
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "annual boundary and concurrent decisions preserve previously approved same-year entitlement"
+        },
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "each pending type can be rejected directly and comp rejection refunds once"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "comp reservations refund once, reject invalid values, and serialize competing spends/conversions"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "comp conversion competes with two spends without granting or spending hours twice"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "annual boundary and concurrent decisions preserve previously approved same-year entitlement"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "each pending type can be rejected directly and comp rejection refunds once"
+        }
+      ]
+    },
+    {
+      "id": "L15",
+      "passed": true,
+      "evidence": [
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "December/January entitlement uses leave year; sick usage clamps and ignores nonworking legacy leave"
+        },
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "rest days and holidays reject leave without balances; holiday changes divisor to 25"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "December/January entitlement uses leave year; sick usage clamps and ignores nonworking legacy leave"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "rest days and holidays reject leave without balances; holiday changes divisor to 25"
+        }
+      ]
+    },
+    {
+      "id": "L16",
+      "passed": true,
+      "evidence": [
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "baseline and all four real leave decision paths use exact salaries and repeat safely"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "baseline and all four real leave decision paths use exact salaries and repeat safely"
+        }
+      ]
+    },
+    {
+      "id": "A01",
+      "passed": true,
+      "evidence": [
+        {
+          "scenario": "controlled",
+          "tier": "browser",
+          "name": "Reconcile saved salary totals and test wallet"
+        },
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "baseline and all four real leave decision paths use exact salaries and repeat safely"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "baseline and all four real leave decision paths use exact salaries and repeat safely"
+        }
+      ]
+    },
+    {
+      "id": "A02",
+      "passed": true,
+      "evidence": [
+        {
+          "scenario": "controlled",
+          "tier": "browser",
+          "name": "Reconcile saved salary totals and test wallet"
+        },
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "absence, undertime flags, accumulated half rupees, overtime decisions and multiplier"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "absence, undertime flags, accumulated half rupees, overtime decisions and multiplier"
+        }
+      ]
+    },
+    {
+      "id": "A03",
+      "passed": true,
+      "evidence": [
+        {
+          "scenario": "controlled",
+          "tier": "browser",
+          "name": "Reconcile saved salary totals and test wallet"
+        },
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "absence, undertime flags, accumulated half rupees, overtime decisions and multiplier"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "absence, undertime flags, accumulated half rupees, overtime decisions and multiplier"
+        }
+      ]
+    },
+    {
+      "id": "A04",
+      "passed": true,
+      "evidence": [
+        {
+          "scenario": "controlled",
+          "tier": "browser",
+          "name": "Reconcile saved salary totals and test wallet"
+        },
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "real import breaks, overnight separate uploads and daytime missing checkout"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "real import breaks, overnight separate uploads and daytime missing checkout"
+        }
+      ]
+    },
+    {
+      "id": "A05",
+      "passed": true,
+      "evidence": [
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "absence, undertime flags, accumulated half rupees, overtime decisions and multiplier"
+        },
+        {
+          "scenario": "real",
+          "tier": "browser",
+          "name": "Reject automatically suggested rest-day overtime without changing source duty"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "absence, undertime flags, accumulated half rupees, overtime decisions and multiplier"
+        }
+      ]
+    },
+    {
+      "id": "A06",
+      "passed": true,
+      "evidence": [
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "real import breaks, overnight separate uploads and daytime missing checkout"
+        },
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "one upload attributes overnight checkout to IN date and keeps next normal duty separate"
+        },
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "overnight checkout across cycle and calendar boundaries remains attributed to IN date"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "real import breaks, overnight separate uploads and daytime missing checkout"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "one upload attributes overnight checkout to IN date and keeps next normal duty separate"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "overnight checkout across cycle and calendar boundaries remains attributed to IN date"
+        }
+      ]
+    },
+    {
+      "id": "A07",
+      "passed": true,
+      "evidence": [
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "real import breaks, overnight separate uploads and daytime missing checkout"
+        },
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "an imported unresolved day cannot approve an older complete salary snapshot"
+        },
+        {
+          "scenario": "real",
+          "tier": "browser",
+          "name": "Unresolved historical source blocks salary"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "real import breaks, overnight separate uploads and daytime missing checkout"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "an imported unresolved day cannot approve an older complete salary snapshot"
+        }
+      ]
+    },
+    {
+      "id": "A08",
+      "passed": true,
+      "evidence": [
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "real import breaks, overnight separate uploads and daytime missing checkout"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "real import breaks, overnight separate uploads and daytime missing checkout"
+        }
+      ]
+    },
+    {
+      "id": "A09",
+      "passed": true,
+      "evidence": [
+        {
+          "scenario": "controlled",
+          "tier": "browser",
+          "name": "HR correction recalculates salary and source reupload preserves correction"
+        },
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "correction, deletion, replay, stale drafts and finalized mutation guards retain source evidence"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "correction, deletion, replay, stale drafts and finalized mutation guards retain source evidence"
+        }
+      ]
+    },
+    {
+      "id": "A10",
+      "passed": true,
+      "evidence": [
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "deleted imported checkout can be resolved as every supported leave type"
+        },
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "correction, deletion, replay, stale drafts and finalized mutation guards retain source evidence"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "deleted imported checkout can be resolved as every supported leave type"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "correction, deletion, replay, stale drafts and finalized mutation guards retain source evidence"
+        }
+      ]
+    },
+    {
+      "id": "A11",
+      "passed": true,
+      "evidence": [
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "rest days and holidays reject leave without balances; holiday changes divisor to 25"
+        },
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "missing expected working date stays unmarked until HR resolves its daily status"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "rest days and holidays reject leave without balances; holiday changes divisor to 25"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "missing expected working date stays unmarked until HR resolves its daily status"
+        }
+      ]
+    },
+    {
+      "id": "A12",
+      "passed": true,
+      "evidence": [
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "joining and explicit cutoff prorate separately; revision effective date follows current contract"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "joining and explicit cutoff prorate separately; revision effective date follows current contract"
+        }
+      ]
+    },
+    {
+      "id": "A13",
+      "passed": true,
+      "evidence": [
+        {
+          "scenario": "controlled",
+          "tier": "browser",
+          "name": "Reconcile saved salary totals and test wallet"
+        },
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "absence, undertime flags, accumulated half rupees, overtime decisions and multiplier"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "absence, undertime flags, accumulated half rupees, overtime decisions and multiplier"
+        }
+      ]
+    },
+    {
+      "id": "A14",
+      "passed": true,
+      "evidence": [
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "selective waiver preserves attendance and balances while pending leave still blocks finalization"
+        },
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "annual, sick, special and undertime selective waivers remove only their named occasion"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "selective waiver preserves attendance and balances while pending leave still blocks finalization"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "annual, sick, special and undertime selective waivers remove only their named occasion"
+        }
+      ]
+    },
+    {
+      "id": "P01",
+      "passed": true,
+      "evidence": [
+        {
+          "scenario": "controlled",
+          "tier": "browser",
+          "name": "Reconcile saved salary totals and test wallet"
+        },
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "browser drafts retain exact literals through generation, approval and concurrent payment"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "browser drafts retain exact literals through generation, approval and concurrent payment"
+        }
+      ]
+    },
+    {
+      "id": "P02",
+      "passed": true,
+      "evidence": [
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "correction, deletion, replay, stale drafts and finalized mutation guards retain source evidence"
+        },
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "leave approval competing with generation cannot finalize stale salary"
+        },
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "manual attendance and overtime decisions invalidate saved drafts until exact regeneration"
+        },
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "captured invalidation revision cannot clear a later attendance change"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "correction, deletion, replay, stale drafts and finalized mutation guards retain source evidence"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "leave approval competing with generation cannot finalize stale salary"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "manual attendance and overtime decisions invalidate saved drafts until exact regeneration"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "captured invalidation revision cannot clear a later attendance change"
+        }
+      ]
+    },
+    {
+      "id": "P03",
+      "passed": true,
+      "evidence": [
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "browser drafts retain exact literals through generation, approval and concurrent payment"
+        },
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "coverage and pending guards reject incomplete payroll; insufficient payment rolls back"
+        },
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "approval between regenerated employee saves cannot let cleanup delete approved coverage"
+        },
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "an imported unresolved day cannot approve an older complete salary snapshot"
+        },
+        {
+          "scenario": "real",
+          "tier": "browser",
+          "name": "Reject automatically suggested rest-day overtime without changing source duty"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "browser drafts retain exact literals through generation, approval and concurrent payment"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "coverage and pending guards reject incomplete payroll; insufficient payment rolls back"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "approval between regenerated employee saves cannot let cleanup delete approved coverage"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "an imported unresolved day cannot approve an older complete salary snapshot"
+        }
+      ]
+    },
+    {
+      "id": "P04",
+      "passed": true,
+      "evidence": [
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "browser drafts retain exact literals through generation, approval and concurrent payment"
+        },
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "annual boundary and concurrent decisions preserve previously approved same-year entitlement"
+        },
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "each leave type survives regeneration and payroll approval with exactly one balance charge"
+        },
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "December/January entitlement uses leave year; sick usage clamps and ignores nonworking legacy leave"
+        },
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "January payroll excludes prior December usage and overlapping approved coverage counts dates once"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "browser drafts retain exact literals through generation, approval and concurrent payment"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "annual boundary and concurrent decisions preserve previously approved same-year entitlement"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "each leave type survives regeneration and payroll approval with exactly one balance charge"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "December/January entitlement uses leave year; sick usage clamps and ignores nonworking legacy leave"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "January payroll excludes prior December usage and overlapping approved coverage counts dates once"
+        }
+      ]
+    },
+    {
+      "id": "P05",
+      "passed": true,
+      "evidence": [
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "correction, deletion, replay, stale drafts and finalized mutation guards retain source evidence"
+        },
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "finalized cycles refuse import, leave decisions, overtime conversion and direct draft saves atomically"
+        },
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "approval between regenerated employee saves cannot let cleanup delete approved coverage"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "correction, deletion, replay, stale drafts and finalized mutation guards retain source evidence"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "finalized cycles refuse import, leave decisions, overtime conversion and direct draft saves atomically"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "approval between regenerated employee saves cannot let cleanup delete approved coverage"
+        }
+      ]
+    },
+    {
+      "id": "P06",
+      "passed": true,
+      "evidence": [
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "browser drafts retain exact literals through generation, approval and concurrent payment"
+        },
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "coverage and pending guards reject incomplete payroll; insufficient payment rolls back"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "browser drafts retain exact literals through generation, approval and concurrent payment"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "coverage and pending guards reject incomplete payroll; insufficient payment rolls back"
+        }
+      ]
+    },
+    {
+      "id": "P07",
+      "passed": true,
+      "evidence": [
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "comp reservations refund once, reject invalid values, and serialize competing spends/conversions"
+        },
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "comp conversion competes with two spends without granting or spending hours twice"
+        },
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "annual boundary and concurrent decisions preserve previously approved same-year entitlement"
+        },
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "leave approval competing with generation cannot finalize stale salary"
+        },
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "approval between regenerated employee saves cannot let cleanup delete approved coverage"
+        },
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "import and correction compete with generation and approval without stale finalized salary"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "comp reservations refund once, reject invalid values, and serialize competing spends/conversions"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "comp conversion competes with two spends without granting or spending hours twice"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "annual boundary and concurrent decisions preserve previously approved same-year entitlement"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "leave approval competing with generation cannot finalize stale salary"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "approval between regenerated employee saves cannot let cleanup delete approved coverage"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "import and correction compete with generation and approval without stale finalized salary"
+        }
+      ]
+    },
+    {
+      "id": "P08",
+      "passed": true,
+      "evidence": [
+        {
+          "scenario": "controlled",
+          "tier": "browser",
+          "name": "Viewer is refused actual mutation requests"
+        },
+        {
+          "scenario": "real",
+          "tier": "browser",
+          "name": "Viewer is refused actual mutation requests"
+        }
+      ]
+    },
+    {
+      "id": "COMPOSITE",
+      "passed": true,
+      "evidence": [
+        {
+          "scenario": "controlled",
+          "tier": "integration",
+          "name": "composite fixture reconciles independent occasions, additions and balance usage"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "composite fixture reconciles independent occasions, additions and balance usage"
+        }
+      ]
+    },
+    {
+      "id": "REAL_FILE",
+      "passed": true,
+      "evidence": [
+        {
+          "scenario": "real",
+          "tier": "browser",
+          "name": "Reconcile saved salary totals and test wallet"
+        },
+        {
+          "scenario": "real",
+          "tier": "integration",
+          "name": "browser drafts retain exact literals through generation, approval and concurrent payment"
+        }
+      ]
+    }
+  ]
+}

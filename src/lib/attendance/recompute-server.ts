@@ -7,7 +7,7 @@ function isRestDay(date: string, restDays: unknown) {
   return configuredRestDays.includes(dayOfWeek);
 }
 
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import {
   attendance,
   attendancePunches,
@@ -18,6 +18,7 @@ import {
 import type { db } from "@/db";
 import { revalidateOvertimeRequest } from "./overtime-request";
 import { calculateTotalShiftHours } from "./time";
+import { toPKTDate } from "./time";
 import { computeAttendanceFromPunches } from "./recompute";
 
 export type AttendanceTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -57,6 +58,8 @@ function appendUniqueNote(
 function getPunchDrivenSource(
   punches: Array<typeof attendancePunches.$inferSelect>,
 ) {
+  if (punches.some((punch) => punch.source === "device_import"))
+    return "biometric";
   return punches.some((punch) => punch.source === "qr_terminal")
     ? "qr_terminal"
     : "manual";
@@ -116,12 +119,19 @@ export async function recomputeAttendanceRow(
       shifts: employee.shifts ?? [],
       graceMinutes: settings?.attendanceGraceMinutes ?? DEFAULT_GRACE_MINUTES,
       nightShiftStartHour: NIGHT_SHIFT_START_HOUR,
-      forceNightShift: options.forceNightShift,
+      forceNightShift:
+        options.forceNightShift ||
+        punches.some(
+          (punch) =>
+            punch.direction === "out" &&
+            toPKTDate(punch.timestamp) > attendanceDate,
+        ),
     },
   );
   const isOffDay = isRestDay(attendanceDate, employee.restDays);
   const shiftHours = calculateTotalShiftHours(employee.shifts);
-  const standardHours = shiftHours > 0 ? shiftHours : (employee.standardDutyHours || 8);
+  const standardHours =
+    shiftHours > 0 ? shiftHours : employee.standardDutyHours || 8;
   const effectiveStandardHours = isOffDay ? 0 : standardHours;
 
   const overtimeRevalidation = revalidateOvertimeRequest({
@@ -135,6 +145,10 @@ export async function recomputeAttendanceRow(
 
   const updateData = {
     status: "present" as const,
+    isApprovedLeave: false,
+    leaveType: null,
+    leaveApprovalStatus: "none",
+    compensatoryHoursUsed: "0",
     checkIn: computed.checkIn,
     checkOut: computed.checkOut,
     dutyHours: computed.dutyHours,
@@ -152,12 +166,21 @@ export async function recomputeAttendanceRow(
     notes:
       options.noteOverride !== undefined
         ? options.noteOverride
-        : appendUniqueNote(existingAttendance?.notes ?? null, options.appendNote),
+        : appendUniqueNote(
+            existingAttendance?.notes ?? null,
+            options.appendNote,
+          ),
     ...(manualFieldStrategy === "reset"
       ? {
-          overtimeHours: isOffDay && parseFloat(computed.dutyHours) > 0 ? computed.dutyHours : "0.00",
+          overtimeHours:
+            isOffDay && parseFloat(computed.dutyHours) > 0
+              ? computed.dutyHours
+              : "0.00",
           overtimeStatus: "pending",
-          overtimeRemarks: isOffDay && parseFloat(computed.dutyHours) > 0 ? "Worked on rest day" : null,
+          overtimeRemarks:
+            isOffDay && parseFloat(computed.dutyHours) > 0
+              ? "Worked on rest day"
+              : null,
           checkOutReason: null,
           isApprovedLeave: false,
           leaveType: null,
@@ -165,40 +188,48 @@ export async function recomputeAttendanceRow(
         }
       : existingAttendance
         ? {
-            overtimeHours: isOffDay && (!existingAttendance.overtimeHours || parseFloat(existingAttendance.overtimeHours) === 0) && parseFloat(computed.dutyHours) > 0
-              ? computed.dutyHours
-              : existingAttendance.overtimeHours ?? "0.00",
+            overtimeHours:
+              isOffDay &&
+              (!existingAttendance.overtimeHours ||
+                parseFloat(existingAttendance.overtimeHours) === 0) &&
+              parseFloat(computed.dutyHours) > 0
+                ? computed.dutyHours
+                : (existingAttendance.overtimeHours ?? "0.00"),
             overtimeStatus: overtimeRevalidation.nextOvertimeStatus,
-            overtimeRemarks: existingAttendance.overtimeRemarks ?? (isOffDay && parseFloat(computed.dutyHours) > 0 ? "Worked on rest day" : null),
+            overtimeRemarks:
+              existingAttendance.overtimeRemarks ??
+              (isOffDay && parseFloat(computed.dutyHours) > 0
+                ? "Worked on rest day"
+                : null),
           }
         : {
-            overtimeHours: isOffDay && parseFloat(computed.dutyHours) > 0 ? computed.dutyHours : "0.00",
+            overtimeHours:
+              isOffDay && parseFloat(computed.dutyHours) > 0
+                ? computed.dutyHours
+                : "0.00",
             overtimeStatus: "pending",
-            overtimeRemarks: isOffDay && parseFloat(computed.dutyHours) > 0 ? "Worked on rest day" : null,
-          }
-    ),
+            overtimeRemarks:
+              isOffDay && parseFloat(computed.dutyHours) > 0
+                ? "Worked on rest day"
+                : null,
+          }),
     updatedAt: new Date(),
   };
 
-  // Compensatory balance adjustment
+  // Switching a leave row to punch-backed presence refunds reserved hours once.
+  // Clearing the persisted leave metadata above makes repeated recomputation idempotent.
   if (existingAttendance?.leaveType === "compensatory") {
-      const previousCompUsed = parseFloat(existingAttendance.compensatoryHoursUsed || "0");
-      const newCompUsed = (updateData as any).leaveType === "compensatory" ? parseFloat((updateData as any).compensatoryHoursUsed || "0") : 0;
-      const compHoursDiff = newCompUsed - previousCompUsed;
-
-      if (compHoursDiff !== 0) {
-          const emp = await tx.query.employees.findFirst({
-              where: eq(employees.id, employeeId),
-              columns: { compensatoryHoursBalance: true }
-          });
-          if (emp) {
-              const currentBalance = parseFloat(emp.compensatoryHoursBalance || "0");
-              const newBalance = currentBalance - compHoursDiff;
-              await tx.update(employees)
-                  .set({ compensatoryHoursBalance: newBalance.toString() })
-                  .where(eq(employees.id, employeeId));
-          }
-      }
+    const previousCompUsed = Number(
+      existingAttendance.compensatoryHoursUsed || "0",
+    );
+    if (Number.isFinite(previousCompUsed) && previousCompUsed > 0) {
+      await tx
+        .update(employees)
+        .set({
+          compensatoryHoursBalance: sql`COALESCE(${employees.compensatoryHoursBalance}, 0) + ${previousCompUsed}`,
+        })
+        .where(eq(employees.id, employeeId));
+    }
   }
 
   const [upserted] = await tx

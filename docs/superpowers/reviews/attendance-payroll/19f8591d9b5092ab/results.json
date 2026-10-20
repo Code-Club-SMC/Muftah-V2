@@ -1,0 +1,48 @@
+{
+  "runId": "19f8591d9b5092ab",
+  "startedAt": "2026-10-20T11:08:52.701Z",
+  "timezone": "Asia/Karachi",
+  "cycle": {
+    "month": "2026-10",
+    "storedMonth": "2026-10-01",
+    "start": "2026-09-16",
+    "end": "2026-10-15",
+    "timezone": "Asia/Karachi",
+    "divisor": 26,
+    "dutyHours": 8,
+    "basic": 26000,
+    "gross": 42900,
+    "hourly": 125
+  },
+  "buildCommit": "e5408b152e503fcc1cc6e0cb6ddb252725bbf6a6",
+  "dirtyBuild": true,
+  "status": "failed",
+  "scenarios": [
+    {
+      "scenario": "controlled",
+      "database": "titan_payroll_e2e_19f8591d9b5092ab_test"
+    },
+    {
+      "scenario": "real",
+      "database": "titan_payroll_real_19f8591d9b5092ab_test"
+    }
+  ],
+  "cleanup": [
+    {
+      "database": "titan_payroll_e2e_19f8591d9b5092ab_test",
+      "retained": true
+    },
+    {
+      "database": "titan_payroll_real_19f8591d9b5092ab_test",
+      "retained": true
+    }
+  ],
+  "buildIdentity": {
+    "sourceSha256": "342ad061220e0bc50f67de195da87a62bfb566301cb295c3da49e5178a3f712f",
+    "outputSha256": "75f79da9317db9233642ea21c27a55ec80e228b13567bf774e51d90d1dc0198c",
+    "reused": true,
+    "originalBuildRun": "5701645c8c937ce3"
+  },
+  "error": "real-browser failed; see real-browser.log\n\n1 !== 0\n",
+  "finishedAt": "2026-10-20T11:14:40.014Z"
+}

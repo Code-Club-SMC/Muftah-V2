@@ -1,0 +1,77 @@
+{
+  "tier": "integration",
+  "scenario": "controlled",
+  "database": "titan_payroll_e2e_9fbe3dd93550d0c2_test",
+  "passed": false,
+  "checks": [
+    {
+      "name": "approval between regenerated employee saves cannot let cleanup delete approved coverage",
+      "caseIds": [
+        "P03",
+        "P05",
+        "P07"
+      ],
+      "passed": false,
+      "expected": "All named assertions and recorded literal comparisons pass",
+      "actual": "approved payroll retains complete coverage after failed regeneration cleanup: expected 1 to deeply equal 2",
+      "comparisons": [
+        {
+          "field": "approval wins between employee saves",
+          "expected": "fulfilled",
+          "actual": "fulfilled"
+        },
+        {
+          "field": "remaining regeneration refuses finalized payroll",
+          "expected": "rejected",
+          "actual": "rejected"
+        },
+        {
+          "field": "approved payroll retains complete coverage after failed regeneration cleanup",
+          "expected": 2,
+          "actual": 1
+        }
+      ]
+    }
+  ],
+  "browserDraftPrerequisiteVerified": false,
+  "notCoveredByThisInvocation": [
+    "L01",
+    "L02",
+    "L03",
+    "L04",
+    "L05",
+    "L06",
+    "L07",
+    "L08",
+    "L09",
+    "L10",
+    "L11",
+    "L12",
+    "L13",
+    "L14",
+    "L15",
+    "L16",
+    "A01",
+    "A02",
+    "A03",
+    "A04",
+    "A05",
+    "A06",
+    "A07",
+    "A08",
+    "A09",
+    "A10",
+    "A11",
+    "A12",
+    "A13",
+    "A14",
+    "P01",
+    "P02",
+    "P04",
+    "P06",
+    "P08",
+    "COMPOSITE",
+    "REAL_FILE"
+  ],
+  "transportAuthLimitation": "Production validators, handlers, transactions and PostgreSQL run unchanged. Only server-function transport and middleware are captured; authenticated HR context is supplied explicitly. These calls do not establish HTTP authentication or RBAC enforcement. Browser results report that coverage separately."
+}

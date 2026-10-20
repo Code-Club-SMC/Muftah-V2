@@ -1,0 +1,45 @@
+{
+  "runId": "907277fd5e28897c",
+  "startedAt": "2026-10-20T11:28:53.437Z",
+  "timezone": "Asia/Karachi",
+  "cycle": {
+    "month": "2026-10",
+    "storedMonth": "2026-10-01",
+    "start": "2026-09-16",
+    "end": "2026-10-15",
+    "timezone": "Asia/Karachi",
+    "divisor": 26,
+    "dutyHours": 8,
+    "basic": 26000,
+    "gross": 42900,
+    "hourly": 125
+  },
+  "buildCommit": "e5408b152e503fcc1cc6e0cb6ddb252725bbf6a6",
+  "dirtyBuild": true,
+  "status": "failed",
+  "requestedScenarios": [
+    "controlled",
+    "real"
+  ],
+  "limitedRun": false,
+  "scenarios": [
+    {
+      "scenario": "controlled",
+      "database": "titan_payroll_e2e_907277fd5e28897c_test"
+    }
+  ],
+  "cleanup": [
+    {
+      "database": "titan_payroll_e2e_907277fd5e28897c_test",
+      "dropped": true
+    }
+  ],
+  "buildIdentity": {
+    "sourceSha256": "f4ebab5797a08e6abb4737f93d96fd83e9e06df73df5677c5806201146785f9a",
+    "outputSha256": "1853c161912ac4ece8ecf17c9d21748ff79ae5304ed0d2084825fb67516ffd8d",
+    "reused": true,
+    "originalBuildRun": "c5f51368454a1276"
+  },
+  "error": "controlled-browser failed; see controlled-browser.log\n\n1 !== 0\n",
+  "finishedAt": "2026-10-20T11:32:42.742Z"
+}

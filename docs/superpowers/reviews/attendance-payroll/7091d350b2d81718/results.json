@@ -1,0 +1,41 @@
+{
+  "runId": "7091d350b2d81718",
+  "startedAt": "2026-10-19T11:54:13.243Z",
+  "timezone": "Asia/Karachi",
+  "cycle": {
+    "month": "2026-10",
+    "storedMonth": "2026-10-01",
+    "start": "2026-09-16",
+    "end": "2026-10-15",
+    "timezone": "Asia/Karachi",
+    "divisor": 26,
+    "dutyHours": 8,
+    "basic": 26000,
+    "gross": 42900,
+    "hourly": 125
+  },
+  "buildCommit": "e5408b152e503fcc1cc6e0cb6ddb252725bbf6a6",
+  "dirtyBuild": true,
+  "status": "preparation-only",
+  "scenarios": [
+    {
+      "scenario": "controlled",
+      "database": "titan_payroll_e2e_7091d350b2d81718_test"
+    },
+    {
+      "scenario": "real",
+      "database": "titan_payroll_real_7091d350b2d81718_test"
+    }
+  ],
+  "cleanup": [
+    {
+      "database": "titan_payroll_e2e_7091d350b2d81718_test",
+      "dropped": true
+    },
+    {
+      "database": "titan_payroll_real_7091d350b2d81718_test",
+      "dropped": true
+    }
+  ],
+  "finishedAt": "2026-10-19T11:54:28.769Z"
+}

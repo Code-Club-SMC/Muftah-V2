@@ -7,11 +7,12 @@
   },
   "scripts": {
     "dev": "vite dev --port 3000",
-    "build": "NODE_OPTIONS=--max-old-space-size=4096 vite build",
+    "build": "NODE_ENV=production NODE_OPTIONS=--max-old-space-size=4096 vite build",
     "start": "node .output/server/index.mjs",
     "preview": "vite preview",
     "test": "vitest run",
     "test:integration:attendance": "vitest run --config vitest.integration.config.ts",
+    "test:e2e:payroll": "bun src/__tests__/e2e/attendance-payroll.run.ts",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate --config=drizzle.config.ts",

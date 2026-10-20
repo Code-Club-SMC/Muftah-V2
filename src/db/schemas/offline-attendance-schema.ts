@@ -14,6 +14,7 @@ import {
 import { createId } from "@paralleldrive/cuid2";
 import { user } from "./auth-schema";
 import { attendancePunches, employees, payrolls } from "./hr-schema";
+import { deviceAttendanceImports } from "./device-attendance-schema";
 
 export type OfflineWorkbookStatus = "active" | "retired" | "replaced";
 export type OfflineOutageStatus = "pending" | "confirmed" | "rejected";
@@ -358,9 +359,15 @@ export const payrollAttendanceInvalidations = pgTable(
     payrollId: text("payroll_id")
       .notNull()
       .references(() => payrolls.id, { onDelete: "cascade" }),
-    importBatchId: text("import_batch_id")
-      .notNull()
-      .references(() => attendanceImportBatches.id, { onDelete: "restrict" }),
+    importBatchId: text("import_batch_id").references(
+      () => attendanceImportBatches.id,
+      { onDelete: "restrict" },
+    ),
+    deviceImportId: text("device_import_id").references(
+      () => deviceAttendanceImports.id,
+      { onDelete: "restrict" },
+    ),
+    revision: integer("revision").notNull().default(1),
     affectedSummary: jsonb("affected_summary")
       .$type<PayrollAttendanceAffectedSummary>()
       .notNull(),
@@ -377,5 +384,8 @@ export const payrollAttendanceInvalidations = pgTable(
       .on(table.payrollId, table.importBatchId)
       .where(sql`${table.resolvedAt} IS NULL`),
     index("payroll_attendance_invalidations_batch_idx").on(table.importBatchId),
+    uniqueIndex("payroll_attendance_invalidations_device_idx")
+      .on(table.payrollId, table.deviceImportId)
+      .where(sql`${table.resolvedAt} IS NULL`),
   ],
 );

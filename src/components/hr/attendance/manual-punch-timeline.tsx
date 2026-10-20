@@ -8,7 +8,10 @@ import {
   Trash2,
   UserRound,
 } from "lucide-react";
-import { computeAttendanceFromPunches, type RecomputeResult } from "@/lib/attendance/recompute";
+import {
+  computeAttendanceFromPunches,
+  type RecomputeResult,
+} from "@/lib/attendance/recompute";
 import { getProtectedDeletePunchIds } from "@/lib/attendance/punch-sequence";
 import { toPKTDate, toPKTTime } from "@/lib/attendance/time";
 import { useQuery } from "@tanstack/react-query";
@@ -51,7 +54,8 @@ type PunchRow = {
   timestamp: string | Date;
   attendanceDate: string;
   direction: PunchDirection;
-  source: "qr_terminal" | "manual" | "offline_excel";
+  source: "qr_terminal" | "manual" | "offline_excel" | "device_import";
+  requiresCorrectionReason?: boolean;
   note?: string | null;
   terminalUser?: {
     id: string;
@@ -97,9 +101,18 @@ function defaultPunchDateTime(date: string) {
 function sourceLabel(punch: PunchRow) {
   if (punch.source === "qr_terminal") return "QR terminal";
   if (punch.source === "offline_excel") return "Offline Excel";
+  if (punch.source === "device_import") return "Device import";
   return punch.terminalUser?.name
     ? `Manual by ${punch.terminalUser.name}`
     : "Manual";
+}
+
+function requiresCorrectionReason(punch: PunchRow) {
+  return (
+    punch.requiresCorrectionReason ||
+    punch.source === "offline_excel" ||
+    punch.source === "device_import"
+  );
 }
 
 function getNextDirection(punches: PunchRow[]): PunchDirection {
@@ -168,7 +181,8 @@ export function ManualPunchTimeline({
     })),
     {
       shifts: shifts ?? [],
-      graceMinutes: settingsQuery.data?.attendanceGraceMinutes ?? DEFAULT_GRACE_MINUTES,
+      graceMinutes:
+        settingsQuery.data?.attendanceGraceMinutes ?? DEFAULT_GRACE_MINUTES,
       nightShiftStartHour: NIGHT_SHIFT_START_HOUR,
     },
   );
@@ -233,8 +247,9 @@ export function ManualPunchTimeline({
         punchId: punch.id,
         newTimestamp: toPKTOffsetTimestamp(editingTimestamp),
         attendanceDate: date,
-        reason:
-          punch.source === "offline_excel" ? editingReason.trim() : undefined,
+        reason: requiresCorrectionReason(punch)
+          ? editingReason.trim()
+          : undefined,
       },
     });
     setEditingPunchId(null);
@@ -246,7 +261,9 @@ export function ManualPunchTimeline({
     await deletePunch.mutateAsync({
       data: {
         punchId: punch.id,
-        reason: punch.source === "offline_excel" ? deleteReason.trim() : undefined,
+        reason: requiresCorrectionReason(punch)
+          ? deleteReason.trim()
+          : undefined,
       },
     });
     setDeletePunchId(null);
@@ -267,8 +284,16 @@ export function ManualPunchTimeline({
       </Alert>
 
       <div className="grid grid-cols-2 gap-2 md:grid-cols-6">
-        <SummaryCard label="First In" value={summary.checkIn ?? "--:--"} muted={!summary.checkIn} />
-        <SummaryCard label="Last Out" value={summary.checkOut ?? "--:--"} muted={!summary.checkOut} />
+        <SummaryCard
+          label="First In"
+          value={summary.checkIn ?? "--:--"}
+          muted={!summary.checkIn}
+        />
+        <SummaryCard
+          label="Last Out"
+          value={summary.checkOut ?? "--:--"}
+          muted={!summary.checkOut}
+        />
         <SummaryCard label="Duty" value={`${summary.dutyHours}h`} />
         <SummaryCard
           label="Early Leave"
@@ -328,8 +353,8 @@ export function ManualPunchTimeline({
               System decides from time order
             </p>
             <p className="mt-1 text-xs text-muted-foreground">
-              Next expected punch: {suggestedDirection.toUpperCase()}. If a
-              time is wrong, correct the punch instead of forcing IN or OUT.
+              Next expected punch: {suggestedDirection.toUpperCase()}. If a time
+              is wrong, correct the punch instead of forcing IN or OUT.
             </p>
           </div>
           <Field>
@@ -364,11 +389,11 @@ export function ManualPunchTimeline({
             const isEditing = editingPunchId === punch.id;
             const isIn = punch.direction === "in";
             const deleteBlocked = protectedDeletePunchIds.has(punch.id);
-            const isOfflinePunch = punch.source === "offline_excel";
+            const isImportedPunch = requiresCorrectionReason(punch);
             const editReasonInvalid =
-              isOfflinePunch && editingReason.trim().length < 5;
+              isImportedPunch && editingReason.trim().length < 5;
             const deleteReasonInvalid =
-              isOfflinePunch && deleteReason.trim().length < 5;
+              isImportedPunch && deleteReason.trim().length < 5;
 
             return (
               <div
@@ -421,12 +446,18 @@ export function ManualPunchTimeline({
                       <Input
                         type="datetime-local"
                         value={editingTimestamp}
-                        onChange={(event) => setEditingTimestamp(event.target.value)}
+                        onChange={(event) =>
+                          setEditingTimestamp(event.target.value)
+                        }
                         className="md:max-w-64"
                       />
-                      {isOfflinePunch && (
+                      {isImportedPunch && (
                         <Field data-invalid={editReasonInvalid}>
-                          <FieldLabel>Offline correction reason</FieldLabel>
+                          <FieldLabel>
+                            {punch.source === "offline_excel"
+                              ? "Offline correction reason"
+                              : "Device import correction reason"}
+                          </FieldLabel>
                           <Textarea
                             value={editingReason}
                             onChange={(event) =>
@@ -437,7 +468,7 @@ export function ManualPunchTimeline({
                             className="min-h-16 resize-none"
                           />
                           <FieldDescription>
-                            Required for Offline Excel punches. Minimum 5
+                            Required for {sourceLabel(punch)} punches. Minimum 5
                             characters.
                           </FieldDescription>
                         </Field>
@@ -479,7 +510,7 @@ export function ManualPunchTimeline({
                   >
                     <Pencil />
                   </Button>
-                  {isOfflinePunch ? (
+                  {isImportedPunch ? (
                     <AlertDialog
                       open={deletePunchId === punch.id}
                       onOpenChange={(open) => {
@@ -496,7 +527,7 @@ export function ManualPunchTimeline({
                           title={
                             deleteBlocked
                               ? "Delete the latest related punch first"
-                              : "Delete Offline Excel punch"
+                              : `Delete ${sourceLabel(punch)} punch`
                           }
                         >
                           <Trash2 />
@@ -505,7 +536,7 @@ export function ManualPunchTimeline({
                       <AlertDialogContent>
                         <AlertDialogHeader>
                           <AlertDialogTitle>
-                            Delete Offline Excel punch?
+                            Delete {sourceLabel(punch)} punch?
                           </AlertDialogTitle>
                           <AlertDialogDescription>
                             This keeps the imported row claimed and records an
@@ -525,7 +556,7 @@ export function ManualPunchTimeline({
                             className="min-h-20 resize-none"
                           />
                           <FieldDescription>
-                            Required for Offline Excel punches. Minimum 5
+                            Required for {sourceLabel(punch)} punches. Minimum 5
                             characters.
                           </FieldDescription>
                         </Field>

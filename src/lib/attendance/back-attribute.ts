@@ -51,10 +51,9 @@ export function resolveAttendanceDate(
     incomingHour < opts.overnightOutBeforeHour
   ) {
     return {
-      attendanceDate: today,
+      attendanceDate: lastPunch.attendanceDate,
       direction: "out",
       isOvernightCheckout: true,
-      migratedFromDate: lastPunch.attendanceDate,
     };
   }
 
@@ -64,4 +63,3 @@ export function resolveAttendanceDate(
     isOvernightCheckout: false,
   };
 }
-

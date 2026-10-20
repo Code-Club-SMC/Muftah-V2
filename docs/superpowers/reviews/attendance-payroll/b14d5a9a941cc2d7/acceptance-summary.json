@@ -1,0 +1,58 @@
+{
+  "status": "passed",
+  "runId": "b14d5a9a941cc2d7",
+  "checks": {
+    "controlled-browser": 28,
+    "controlled-integration": 31,
+    "real-browser": 31,
+    "real-integration": 31
+  },
+  "mandatoryCases": 40,
+  "affectedRegressions": {
+    "tests": 169,
+    "files": 30,
+    "passed": true
+  },
+  "typecheck": {
+    "passed": false,
+    "knownReportDiagnostics": 47,
+    "newDiagnostics": 0
+  },
+  "graphify": "updated",
+  "cleanup": [
+    {
+      "database": "titan_payroll_e2e_b14d5a9a941cc2d7_test",
+      "dropped": true
+    },
+    {
+      "database": "titan_payroll_real_b14d5a9a941cc2d7_test",
+      "dropped": true
+    }
+  ],
+  "browserDiagnostics": {
+    "controlled": {
+      "consoleErrors": [
+        "Error: <ellipse> attribute rx: Expected length, \"undefined\"."
+      ],
+      "inspectionErrors": [
+        "response.text: Protocol error (Network.getResponseBody): No resource with given identifier found\nResponse body is not available for a response that was navigated away from. Read response.body() before triggering any navigation.",
+        "response.text: Protocol error (Network.getResponseBody): No resource with given identifier found\nResponse body is not available for a response that was navigated away from. Read response.body() before triggering any navigation.",
+        "response.text: Protocol error (Network.getResponseBody): No resource with given identifier found\nResponse body is not available for a response that was navigated away from. Read response.body() before triggering any navigation.",
+        "response.text: Protocol error (Network.getResponseBody): No resource with given identifier found\nResponse body is not available for a response that was navigated away from. Read response.body() before triggering any navigation.",
+        "response.text: Protocol error (Network.getResponseBody): No resource with given identifier found\nResponse body is not available for a response that was navigated away from. Read response.body() before triggering any navigation.",
+        "response.text: Protocol error (Network.getResponseBody): No resource with given identifier found\nResponse body is not available for a response that was navigated away from. Read response.body() before triggering any navigation.",
+        "response.text: Protocol error (Network.getResponseBody): No resource with given identifier found\nResponse body is not available for a response that was navigated away from. Read response.body() before triggering any navigation."
+      ],
+      "failedResponses": []
+    },
+    "real": {
+      "consoleErrors": [
+        "Error: <ellipse> attribute rx: Expected length, \"undefined\"."
+      ],
+      "inspectionErrors": [
+        "response.text: Protocol error (Network.getResponseBody): No resource with given identifier found\nResponse body is not available for a response that was navigated away from. Read response.body() before triggering any navigation."
+      ],
+      "failedResponses": []
+    }
+  }
+}

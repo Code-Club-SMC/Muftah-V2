@@ -1,0 +1,17 @@
+START Real Better Auth sign-in and HR route
+PASS Real Better Auth sign-in and HR route
+START Upload source and independently inspect PostgreSQL
+PASS Upload source and independently inspect PostgreSQL
+START Unresolved historical source blocks salary
+locator.waitFor: Timeout 30000ms exceeded.
+Call log:
+[2m  - waiting for getByRole('dialog', { name: 'Salary Calculation', exact: true }).getByText(/needs HR review/) to be visible[22m
+
+    at /home/abdul-rehman/Projects/titan-new/src/__tests__/e2e/attendance-payroll.browser.cjs:389:48
+    at async step (/home/abdul-rehman/Projects/titan-new/src/__tests__/e2e/attendance-payroll.browser.cjs:37:20)
+    at async main (/home/abdul-rehman/Projects/titan-new/src/__tests__/e2e/attendance-payroll.browser.cjs:387:5) {
+  log: [
+    "  - waiting for getByRole('dialog', { name: 'Salary Calculation', exact: true }).getByText(/needs HR review/) to be visible"
+  ],
+  name: 'TimeoutError'
+}

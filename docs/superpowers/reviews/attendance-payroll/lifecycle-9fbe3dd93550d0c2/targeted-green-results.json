@@ -1,0 +1,218 @@
+{
+  "tier": "integration",
+  "scenario": "controlled",
+  "database": "titan_payroll_e2e_9fbe3dd93550d0c2_test",
+  "passed": true,
+  "checks": [
+    {
+      "name": "correction, deletion, replay, stale drafts and finalized mutation guards retain source evidence",
+      "caseIds": [
+        "A09",
+        "A10",
+        "P02",
+        "P05"
+      ],
+      "passed": true,
+      "expected": "All named assertions and recorded literal comparisons pass",
+      "actual": {
+        "initialNet": 42650,
+        "correctedNet": 42900,
+        "explicitAbsentNet": 41300,
+        "remainingPunches": 1,
+        "claims": 2
+      },
+      "comparisons": [
+        {
+          "field": "wgjx7jju2f2t8nzh8bvq7at7 net salary",
+          "expected": 42650,
+          "actual": 42650
+        },
+        {
+          "field": "wgjx7jju2f2t8nzh8bvq7at7 total deductions",
+          "expected": 250,
+          "actual": 250
+        },
+        {
+          "field": "wgjx7jju2f2t8nzh8bvq7at7 net salary",
+          "expected": 42900,
+          "actual": 42900
+        },
+        {
+          "field": "wgjx7jju2f2t8nzh8bvq7at7 total deductions",
+          "expected": 0,
+          "actual": 0
+        },
+        {
+          "field": "wgjx7jju2f2t8nzh8bvq7at7 net salary",
+          "expected": 41300,
+          "actual": 41300
+        },
+        {
+          "field": "wgjx7jju2f2t8nzh8bvq7at7 total deductions",
+          "expected": 1600,
+          "actual": 1600
+        },
+        {
+          "field": "correction and deletion preserve reason and actor",
+          "expected": [
+            {
+              "action": "correct",
+              "reason": "Synthetic correction to actual full duty",
+              "actor": "00487db3-88c2-465a-b5a1-b6c25cc2ff74"
+            },
+            {
+              "action": "delete",
+              "reason": "Synthetic deletion lineage test",
+              "actor": "00487db3-88c2-465a-b5a1-b6c25cc2ff74"
+            }
+          ],
+          "actual": [
+            {
+              "action": "correct",
+              "reason": "Synthetic correction to actual full duty",
+              "actor": "00487db3-88c2-465a-b5a1-b6c25cc2ff74"
+            },
+            {
+              "action": "delete",
+              "reason": "Synthetic deletion lineage test",
+              "actor": "00487db3-88c2-465a-b5a1-b6c25cc2ff74"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "approval between regenerated employee saves cannot let cleanup delete approved coverage",
+      "caseIds": [
+        "P03",
+        "P05",
+        "P07"
+      ],
+      "passed": true,
+      "expected": "All named assertions and recorded literal comparisons pass",
+      "actual": {
+        "payroll": "approved",
+        "count": 2,
+        "total": 85800
+      },
+      "comparisons": [
+        {
+          "field": "approval wins between employee saves",
+          "expected": "fulfilled",
+          "actual": "fulfilled"
+        },
+        {
+          "field": "remaining regeneration refuses finalized payroll",
+          "expected": "rejected",
+          "actual": "rejected"
+        },
+        {
+          "field": "approved payroll retains complete coverage after failed regeneration cleanup",
+          "expected": 2,
+          "actual": 2
+        },
+        {
+          "field": "approved salary values remain intact",
+          "expected": [
+            42900,
+            42900
+          ],
+          "actual": [
+            42900,
+            42900
+          ]
+        },
+        {
+          "field": "approved payroll total remains consistent",
+          "expected": {
+            "status": "approved",
+            "total": 85800
+          },
+          "actual": {
+            "status": "approved",
+            "total": 85800
+          }
+        }
+      ]
+    },
+    {
+      "name": "captured invalidation revision cannot clear a later attendance change",
+      "caseIds": [
+        "P02"
+      ],
+      "passed": true,
+      "expected": "All named assertions and recorded literal comparisons pass",
+      "actual": {
+        "capturedRevision": 1,
+        "currentRevision": 2,
+        "approvedNet": 42650
+      },
+      "comparisons": [
+        {
+          "field": "one captured invalidation",
+          "expected": 1,
+          "actual": 1
+        },
+        {
+          "field": "later invalidation revision survives old snapshot",
+          "expected": {
+            "revision": 2,
+            "resolved": false
+          },
+          "actual": {
+            "revision": 2,
+            "resolved": false
+          }
+        },
+        {
+          "field": "fresh regeneration clears current revision",
+          "expected": true,
+          "actual": true
+        },
+        {
+          "field": "fresh revision saves exact latest salary",
+          "expected": 42650,
+          "actual": 42650
+        }
+      ]
+    }
+  ],
+  "browserDraftPrerequisiteVerified": false,
+  "notCoveredByThisInvocation": [
+    "L01",
+    "L02",
+    "L03",
+    "L04",
+    "L05",
+    "L06",
+    "L07",
+    "L08",
+    "L09",
+    "L10",
+    "L11",
+    "L12",
+    "L13",
+    "L14",
+    "L15",
+    "L16",
+    "A01",
+    "A02",
+    "A03",
+    "A04",
+    "A05",
+    "A06",
+    "A07",
+    "A08",
+    "A11",
+    "A12",
+    "A13",
+    "A14",
+    "P01",
+    "P04",
+    "P06",
+    "P08",
+    "COMPOSITE",
+    "REAL_FILE"
+  ],
+  "transportAuthLimitation": "Production validators, handlers, transactions and PostgreSQL run unchanged. Only server-function transport and middleware are captured; authenticated HR context is supplied explicitly. These calls do not establish HTTP authentication or RBAC enforcement. Browser results report that coverage separately."
+}

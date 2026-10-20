@@ -14,6 +14,7 @@ import * as offlineAttendanceSchema from "./schemas/offline-attendance-schema";
 import * as offlineSalesSchema from "./schemas/offline-sales-schema";
 import * as systemActivitySchema from "./schemas/system-activity-schema";
 import * as productionSchema from "./schemas/production-schema";
+import * as deviceAttendanceSchema from "./schemas/device-attendance-schema";
 
 const schema = {
   ...authSchema,
@@ -30,6 +31,7 @@ const schema = {
   ...offlineSalesSchema,
   ...systemActivitySchema,
   ...productionSchema,
+  ...deviceAttendanceSchema,
 };
 
 if (!process.env.DATABASE_URL) {

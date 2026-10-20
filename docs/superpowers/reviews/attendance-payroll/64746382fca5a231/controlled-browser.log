@@ -1,0 +1,23 @@
+START Real Better Auth sign-in and HR route
+PASS Real Better Auth sign-in and HR route
+START Upload source and independently inspect PostgreSQL
+PASS Upload source and independently inspect PostgreSQL
+START Submit E2E02 attendance decision
+PASS Submit E2E02 attendance decision
+START Submit E2E03 attendance decision
+PASS Submit E2E03 attendance decision
+START Submit E2E04 attendance decision
+locator.click: Timeout 30000ms exceeded.
+Call log:
+[2m  - waiting for getByRole('button', { name: 'Review attendance row 93', exact: true })[22m
+
+    at reviewRow (/home/abdul-rehman/Projects/titan-new/src/__tests__/e2e/attendance-payroll.browser.cjs:82:95)
+    at resolveRow (/home/abdul-rehman/Projects/titan-new/src/__tests__/e2e/attendance-payroll.browser.cjs:88:24)
+    at /home/abdul-rehman/Projects/titan-new/src/__tests__/e2e/attendance-payroll.browser.cjs:234:77
+    at step (/home/abdul-rehman/Projects/titan-new/src/__tests__/e2e/attendance-payroll.browser.cjs:31:26)
+    at main (/home/abdul-rehman/Projects/titan-new/src/__tests__/e2e/attendance-payroll.browser.cjs:234:15) {
+  log: [
+    "  - waiting for getByRole('button', { name: 'Review attendance row 93', exact: true })"
+  ],
+  name: 'TimeoutError'
+}

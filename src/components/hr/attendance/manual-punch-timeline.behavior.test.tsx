@@ -9,13 +9,25 @@ const mocks = vi.hoisted(() => ({
     timestamp: string;
     attendanceDate: string;
     direction: "in" | "out";
-    source: "qr_terminal" | "manual" | "offline_excel";
+    source: "qr_terminal" | "manual" | "offline_excel" | "device_import";
+    requiresCorrectionReason?: boolean;
     note?: string | null;
-    terminalUser?: { id: string; name: string | null; email: string | null } | null;
+    terminalUser?: {
+      id: string;
+      name: string | null;
+      email: string | null;
+    } | null;
   }>,
   addManualPunch: vi.fn(),
   deletePunch: vi.fn(),
   correctPunch: vi.fn(),
+}));
+
+vi.mock("@tanstack/react-query", () => ({
+  useQuery: () => ({ data: { attendanceGraceMinutes: 15 } }),
+}));
+vi.mock("@/server-functions/hr/payroll/settings-fn", () => ({
+  getHrPayrollSettingsFn: vi.fn(),
 }));
 
 vi.mock("@/hooks/hr/use-attendance-punches", () => ({
@@ -73,77 +85,95 @@ describe("manual punch timeline behavior", () => {
     expect(screen.getByTestId("summary-events").textContent).toBe("1");
   });
 
-  it("requires reason before correcting an offline Excel punch", async () => {
-    mocks.punches = [
-      {
-        id: "punch-1",
-        timestamp: "2026-07-03T04:00:00.000Z",
-        attendanceDate: "2026-07-03",
-        direction: "in",
-        source: "offline_excel",
-      },
-    ];
-
-    render(<Host />);
-
-    expect(screen.getByText("Offline Excel")).toBeTruthy();
-    fireEvent.click(screen.getByTitle("Correct punch time"));
-
-    const saveButton = screen.getByRole("button", { name: /save/i });
-    expect((saveButton as HTMLButtonElement).disabled).toBe(true);
-
-    fireEvent.change(
-      screen.getByPlaceholderText("Required, e.g. supervisor verified wrong time."),
-      { target: { value: "verified wrong time" } },
-    );
-    expect((saveButton as HTMLButtonElement).disabled).toBe(false);
-    fireEvent.click(saveButton);
-
-    await waitFor(() => {
-      expect(mocks.correctPunch).toHaveBeenCalledWith({
-        data: expect.objectContaining({
-          punchId: "punch-1",
-          reason: "verified wrong time",
-        }),
-      });
-    });
-  });
-
-  it("requires reason before deleting an offline Excel punch", async () => {
-    mocks.punches = [
-      {
-        id: "punch-1",
-        timestamp: "2026-07-03T04:00:00.000Z",
-        attendanceDate: "2026-07-03",
-        direction: "in",
-        source: "offline_excel",
-      },
-    ];
-
-    render(<Host />);
-
-    fireEvent.click(screen.getByTitle("Delete Offline Excel punch"));
-    expect(screen.getByText("Delete Offline Excel punch?")).toBeTruthy();
-
-    const deleteButton = screen.getByRole("button", { name: "Delete punch" });
-    expect((deleteButton as HTMLButtonElement).disabled).toBe(true);
-
-    fireEvent.change(
-      screen.getByPlaceholderText(
-        "Required, e.g. duplicate verified by supervisor.",
-      ),
-      { target: { value: "duplicate verified" } },
-    );
-    expect((deleteButton as HTMLButtonElement).disabled).toBe(false);
-    fireEvent.click(deleteButton);
-
-    await waitFor(() => {
-      expect(mocks.deletePunch).toHaveBeenCalledWith({
-        data: {
-          punchId: "punch-1",
-          reason: "duplicate verified",
+  it.each([
+    ["offline_excel", "Offline Excel"],
+    ["device_import", "Device import"],
+    ["manual", "Manual"],
+  ] as const)(
+    "requires reason before correcting a %s punch",
+    async (source, label) => {
+      mocks.punches = [
+        {
+          id: "punch-1",
+          timestamp: "2026-07-03T04:00:00.000Z",
+          attendanceDate: "2026-07-03",
+          direction: "in",
+          source,
+          requiresCorrectionReason: source === "manual",
         },
+      ];
+
+      render(<Host />);
+
+      expect(screen.getByText(label)).toBeTruthy();
+      fireEvent.click(screen.getByTitle("Correct punch time"));
+
+      const saveButton = screen.getByRole("button", { name: /save/i });
+      expect((saveButton as HTMLButtonElement).disabled).toBe(true);
+
+      fireEvent.change(
+        screen.getByPlaceholderText(
+          "Required, e.g. supervisor verified wrong time.",
+        ),
+        { target: { value: "verified wrong time" } },
+      );
+      expect((saveButton as HTMLButtonElement).disabled).toBe(false);
+      fireEvent.click(saveButton);
+
+      await waitFor(() => {
+        expect(mocks.correctPunch).toHaveBeenCalledWith({
+          data: expect.objectContaining({
+            punchId: "punch-1",
+            reason: "verified wrong time",
+          }),
+        });
       });
-    });
-  });
+    },
+  );
+
+  it.each([
+    ["offline_excel", "Offline Excel"],
+    ["device_import", "Device import"],
+    ["manual", "Manual"],
+  ] as const)(
+    "requires reason before deleting a %s punch",
+    async (source, label) => {
+      mocks.punches = [
+        {
+          id: "punch-1",
+          timestamp: "2026-07-03T04:00:00.000Z",
+          attendanceDate: "2026-07-03",
+          direction: "in",
+          source,
+          requiresCorrectionReason: source === "manual",
+        },
+      ];
+
+      render(<Host />);
+
+      fireEvent.click(screen.getByTitle(`Delete ${label} punch`));
+      expect(screen.getByText(`Delete ${label} punch?`)).toBeTruthy();
+
+      const deleteButton = screen.getByRole("button", { name: "Delete punch" });
+      expect((deleteButton as HTMLButtonElement).disabled).toBe(true);
+
+      fireEvent.change(
+        screen.getByPlaceholderText(
+          "Required, e.g. duplicate verified by supervisor.",
+        ),
+        { target: { value: "duplicate verified" } },
+      );
+      expect((deleteButton as HTMLButtonElement).disabled).toBe(false);
+      fireEvent.click(deleteButton);
+
+      await waitFor(() => {
+        expect(mocks.deletePunch).toHaveBeenCalledWith({
+          data: {
+            punchId: "punch-1",
+            reason: "duplicate verified",
+          },
+        });
+      });
+    },
+  );
 });

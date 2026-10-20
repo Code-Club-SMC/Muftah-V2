@@ -1,0 +1,719 @@
+{
+  "tier": "browser",
+  "startedAt": "2026-10-20T10:52:47.244Z",
+  "checks": [
+    {
+      "name": "Real Better Auth sign-in and HR route",
+      "caseIds": [],
+      "passed": true
+    },
+    {
+      "name": "Upload source and independently inspect PostgreSQL",
+      "caseIds": [],
+      "passed": true,
+      "actual": {
+        "punches": 574,
+        "claims": 574,
+        "attendance": 286
+      }
+    },
+    {
+      "name": "Submit E2E02 attendance decision",
+      "caseIds": [],
+      "passed": true,
+      "actual": {
+        "id": "h3iqsufs89rj4je63o7dqvck",
+        "employee_id": "dfzdtzcwwgbxjka4l72mrtoi",
+        "date": "2026-09-30T19:00:00.000Z",
+        "check_in": null,
+        "check_out": null,
+        "duty_hours": "0.00",
+        "overtime_hours": "0.00",
+        "status": "leave",
+        "is_late": false,
+        "is_night_shift": false,
+        "overtime_status": "pending",
+        "overtime_remarks": null,
+        "early_departure_status": "none",
+        "check_out_reason": null,
+        "shift_violations": [
+          {
+            "late": false,
+            "actualIn": "09:00:00",
+            "actualOut": "17:00:00",
+            "expectedIn": "09:00",
+            "shiftIndex": 0,
+            "expectedOut": "17:00",
+            "earlyDeparture": false
+          }
+        ],
+        "is_approved_leave": false,
+        "leave_approval_status": "pending",
+        "leave_type": "annual",
+        "entry_source": "biometric",
+        "notes": "Synthetic payroll E2E HR decision; not actual entitlement or device evidence",
+        "area_visited": null,
+        "is_company_vehicle": false,
+        "payment_mode": null,
+        "distance_km": "0.00",
+        "per_km_rate": "0.00",
+        "petrol_amount": "0.00",
+        "sale_amount": "0.00",
+        "recovery_amount": "0.00",
+        "return_amount": "0.00",
+        "shop_type": null,
+        "slip_numbers": null,
+        "created_at": "2026-10-20T05:52:52.472Z",
+        "updated_at": "2026-10-20T05:53:01.232Z",
+        "overtime_compensation_method": "payout",
+        "compensatory_hours_used": "0.00"
+      }
+    },
+    {
+      "name": "Submit E2E03 attendance decision",
+      "caseIds": [],
+      "passed": true,
+      "actual": {
+        "id": "mw0bp6bdleuh77g1vjfagf3o",
+        "employee_id": "i6nsidrpyi2uim1xh33g0yrr",
+        "date": "2026-09-30T19:00:00.000Z",
+        "check_in": null,
+        "check_out": null,
+        "duty_hours": "0.00",
+        "overtime_hours": "0.00",
+        "status": "leave",
+        "is_late": false,
+        "is_night_shift": false,
+        "overtime_status": "pending",
+        "overtime_remarks": null,
+        "early_departure_status": "none",
+        "check_out_reason": null,
+        "shift_violations": [
+          {
+            "late": false,
+            "actualIn": "09:00:00",
+            "actualOut": "17:00:00",
+            "expectedIn": "09:00",
+            "shiftIndex": 0,
+            "expectedOut": "17:00",
+            "earlyDeparture": false
+          }
+        ],
+        "is_approved_leave": false,
+        "leave_approval_status": "pending",
+        "leave_type": "sick",
+        "entry_source": "biometric",
+        "notes": "Synthetic payroll E2E HR decision; not actual entitlement or device evidence",
+        "area_visited": null,
+        "is_company_vehicle": false,
+        "payment_mode": null,
+        "distance_km": "0.00",
+        "per_km_rate": "0.00",
+        "petrol_amount": "0.00",
+        "sale_amount": "0.00",
+        "recovery_amount": "0.00",
+        "return_amount": "0.00",
+        "shop_type": null,
+        "slip_numbers": null,
+        "created_at": "2026-10-20T05:52:52.472Z",
+        "updated_at": "2026-10-20T05:53:03.889Z",
+        "overtime_compensation_method": "payout",
+        "compensatory_hours_used": "0.00"
+      }
+    },
+    {
+      "name": "Submit E2E04 attendance decision",
+      "caseIds": [],
+      "passed": true,
+      "actual": {
+        "id": "hbcjdgwqgkx9iuywnkkb71vc",
+        "employee_id": "dstjesfmvdji7vsq23syhc7j",
+        "date": "2026-09-30T19:00:00.000Z",
+        "check_in": null,
+        "check_out": null,
+        "duty_hours": "0.00",
+        "overtime_hours": "0.00",
+        "status": "leave",
+        "is_late": false,
+        "is_night_shift": false,
+        "overtime_status": "pending",
+        "overtime_remarks": null,
+        "early_departure_status": "none",
+        "check_out_reason": null,
+        "shift_violations": [
+          {
+            "late": false,
+            "actualIn": "09:00:00",
+            "actualOut": "17:00:00",
+            "expectedIn": "09:00",
+            "shiftIndex": 0,
+            "expectedOut": "17:00",
+            "earlyDeparture": false
+          }
+        ],
+        "is_approved_leave": false,
+        "leave_approval_status": "pending",
+        "leave_type": "special",
+        "entry_source": "biometric",
+        "notes": "Synthetic payroll E2E HR decision; not actual entitlement or device evidence",
+        "area_visited": null,
+        "is_company_vehicle": false,
+        "payment_mode": null,
+        "distance_km": "0.00",
+        "per_km_rate": "0.00",
+        "petrol_amount": "0.00",
+        "sale_amount": "0.00",
+        "recovery_amount": "0.00",
+        "return_amount": "0.00",
+        "shop_type": null,
+        "slip_numbers": null,
+        "created_at": "2026-10-20T05:52:52.472Z",
+        "updated_at": "2026-10-20T05:53:06.458Z",
+        "overtime_compensation_method": "payout",
+        "compensatory_hours_used": "0.00"
+      }
+    },
+    {
+      "name": "Submit E2E05 attendance decision",
+      "caseIds": [],
+      "passed": true,
+      "actual": {
+        "id": "gto0bxzqw3cp127juxc8ii4n",
+        "employee_id": "jxo9c0ksm3et6eza2a876cyx",
+        "date": "2026-09-30T19:00:00.000Z",
+        "check_in": null,
+        "check_out": null,
+        "duty_hours": "0.00",
+        "overtime_hours": "0.00",
+        "status": "leave",
+        "is_late": false,
+        "is_night_shift": false,
+        "overtime_status": "pending",
+        "overtime_remarks": null,
+        "early_departure_status": "none",
+        "check_out_reason": null,
+        "shift_violations": [
+          {
+            "late": false,
+            "actualIn": "09:00:00",
+            "actualOut": "17:00:00",
+            "expectedIn": "09:00",
+            "shiftIndex": 0,
+            "expectedOut": "17:00",
+            "earlyDeparture": false
+          }
+        ],
+        "is_approved_leave": false,
+        "leave_approval_status": "pending",
+        "leave_type": "compensatory",
+        "entry_source": "biometric",
+        "notes": "Synthetic payroll E2E HR decision; not actual entitlement or device evidence",
+        "area_visited": null,
+        "is_company_vehicle": false,
+        "payment_mode": null,
+        "distance_km": "0.00",
+        "per_km_rate": "0.00",
+        "petrol_amount": "0.00",
+        "sale_amount": "0.00",
+        "recovery_amount": "0.00",
+        "return_amount": "0.00",
+        "shop_type": null,
+        "slip_numbers": null,
+        "created_at": "2026-10-20T05:52:52.472Z",
+        "updated_at": "2026-10-20T05:53:09.496Z",
+        "overtime_compensation_method": "payout",
+        "compensatory_hours_used": "8.00"
+      }
+    },
+    {
+      "name": "Submit E2E06 attendance decision",
+      "caseIds": [],
+      "passed": true,
+      "actual": {
+        "id": "fxvqgnmsabrgnua0d381r1yf",
+        "employee_id": "axa88dwrkflltsfehwvs3qd4",
+        "date": "2026-09-30T19:00:00.000Z",
+        "check_in": null,
+        "check_out": null,
+        "duty_hours": "0.00",
+        "overtime_hours": "0.00",
+        "status": "leave",
+        "is_late": false,
+        "is_night_shift": false,
+        "overtime_status": "pending",
+        "overtime_remarks": null,
+        "early_departure_status": "none",
+        "check_out_reason": null,
+        "shift_violations": [
+          {
+            "late": false,
+            "actualIn": "09:00:00",
+            "actualOut": "17:00:00",
+            "expectedIn": "09:00",
+            "shiftIndex": 0,
+            "expectedOut": "17:00",
+            "earlyDeparture": false
+          }
+        ],
+        "is_approved_leave": false,
+        "leave_approval_status": "pending",
+        "leave_type": "compensatory",
+        "entry_source": "biometric",
+        "notes": "Synthetic payroll E2E HR decision; not actual entitlement or device evidence",
+        "area_visited": null,
+        "is_company_vehicle": false,
+        "payment_mode": null,
+        "distance_km": "0.00",
+        "per_km_rate": "0.00",
+        "petrol_amount": "0.00",
+        "sale_amount": "0.00",
+        "recovery_amount": "0.00",
+        "return_amount": "0.00",
+        "shop_type": null,
+        "slip_numbers": null,
+        "created_at": "2026-10-20T05:52:52.472Z",
+        "updated_at": "2026-10-20T05:53:12.328Z",
+        "overtime_compensation_method": "payout",
+        "compensatory_hours_used": "4.00"
+      }
+    },
+    {
+      "name": "Submit E2E10 attendance decision",
+      "caseIds": [],
+      "passed": true,
+      "actual": {
+        "id": "v79tbnt4jlliovuguk2e7y3d",
+        "employee_id": "ag1uvezpy370pkjd13fo0ddy",
+        "date": "2026-09-30T19:00:00.000Z",
+        "check_in": null,
+        "check_out": null,
+        "duty_hours": "0.00",
+        "overtime_hours": "0.00",
+        "status": "absent",
+        "is_late": false,
+        "is_night_shift": false,
+        "overtime_status": "pending",
+        "overtime_remarks": null,
+        "early_departure_status": "none",
+        "check_out_reason": null,
+        "shift_violations": [
+          {
+            "late": false,
+            "actualIn": "09:00:00",
+            "actualOut": "17:00:00",
+            "expectedIn": "09:00",
+            "shiftIndex": 0,
+            "expectedOut": "17:00",
+            "earlyDeparture": false
+          }
+        ],
+        "is_approved_leave": false,
+        "leave_approval_status": "none",
+        "leave_type": null,
+        "entry_source": "biometric",
+        "notes": "Synthetic payroll E2E HR decision; not actual entitlement or device evidence",
+        "area_visited": null,
+        "is_company_vehicle": false,
+        "payment_mode": null,
+        "distance_km": "0.00",
+        "per_km_rate": "0.00",
+        "petrol_amount": "0.00",
+        "sale_amount": "0.00",
+        "recovery_amount": "0.00",
+        "return_amount": "0.00",
+        "shop_type": null,
+        "slip_numbers": null,
+        "created_at": "2026-10-20T05:52:52.472Z",
+        "updated_at": "2026-10-20T05:53:14.988Z",
+        "overtime_compensation_method": "payout",
+        "compensatory_hours_used": "0.00"
+      }
+    },
+    {
+      "name": "Exercise pending, approved, rejected and repeated annual",
+      "caseIds": [],
+      "passed": true,
+      "actual": {
+        "pending": {
+          "net": 42800,
+          "unpaidLeave": 1,
+          "components": {
+            "basicSalary": 0,
+            "houseRent": 0,
+            "utilities": 0,
+            "conveyance": 100,
+            "mobile": 0,
+            "bikeMaintenance": 0,
+            "technical": 0,
+            "special": 0
+          },
+          "occasions": {
+            "absent": 0,
+            "undertime": 0,
+            "specialLeave": 0,
+            "sickLeave": 0,
+            "annualLeave": 100,
+            "unapprovedLeave": 0,
+            "notEmployed": 0
+          }
+        },
+        "approved": {
+          "status": "leave",
+          "leave_type": "annual",
+          "leave_approval_status": "approved",
+          "is_approved_leave": true,
+          "duty_hours": "0.00",
+          "compensatory_hours_used": "0.00",
+          "annual_leave_balance": 13,
+          "sick_leave_balance": 10,
+          "compensatory_hours_balance": "0.00"
+        },
+        "rejected": {
+          "status": "leave",
+          "leave_type": "annual",
+          "leave_approval_status": "rejected",
+          "is_approved_leave": false,
+          "duty_hours": "0.00",
+          "compensatory_hours_used": "0.00",
+          "annual_leave_balance": 14,
+          "sick_leave_balance": 10,
+          "compensatory_hours_balance": "0.00"
+        },
+        "rejectedPreview": {
+          "net": 42800,
+          "unpaidLeave": 1,
+          "components": {
+            "basicSalary": 0,
+            "houseRent": 0,
+            "utilities": 0,
+            "conveyance": 100,
+            "mobile": 0,
+            "bikeMaintenance": 0,
+            "technical": 0,
+            "special": 0
+          },
+          "occasions": {
+            "absent": 0,
+            "undertime": 0,
+            "specialLeave": 0,
+            "sickLeave": 0,
+            "annualLeave": 100,
+            "unapprovedLeave": 0,
+            "notEmployed": 0
+          }
+        },
+        "restored": {
+          "status": "leave",
+          "leave_type": "annual",
+          "leave_approval_status": "approved",
+          "is_approved_leave": true,
+          "duty_hours": "0.00",
+          "compensatory_hours_used": "0.00",
+          "annual_leave_balance": 13,
+          "sick_leave_balance": 10,
+          "compensatory_hours_balance": "0.00"
+        }
+      }
+    },
+    {
+      "name": "Exercise pending, approved, rejected and repeated sick",
+      "caseIds": [],
+      "passed": true,
+      "actual": {
+        "pending": {
+          "net": 42900,
+          "unpaidLeave": 1,
+          "components": {
+            "basicSalary": 0,
+            "houseRent": 0,
+            "utilities": 0,
+            "conveyance": 0,
+            "mobile": 0,
+            "bikeMaintenance": 0,
+            "technical": 0,
+            "special": 0
+          },
+          "occasions": {
+            "absent": 0,
+            "undertime": 0,
+            "specialLeave": 0,
+            "sickLeave": 0,
+            "annualLeave": 0,
+            "unapprovedLeave": 0,
+            "notEmployed": 0
+          }
+        },
+        "approved": {
+          "status": "leave",
+          "leave_type": "sick",
+          "leave_approval_status": "approved",
+          "is_approved_leave": true,
+          "duty_hours": "0.00",
+          "compensatory_hours_used": "0.00",
+          "annual_leave_balance": 14,
+          "sick_leave_balance": 10,
+          "compensatory_hours_balance": "0.00"
+        },
+        "rejected": {
+          "status": "leave",
+          "leave_type": "sick",
+          "leave_approval_status": "rejected",
+          "is_approved_leave": false,
+          "duty_hours": "0.00",
+          "compensatory_hours_used": "0.00",
+          "annual_leave_balance": 14,
+          "sick_leave_balance": 10,
+          "compensatory_hours_balance": "0.00"
+        },
+        "rejectedPreview": {
+          "net": 42900,
+          "unpaidLeave": 1,
+          "components": {
+            "basicSalary": 0,
+            "houseRent": 0,
+            "utilities": 0,
+            "conveyance": 0,
+            "mobile": 0,
+            "bikeMaintenance": 0,
+            "technical": 0,
+            "special": 0
+          },
+          "occasions": {
+            "absent": 0,
+            "undertime": 0,
+            "specialLeave": 0,
+            "sickLeave": 0,
+            "annualLeave": 0,
+            "unapprovedLeave": 0,
+            "notEmployed": 0
+          }
+        },
+        "restored": {
+          "status": "leave",
+          "leave_type": "sick",
+          "leave_approval_status": "approved",
+          "is_approved_leave": true,
+          "duty_hours": "0.00",
+          "compensatory_hours_used": "0.00",
+          "annual_leave_balance": 14,
+          "sick_leave_balance": 10,
+          "compensatory_hours_balance": "0.00"
+        }
+      }
+    },
+    {
+      "name": "Exercise pending, approved, rejected and repeated special",
+      "caseIds": [],
+      "passed": true,
+      "actual": {
+        "pending": {
+          "net": 42400,
+          "unpaidLeave": 1,
+          "components": {
+            "basicSalary": 0,
+            "houseRent": 200,
+            "utilities": 100,
+            "conveyance": 100,
+            "mobile": 50,
+            "bikeMaintenance": 50,
+            "technical": 0,
+            "special": 0
+          },
+          "occasions": {
+            "absent": 0,
+            "undertime": 0,
+            "specialLeave": 500,
+            "sickLeave": 0,
+            "annualLeave": 0,
+            "unapprovedLeave": 0,
+            "notEmployed": 0
+          }
+        },
+        "approved": {
+          "status": "leave",
+          "leave_type": "special",
+          "leave_approval_status": "approved",
+          "is_approved_leave": true,
+          "duty_hours": "0.00",
+          "compensatory_hours_used": "0.00",
+          "annual_leave_balance": 14,
+          "sick_leave_balance": 10,
+          "compensatory_hours_balance": "0.00"
+        },
+        "rejected": {
+          "status": "leave",
+          "leave_type": "special",
+          "leave_approval_status": "rejected",
+          "is_approved_leave": false,
+          "duty_hours": "0.00",
+          "compensatory_hours_used": "0.00",
+          "annual_leave_balance": 14,
+          "sick_leave_balance": 10,
+          "compensatory_hours_balance": "0.00"
+        },
+        "rejectedPreview": {
+          "net": 42400,
+          "unpaidLeave": 1,
+          "components": {
+            "basicSalary": 0,
+            "houseRent": 200,
+            "utilities": 100,
+            "conveyance": 100,
+            "mobile": 50,
+            "bikeMaintenance": 50,
+            "technical": 0,
+            "special": 0
+          },
+          "occasions": {
+            "absent": 0,
+            "undertime": 0,
+            "specialLeave": 500,
+            "sickLeave": 0,
+            "annualLeave": 0,
+            "unapprovedLeave": 0,
+            "notEmployed": 0
+          }
+        },
+        "restored": {
+          "status": "leave",
+          "leave_type": "special",
+          "leave_approval_status": "approved",
+          "is_approved_leave": true,
+          "duty_hours": "0.00",
+          "compensatory_hours_used": "0.00",
+          "annual_leave_balance": 14,
+          "sick_leave_balance": 10,
+          "compensatory_hours_balance": "0.00"
+        }
+      }
+    },
+    {
+      "name": "Exercise pending, approved, rejected and repeated compensatory",
+      "caseIds": [],
+      "passed": true,
+      "actual": {
+        "pending": {
+          "net": 42800,
+          "unpaidLeave": 1,
+          "components": {
+            "basicSalary": 0,
+            "houseRent": 0,
+            "utilities": 0,
+            "conveyance": 100,
+            "mobile": 0,
+            "bikeMaintenance": 0,
+            "technical": 0,
+            "special": 0
+          },
+          "occasions": {
+            "absent": 0,
+            "undertime": 0,
+            "specialLeave": 0,
+            "sickLeave": 0,
+            "annualLeave": 0,
+            "unapprovedLeave": 100,
+            "notEmployed": 0
+          }
+        },
+        "approved": {
+          "status": "leave",
+          "leave_type": "compensatory",
+          "leave_approval_status": "approved",
+          "is_approved_leave": true,
+          "duty_hours": "0.00",
+          "compensatory_hours_used": "8.00",
+          "annual_leave_balance": 14,
+          "sick_leave_balance": 10,
+          "compensatory_hours_balance": "8.00"
+        },
+        "rejected": {
+          "status": "leave",
+          "leave_type": "compensatory",
+          "leave_approval_status": "rejected",
+          "is_approved_leave": false,
+          "duty_hours": "0.00",
+          "compensatory_hours_used": "0.00",
+          "annual_leave_balance": 14,
+          "sick_leave_balance": 10,
+          "compensatory_hours_balance": "16.00"
+        },
+        "rejectedPreview": {
+          "net": 42800,
+          "unpaidLeave": 1,
+          "components": {
+            "basicSalary": 0,
+            "houseRent": 0,
+            "utilities": 0,
+            "conveyance": 100,
+            "mobile": 0,
+            "bikeMaintenance": 0,
+            "technical": 0,
+            "special": 0
+          },
+          "occasions": {
+            "absent": 0,
+            "undertime": 0,
+            "specialLeave": 0,
+            "sickLeave": 0,
+            "annualLeave": 0,
+            "unapprovedLeave": 100,
+            "notEmployed": 0
+          }
+        },
+        "restored": {
+          "status": "leave",
+          "leave_type": "compensatory",
+          "leave_approval_status": "approved",
+          "is_approved_leave": true,
+          "duty_hours": "0.00",
+          "compensatory_hours_used": "8.00",
+          "annual_leave_balance": 14,
+          "sick_leave_balance": 10,
+          "compensatory_hours_balance": "8.00"
+        }
+      }
+    },
+    {
+      "name": "Approve E2E06 compensatory",
+      "caseIds": [],
+      "passed": true
+    },
+    {
+      "name": "Request and approve two cash overtime hours",
+      "caseIds": [],
+      "passed": false,
+      "error": "page.waitForResponse: Timeout 30000ms exceeded while waiting for event \"response\""
+    }
+  ],
+  "pageErrors": [],
+  "consoleErrors": [
+    "Error: <ellipse> attribute rx: Expected length, \"undefined\".",
+    "Preview response inspection: response.text: Protocol error (Network.getResponseBody): No resource with given identifier found\nResponse body is not available for a response that was navigated away from. Read response.body() before triggering any navigation.",
+    "Preview response inspection: response.text: Protocol error (Network.getResponseBody): No resource with given identifier found\nResponse body is not available for a response that was navigated away from. Read response.body() before triggering any navigation.",
+    "Preview response inspection: response.text: Protocol error (Network.getResponseBody): No resource with given identifier found\nResponse body is not available for a response that was navigated away from. Read response.body() before triggering any navigation.",
+    "Preview response inspection: response.text: Protocol error (Network.getResponseBody): No resource with given identifier found\nResponse body is not available for a response that was navigated away from. Read response.body() before triggering any navigation.",
+    "Preview response inspection: response.text: Protocol error (Network.getResponseBody): No resource with given identifier found\nResponse body is not available for a response that was navigated away from. Read response.body() before triggering any navigation.",
+    "Preview response inspection: response.text: Protocol error (Network.getResponseBody): No resource with given identifier found\nResponse body is not available for a response that was navigated away from. Read response.body() before triggering any navigation.",
+    "Preview response inspection: response.text: Protocol error (Network.getResponseBody): No resource with given identifier found\nResponse body is not available for a response that was navigated away from. Read response.body() before triggering any navigation."
+  ],
+  "failedResponses": [],
+  "passed": false,
+  "database": "titan_payroll_e2e_5b2c099c7dbdccc1_test",
+  "scenario": "controlled",
+  "sourceSha256": "1b10268678ba3c0520a3b9b318eb31c816899517838637a6a7bdd2f404f5d5eb",
+  "cycle": {
+    "month": "2026-10",
+    "storedMonth": "2026-10-01",
+    "start": "2026-09-16",
+    "end": "2026-10-15",
+    "timezone": "Asia/Karachi",
+    "divisor": 26,
+    "dutyHours": 8,
+    "basic": 26000,
+    "gross": 42900,
+    "hourly": 125
+  },
+  "browser": "144.0.7559.132",
+  "error": "page.waitForResponse: Timeout 30000ms exceeded while waiting for event \"response\"\n    at mutate (/home/abdul-rehman/Projects/titan-new/src/__tests__/e2e/attendance-payroll.browser.cjs:47:10)\n    at /home/abdul-rehman/Projects/titan-new/src/__tests__/e2e/attendance-payroll.browser.cjs:379:13\n    at async step (/home/abdul-rehman/Projects/titan-new/src/__tests__/e2e/attendance-payroll.browser.cjs:32:20)\n    at async main (/home/abdul-rehman/Projects/titan-new/src/__tests__/e2e/attendance-payroll.browser.cjs:369:5)",
+  "finishedAt": "2026-10-20T10:54:47.549Z"
+}

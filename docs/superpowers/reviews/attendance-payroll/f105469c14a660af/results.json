@@ -1,0 +1,37 @@
+{
+  "runId": "f105469c14a660af",
+  "startedAt": "2026-10-20T11:18:13.052Z",
+  "timezone": "Asia/Karachi",
+  "cycle": {
+    "month": "2026-10",
+    "storedMonth": "2026-10-01",
+    "start": "2026-09-16",
+    "end": "2026-10-15",
+    "timezone": "Asia/Karachi",
+    "divisor": 26,
+    "dutyHours": 8,
+    "basic": 26000,
+    "gross": 42900,
+    "hourly": 125
+  },
+  "buildCommit": "e5408b152e503fcc1cc6e0cb6ddb252725bbf6a6",
+  "dirtyBuild": true,
+  "status": "failed",
+  "requestedScenarios": [
+    "real"
+  ],
+  "limitedRun": true,
+  "scenarios": [],
+  "cleanup": [
+    {
+      "database": "titan_payroll_real_f105469c14a660af_test",
+      "revokeSessions": "failed"
+    },
+    {
+      "database": "titan_payroll_real_f105469c14a660af_test",
+      "retained": true
+    }
+  ],
+  "error": "Failed query: rollback\nparams: ",
+  "finishedAt": "2026-10-20T11:21:44.324Z"
+}

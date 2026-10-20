@@ -28,6 +28,11 @@ import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { BulkAttendanceSheet } from "./bulk-attendance-sheet";
 import type { AttendanceEntrySource } from "@/lib/attendance/order-booker-day-state";
+import { DeviceImportSheet } from "./device-import-sheet";
+import { useViewerAccess } from "@/hooks/use-viewer-access";
+import { hasPermission } from "@/lib/rbac";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { FileUploadIcon } from "@hugeicons/core-free-icons";
 
 // ── Animation Variants ─────────────────────────────────────────────────────
 
@@ -52,6 +57,9 @@ const itemVariants: Variants = {
 
 export const AttendanceContainer = () => {
   const [bulkOpen, setBulkOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const { data: viewerAccess } = useViewerAccess();
+  const canManage = hasPermission(viewerAccess?.permissions ?? [], "hr.manage");
   const [selectedDate, setSelectedDate] = useState(
     format(startOfToday(), "yyyy-MM-dd"),
   );
@@ -248,6 +256,12 @@ export const AttendanceContainer = () => {
             </Button>
 
             <div className="w-px h-9 bg-border hidden sm:block mx-1" />
+            {canManage && (
+              <Button variant="outline" onClick={() => setImportOpen(true)}>
+                <HugeiconsIcon icon={FileUploadIcon} data-icon="inline-start" />
+                Import device report
+              </Button>
+            )}
             <Button variant="outline" onClick={() => setBulkOpen(true)}>
               <CalendarRange className="size-3.5 mr-2" />
               Bulk Mark
@@ -338,6 +352,9 @@ export const AttendanceContainer = () => {
         onOpenChange={setBulkOpen}
         employees={employees}
       />
+      {canManage && (
+        <DeviceImportSheet open={importOpen} onOpenChange={setImportOpen} />
+      )}
     </motion.div>
   );
 };

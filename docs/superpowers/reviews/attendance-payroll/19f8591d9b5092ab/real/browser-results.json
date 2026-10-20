@@ -1,0 +1,153 @@
+{
+  "tier": "browser",
+  "startedAt": "2026-10-20T11:13:50.628Z",
+  "checks": [
+    {
+      "name": "Real Better Auth sign-in and HR route",
+      "caseIds": [],
+      "passed": true
+    },
+    {
+      "name": "Upload source and independently inspect PostgreSQL",
+      "caseIds": [],
+      "passed": true,
+      "actual": {
+        "punches": 138,
+        "claims": 138,
+        "attendance": 52
+      }
+    },
+    {
+      "name": "Unresolved historical source blocks salary",
+      "caseIds": [
+        "A07"
+      ],
+      "passed": false,
+      "error": "locator.waitFor: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('dialog', { name: 'Salary Calculation', exact: true }).getByText(/needs HR review/) to be visible\u001b[22m\n"
+    }
+  ],
+  "pageErrors": [],
+  "consoleErrors": [
+    "Error: <ellipse> attribute rx: Expected length, \"undefined\"."
+  ],
+  "inspectionErrors": [],
+  "failedResponses": [],
+  "passed": false,
+  "database": "titan_payroll_real_19f8591d9b5092ab_test",
+  "scenario": "real",
+  "sourceSha256": "5c96e6912b261a4def094be00b46de516930b6fe085c1cdb75b71684d8779591",
+  "cycle": {
+    "month": "2026-10",
+    "storedMonth": "2026-10-01",
+    "start": "2026-09-16",
+    "end": "2026-10-15",
+    "timezone": "Asia/Karachi",
+    "divisor": 26,
+    "dutyHours": 8,
+    "basic": 26000,
+    "gross": 42900,
+    "hourly": 125
+  },
+  "browser": "144.0.7559.132",
+  "sourceReviewRows": [
+    {
+      "rowNumber": 9,
+      "personId": "112009",
+      "date": "2026-10-07",
+      "messages": [
+        "Missing or incomplete punches. HR must correct this attendance day or resolve its status before payroll."
+      ]
+    },
+    {
+      "rowNumber": 10,
+      "personId": "112009",
+      "date": "2026-10-11",
+      "messages": [
+        "Missing or incomplete punches. HR must correct this attendance day or resolve its status before payroll."
+      ]
+    },
+    {
+      "rowNumber": 13,
+      "personId": "112009",
+      "date": "2026-10-14",
+      "messages": [
+        "Missing or incomplete punches. HR must correct this attendance day or resolve its status before payroll."
+      ]
+    },
+    {
+      "rowNumber": 21,
+      "personId": "113016",
+      "date": "2026-10-14",
+      "messages": [
+        "Missing or incomplete punches. HR must correct this attendance day or resolve its status before payroll."
+      ]
+    },
+    {
+      "rowNumber": 31,
+      "personId": "111007",
+      "date": "2026-10-14",
+      "messages": [
+        "Missing or incomplete punches. HR must correct this attendance day or resolve its status before payroll."
+      ]
+    },
+    {
+      "rowNumber": 36,
+      "personId": "110001",
+      "date": "2026-10-07",
+      "messages": [
+        "Missing or incomplete punches. HR must correct this attendance day or resolve its status before payroll."
+      ]
+    },
+    {
+      "rowNumber": 38,
+      "personId": "110001",
+      "date": "2026-10-10",
+      "messages": [
+        "Missing or incomplete punches. HR must correct this attendance day or resolve its status before payroll."
+      ]
+    },
+    {
+      "rowNumber": 39,
+      "personId": "110001",
+      "date": "2026-10-11",
+      "messages": [
+        "Missing or incomplete punches. HR must correct this attendance day or resolve its status before payroll."
+      ]
+    },
+    {
+      "rowNumber": 42,
+      "personId": "110001",
+      "date": "2026-10-14",
+      "messages": [
+        "Missing or incomplete punches. HR must correct this attendance day or resolve its status before payroll."
+      ]
+    },
+    {
+      "rowNumber": 46,
+      "personId": "111008",
+      "date": "2026-10-14",
+      "messages": [
+        "Missing or incomplete punches. HR must correct this attendance day or resolve its status before payroll."
+      ]
+    },
+    {
+      "rowNumber": 51,
+      "personId": "111006",
+      "date": "2026-10-11",
+      "messages": [
+        "Missing or incomplete punches. HR must correct this attendance day or resolve its status before payroll."
+      ]
+    },
+    {
+      "rowNumber": 54,
+      "personId": "111006",
+      "date": "2026-10-14",
+      "messages": [
+        "Missing or incomplete punches. HR must correct this attendance day or resolve its status before payroll."
+      ]
+    }
+  ],
+  "error": "locator.waitFor: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('dialog', { name: 'Salary Calculation', exact: true }).getByText(/needs HR review/) to be visible\u001b[22m\n\n    at /home/abdul-rehman/Projects/titan-new/src/__tests__/e2e/attendance-payroll.browser.cjs:389:48\n    at async step (/home/abdul-rehman/Projects/titan-new/src/__tests__/e2e/attendance-payroll.browser.cjs:37:20)\n    at async main (/home/abdul-rehman/Projects/titan-new/src/__tests__/e2e/attendance-payroll.browser.cjs:387:5)",
+  "tracePrivacy": "Actions, snapshots and images retained; authenticated network traffic and non-image response resources excluded.",
+  "finishedAt": "2026-10-20T11:14:31.898Z"
+}

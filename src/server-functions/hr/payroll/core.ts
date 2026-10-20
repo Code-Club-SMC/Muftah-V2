@@ -30,6 +30,8 @@ import {
   type AttendanceDeductionAdjustments,
 } from "@/lib/types/hr-types";
 
+import { assertDeviceAttendanceResolved, lockAttendancePayrollWrites } from "@/lib/attendance/device-import/payroll.server";
+
 function getEffectiveSalaryDate(payrollPeriod: { startDate: string; endDate: string }): string {
   const todayStr = format(new Date(), "yyyy-MM-dd");
   const thirtyDaysAfterEnd = format(addDays(parseISO(payrollPeriod.endDate), 30), "yyyy-MM-dd");
@@ -357,7 +359,9 @@ export async function generateEmployeePayslipCore(
     remarks = "",
   } = input;
 
-  // -- 0. Validate arrears (fail-fast before any DB work) --------------------
+  await assertDeviceAttendanceResolved(db, employeeId, payrollPeriod.startDate, earlyCutoffDate ?? payrollPeriod.endDate);
+
+  // -- 0. Validate arrears before calculating the payslip --------------------
   const arrearsAmt = arrears?.arrearsAmount ?? 0;
   const arrearsMonths = arrears?.arrearsFromMonths ?? [];
 
@@ -660,6 +664,10 @@ export async function generateEmployeePayslipCore(
 
   // -- 8. Atomic transaction: reverse old side effects -> save payslip --------
   const savedPayslip = await db.transaction(async (tx) => {
+    await lockAttendancePayrollWrites(tx);
+    const currentPayroll = await tx.query.payrolls.findFirst({ where: eq(payrolls.id, payrollId) });
+    if (!currentPayroll || currentPayroll.status !== "draft") throw new Error("Only draft payrolls can save payslips.");
+    await assertDeviceAttendanceResolved(tx, employeeId, payrollPeriod.startDate, earlyCutoffDate ?? payrollPeriod.endDate);
     const existingPayslip = await tx.query.payslips.findFirst({
       where: and(
         eq(payslips.payrollId, payrollId),

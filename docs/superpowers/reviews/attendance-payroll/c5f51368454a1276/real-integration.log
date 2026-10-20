@@ -1,0 +1,35 @@
+$ vitest run --config vitest.integration.config.ts src/__tests__/integration/attendance-payroll.test.ts
+The plugin "vite-tsconfig-paths" is detected. Vite now supports tsconfig paths resolution natively via the resolve.tsconfigPaths option. You can remove the plugin and set resolve.tsconfigPaths: true in your Vite config instead.
+
+ RUN  v4.1.5 /home/abdul-rehman/Projects/titan-new
+
+(node:155142) DeprecationWarning: Calling client.query() when the client is already executing a query is deprecated and will be removed in pg@9.0. Use async/await or an external async flow control mechanism instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+ ❯ src/__tests__/integration/attendance-payroll.test.ts (31 tests | 1 failed) 42334ms
+     × browser drafts retain exact literals through generation, approval and concurrent payment 673ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/__tests__/integration/attendance-payroll.test.ts > attendance to payroll, real PostgreSQL lifecycle > browser drafts retain exact literals through generation, approval and concurrent payment
+Error: Cannot approve payroll with 7 unresolved leave/overtime attendance item(s).
+ ❯ src/server-functions/hr/payroll/payroll-fn.ts:540:15
+    538|       });
+    539|       if (unresolvedAttendance.length > 0) {
+    540|         throw new Error(
+       |               ^
+    541|           `Cannot approve payroll with ${unresolvedAttendance.length} …
+    542|         );
+ ❯ NodePgSession.transaction node_modules/src/node-postgres/session.ts:259:18
+ ❯ src/server-functions/hr/payroll/payroll-fn.ts:463:12
+ ❯ src/__tests__/integration/attendance-payroll.test.ts:154:63
+ ❯ src/__tests__/integration/attendance-payroll.test.ts:50:22
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 30 passed (31)
+   Start at  16:26:37
+   Duration  43.04s (transform 731ms, setup 0ms, import 529ms, tests 42.33s, environment 0ms)
+
+error: script "test" exited with code 1

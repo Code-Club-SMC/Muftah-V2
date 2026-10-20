@@ -5,6 +5,9 @@ import { createServerFn } from "@tanstack/react-start";
 import { eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { differenceInMinutes, parse } from "date-fns";
+import { invalidateDeviceAttendanceChanges, lockAttendancePayrollWrites } from "@/lib/attendance/device-import/payroll.server";
+import { lockEmployeePunchWrites } from "./punch-write-lock";
+import { buildOvertimeRequestSummary, getOvertimeStandardDutyHours } from "@/lib/attendance/overtime-request";
 
 const convertOvertimeSchema = z.object({
   employeeId: z.string(),
@@ -16,6 +19,8 @@ export const convertOvertimeToCompOffFn = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => convertOvertimeSchema.parse(data))
   .handler(async ({ data }: { data: z.infer<typeof convertOvertimeSchema> }) => {
     return await db.transaction(async (tx) => {
+      await lockAttendancePayrollWrites(tx);
+      await lockEmployeePunchWrites(tx, data.employeeId);
       // 1. Fetch employee to get shift details
       const employee = await tx.query.employees.findFirst({
         where: eq(employees.id, data.employeeId),
@@ -61,9 +66,12 @@ export const convertOvertimeToCompOffFn = createServerFn({ method: "POST" })
           throw new Error("One or more records are already converted to Comp Off");
         }
         const hours = parseFloat(record.overtimeHours || "0");
-        if (hours <= 0) {
+        if (!Number.isFinite(hours) || hours <= 0 || record.status !== "present") {
           throw new Error("Selected records must have valid overtime hours");
         }
+        const summary = buildOvertimeRequestSummary({ dutyHours: record.dutyHours,
+          standardDutyHours: getOvertimeStandardDutyHours(record.date, employee), requestedOvertimeHours: record.overtimeHours });
+        if (summary.state === "stale") throw new Error(summary.warning || "Requested overtime exceeds worked hours.");
         totalOvertimeHours += hours;
       }
 
@@ -75,6 +83,7 @@ export const convertOvertimeToCompOffFn = createServerFn({ method: "POST" })
       }
 
       // 6. Conversion
+      await invalidateDeviceAttendanceChanges(tx, data.employeeId, records.map(row => row.date));
       // Mark these records as comp_off
       await tx
         .update(attendance)

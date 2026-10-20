@@ -161,7 +161,10 @@ export const upsertAttendanceSchema = z
       .default("none"),
 
     overtimeRemarks: z.string().nullable(),
-    compensatoryHoursUsed: z.string().nullable().optional(),
+    compensatoryHoursUsed: z.string().refine(
+      (value) => Number.isFinite(Number(value)) && Number(value) >= 0,
+      "Compensatory hours must be finite and nonnegative",
+    ).nullable().optional(),
     overtimeStatus: z.enum(["pending", "approved", "rejected"]).nullable(),
 
     earlyDepartureStatus: z

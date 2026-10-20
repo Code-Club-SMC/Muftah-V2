@@ -4,9 +4,16 @@ import {
   calculateSuggestedOvertimeHours,
   normalizeRequestedOvertimeHours,
   revalidateOvertimeRequest,
+  getOvertimeStandardDutyHours,
 } from "./overtime-request";
 
 describe("overtime request rules", () => {
+  it("uses zero standard duty on rest days and shift duration on working days", () => {
+    const employee = { standardDutyHours: 8, restDays: [0], shifts: [{ start: "09:00", end: "15:00" }] };
+    expect(getOvertimeStandardDutyHours("2026-10-11", employee)).toBe(0);
+    expect(getOvertimeStandardDutyHours("2026-10-12", employee)).toBe(6);
+    expect(getOvertimeStandardDutyHours("2026-10-12", { standardDutyHours: 8 })).toBe(8);
+  });
   it("calculates suggested overtime from worked hours and standard hours", () => {
     expect(calculateSuggestedOvertimeHours("10.00", 8)).toBe(2);
   });

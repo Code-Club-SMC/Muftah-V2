@@ -1,0 +1,802 @@
+{
+  "tier": "browser",
+  "startedAt": "2026-10-20T11:47:08.707Z",
+  "checks": [
+    {
+      "name": "Real Better Auth sign-in and HR route",
+      "caseIds": [],
+      "passed": true
+    },
+    {
+      "name": "Upload source and independently inspect PostgreSQL",
+      "caseIds": [],
+      "passed": true,
+      "actual": {
+        "punches": 138,
+        "claims": 138,
+        "attendance": 52
+      }
+    },
+    {
+      "name": "Unresolved historical source blocks salary",
+      "caseIds": [
+        "A07"
+      ],
+      "passed": true
+    },
+    {
+      "name": "Create 114 supplemental working dates through bulk HR action",
+      "caseIds": [],
+      "passed": true
+    },
+    {
+      "name": "Resolve source row 9",
+      "caseIds": [],
+      "passed": true,
+      "actual": {
+        "id": "dpaumbwinp6wkn6bx1efngqu",
+        "employee_id": "k262mqeo862x13x0cxphdbm8",
+        "date": "2026-10-06T19:00:00.000Z",
+        "check_in": null,
+        "check_out": null,
+        "duty_hours": "0.00",
+        "overtime_hours": "0.00",
+        "status": "leave",
+        "is_late": false,
+        "is_night_shift": false,
+        "overtime_status": "pending",
+        "overtime_remarks": null,
+        "early_departure_status": "none",
+        "check_out_reason": null,
+        "shift_violations": [
+          {
+            "late": false,
+            "actualIn": "06:34:00",
+            "expectedIn": "09:00",
+            "shiftIndex": 0,
+            "expectedOut": "17:00",
+            "earlyDeparture": true
+          }
+        ],
+        "is_approved_leave": false,
+        "leave_approval_status": "pending",
+        "leave_type": "annual",
+        "entry_source": "biometric",
+        "notes": "Synthetic payroll E2E HR decision; not actual entitlement or device evidence",
+        "area_visited": null,
+        "is_company_vehicle": false,
+        "payment_mode": null,
+        "distance_km": "0.00",
+        "per_km_rate": "0.00",
+        "petrol_amount": "0.00",
+        "sale_amount": "0.00",
+        "recovery_amount": "0.00",
+        "return_amount": "0.00",
+        "shop_type": null,
+        "slip_numbers": null,
+        "created_at": "2026-10-20T06:47:12.441Z",
+        "updated_at": "2026-10-20T06:47:26.943Z",
+        "overtime_compensation_method": "payout",
+        "compensatory_hours_used": "0.00"
+      }
+    },
+    {
+      "name": "Resolve source row 10",
+      "caseIds": [],
+      "passed": true,
+      "actual": {
+        "id": "d1ci0h3rhezp3uoczuhdz8bm",
+        "employee_id": "k262mqeo862x13x0cxphdbm8",
+        "date": "2026-10-10T19:00:00.000Z",
+        "check_in": null,
+        "check_out": null,
+        "duty_hours": "0.00",
+        "overtime_hours": "0.00",
+        "status": "absent",
+        "is_late": false,
+        "is_night_shift": false,
+        "overtime_status": "pending",
+        "overtime_remarks": null,
+        "early_departure_status": "none",
+        "check_out_reason": null,
+        "shift_violations": [
+          {
+            "late": true,
+            "actualIn": "19:14:00",
+            "expectedIn": "09:00",
+            "shiftIndex": 0,
+            "expectedOut": "17:00",
+            "earlyDeparture": true
+          }
+        ],
+        "is_approved_leave": false,
+        "leave_approval_status": "none",
+        "leave_type": null,
+        "entry_source": "biometric",
+        "notes": "Synthetic payroll E2E HR decision; not actual entitlement or device evidence",
+        "area_visited": null,
+        "is_company_vehicle": false,
+        "payment_mode": null,
+        "distance_km": "0.00",
+        "per_km_rate": "0.00",
+        "petrol_amount": "0.00",
+        "sale_amount": "0.00",
+        "recovery_amount": "0.00",
+        "return_amount": "0.00",
+        "shop_type": null,
+        "slip_numbers": null,
+        "created_at": "2026-10-20T06:47:12.441Z",
+        "updated_at": "2026-10-20T06:47:28.631Z",
+        "overtime_compensation_method": "payout",
+        "compensatory_hours_used": "0.00"
+      }
+    },
+    {
+      "name": "Resolve source row 13",
+      "caseIds": [],
+      "passed": true,
+      "actual": {
+        "id": "et6fqlk0cu6hr3yl2hbj1e01",
+        "employee_id": "k262mqeo862x13x0cxphdbm8",
+        "date": "2026-10-13T19:00:00.000Z",
+        "check_in": null,
+        "check_out": null,
+        "duty_hours": "0.00",
+        "overtime_hours": "0.00",
+        "status": "absent",
+        "is_late": false,
+        "is_night_shift": false,
+        "overtime_status": "pending",
+        "overtime_remarks": null,
+        "early_departure_status": "none",
+        "check_out_reason": null,
+        "shift_violations": [
+          {
+            "late": false,
+            "actualIn": "06:52:00",
+            "expectedIn": "09:00",
+            "shiftIndex": 0,
+            "expectedOut": "17:00",
+            "earlyDeparture": true
+          }
+        ],
+        "is_approved_leave": false,
+        "leave_approval_status": "none",
+        "leave_type": null,
+        "entry_source": "biometric",
+        "notes": "Synthetic payroll E2E HR decision; not actual entitlement or device evidence",
+        "area_visited": null,
+        "is_company_vehicle": false,
+        "payment_mode": null,
+        "distance_km": "0.00",
+        "per_km_rate": "0.00",
+        "petrol_amount": "0.00",
+        "sale_amount": "0.00",
+        "recovery_amount": "0.00",
+        "return_amount": "0.00",
+        "shop_type": null,
+        "slip_numbers": null,
+        "created_at": "2026-10-20T06:47:12.441Z",
+        "updated_at": "2026-10-20T06:47:30.441Z",
+        "overtime_compensation_method": "payout",
+        "compensatory_hours_used": "0.00"
+      }
+    },
+    {
+      "name": "Resolve source row 21",
+      "caseIds": [],
+      "passed": true,
+      "actual": {
+        "id": "pwzw8hu2x6gdk1mzj0kjbsm1",
+        "employee_id": "l0jt1asduxetj6up6zex1dkr",
+        "date": "2026-10-13T19:00:00.000Z",
+        "check_in": null,
+        "check_out": null,
+        "duty_hours": "0.00",
+        "overtime_hours": "0.00",
+        "status": "leave",
+        "is_late": false,
+        "is_night_shift": false,
+        "overtime_status": "pending",
+        "overtime_remarks": null,
+        "early_departure_status": "none",
+        "check_out_reason": null,
+        "shift_violations": [
+          {
+            "late": false,
+            "actualIn": "07:50:00",
+            "expectedIn": "09:00",
+            "shiftIndex": 0,
+            "expectedOut": "17:00",
+            "earlyDeparture": true
+          }
+        ],
+        "is_approved_leave": false,
+        "leave_approval_status": "pending",
+        "leave_type": "sick",
+        "entry_source": "biometric",
+        "notes": "Synthetic payroll E2E HR decision; not actual entitlement or device evidence",
+        "area_visited": null,
+        "is_company_vehicle": false,
+        "payment_mode": null,
+        "distance_km": "0.00",
+        "per_km_rate": "0.00",
+        "petrol_amount": "0.00",
+        "sale_amount": "0.00",
+        "recovery_amount": "0.00",
+        "return_amount": "0.00",
+        "shop_type": null,
+        "slip_numbers": null,
+        "created_at": "2026-10-20T06:47:12.441Z",
+        "updated_at": "2026-10-20T06:47:32.747Z",
+        "overtime_compensation_method": "payout",
+        "compensatory_hours_used": "0.00"
+      }
+    },
+    {
+      "name": "Resolve source row 31",
+      "caseIds": [],
+      "passed": true,
+      "actual": {
+        "id": "ddecddqaot89si1xidf5bjpj",
+        "employee_id": "qiv70h53acig37z45riglrc5",
+        "date": "2026-10-13T19:00:00.000Z",
+        "check_in": null,
+        "check_out": null,
+        "duty_hours": "0.00",
+        "overtime_hours": "0.00",
+        "status": "leave",
+        "is_late": false,
+        "is_night_shift": false,
+        "overtime_status": "pending",
+        "overtime_remarks": null,
+        "early_departure_status": "none",
+        "check_out_reason": null,
+        "shift_violations": [
+          {
+            "late": false,
+            "actualIn": "07:41:00",
+            "expectedIn": "09:00",
+            "shiftIndex": 0,
+            "expectedOut": "17:00",
+            "earlyDeparture": true
+          }
+        ],
+        "is_approved_leave": false,
+        "leave_approval_status": "pending",
+        "leave_type": "special",
+        "entry_source": "biometric",
+        "notes": "Synthetic payroll E2E HR decision; not actual entitlement or device evidence",
+        "area_visited": null,
+        "is_company_vehicle": false,
+        "payment_mode": null,
+        "distance_km": "0.00",
+        "per_km_rate": "0.00",
+        "petrol_amount": "0.00",
+        "sale_amount": "0.00",
+        "recovery_amount": "0.00",
+        "return_amount": "0.00",
+        "shop_type": null,
+        "slip_numbers": null,
+        "created_at": "2026-10-20T06:47:12.441Z",
+        "updated_at": "2026-10-20T06:47:34.708Z",
+        "overtime_compensation_method": "payout",
+        "compensatory_hours_used": "0.00"
+      }
+    },
+    {
+      "name": "Resolve source row 36",
+      "caseIds": [],
+      "passed": true,
+      "actual": {
+        "id": "usqmd5g7nzd59amb89j48hy5",
+        "employee_id": "sf6w76hw4n6g85r8ddjqsw02",
+        "date": "2026-10-06T19:00:00.000Z",
+        "check_in": null,
+        "check_out": null,
+        "duty_hours": "0.00",
+        "overtime_hours": "0.00",
+        "status": "leave",
+        "is_late": false,
+        "is_night_shift": false,
+        "overtime_status": "pending",
+        "overtime_remarks": null,
+        "early_departure_status": "none",
+        "check_out_reason": null,
+        "shift_violations": [
+          {
+            "late": false,
+            "actualIn": "07:08:00",
+            "expectedIn": "09:00",
+            "shiftIndex": 0,
+            "expectedOut": "17:00",
+            "earlyDeparture": true
+          }
+        ],
+        "is_approved_leave": false,
+        "leave_approval_status": "pending",
+        "leave_type": "compensatory",
+        "entry_source": "biometric",
+        "notes": "Synthetic payroll E2E HR decision; not actual entitlement or device evidence",
+        "area_visited": null,
+        "is_company_vehicle": false,
+        "payment_mode": null,
+        "distance_km": "0.00",
+        "per_km_rate": "0.00",
+        "petrol_amount": "0.00",
+        "sale_amount": "0.00",
+        "recovery_amount": "0.00",
+        "return_amount": "0.00",
+        "shop_type": null,
+        "slip_numbers": null,
+        "created_at": "2026-10-20T06:47:12.441Z",
+        "updated_at": "2026-10-20T06:47:36.812Z",
+        "overtime_compensation_method": "payout",
+        "compensatory_hours_used": "8.00"
+      }
+    },
+    {
+      "name": "Resolve source row 38",
+      "caseIds": [],
+      "passed": true,
+      "actual": {
+        "id": "aeeaa8hms7x852ibrihhfgpd",
+        "employee_id": "sf6w76hw4n6g85r8ddjqsw02",
+        "date": "2026-10-09T19:00:00.000Z",
+        "check_in": null,
+        "check_out": null,
+        "duty_hours": "0.00",
+        "overtime_hours": "0.00",
+        "status": "absent",
+        "is_late": false,
+        "is_night_shift": false,
+        "overtime_status": "pending",
+        "overtime_remarks": null,
+        "early_departure_status": "none",
+        "check_out_reason": null,
+        "shift_violations": [
+          {
+            "late": false,
+            "actualIn": "06:40:00",
+            "actualOut": "13:32:00",
+            "expectedIn": "09:00",
+            "shiftIndex": 0,
+            "expectedOut": "17:00",
+            "earlyDeparture": true
+          }
+        ],
+        "is_approved_leave": false,
+        "leave_approval_status": "none",
+        "leave_type": null,
+        "entry_source": "biometric",
+        "notes": "Synthetic payroll E2E HR decision; not actual entitlement or device evidence",
+        "area_visited": null,
+        "is_company_vehicle": false,
+        "payment_mode": null,
+        "distance_km": "0.00",
+        "per_km_rate": "0.00",
+        "petrol_amount": "0.00",
+        "sale_amount": "0.00",
+        "recovery_amount": "0.00",
+        "return_amount": "0.00",
+        "shop_type": null,
+        "slip_numbers": null,
+        "created_at": "2026-10-20T06:47:12.441Z",
+        "updated_at": "2026-10-20T06:47:38.180Z",
+        "overtime_compensation_method": "payout",
+        "compensatory_hours_used": "0.00"
+      }
+    },
+    {
+      "name": "Resolve source row 39",
+      "caseIds": [],
+      "passed": true,
+      "actual": {
+        "id": "yehbzhfxlpek22b2jdw0ypke",
+        "employee_id": "sf6w76hw4n6g85r8ddjqsw02",
+        "date": "2026-10-10T19:00:00.000Z",
+        "check_in": null,
+        "check_out": null,
+        "duty_hours": "0.00",
+        "overtime_hours": "0.00",
+        "status": "absent",
+        "is_late": false,
+        "is_night_shift": false,
+        "overtime_status": "pending",
+        "overtime_remarks": null,
+        "early_departure_status": "none",
+        "check_out_reason": null,
+        "shift_violations": [
+          {
+            "late": true,
+            "actualIn": "18:51:00",
+            "expectedIn": "09:00",
+            "shiftIndex": 0,
+            "expectedOut": "17:00",
+            "earlyDeparture": true
+          }
+        ],
+        "is_approved_leave": false,
+        "leave_approval_status": "none",
+        "leave_type": null,
+        "entry_source": "biometric",
+        "notes": "Synthetic payroll E2E HR decision; not actual entitlement or device evidence",
+        "area_visited": null,
+        "is_company_vehicle": false,
+        "payment_mode": null,
+        "distance_km": "0.00",
+        "per_km_rate": "0.00",
+        "petrol_amount": "0.00",
+        "sale_amount": "0.00",
+        "recovery_amount": "0.00",
+        "return_amount": "0.00",
+        "shop_type": null,
+        "slip_numbers": null,
+        "created_at": "2026-10-20T06:47:12.441Z",
+        "updated_at": "2026-10-20T06:47:39.653Z",
+        "overtime_compensation_method": "payout",
+        "compensatory_hours_used": "0.00"
+      }
+    },
+    {
+      "name": "Resolve source row 42",
+      "caseIds": [],
+      "passed": true,
+      "actual": {
+        "id": "ant7nlsy98zpezmegkhkihqa",
+        "employee_id": "sf6w76hw4n6g85r8ddjqsw02",
+        "date": "2026-10-13T19:00:00.000Z",
+        "check_in": null,
+        "check_out": null,
+        "duty_hours": "0.00",
+        "overtime_hours": "0.00",
+        "status": "absent",
+        "is_late": false,
+        "is_night_shift": false,
+        "overtime_status": "pending",
+        "overtime_remarks": null,
+        "early_departure_status": "none",
+        "check_out_reason": null,
+        "shift_violations": [
+          {
+            "late": false,
+            "actualIn": "07:41:00",
+            "expectedIn": "09:00",
+            "shiftIndex": 0,
+            "expectedOut": "17:00",
+            "earlyDeparture": true
+          }
+        ],
+        "is_approved_leave": false,
+        "leave_approval_status": "none",
+        "leave_type": null,
+        "entry_source": "biometric",
+        "notes": "Synthetic payroll E2E HR decision; not actual entitlement or device evidence",
+        "area_visited": null,
+        "is_company_vehicle": false,
+        "payment_mode": null,
+        "distance_km": "0.00",
+        "per_km_rate": "0.00",
+        "petrol_amount": "0.00",
+        "sale_amount": "0.00",
+        "recovery_amount": "0.00",
+        "return_amount": "0.00",
+        "shop_type": null,
+        "slip_numbers": null,
+        "created_at": "2026-10-20T06:47:12.441Z",
+        "updated_at": "2026-10-20T06:47:40.877Z",
+        "overtime_compensation_method": "payout",
+        "compensatory_hours_used": "0.00"
+      }
+    },
+    {
+      "name": "Resolve source row 46",
+      "caseIds": [],
+      "passed": true,
+      "actual": {
+        "id": "ouztxsk34sp8oii7ioh1hr0n",
+        "employee_id": "ggdzd1fd7p77qtawzw7vcnbj",
+        "date": "2026-10-13T19:00:00.000Z",
+        "check_in": null,
+        "check_out": null,
+        "duty_hours": "0.00",
+        "overtime_hours": "0.00",
+        "status": "absent",
+        "is_late": false,
+        "is_night_shift": false,
+        "overtime_status": "pending",
+        "overtime_remarks": null,
+        "early_departure_status": "none",
+        "check_out_reason": null,
+        "shift_violations": [
+          {
+            "late": false,
+            "actualIn": "07:48:00",
+            "expectedIn": "09:00",
+            "shiftIndex": 0,
+            "expectedOut": "17:00",
+            "earlyDeparture": true
+          }
+        ],
+        "is_approved_leave": false,
+        "leave_approval_status": "none",
+        "leave_type": null,
+        "entry_source": "biometric",
+        "notes": "Synthetic payroll E2E HR decision; not actual entitlement or device evidence",
+        "area_visited": null,
+        "is_company_vehicle": false,
+        "payment_mode": null,
+        "distance_km": "0.00",
+        "per_km_rate": "0.00",
+        "petrol_amount": "0.00",
+        "sale_amount": "0.00",
+        "recovery_amount": "0.00",
+        "return_amount": "0.00",
+        "shop_type": null,
+        "slip_numbers": null,
+        "created_at": "2026-10-20T06:47:12.441Z",
+        "updated_at": "2026-10-20T06:47:42.340Z",
+        "overtime_compensation_method": "payout",
+        "compensatory_hours_used": "0.00"
+      }
+    },
+    {
+      "name": "Resolve source row 51",
+      "caseIds": [],
+      "passed": true,
+      "actual": {
+        "id": "qufzje0orr2ohaihvosmosvz",
+        "employee_id": "lthb3ir81dffcmubp4dep7wj",
+        "date": "2026-10-10T19:00:00.000Z",
+        "check_in": null,
+        "check_out": null,
+        "duty_hours": "0.00",
+        "overtime_hours": "0.00",
+        "status": "absent",
+        "is_late": false,
+        "is_night_shift": false,
+        "overtime_status": "pending",
+        "overtime_remarks": null,
+        "early_departure_status": "none",
+        "check_out_reason": null,
+        "shift_violations": [
+          {
+            "late": false,
+            "actualIn": "07:37:00",
+            "actualOut": "13:16:00",
+            "expectedIn": "09:00",
+            "shiftIndex": 0,
+            "expectedOut": "17:00",
+            "earlyDeparture": true
+          }
+        ],
+        "is_approved_leave": false,
+        "leave_approval_status": "none",
+        "leave_type": null,
+        "entry_source": "biometric",
+        "notes": "Synthetic payroll E2E HR decision; not actual entitlement or device evidence",
+        "area_visited": null,
+        "is_company_vehicle": false,
+        "payment_mode": null,
+        "distance_km": "0.00",
+        "per_km_rate": "0.00",
+        "petrol_amount": "0.00",
+        "sale_amount": "0.00",
+        "recovery_amount": "0.00",
+        "return_amount": "0.00",
+        "shop_type": null,
+        "slip_numbers": null,
+        "created_at": "2026-10-20T06:47:12.441Z",
+        "updated_at": "2026-10-20T06:47:44.059Z",
+        "overtime_compensation_method": "payout",
+        "compensatory_hours_used": "0.00"
+      }
+    },
+    {
+      "name": "Resolve source row 54",
+      "caseIds": [],
+      "passed": true,
+      "actual": {
+        "id": "wdp4xfqmuuad1vjrqqfq2qx2",
+        "employee_id": "lthb3ir81dffcmubp4dep7wj",
+        "date": "2026-10-13T19:00:00.000Z",
+        "check_in": null,
+        "check_out": null,
+        "duty_hours": "0.00",
+        "overtime_hours": "0.00",
+        "status": "absent",
+        "is_late": false,
+        "is_night_shift": false,
+        "overtime_status": "pending",
+        "overtime_remarks": null,
+        "early_departure_status": "none",
+        "check_out_reason": null,
+        "shift_violations": [
+          {
+            "late": false,
+            "actualIn": "07:42:00",
+            "expectedIn": "09:00",
+            "shiftIndex": 0,
+            "expectedOut": "17:00",
+            "earlyDeparture": true
+          }
+        ],
+        "is_approved_leave": false,
+        "leave_approval_status": "none",
+        "leave_type": null,
+        "entry_source": "biometric",
+        "notes": "Synthetic payroll E2E HR decision; not actual entitlement or device evidence",
+        "area_visited": null,
+        "is_company_vehicle": false,
+        "payment_mode": null,
+        "distance_km": "0.00",
+        "per_km_rate": "0.00",
+        "petrol_amount": "0.00",
+        "sale_amount": "0.00",
+        "recovery_amount": "0.00",
+        "return_amount": "0.00",
+        "shop_type": null,
+        "slip_numbers": null,
+        "created_at": "2026-10-20T06:47:12.441Z",
+        "updated_at": "2026-10-20T06:47:46.057Z",
+        "overtime_compensation_method": "payout",
+        "compensatory_hours_used": "0.00"
+      }
+    },
+    {
+      "name": "Approve 112009 annual",
+      "caseIds": [],
+      "passed": true
+    },
+    {
+      "name": "Approve 113016 sick",
+      "caseIds": [],
+      "passed": true
+    },
+    {
+      "name": "Approve 111007 special",
+      "caseIds": [],
+      "passed": true
+    },
+    {
+      "name": "Approve 110001 compensatory",
+      "caseIds": [],
+      "passed": true
+    },
+    {
+      "name": "Reject automatically suggested rest-day overtime without changing source duty",
+      "caseIds": [
+        "A05",
+        "P03"
+      ],
+      "passed": false,
+      "error": "Only original completed rest-day intervals create these pending suggestions\n+ actual - expected\n\n  [\n    {\n      code: '110001',\n+     date: 2026-10-03T19:00:00.000Z,\n-     date: '2026-10-04',\n      hours: 3\n    },\n    {\n      code: '111007',\n+     date: 2026-10-03T19:00:00.000Z,\n-     date: '2026-10-04',\n      hours: 7.95\n    },\n    {\n      code: '111007',\n+     date: 2026-10-10T19:00:00.000Z,\n-     date: '2026-10-11',\n      hours: 7.35\n    },\n    {\n      code: '111008',\n+     date: 2026-10-10T19:00:00.000Z,\n-     date: '2026-10-11',\n      hours: 5.43\n    },\n    {\n      code: '112009',\n+     date: 2026-10-03T19:00:00.000Z,\n-     date: '2026-10-04',\n      hours: 10.78\n    },\n    {\n      code: '113016',\n+     date: 2026-10-03T19:00:00.000Z,\n-     date: '2026-10-04',\n      hours: 9.03\n    },\n    {\n      code: '113016',\n+     date: 2026-10-10T19:00:00.000Z,\n-     date: '2026-10-11',\n      hours: 8.25\n    }\n  ]\n"
+    }
+  ],
+  "pageErrors": [],
+  "consoleErrors": [
+    "Error: <ellipse> attribute rx: Expected length, \"undefined\"."
+  ],
+  "inspectionErrors": [
+    "response.text: Protocol error (Network.getResponseBody): No resource with given identifier found\nResponse body is not available for a response that was navigated away from. Read response.body() before triggering any navigation."
+  ],
+  "failedResponses": [],
+  "passed": false,
+  "database": "titan_payroll_real_edc3471f8f5f2872_test",
+  "scenario": "real",
+  "sourceSha256": "5c96e6912b261a4def094be00b46de516930b6fe085c1cdb75b71684d8779591",
+  "cycle": {
+    "month": "2026-10",
+    "storedMonth": "2026-10-01",
+    "start": "2026-09-16",
+    "end": "2026-10-15",
+    "timezone": "Asia/Karachi",
+    "divisor": 26,
+    "dutyHours": 8,
+    "basic": 26000,
+    "gross": 42900,
+    "hourly": 125
+  },
+  "browser": "144.0.7559.132",
+  "sourceReviewRows": [
+    {
+      "rowNumber": 9,
+      "personId": "112009",
+      "date": "2026-10-07",
+      "messages": [
+        "Missing or incomplete punches. HR must correct this attendance day or resolve its status before payroll."
+      ]
+    },
+    {
+      "rowNumber": 10,
+      "personId": "112009",
+      "date": "2026-10-11",
+      "messages": [
+        "Missing or incomplete punches. HR must correct this attendance day or resolve its status before payroll."
+      ]
+    },
+    {
+      "rowNumber": 13,
+      "personId": "112009",
+      "date": "2026-10-14",
+      "messages": [
+        "Missing or incomplete punches. HR must correct this attendance day or resolve its status before payroll."
+      ]
+    },
+    {
+      "rowNumber": 21,
+      "personId": "113016",
+      "date": "2026-10-14",
+      "messages": [
+        "Missing or incomplete punches. HR must correct this attendance day or resolve its status before payroll."
+      ]
+    },
+    {
+      "rowNumber": 31,
+      "personId": "111007",
+      "date": "2026-10-14",
+      "messages": [
+        "Missing or incomplete punches. HR must correct this attendance day or resolve its status before payroll."
+      ]
+    },
+    {
+      "rowNumber": 36,
+      "personId": "110001",
+      "date": "2026-10-07",
+      "messages": [
+        "Missing or incomplete punches. HR must correct this attendance day or resolve its status before payroll."
+      ]
+    },
+    {
+      "rowNumber": 38,
+      "personId": "110001",
+      "date": "2026-10-10",
+      "messages": [
+        "Missing or incomplete punches. HR must correct this attendance day or resolve its status before payroll."
+      ]
+    },
+    {
+      "rowNumber": 39,
+      "personId": "110001",
+      "date": "2026-10-11",
+      "messages": [
+        "Missing or incomplete punches. HR must correct this attendance day or resolve its status before payroll."
+      ]
+    },
+    {
+      "rowNumber": 42,
+      "personId": "110001",
+      "date": "2026-10-14",
+      "messages": [
+        "Missing or incomplete punches. HR must correct this attendance day or resolve its status before payroll."
+      ]
+    },
+    {
+      "rowNumber": 46,
+      "personId": "111008",
+      "date": "2026-10-14",
+      "messages": [
+        "Missing or incomplete punches. HR must correct this attendance day or resolve its status before payroll."
+      ]
+    },
+    {
+      "rowNumber": 51,
+      "personId": "111006",
+      "date": "2026-10-11",
+      "messages": [
+        "Missing or incomplete punches. HR must correct this attendance day or resolve its status before payroll."
+      ]
+    },
+    {
+      "rowNumber": 54,
+      "personId": "111006",
+      "date": "2026-10-14",
+      "messages": [
+        "Missing or incomplete punches. HR must correct this attendance day or resolve its status before payroll."
+      ]
+    }
+  ],
+  "error": "AssertionError [ERR_ASSERTION]: Only original completed rest-day intervals create these pending suggestions\n+ actual - expected\n\n  [\n    {\n      code: '110001',\n+     date: 2026-10-03T19:00:00.000Z,\n-     date: '2026-10-04',\n      hours: 3\n    },\n    {\n      code: '111007',\n+     date: 2026-10-03T19:00:00.000Z,\n-     date: '2026-10-04',\n      hours: 7.95\n    },\n    {\n      code: '111007',\n+     date: 2026-10-10T19:00:00.000Z,\n-     date: '2026-10-11',\n      hours: 7.35\n    },\n    {\n      code: '111008',\n+     date: 2026-10-10T19:00:00.000Z,\n-     date: '2026-10-11',\n      hours: 5.43\n    },\n    {\n      code: '112009',\n+     date: 2026-10-03T19:00:00.000Z,\n-     date: '2026-10-04',\n      hours: 10.78\n    },\n    {\n      code: '113016',\n+     date: 2026-10-03T19:00:00.000Z,\n-     date: '2026-10-04',\n      hours: 9.03\n    },\n    {\n      code: '113016',\n+     date: 2026-10-10T19:00:00.000Z,\n-     date: '2026-10-11',\n      hours: 8.25\n    }\n  ]\n\n    at /home/abdul-rehman/Projects/titan-new/src/__tests__/e2e/attendance-payroll.browser.cjs:424:12\n    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)\n    at async step (/home/abdul-rehman/Projects/titan-new/src/__tests__/e2e/attendance-payroll.browser.cjs:37:20)\n    at async main (/home/abdul-rehman/Projects/titan-new/src/__tests__/e2e/attendance-payroll.browser.cjs:419:13)",
+  "tracePrivacy": "Actions, snapshots and images retained; authenticated network traffic and non-image response resources excluded.",
+  "finishedAt": "2026-10-20T11:47:54.278Z"
+}

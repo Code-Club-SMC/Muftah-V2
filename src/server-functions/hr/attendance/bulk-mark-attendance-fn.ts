@@ -4,6 +4,10 @@ import { db } from "@/db";
 import { attendance, employees } from "@/db/schemas/hr-schema";
 import { requireHrManageMiddleware } from "@/lib/middlewares";
 import { z } from "zod";
+import { lockEmployeePunchWrites } from "./punch-write-lock";
+import { invalidateDeviceAttendanceChanges, lockAttendancePayrollWrites } from "@/lib/attendance/device-import/payroll.server";
+import { assertWorkingLeaveDate } from "@/lib/attendance/leave-policy";
+import { adjustCompensatoryReservation } from "@/lib/attendance/compensatory-reservation.server";
 
 export const bulkMarkAttendanceFn = createServerFn()
   .middleware([requireHrManageMiddleware])
@@ -57,6 +61,10 @@ export const bulkMarkAttendanceFn = createServerFn()
     });
 
     await db.transaction(async (tx) => {
+      await lockAttendancePayrollWrites(tx);
+      for (const employeeId of [...employeeIds].sort()) {
+        await lockEmployeePunchWrites(tx, employeeId);
+      }
       for (const employeeId of employeeIds) {
         const payload = buildNormalizedAttendancePayload(employeeId);
         
@@ -65,20 +73,14 @@ export const bulkMarkAttendanceFn = createServerFn()
           where: and(eq(attendance.employeeId, employeeId), eq(attendance.date, date))
         });
         
+        await invalidateDeviceAttendanceChanges(tx, employeeId, [date]);
+        const employee = employeesList.find(row => row.id === employeeId);
+        if (!employee) throw new Error("Employee not found");
+        if (status === "leave") {
+          assertWorkingLeaveDate(date, employee.restDays, existingAttendance?.status);
+        }
         if (existingAttendance?.leaveType === "compensatory") {
-          const previousCompUsed = parseFloat(existingAttendance.compensatoryHoursUsed || "0");
-          if (previousCompUsed > 0) {
-            const emp = await tx.query.employees.findFirst({
-              where: eq(employees.id, employeeId),
-              columns: { compensatoryHoursBalance: true }
-            });
-            if (emp) {
-              const currentBalance = parseFloat(emp.compensatoryHoursBalance || "0");
-              await tx.update(employees)
-                .set({ compensatoryHoursBalance: (currentBalance + previousCompUsed).toString() })
-                .where(eq(employees.id, employeeId));
-            }
-          }
+          await adjustCompensatoryReservation(tx, employeeId, existingAttendance.compensatoryHoursUsed, "0");
         }
         
         await tx

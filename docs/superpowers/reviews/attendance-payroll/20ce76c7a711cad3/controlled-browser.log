@@ -1,0 +1,26 @@
+START Real Better Auth sign-in and HR route
+PASS Real Better Auth sign-in and HR route
+START Upload source and independently inspect PostgreSQL
+PASS Upload source and independently inspect PostgreSQL
+START Submit E2E02 attendance decision
+PASS Submit E2E02 attendance decision
+START Submit E2E03 attendance decision
+PASS Submit E2E03 attendance decision
+START Submit E2E04 attendance decision
+PASS Submit E2E04 attendance decision
+START Submit E2E05 attendance decision
+PASS Submit E2E05 attendance decision
+START Submit E2E06 attendance decision
+PASS Submit E2E06 attendance decision
+START Submit E2E10 attendance decision
+PASS Submit E2E10 attendance decision
+START Approve E2E02 annual
+page.waitForResponse: Timeout 30000ms exceeded while waiting for event "response"
+    at mutate (/home/abdul-rehman/Projects/titan-new/src/__tests__/e2e/attendance-payroll.browser.cjs:45:10)
+    at approveLeave (/home/abdul-rehman/Projects/titan-new/src/__tests__/e2e/attendance-payroll.browser.cjs:143:9)
+    at async /home/abdul-rehman/Projects/titan-new/src/__tests__/e2e/attendance-payroll.browser.cjs:242:105
+    at async step (/home/abdul-rehman/Projects/titan-new/src/__tests__/e2e/attendance-payroll.browser.cjs:30:20)
+    at async main (/home/abdul-rehman/Projects/titan-new/src/__tests__/e2e/attendance-payroll.browser.cjs:242:24) {
+  log: [],
+  name: 'TimeoutError'
+}

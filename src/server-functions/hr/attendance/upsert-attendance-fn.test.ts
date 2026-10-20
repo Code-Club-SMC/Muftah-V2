@@ -26,7 +26,7 @@ describe("upsert attendance server source", () => {
     expect(source).toContain(
       "dutyHours: punchDrivenAttendance.dutyHours",
     );
-    expect(source).toContain("standardDutyHours: standardHours");
+    expect(source).toContain("standardDutyHours: getOvertimeStandardDutyHours(date, employee)");
     expect(source).toContain("requestedOvertimeHours");
     expect(source).toContain(
       "if (punchDrivenOvertimeSummary.state === \"stale\")",

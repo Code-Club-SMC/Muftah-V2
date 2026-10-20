@@ -1,0 +1,663 @@
+{
+  "sha256": "5c96e6912b261a4def094be00b46de516930b6fe085c1cdb75b71684d8779591",
+  "rows": [
+    {
+      "row": 3,
+      "code": "112009",
+      "name": "Himayat Ullah",
+      "date": "2026-10-01",
+      "times": [
+        "07:29",
+        "17:48"
+      ],
+      "completedHours": "10.32",
+      "needsReview": false
+    },
+    {
+      "row": 4,
+      "code": "112009",
+      "name": "Himayat Ullah",
+      "date": "2026-10-02",
+      "times": [
+        "06:51",
+        "17:11"
+      ],
+      "completedHours": "10.33",
+      "needsReview": false
+    },
+    {
+      "row": 5,
+      "code": "112009",
+      "name": "Himayat Ullah",
+      "date": "2026-10-03",
+      "times": [
+        "06:55",
+        "17:03"
+      ],
+      "completedHours": "10.13",
+      "needsReview": false
+    },
+    {
+      "row": 6,
+      "code": "112009",
+      "name": "Himayat Ullah",
+      "date": "2026-10-04",
+      "times": [
+        "06:52",
+        "17:39"
+      ],
+      "completedHours": "10.78",
+      "needsReview": false
+    },
+    {
+      "row": 7,
+      "code": "112009",
+      "name": "Himayat Ullah",
+      "date": "2026-10-05",
+      "times": [
+        "06:57",
+        "17:12"
+      ],
+      "completedHours": "10.25",
+      "needsReview": false
+    },
+    {
+      "row": 8,
+      "code": "112009",
+      "name": "Himayat Ullah",
+      "date": "2026-10-06",
+      "times": [
+        "07:03",
+        "17:21"
+      ],
+      "completedHours": "10.30",
+      "needsReview": false
+    },
+    {
+      "row": 9,
+      "code": "112009",
+      "name": "Himayat Ullah",
+      "date": "2026-10-07",
+      "times": [
+        "06:34"
+      ],
+      "completedHours": "0.00",
+      "needsReview": true
+    },
+    {
+      "row": 10,
+      "code": "112009",
+      "name": "Himayat Ullah",
+      "date": "2026-10-11",
+      "times": [
+        "19:14"
+      ],
+      "completedHours": "0.00",
+      "needsReview": true
+    },
+    {
+      "row": 11,
+      "code": "112009",
+      "name": "Himayat Ullah",
+      "date": "2026-10-12",
+      "times": [
+        "07:00",
+        "16:49"
+      ],
+      "completedHours": "9.82",
+      "needsReview": false
+    },
+    {
+      "row": 12,
+      "code": "112009",
+      "name": "Himayat Ullah",
+      "date": "2026-10-13",
+      "times": [
+        "06:57",
+        "16:49"
+      ],
+      "completedHours": "9.87",
+      "needsReview": false
+    },
+    {
+      "row": 13,
+      "code": "112009",
+      "name": "Himayat Ullah",
+      "date": "2026-10-14",
+      "times": [
+        "06:52"
+      ],
+      "completedHours": "0.00",
+      "needsReview": true
+    },
+    {
+      "row": 14,
+      "code": "113016",
+      "name": "Rahmant Wali",
+      "date": "2026-10-01",
+      "times": [
+        "07:37",
+        "13:01",
+        "14:21",
+        "19:05"
+      ],
+      "completedHours": "10.13",
+      "needsReview": false
+    },
+    {
+      "row": 15,
+      "code": "113016",
+      "name": "Rahmant Wali",
+      "date": "2026-10-04",
+      "times": [
+        "07:35",
+        "16:37"
+      ],
+      "completedHours": "9.03",
+      "needsReview": false
+    },
+    {
+      "row": 16,
+      "code": "113016",
+      "name": "Rahmant Wali",
+      "date": "2026-10-05",
+      "times": [
+        "07:37",
+        "12:51",
+        "14:08",
+        "18:34"
+      ],
+      "completedHours": "9.67",
+      "needsReview": false
+    },
+    {
+      "row": 17,
+      "code": "113016",
+      "name": "Rahmant Wali",
+      "date": "2026-10-07",
+      "times": [
+        "07:39",
+        "07:47"
+      ],
+      "completedHours": "0.13",
+      "needsReview": false
+    },
+    {
+      "row": 18,
+      "code": "113016",
+      "name": "Rahmant Wali",
+      "date": "2026-10-10",
+      "times": [
+        "07:34",
+        "13:46"
+      ],
+      "completedHours": "6.20",
+      "needsReview": false
+    },
+    {
+      "row": 19,
+      "code": "113016",
+      "name": "Rahmant Wali",
+      "date": "2026-10-11",
+      "times": [
+        "07:52",
+        "16:07"
+      ],
+      "completedHours": "8.25",
+      "needsReview": false
+    },
+    {
+      "row": 20,
+      "code": "113016",
+      "name": "Rahmant Wali",
+      "date": "2026-10-12",
+      "times": [
+        "07:37",
+        "08:58"
+      ],
+      "completedHours": "1.35",
+      "needsReview": false
+    },
+    {
+      "row": 21,
+      "code": "113016",
+      "name": "Rahmant Wali",
+      "date": "2026-10-14",
+      "times": [
+        "07:50"
+      ],
+      "completedHours": "0.00",
+      "needsReview": true
+    },
+    {
+      "row": 22,
+      "code": "111007",
+      "name": "Sameen Ullah",
+      "date": "2026-10-01",
+      "times": [
+        "07:27",
+        "13:00",
+        "14:08",
+        "16:04"
+      ],
+      "completedHours": "7.48",
+      "needsReview": false
+    },
+    {
+      "row": 23,
+      "code": "111007",
+      "name": "Sameen Ullah",
+      "date": "2026-10-03",
+      "times": [
+        "07:41",
+        "12:58",
+        "14:01",
+        "16:32"
+      ],
+      "completedHours": "7.80",
+      "needsReview": false
+    },
+    {
+      "row": 24,
+      "code": "111007",
+      "name": "Sameen Ullah",
+      "date": "2026-10-04",
+      "times": [
+        "07:33",
+        "12:55",
+        "14:03",
+        "16:38"
+      ],
+      "completedHours": "7.95",
+      "needsReview": false
+    },
+    {
+      "row": 25,
+      "code": "111007",
+      "name": "Sameen Ullah",
+      "date": "2026-10-05",
+      "times": [
+        "07:32",
+        "12:53",
+        "14:05",
+        "18:34"
+      ],
+      "completedHours": "9.83",
+      "needsReview": false
+    },
+    {
+      "row": 26,
+      "code": "111007",
+      "name": "Sameen Ullah",
+      "date": "2026-10-08",
+      "times": [
+        "07:39",
+        "13:00",
+        "14:00",
+        "14:17"
+      ],
+      "completedHours": "5.63",
+      "needsReview": false
+    },
+    {
+      "row": 27,
+      "code": "111007",
+      "name": "Sameen Ullah",
+      "date": "2026-10-10",
+      "times": [
+        "07:35",
+        "13:03",
+        "14:24",
+        "16:26"
+      ],
+      "completedHours": "7.50",
+      "needsReview": false
+    },
+    {
+      "row": 28,
+      "code": "111007",
+      "name": "Sameen Ullah",
+      "date": "2026-10-11",
+      "times": [
+        "07:38",
+        "12:59",
+        "14:06",
+        "16:06"
+      ],
+      "completedHours": "7.35",
+      "needsReview": false
+    },
+    {
+      "row": 29,
+      "code": "111007",
+      "name": "Sameen Ullah",
+      "date": "2026-10-12",
+      "times": [
+        "07:43",
+        "12:59",
+        "13:59",
+        "17:02"
+      ],
+      "completedHours": "8.32",
+      "needsReview": false
+    },
+    {
+      "row": 30,
+      "code": "111007",
+      "name": "Sameen Ullah",
+      "date": "2026-10-13",
+      "times": [
+        "07:38",
+        "13:19",
+        "14:05",
+        "16:32"
+      ],
+      "completedHours": "8.13",
+      "needsReview": false
+    },
+    {
+      "row": 31,
+      "code": "111007",
+      "name": "Sameen Ullah",
+      "date": "2026-10-14",
+      "times": [
+        "07:41"
+      ],
+      "completedHours": "0.00",
+      "needsReview": true
+    },
+    {
+      "row": 32,
+      "code": "110001",
+      "name": "Shahab Gul",
+      "date": "2026-10-01",
+      "times": [
+        "07:51",
+        "13:06",
+        "14:18",
+        "16:00"
+      ],
+      "completedHours": "6.95",
+      "needsReview": false
+    },
+    {
+      "row": 33,
+      "code": "110001",
+      "name": "Shahab Gul",
+      "date": "2026-10-04",
+      "times": [
+        "10:03",
+        "13:03"
+      ],
+      "completedHours": "3.00",
+      "needsReview": false
+    },
+    {
+      "row": 34,
+      "code": "110001",
+      "name": "Shahab Gul",
+      "date": "2026-10-05",
+      "times": [
+        "07:32",
+        "13:19",
+        "14:05",
+        "16:51"
+      ],
+      "completedHours": "8.55",
+      "needsReview": false
+    },
+    {
+      "row": 35,
+      "code": "110001",
+      "name": "Shahab Gul",
+      "date": "2026-10-06",
+      "times": [
+        "06:45",
+        "16:37"
+      ],
+      "completedHours": "9.87",
+      "needsReview": false
+    },
+    {
+      "row": 36,
+      "code": "110001",
+      "name": "Shahab Gul",
+      "date": "2026-10-07",
+      "times": [
+        "07:08"
+      ],
+      "completedHours": "0.00",
+      "needsReview": true
+    },
+    {
+      "row": 37,
+      "code": "110001",
+      "name": "Shahab Gul",
+      "date": "2026-10-08",
+      "times": [
+        "07:37",
+        "12:59"
+      ],
+      "completedHours": "5.37",
+      "needsReview": false
+    },
+    {
+      "row": 38,
+      "code": "110001",
+      "name": "Shahab Gul",
+      "date": "2026-10-10",
+      "times": [
+        "06:40",
+        "13:32",
+        "14:49"
+      ],
+      "completedHours": "6.87",
+      "needsReview": true
+    },
+    {
+      "row": 39,
+      "code": "110001",
+      "name": "Shahab Gul",
+      "date": "2026-10-11",
+      "times": [
+        "18:51"
+      ],
+      "completedHours": "0.00",
+      "needsReview": true
+    },
+    {
+      "row": 40,
+      "code": "110001",
+      "name": "Shahab Gul",
+      "date": "2026-10-12",
+      "times": [
+        "06:58",
+        "13:02",
+        "14:45",
+        "17:10"
+      ],
+      "completedHours": "8.48",
+      "needsReview": false
+    },
+    {
+      "row": 41,
+      "code": "110001",
+      "name": "Shahab Gul",
+      "date": "2026-10-13",
+      "times": [
+        "07:38",
+        "19:59"
+      ],
+      "completedHours": "12.35",
+      "needsReview": false
+    },
+    {
+      "row": 42,
+      "code": "110001",
+      "name": "Shahab Gul",
+      "date": "2026-10-14",
+      "times": [
+        "07:41"
+      ],
+      "completedHours": "0.00",
+      "needsReview": true
+    },
+    {
+      "row": 43,
+      "code": "111008",
+      "name": "Rafi Ullah",
+      "date": "2026-10-11",
+      "times": [
+        "07:48",
+        "13:14"
+      ],
+      "completedHours": "5.43",
+      "needsReview": false
+    },
+    {
+      "row": 44,
+      "code": "111008",
+      "name": "Rafi Ullah",
+      "date": "2026-10-12",
+      "times": [
+        "08:02",
+        "13:00",
+        "14:06",
+        "16:57"
+      ],
+      "completedHours": "7.82",
+      "needsReview": false
+    },
+    {
+      "row": 45,
+      "code": "111008",
+      "name": "Rafi Ullah",
+      "date": "2026-10-13",
+      "times": [
+        "08:12",
+        "13:17",
+        "14:10",
+        "16:31"
+      ],
+      "completedHours": "7.43",
+      "needsReview": false
+    },
+    {
+      "row": 46,
+      "code": "111008",
+      "name": "Rafi Ullah",
+      "date": "2026-10-14",
+      "times": [
+        "07:48"
+      ],
+      "completedHours": "0.00",
+      "needsReview": true
+    },
+    {
+      "row": 47,
+      "code": "111006",
+      "name": "Anees Ur Rahman",
+      "date": "2026-10-01",
+      "times": [
+        "07:56",
+        "13:01"
+      ],
+      "completedHours": "5.08",
+      "needsReview": false
+    },
+    {
+      "row": 48,
+      "code": "111006",
+      "name": "Anees Ur Rahman",
+      "date": "2026-10-03",
+      "times": [
+        "07:41",
+        "12:56",
+        "13:58",
+        "16:32"
+      ],
+      "completedHours": "7.82",
+      "needsReview": false
+    },
+    {
+      "row": 49,
+      "code": "111006",
+      "name": "Anees Ur Rahman",
+      "date": "2026-10-07",
+      "times": [
+        "07:39",
+        "07:48"
+      ],
+      "completedHours": "0.15",
+      "needsReview": false
+    },
+    {
+      "row": 50,
+      "code": "111006",
+      "name": "Anees Ur Rahman",
+      "date": "2026-10-10",
+      "times": [
+        "07:36",
+        "12:47",
+        "14:05",
+        "16:26"
+      ],
+      "completedHours": "7.53",
+      "needsReview": false
+    },
+    {
+      "row": 51,
+      "code": "111006",
+      "name": "Anees Ur Rahman",
+      "date": "2026-10-11",
+      "times": [
+        "07:37",
+        "13:16",
+        "14:12",
+        "17:45",
+        "18:33"
+      ],
+      "completedHours": "9.20",
+      "needsReview": true
+    },
+    {
+      "row": 52,
+      "code": "111006",
+      "name": "Anees Ur Rahman",
+      "date": "2026-10-12",
+      "times": [
+        "07:28",
+        "13:04",
+        "14:00",
+        "16:46"
+      ],
+      "completedHours": "8.37",
+      "needsReview": false
+    },
+    {
+      "row": 53,
+      "code": "111006",
+      "name": "Anees Ur Rahman",
+      "date": "2026-10-13",
+      "times": [
+        "07:38",
+        "13:19",
+        "14:11",
+        "16:32"
+      ],
+      "completedHours": "8.03",
+      "needsReview": false
+    },
+    {
+      "row": 54,
+      "code": "111006",
+      "name": "Anees Ur Rahman",
+      "date": "2026-10-14",
+      "times": [
+        "07:42"
+      ],
+      "completedHours": "0.00",
+      "needsReview": true
+    }
+  ]
+}

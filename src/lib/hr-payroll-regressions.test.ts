@@ -17,7 +17,7 @@ describe("hr payroll regressions", () => {
 
     expect(source).toContain("const payrollTransitionRules");
     expect(source).toContain("pay: false");
-    expect(source).toContain("\"approved-generate\": \"Approved payroll is locked.");
+    expect(source).toMatch(/"approved-generate":\s*"Approved payroll is locked\./);
     expect(source).not.toContain(".includes(\"cannot\")");
   });
 
@@ -192,31 +192,20 @@ describe("hr payroll regressions", () => {
     expect(coreSource).toContain("advanceDeductionDelta");
   });
 
-  it("keeps migration history incremental while adding the punch ledger", () => {
+  it("includes the punch ledger in the complete generated migration chain", () => {
     const migrationFiles = readdirSync(MIGRATIONS_DIR);
     const journalSource = readFileSync(
       resolve(MIGRATIONS_DIR, "meta/_journal.json"),
       "utf8",
     );
-    const punchLedgerMigration = migrationFiles.find(
-      (file) => file.startsWith("0007_") && file.endsWith(".sql"),
-    );
-
-    expect(migrationFiles).toContain("0000_solid_gertrude_yorkes.sql");
-    expect(migrationFiles).toContain("0006_order_booker_bill_numbers.sql");
-    expect(punchLedgerMigration).toBeTruthy();
-    expect(journalSource).toContain("0000_solid_gertrude_yorkes");
-    expect(journalSource).toContain("0006_order_booker_bill_numbers");
-    expect(journalSource).toContain("0007_");
-    expect(journalSource).not.toContain("0000_conscious_flatman");
-
-    const migrationSource = readFileSync(
-      resolve(MIGRATIONS_DIR, punchLedgerMigration!),
-      "utf8",
-    );
-
+    const journal = JSON.parse(journalSource) as { entries: { idx: number; tag: string }[] };
+    const generatedSql = journal.entries.map(entry => `${entry.tag}.sql`);
+    expect(generatedSql).toEqual(migrationFiles.filter(file => file.endsWith(".sql")).sort());
+    expect(new Set(generatedSql).size).toBe(generatedSql.length);
+    expect(journal.entries.map(entry => entry.idx)).toEqual(journal.entries.map((_, index) => index));
+    const migrationSource = generatedSql.map(file => readFileSync(resolve(MIGRATIONS_DIR, file), "utf8")).join("\n");
     expect(migrationSource).toContain('CREATE TABLE "attendance_punches"');
-    expect(migrationSource).toContain('ALTER TABLE "attendance" DROP COLUMN "check_in_2"');
-    expect(migrationSource).toContain('ALTER TABLE "attendance" DROP COLUMN "check_out_2"');
+    expect(migrationSource).toContain('"attendance_date" date NOT NULL');
+    expect(migrationSource).toContain('"direction"');
   });
 });

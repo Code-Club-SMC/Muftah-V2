@@ -1,0 +1,10 @@
+$ vitest run src/hooks/hr/payroll-invalidation.test.tsx src/server-functions/hr/attendance src/lib/hr-payroll-calculator.test.ts src/lib/hr-payroll-regressions.test.ts src/lib/hr-attendance-overtime-regressions.test.ts src/lib/hr-overtime-approvals.test.ts src/lib/hr-overtime-ui-consistency.test.ts src/lib/payroll-approved-policies.test.ts src/lib/payroll-allowance-deductions.test.ts src/lib/payroll-attendance-waivers.test.ts src/lib/payroll-explanation-log.test.ts src/lib/attendance/device-import/payroll.test.ts src/integrations/react-query/root-provider.test.ts "src/__tests__/e2e/attendance-payroll.fixtures.test.ts" "src/__tests__/e2e/attendance-payroll.safety.test.ts"
+The plugin "vite-tsconfig-paths" is detected. Vite now supports tsconfig paths resolution natively via the resolve.tsconfigPaths option. You can remove the plugin and set resolve.tsconfigPaths: true in your Vite config instead.
+
+ RUN  v4.1.5 /home/abdul-rehman/Projects/titan-new
+
+
+ Test Files  30 passed (30)
+      Tests  169 passed (169)
+   Start at  16:18:15
+   Duration  238.07s (transform 13.53s, setup 4.87s, import 602.77s, tests 989ms, environment 90.44s)

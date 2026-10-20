@@ -1,0 +1,62 @@
+START Real Better Auth sign-in and HR route
+PASS Real Better Auth sign-in and HR route
+START Upload source and independently inspect PostgreSQL
+PASS Upload source and independently inspect PostgreSQL
+START Unresolved historical source blocks salary
+PASS Unresolved historical source blocks salary
+START Create 114 supplemental working dates through bulk HR action
+PASS Create 114 supplemental working dates through bulk HR action
+START Resolve source row 9
+PASS Resolve source row 9
+START Resolve source row 10
+PASS Resolve source row 10
+START Resolve source row 13
+PASS Resolve source row 13
+START Resolve source row 21
+PASS Resolve source row 21
+START Resolve source row 31
+PASS Resolve source row 31
+START Resolve source row 36
+PASS Resolve source row 36
+START Resolve source row 38
+PASS Resolve source row 38
+START Resolve source row 39
+PASS Resolve source row 39
+START Resolve source row 42
+PASS Resolve source row 42
+START Resolve source row 46
+PASS Resolve source row 46
+START Resolve source row 51
+PASS Resolve source row 51
+START Resolve source row 54
+PASS Resolve source row 54
+START Approve 112009 annual
+PASS Approve 112009 annual
+START Approve 113016 sick
+PASS Approve 113016 sick
+START Approve 111007 special
+PASS Approve 111007 special
+START Approve 110001 compensatory
+PASS Approve 110001 compensatory
+START Reject automatically suggested rest-day overtime without changing source duty
+PASS Reject automatically suggested rest-day overtime without changing source duty
+START Source replay preserves all explicit HR decisions
+PASS Source replay preserves all explicit HR decisions
+START Preview, save and reload 112009
+PASS Preview, save and reload 112009
+START Preview, save and reload 113016
+PASS Preview, save and reload 113016
+START Preview, save and reload 111007
+PASS Preview, save and reload 111007
+START Preview, save and reload 110001
+PASS Preview, save and reload 110001
+START Preview, save and reload 111008
+PASS Preview, save and reload 111008
+START Preview, save and reload 111006
+PASS Preview, save and reload 111006
+START Source replay preserves saved salary drafts
+PASS Source replay preserves saved salary drafts
+START Reconcile saved salary totals and test wallet
+PASS Reconcile saved salary totals and test wallet
+START Viewer is refused actual mutation requests
+PASS Viewer is refused actual mutation requests

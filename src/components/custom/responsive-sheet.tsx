@@ -36,6 +36,7 @@ type ResponsiveSheetProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   className?: string;
+  bodyClassName?: string;
   icon?: LucideIcon;
   isDirty?: boolean;
   confirmCloseTitle?: string;
@@ -49,6 +50,7 @@ export const ResponsiveSheet = ({
   open,
   onOpenChange,
   className,
+  bodyClassName,
   icon,
   isDirty,
   confirmCloseTitle,
@@ -95,7 +97,7 @@ export const ResponsiveSheet = ({
               </DrawerTitle>
               <DrawerDescription>{description}</DrawerDescription>
             </DrawerHeader>
-            <div className="p-4">{children}</div>
+            <div className={cn("p-4", bodyClassName)}>{children}</div>
           </DrawerContent>
         </Drawer>
       ) : (
@@ -110,7 +112,7 @@ export const ResponsiveSheet = ({
               </SheetTitle>
               <SheetDescription>{description}</SheetDescription>
             </SheetHeader>
-            <div className="px-5">{children}</div>
+            <div className={cn("px-5", bodyClassName)}>{children}</div>
           </SheetContent>
         </Sheet>
       )}

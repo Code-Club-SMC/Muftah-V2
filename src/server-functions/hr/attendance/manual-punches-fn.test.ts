@@ -20,19 +20,17 @@ describe("manual punch server source", () => {
     expect(manualPunchSource).toContain("lockEmployeePunchWrites");
     expect(manualPunchSource).toContain("resolveInsertDirection");
     expect(manualPunchSource).toContain("canDeletePunch");
-    expect(manualPunchSource).toContain(
-      "This punch breaks the IN/OUT order",
-    );
+    expect(manualPunchSource).toContain("This punch breaks the IN/OUT order");
   });
 
-  it("applies the same employee lock to scan punches", () => {
-    expect(scanSource).toContain("lockEmployeePunchWrites");
-    expect(scanSource).toContain("await lockEmployeePunchWrites(tx, employee.id)");
+  it("retires scanner writes while manual changes retain employee locking", () => {
+    expect(scanSource).toContain("Barcode attendance has been replaced");
+    expect(scanSource).not.toContain(".insert(");
+    expect(manualPunchSource).toContain("await lockEmployeePunchWrites");
   });
 
   it("keeps overtime revalidation centralized in recomputeAttendanceRow", () => {
     expect(manualPunchSource).toContain("recomputeAttendanceRow(");
-    expect(scanSource).toContain("recomputeAttendanceRow(");
     expect(manualPunchSource).not.toContain("revalidateOvertimeRequest");
     expect(scanSource).not.toContain("revalidateOvertimeRequest");
   });

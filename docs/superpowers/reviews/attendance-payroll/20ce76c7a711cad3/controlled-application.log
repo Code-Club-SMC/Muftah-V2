@@ -1,0 +1,5 @@
+➜ Listening on: http://127.0.0.1:3101/
+2026-10-19T15:40:51.271Z WARN [Better Auth]: Rate limiting skipped: could not determine client IP address. Ensure your runtime forwards a trusted client IP header and configure `advanced.ipAddress.ipAddressHeaders` if needed.
+(node:122871) DeprecationWarning: Calling client.query() when the client is already executing a query is deprecated and will be removed in pg@9.0. Use async/await or an external async flow control mechanism instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+Stopping server gracefully (5s)... Press Ctrl+C again to force close.[2KServer closed successfully.

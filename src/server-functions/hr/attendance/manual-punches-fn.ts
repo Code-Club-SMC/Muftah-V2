@@ -1,9 +1,10 @@
 import { createServerFn } from "@tanstack/react-start";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { attendancePunchCorrectionAudit } from "@/db/schemas/offline-attendance-schema";
 import { attendancePunches, employees } from "@/db/schemas/hr-schema";
+import { deviceAttendancePunchClaims } from "@/db/schemas/device-attendance-schema";
 import {
   canDeletePunch,
   resolveInsertDirection,
@@ -13,6 +14,10 @@ import {
   type RecomputedAttendanceRow,
 } from "@/lib/attendance/recompute-server";
 import { toPKTDate } from "@/lib/attendance/time";
+import {
+  invalidateDeviceAttendanceChanges,
+  lockAttendancePayrollWrites,
+} from "@/lib/attendance/device-import/payroll.server";
 import {
   requireHrManageMiddleware,
   requireHrViewMiddleware,
@@ -65,8 +70,13 @@ function punchAuditSnapshot(punch: typeof attendancePunches.$inferSelect) {
 function requireOfflineCorrectionReason(
   punch: typeof attendancePunches.$inferSelect,
   reason: string | undefined,
+  hasDeviceClaim = false,
 ) {
-  if (punch.source !== "offline_excel") {
+  if (
+    punch.source !== "offline_excel" &&
+    punch.source !== "device_import" &&
+    !hasDeviceClaim
+  ) {
     return reason?.trim() || null;
   }
 
@@ -94,7 +104,7 @@ export const getEmployeePunchesFn = createServerFn()
     }),
   )
   .handler(async ({ data }) => {
-    return await db.query.attendancePunches.findMany({
+    const punches = await db.query.attendancePunches.findMany({
       where: and(
         eq(attendancePunches.employeeId, data.employeeId),
         eq(attendancePunches.attendanceDate, data.date),
@@ -110,6 +120,23 @@ export const getEmployeePunchesFn = createServerFn()
       },
       orderBy: (table, { asc }) => [asc(table.timestamp)],
     });
+    const claims = punches.length
+      ? await db.query.deviceAttendancePunchClaims.findMany({
+          where: inArray(
+            deviceAttendancePunchClaims.punchId,
+            punches.map((punch) => punch.id),
+          ),
+          columns: { punchId: true },
+        })
+      : [];
+    const importedIds = new Set(claims.map((claim) => claim.punchId));
+    return punches.map((punch) => ({
+      ...punch,
+      requiresCorrectionReason:
+        punch.source === "offline_excel" ||
+        punch.source === "device_import" ||
+        importedIds.has(punch.id),
+    }));
   });
 
 export const addManualPunchFn = createServerFn()
@@ -123,7 +150,11 @@ export const addManualPunchFn = createServerFn()
     const terminalUserId = context.session.user.id;
 
     return await db.transaction(async (tx) => {
+      await lockAttendancePayrollWrites(tx);
       await lockEmployeePunchWrites(tx, data.employeeId);
+      await invalidateDeviceAttendanceChanges(tx, data.employeeId, [
+        attendanceDate,
+      ]);
 
       const punchesForDate = await listPunchesForDate(
         tx,
@@ -180,63 +211,80 @@ export const deletePunchFn = createServerFn()
       reason: z.string().optional(),
     }),
   )
-  .handler(async ({ data, context }): Promise<{
-    deletedPunchId: string;
-    attendance: RecomputedAttendanceRow;
-  }> => {
-    return await db.transaction(async (tx) => {
-      const punch = await tx.query.attendancePunches.findFirst({
-        where: eq(attendancePunches.id, data.punchId),
-      });
-
-      if (!punch) {
-        throw new Error("Punch not found");
-      }
-
-      await lockEmployeePunchWrites(tx, punch.employeeId);
-
-      const punchesForDate = await listPunchesForDate(
-        tx,
-        punch.employeeId,
-        punch.attendanceDate,
-      );
-      const canDelete = canDeletePunch(punchesForDate, data.punchId);
-
-      if (!canDelete) {
-        throw new Error(
-          "Later punches depend on this one. Delete the latest punch first or correct the times instead.",
-        );
-      }
-
-      const correctionReason = requireOfflineCorrectionReason(punch, data.reason);
-      if (correctionReason) {
-        await tx.insert(attendancePunchCorrectionAudit).values({
-          originalPunchId: punch.id,
-          originalImportRowId: punch.offlineImportRowId,
-          action: "delete",
-          oldValues: punchAuditSnapshot(punch),
-          newValues: null,
-          reason: correctionReason,
-          changedByUserId: context.session.user.id,
+  .handler(
+    async ({
+      data,
+      context,
+    }): Promise<{
+      deletedPunchId: string;
+      attendance: RecomputedAttendanceRow;
+    }> => {
+      return await db.transaction(async (tx) => {
+        await lockAttendancePayrollWrites(tx);
+        const punch = await tx.query.attendancePunches.findFirst({
+          where: eq(attendancePunches.id, data.punchId),
         });
-      }
 
-      await tx
-        .delete(attendancePunches)
-        .where(eq(attendancePunches.id, data.punchId));
+        if (!punch) {
+          throw new Error("Punch not found");
+        }
 
-      const attendanceRow = await recomputeAttendanceRow(
-        tx,
-        punch.employeeId,
-        punch.attendanceDate,
-      );
+        await lockEmployeePunchWrites(tx, punch.employeeId);
+        const linkedClaims =
+          await tx.query.deviceAttendancePunchClaims.findMany({
+            where: eq(deviceAttendancePunchClaims.punchId, punch.id),
+          });
+        await invalidateDeviceAttendanceChanges(tx, punch.employeeId, [
+          punch.attendanceDate,
+        ]);
 
-      return {
-        deletedPunchId: data.punchId,
-        attendance: attendanceRow,
-      };
-    });
-  });
+        const punchesForDate = await listPunchesForDate(
+          tx,
+          punch.employeeId,
+          punch.attendanceDate,
+        );
+        const canDelete = canDeletePunch(punchesForDate, data.punchId);
+
+        if (!canDelete) {
+          throw new Error(
+            "Later punches depend on this one. Delete the latest punch first or correct the times instead.",
+          );
+        }
+
+        const correctionReason = requireOfflineCorrectionReason(
+          punch,
+          data.reason,
+          linkedClaims.length > 0,
+        );
+        if (correctionReason) {
+          await tx.insert(attendancePunchCorrectionAudit).values({
+            originalPunchId: punch.id,
+            originalImportRowId: punch.offlineImportRowId,
+            action: "delete",
+            oldValues: punchAuditSnapshot(punch),
+            newValues: null,
+            reason: correctionReason,
+            changedByUserId: context.session.user.id,
+          });
+        }
+
+        await tx
+          .delete(attendancePunches)
+          .where(eq(attendancePunches.id, data.punchId));
+
+        const attendanceRow = await recomputeAttendanceRow(
+          tx,
+          punch.employeeId,
+          punch.attendanceDate,
+        );
+
+        return {
+          deletedPunchId: data.punchId,
+          attendance: attendanceRow,
+        };
+      });
+    },
+  );
 
 export const correctPunchFn = createServerFn()
   .middleware([requireHrManageMiddleware])
@@ -249,122 +297,150 @@ export const correctPunchFn = createServerFn()
       reason: z.string().optional(),
     }),
   )
-  .handler(async ({ data, context }): Promise<{
-    punch: typeof attendancePunches.$inferSelect;
-    attendance: RecomputedAttendanceRow;
-    previousAttendance: RecomputedAttendanceRow | null;
-  }> => {
-    const newTimestamp = parseTimestamp(data.newTimestamp);
-    const newAttendanceDate = data.attendanceDate ?? toPKTDate(newTimestamp);
-    const terminalUserId = context.session.user.id;
+  .handler(
+    async ({
+      data,
+      context,
+    }): Promise<{
+      punch: typeof attendancePunches.$inferSelect;
+      attendance: RecomputedAttendanceRow;
+      previousAttendance: RecomputedAttendanceRow | null;
+    }> => {
+      const newTimestamp = parseTimestamp(data.newTimestamp);
+      const newAttendanceDate = data.attendanceDate ?? toPKTDate(newTimestamp);
+      const terminalUserId = context.session.user.id;
 
-    return await db.transaction(async (tx) => {
-      const existingPunch = await tx.query.attendancePunches.findFirst({
-        where: eq(attendancePunches.id, data.punchId),
-      });
-
-      if (!existingPunch) {
-        throw new Error("Punch not found");
-      }
-
-      await lockEmployeePunchWrites(tx, existingPunch.employeeId);
-
-      const currentDayPunches =
-        existingPunch.attendanceDate === newAttendanceDate
-          ? []
-          : await listPunchesForDate(
-              tx,
-              existingPunch.employeeId,
-              existingPunch.attendanceDate,
-            );
-
-      if (
-        existingPunch.attendanceDate !== newAttendanceDate &&
-        currentDayPunches.length > 0 &&
-        !canDeletePunch(currentDayPunches, existingPunch.id)
-      ) {
-        throw new Error(
-          "This punch cannot move yet because later punches still depend on it.",
-        );
-      }
-
-      const nextDayPunches = await listPunchesForDate(
-        tx,
-        existingPunch.employeeId,
-        newAttendanceDate,
-        existingPunch.attendanceDate === newAttendanceDate
-          ? existingPunch.id
-          : undefined,
-      );
-      const correctedDirection = resolveInsertDirection(
-        nextDayPunches,
-        newTimestamp,
-        existingPunch.direction,
-      );
-
-      if (!correctedDirection) {
-        throw new Error(
-          "This corrected time breaks the IN/OUT order for that day.",
-        );
-      }
-
-      const correctionReason = requireOfflineCorrectionReason(
-        existingPunch,
-        data.reason,
-      );
-
-      await tx
-        .delete(attendancePunches)
-        .where(eq(attendancePunches.id, existingPunch.id));
-
-      const [newPunch] = await tx
-        .insert(attendancePunches)
-        .values({
-          employeeId: existingPunch.employeeId,
-          timestamp: newTimestamp,
-          attendanceDate: newAttendanceDate,
-          direction: correctedDirection,
-          source: "manual",
-          terminalUserId,
-          note: data.note ?? existingPunch.note,
-        })
-        .returning();
-
-      if (!newPunch) {
-        throw new Error("Failed to correct punch");
-      }
-
-      if (correctionReason) {
-        await tx.insert(attendancePunchCorrectionAudit).values({
-          originalPunchId: existingPunch.id,
-          originalImportRowId: existingPunch.offlineImportRowId,
-          action: "correct",
-          oldValues: punchAuditSnapshot(existingPunch),
-          newValues: punchAuditSnapshot(newPunch),
-          reason: correctionReason,
-          changedByUserId: context.session.user.id,
+      return await db.transaction(async (tx) => {
+        await lockAttendancePayrollWrites(tx);
+        const existingPunch = await tx.query.attendancePunches.findFirst({
+          where: eq(attendancePunches.id, data.punchId),
         });
-      }
 
-      const previousAttendance =
-        existingPunch.attendanceDate === newAttendanceDate
-          ? null
-          : await recomputeAttendanceRow(
-              tx,
-              existingPunch.employeeId,
-              existingPunch.attendanceDate,
+        if (!existingPunch) {
+          throw new Error("Punch not found");
+        }
+
+        await lockEmployeePunchWrites(tx, existingPunch.employeeId);
+        const linkedClaims =
+          await tx.query.deviceAttendancePunchClaims.findMany({
+            where: eq(deviceAttendancePunchClaims.punchId, existingPunch.id),
+          });
+        await invalidateDeviceAttendanceChanges(tx, existingPunch.employeeId, [
+          existingPunch.attendanceDate,
+          newAttendanceDate,
+        ]);
+
+        const currentDayPunches =
+          existingPunch.attendanceDate === newAttendanceDate
+            ? []
+            : await listPunchesForDate(
+                tx,
+                existingPunch.employeeId,
+                existingPunch.attendanceDate,
+              );
+
+        if (
+          existingPunch.attendanceDate !== newAttendanceDate &&
+          currentDayPunches.length > 0 &&
+          !canDeletePunch(currentDayPunches, existingPunch.id)
+        ) {
+          throw new Error(
+            "This punch cannot move yet because later punches still depend on it.",
+          );
+        }
+
+        const nextDayPunches = await listPunchesForDate(
+          tx,
+          existingPunch.employeeId,
+          newAttendanceDate,
+          existingPunch.attendanceDate === newAttendanceDate
+            ? existingPunch.id
+            : undefined,
+        );
+        const correctedDirection = resolveInsertDirection(
+          nextDayPunches,
+          newTimestamp,
+          existingPunch.direction,
+        );
+
+        if (!correctedDirection) {
+          throw new Error(
+            "This corrected time breaks the IN/OUT order for that day.",
+          );
+        }
+
+        const correctionReason = requireOfflineCorrectionReason(
+          existingPunch,
+          data.reason,
+          linkedClaims.length > 0,
+        );
+
+        await tx
+          .delete(attendancePunches)
+          .where(eq(attendancePunches.id, existingPunch.id));
+
+        const [newPunch] = await tx
+          .insert(attendancePunches)
+          .values({
+            employeeId: existingPunch.employeeId,
+            timestamp: newTimestamp,
+            attendanceDate: newAttendanceDate,
+            direction: correctedDirection,
+            source: "manual",
+            terminalUserId,
+            note: data.note ?? existingPunch.note,
+          })
+          .returning();
+
+        if (!newPunch) {
+          throw new Error("Failed to correct punch");
+        }
+
+        if (linkedClaims.length) {
+          // Deletion clears the FK; keep the raw claim attached to HR's replacement.
+          await tx
+            .update(deviceAttendancePunchClaims)
+            .set({ punchId: newPunch.id, attendanceDate: newAttendanceDate })
+            .where(
+              inArray(
+                deviceAttendancePunchClaims.id,
+                linkedClaims.map((claim) => claim.id),
+              ),
             );
+        }
 
-      const attendanceRow = await recomputeAttendanceRow(
-        tx,
-        existingPunch.employeeId,
-        newAttendanceDate,
-      );
+        if (correctionReason) {
+          await tx.insert(attendancePunchCorrectionAudit).values({
+            originalPunchId: existingPunch.id,
+            originalImportRowId: existingPunch.offlineImportRowId,
+            action: "correct",
+            oldValues: punchAuditSnapshot(existingPunch),
+            newValues: punchAuditSnapshot(newPunch),
+            reason: correctionReason,
+            changedByUserId: context.session.user.id,
+          });
+        }
 
-      return {
-        punch: newPunch,
-        attendance: attendanceRow,
-        previousAttendance,
-      };
-    });
-  });
+        const previousAttendance =
+          existingPunch.attendanceDate === newAttendanceDate
+            ? null
+            : await recomputeAttendanceRow(
+                tx,
+                existingPunch.employeeId,
+                existingPunch.attendanceDate,
+              );
+
+        const attendanceRow = await recomputeAttendanceRow(
+          tx,
+          existingPunch.employeeId,
+          newAttendanceDate,
+        );
+
+        return {
+          punch: newPunch,
+          attendance: attendanceRow,
+          previousAttendance,
+        };
+      });
+    },
+  );

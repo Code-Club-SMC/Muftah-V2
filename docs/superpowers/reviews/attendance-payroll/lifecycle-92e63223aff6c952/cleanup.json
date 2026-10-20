@@ -1,0 +1,38 @@
+[
+  {
+    "database": "titan_payroll_e2e_fa260ba45b3b_test",
+    "alreadyAbsent": true,
+    "dropped": false,
+    "credentialsDeleted": true
+  },
+  {
+    "database": "titan_payroll_e2e_33e491b0da4f_test",
+    "alreadyAbsent": true,
+    "dropped": false,
+    "credentialsDeleted": true
+  },
+  {
+    "database": "titan_payroll_e2e_c5389074d28b_test",
+    "alreadyAbsent": true,
+    "dropped": false,
+    "credentialsDeleted": true
+  },
+  {
+    "database": "titan_payroll_e2e_4854de45eed2_test",
+    "alreadyAbsent": true,
+    "dropped": false,
+    "credentialsDeleted": true
+  },
+  {
+    "database": "titan_payroll_e2e_lifecycle20261020a_test",
+    "alreadyAbsent": false,
+    "dropped": true,
+    "credentialsDeleted": true
+  },
+  {
+    "database": "titan_payroll_e2e_92e63223aff6c952_test",
+    "alreadyAbsent": false,
+    "dropped": true,
+    "credentialsDeleted": true
+  }
+]

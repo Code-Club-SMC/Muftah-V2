@@ -886,7 +886,7 @@ export const AttendanceListTable = ({ data, date }: Props) => {
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       <Tabs defaultValue="standard" className="w-full">
-        <div className="flex justify-between items-end mb-4">
+        <div className="mb-4 flex min-w-0 items-end justify-between overflow-x-auto">
           <TabsList className="bg-muted/50 p-1 h-10 rounded-lg">
             <TabsTrigger
               value="standard"

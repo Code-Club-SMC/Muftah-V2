@@ -1,0 +1,214 @@
+{
+  "runId": "b14d5a9a941cc2d7",
+  "startedAt": "2026-10-20T11:48:48.051Z",
+  "timezone": "Asia/Karachi",
+  "cycle": {
+    "month": "2026-10",
+    "storedMonth": "2026-10-01",
+    "start": "2026-09-16",
+    "end": "2026-10-15",
+    "timezone": "Asia/Karachi",
+    "divisor": 26,
+    "dutyHours": 8,
+    "basic": 26000,
+    "gross": 42900,
+    "hourly": 125
+  },
+  "buildCommit": "e5408b152e503fcc1cc6e0cb6ddb252725bbf6a6",
+  "dirtyBuild": true,
+  "status": "passed",
+  "requestedScenarios": [
+    "controlled",
+    "real"
+  ],
+  "limitedRun": false,
+  "scenarios": [
+    {
+      "scenario": "controlled",
+      "database": "titan_payroll_e2e_b14d5a9a941cc2d7_test"
+    },
+    {
+      "scenario": "real",
+      "database": "titan_payroll_real_b14d5a9a941cc2d7_test"
+    }
+  ],
+  "cleanup": [
+    {
+      "database": "titan_payroll_e2e_b14d5a9a941cc2d7_test",
+      "dropped": true
+    },
+    {
+      "database": "titan_payroll_real_b14d5a9a941cc2d7_test",
+      "dropped": true
+    }
+  ],
+  "buildIdentity": {
+    "sourceSha256": "f4ebab5797a08e6abb4737f93d96fd83e9e06df73df5677c5806201146785f9a",
+    "outputSha256": "1853c161912ac4ece8ecf17c9d21748ff79ae5304ed0d2084825fb67516ffd8d",
+    "reused": true,
+    "originalBuildRun": "c5f51368454a1276"
+  },
+  "coverage": [
+    {
+      "id": "L01",
+      "passed": true
+    },
+    {
+      "id": "L02",
+      "passed": true
+    },
+    {
+      "id": "L03",
+      "passed": true
+    },
+    {
+      "id": "L04",
+      "passed": true
+    },
+    {
+      "id": "L05",
+      "passed": true
+    },
+    {
+      "id": "L06",
+      "passed": true
+    },
+    {
+      "id": "L07",
+      "passed": true
+    },
+    {
+      "id": "L08",
+      "passed": true
+    },
+    {
+      "id": "L09",
+      "passed": true
+    },
+    {
+      "id": "L10",
+      "passed": true
+    },
+    {
+      "id": "L11",
+      "passed": true
+    },
+    {
+      "id": "L12",
+      "passed": true
+    },
+    {
+      "id": "L13",
+      "passed": true
+    },
+    {
+      "id": "L14",
+      "passed": true
+    },
+    {
+      "id": "L15",
+      "passed": true
+    },
+    {
+      "id": "L16",
+      "passed": true
+    },
+    {
+      "id": "A01",
+      "passed": true
+    },
+    {
+      "id": "A02",
+      "passed": true
+    },
+    {
+      "id": "A03",
+      "passed": true
+    },
+    {
+      "id": "A04",
+      "passed": true
+    },
+    {
+      "id": "A05",
+      "passed": true
+    },
+    {
+      "id": "A06",
+      "passed": true
+    },
+    {
+      "id": "A07",
+      "passed": true
+    },
+    {
+      "id": "A08",
+      "passed": true
+    },
+    {
+      "id": "A09",
+      "passed": true
+    },
+    {
+      "id": "A10",
+      "passed": true
+    },
+    {
+      "id": "A11",
+      "passed": true
+    },
+    {
+      "id": "A12",
+      "passed": true
+    },
+    {
+      "id": "A13",
+      "passed": true
+    },
+    {
+      "id": "A14",
+      "passed": true
+    },
+    {
+      "id": "P01",
+      "passed": true
+    },
+    {
+      "id": "P02",
+      "passed": true
+    },
+    {
+      "id": "P03",
+      "passed": true
+    },
+    {
+      "id": "P04",
+      "passed": true
+    },
+    {
+      "id": "P05",
+      "passed": true
+    },
+    {
+      "id": "P06",
+      "passed": true
+    },
+    {
+      "id": "P07",
+      "passed": true
+    },
+    {
+      "id": "P08",
+      "passed": true
+    },
+    {
+      "id": "COMPOSITE",
+      "passed": true
+    },
+    {
+      "id": "REAL_FILE",
+      "passed": true
+    }
+  ],
+  "finishedAt": "2026-10-20T11:55:34.590Z"
+}

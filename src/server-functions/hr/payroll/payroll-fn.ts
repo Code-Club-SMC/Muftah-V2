@@ -1,7 +1,12 @@
 import { getPayrollPeriodFromMonthInput } from "@/lib/payroll-cycle";
 import { createServerFn } from "@tanstack/react-start";
 import { db } from "@/db";
-import { payrolls, employees, payslips, attendance } from "@/db/schemas/hr-schema";
+import {
+  payrolls,
+  employees,
+  payslips,
+  attendance,
+} from "@/db/schemas/hr-schema";
 import { wallets, transactions } from "@/db/schemas/finance-schema";
 import {
   requireHrManageMiddleware,
@@ -24,14 +29,29 @@ import {
   resolvePayrollAttendanceInvalidations,
 } from "@/lib/attendance/offline/payroll-invalidation.server";
 import { logActivityQuiet } from "@/lib/activity-logger.server";
+import { payrollAttendanceInvalidations } from "@/db/schemas/offline-attendance-schema";
+import {
+  assertDeviceAttendanceResolved,
+  lockAttendancePayrollWrites,
+} from "@/lib/attendance/device-import/payroll.server";
+import { isWorkingLeaveDate } from "@/lib/attendance/leave-policy";
 
 // ── Status Workflow Validation ────────────────────────────────────────────────
 type PayrollStatus = "draft" | "approved" | "paid";
-type PayrollAction = "edit" | "delete" | "approve" | "reject" | "pay" | "generate";
+type PayrollAction =
+  | "edit"
+  | "delete"
+  | "approve"
+  | "reject"
+  | "pay"
+  | "generate";
 
 type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
-const payrollTransitionRules: Record<PayrollStatus, Record<PayrollAction, boolean>> = {
+const payrollTransitionRules: Record<
+  PayrollStatus,
+  Record<PayrollAction, boolean>
+> = {
   draft: {
     edit: true,
     delete: true,
@@ -58,19 +78,25 @@ const payrollTransitionRules: Record<PayrollStatus, Record<PayrollAction, boolea
   },
 };
 
-const payrollTransitionErrors: Record<`${PayrollStatus}-${PayrollAction}`, string> = {
+const payrollTransitionErrors: Record<
+  `${PayrollStatus}-${PayrollAction}`,
+  string
+> = {
   "draft-edit": "Draft payroll can be edited.",
   "draft-delete": "Draft payroll can be deleted.",
-  "draft-approve": "Draft payroll can be approved once its payslips are finalized.",
+  "draft-approve":
+    "Draft payroll can be approved once its payslips are finalized.",
   "draft-reject": "Draft payroll cannot be rejected.",
   "draft-pay": "Draft payroll must be approved before payment.",
   "draft-generate": "Draft payroll can generate payslips.",
   "approved-edit": "Approved payroll is locked for editing.",
   "approved-delete": "Approved payroll cannot be deleted.",
   "approved-approve": "Payroll is already approved.",
-  "approved-reject": "Approved payroll is immutable. Create a new draft payroll instead.",
+  "approved-reject":
+    "Approved payroll is immutable. Create a new draft payroll instead.",
   "approved-pay": "Approved payroll can be marked as paid.",
-  "approved-generate": "Approved payroll is locked. Return to a draft workflow before regenerating payslips.",
+  "approved-generate":
+    "Approved payroll is locked. Return to a draft workflow before regenerating payslips.",
   "paid-edit": "Paid payroll is fully immutable.",
   "paid-delete": "Paid payroll is fully immutable.",
   "paid-approve": "Paid payroll is fully immutable.",
@@ -83,7 +109,8 @@ function validateStatusTransition(
   currentStatus: PayrollStatus,
   action: PayrollAction,
 ): void {
-  const key = `${currentStatus}-${action}` as keyof typeof payrollTransitionErrors;
+  const key =
+    `${currentStatus}-${action}` as keyof typeof payrollTransitionErrors;
   if (!payrollTransitionRules[currentStatus][action]) {
     throw new Error(
       payrollTransitionErrors[key] ||
@@ -111,6 +138,7 @@ async function recalculateLeaveBalancesForPayroll(
         columns: {
           id: true,
           annualLeaveAllowance: true,
+          restDays: true,
         },
       },
     },
@@ -145,26 +173,24 @@ async function recalculateLeaveBalancesForPayroll(
       },
     ];
 
-    let annualUsed = 0;
-    let sickUsed = 0;
-
-    for (const period of coveredPeriods) {
-      const leaveRows = await tx.query.attendance.findMany({
-        where: and(
-          eq(attendance.employeeId, employee.id),
-          eq(attendance.status, "leave"),
-          eq(attendance.isApprovedLeave, true),
-          gte(attendance.date, period.startDate),
-          lte(attendance.date, period.endDate),
-        ),
-        columns: {
-          leaveType: true,
-        },
-      });
-
-      annualUsed += leaveRows.filter((row) => row.leaveType === "annual").length;
-      sickUsed += leaveRows.filter((row) => row.leaveType === "sick").length;
-    }
+    // Read each date once: overlapping covered periods cannot spend entitlement
+    // twice, and a January payroll must not charge its prior-December dates.
+    const leaveRows = await tx.query.attendance.findMany({
+      where: and(
+        eq(attendance.employeeId, employee.id),
+        eq(attendance.status, "leave"),
+        eq(attendance.isApprovedLeave, true),
+        gte(attendance.date, yearStart),
+        lte(attendance.date, `${payrollYear}-12-31`),
+      ),
+      columns: { date: true, leaveType: true },
+    });
+    const coveredWorkingLeaves = leaveRows.filter(row =>
+      isWorkingLeaveDate(row.date, employee.restDays) &&
+      coveredPeriods.some(period => row.date >= period.startDate && row.date <= period.endDate),
+    );
+    const annualUsed = coveredWorkingLeaves.filter(row => row.leaveType === "annual").length;
+    const sickUsed = coveredWorkingLeaves.filter(row => row.leaveType === "sick").length;
 
     await tx
       .update(employees)
@@ -198,7 +224,9 @@ export const createPayrollFn = createServerFn()
       where: eq(payrolls.month, payrollPeriod.month),
     });
     if (existing) {
-      throw new Error(`Payroll for ${format(monthDate, "MMMM yyyy")} already exists (status: ${existing.status})`);
+      throw new Error(
+        `Payroll for ${format(monthDate, "MMMM yyyy")} already exists (status: ${existing.status})`,
+      );
     }
 
     // 1. Create payroll record (draft status - no payslips generated yet)
@@ -243,6 +271,11 @@ export const generatePayslipsFn = createServerFn()
     if (!payroll) throw new Error("Payroll not found");
 
     validateStatusTransition(payroll.status as PayrollStatus, "generate");
+    const attendanceInvalidations =
+      await db.query.payrollAttendanceInvalidations.findMany({
+        where: eq(payrollAttendanceInvalidations.payrollId, payroll.id),
+        columns: { id: true, revision: true },
+      });
 
     const monthDate = parseISO(payroll.month);
     const today = format(new Date(), "yyyy-MM-dd");
@@ -313,6 +346,13 @@ export const generatePayslipsFn = createServerFn()
     } catch (error) {
       if (generatedPayslipIds.length > 0) {
         await db.transaction(async (tx) => {
+          await lockAttendancePayrollWrites(tx);
+          const currentPayroll = await tx.query.payrolls.findFirst({
+            where: eq(payrolls.id, payroll.id),
+            columns: { status: true },
+          });
+          // Approval may have committed between individual employee saves.
+          if (currentPayroll?.status !== "draft") return;
           for (const payslipId of generatedPayslipIds) {
             await reversePayslipSideEffects(tx, payslipId);
             await tx.delete(payslips).where(eq(payslips.id, payslipId));
@@ -325,10 +365,12 @@ export const generatePayslipsFn = createServerFn()
     // Update Payroll Total
     const totalAmount = await syncPayrollTotal(db, payroll.id);
     await db.transaction(async (tx) => {
+      await lockAttendancePayrollWrites(tx);
       await resolvePayrollAttendanceInvalidations(
         tx,
         payroll.id,
         context.session.user.id,
+        attendanceInvalidations,
       );
     });
 
@@ -419,6 +461,7 @@ export const approvePayrollFn = createServerFn()
   .inputValidator(z.object({ payrollId: z.string() }))
   .handler(async ({ data, context }) => {
     return await db.transaction(async (tx) => {
+      await lockAttendancePayrollWrites(tx);
       const current = await tx.query.payrolls.findFirst({
         where: eq(payrolls.id, data.payrollId),
       });
@@ -447,14 +490,30 @@ export const approvePayrollFn = createServerFn()
         payrollPayslips.map((payslip) => payslip.employeeId),
       );
       const payslipEmployeeIds = Array.from(uniquePayslipEmployees);
+      for (const employeeId of payslipEmployeeIds) {
+        await assertDeviceAttendanceResolved(
+          tx,
+          employeeId,
+          current.startDate,
+          current.endDate,
+        );
+      }
       const eligibleEmployeeIds = new Set(
         eligibleEmployees.map((employee) => employee.id),
       );
       if (uniquePayslipEmployees.size !== payrollPayslips.length) {
-        throw new Error("Cannot approve payroll with duplicate employee payslips.");
+        throw new Error(
+          "Cannot approve payroll with duplicate employee payslips.",
+        );
       }
-      if (payslipEmployeeIds.some((employeeId) => !eligibleEmployeeIds.has(employeeId))) {
-        throw new Error("Cannot approve payroll with ineligible employee payslips.");
+      if (
+        payslipEmployeeIds.some(
+          (employeeId) => !eligibleEmployeeIds.has(employeeId),
+        )
+      ) {
+        throw new Error(
+          "Cannot approve payroll with ineligible employee payslips.",
+        );
       }
       if (uniquePayslipEmployees.size !== eligibleEmployees.length) {
         throw new Error(
@@ -511,7 +570,6 @@ export const approvePayrollFn = createServerFn()
     });
   });
 
-
 export const rejectPayrollFn = createServerFn()
   .middleware([requireHrManageMiddleware])
   .inputValidator(z.object({ payrollId: z.string() }))
@@ -556,7 +614,9 @@ export const markPayrollAsPaidFn = createServerFn()
         .where(eq(payslips.payrollId, data.payrollId));
 
       if (!aggregates || aggregates.payslipCount === 0) {
-        throw new Error("Cannot mark payroll as paid without generated payslips.");
+        throw new Error(
+          "Cannot mark payroll as paid without generated payslips.",
+        );
       }
 
       const payrollAmount = parseFloat(aggregates.totalAmount || "0");
@@ -571,10 +631,7 @@ export const markPayrollAsPaidFn = createServerFn()
           totalAmount: aggregates.totalAmount || "0",
         })
         .where(
-          and(
-            eq(payrolls.id, data.payrollId),
-            eq(payrolls.status, "approved"),
-          ),
+          and(eq(payrolls.id, data.payrollId), eq(payrolls.status, "approved")),
         )
         .returning();
 
@@ -759,8 +816,13 @@ export const simulatePayrollFn = createServerFn()
     });
 
     const results = await Promise.all(simulationPromises);
-    const successful = results.filter((r): r is Exclude<typeof r, { error: string }> => !("error" in r));
-    const failed = results.filter((r): r is { error: string; employeeId: string; employeeName: string } => "error" in r);
+    const successful = results.filter(
+      (r): r is Exclude<typeof r, { error: string }> => !("error" in r),
+    );
+    const failed = results.filter(
+      (r): r is { error: string; employeeId: string; employeeName: string } =>
+        "error" in r,
+    );
 
     const totalNet = successful.reduce(
       (sum, r) => sum + (r.totalNetWithArrears || 0),

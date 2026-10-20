@@ -1,0 +1,56 @@
+START Real Better Auth sign-in and HR route
+PASS Real Better Auth sign-in and HR route
+START Upload source and independently inspect PostgreSQL
+PASS Upload source and independently inspect PostgreSQL
+START Submit E2E02 attendance decision
+PASS Submit E2E02 attendance decision
+START Submit E2E03 attendance decision
+PASS Submit E2E03 attendance decision
+START Submit E2E04 attendance decision
+PASS Submit E2E04 attendance decision
+START Submit E2E05 attendance decision
+PASS Submit E2E05 attendance decision
+START Submit E2E06 attendance decision
+PASS Submit E2E06 attendance decision
+START Submit E2E10 attendance decision
+PASS Submit E2E10 attendance decision
+START Exercise pending, approved, rejected and repeated annual
+PASS Exercise pending, approved, rejected and repeated annual
+START Exercise pending, approved, rejected and repeated sick
+PASS Exercise pending, approved, rejected and repeated sick
+START Exercise pending, approved, rejected and repeated special
+PASS Exercise pending, approved, rejected and repeated special
+START Exercise pending, approved, rejected and repeated compensatory
+PASS Exercise pending, approved, rejected and repeated compensatory
+START Approve E2E06 compensatory
+PASS Approve E2E06 compensatory
+START Request and approve two cash overtime hours
+PASS Request and approve two cash overtime hours
+START Preview, save and reload E2E01
+PASS Preview, save and reload E2E01
+START Preview, save and reload E2E02
+PASS Preview, save and reload E2E02
+START Preview, save and reload E2E03
+PASS Preview, save and reload E2E03
+START Preview, save and reload E2E04
+PASS Preview, save and reload E2E04
+START Preview, save and reload E2E05
+PASS Preview, save and reload E2E05
+START Preview, save and reload E2E06
+PASS Preview, save and reload E2E06
+START Preview, save and reload E2E07
+PASS Preview, save and reload E2E07
+START Preview, save and reload E2E08
+PASS Preview, save and reload E2E08
+START Preview, save and reload E2E09
+PASS Preview, save and reload E2E09
+START Preview, save and reload E2E10
+PASS Preview, save and reload E2E10
+START Preview, save and reload E2E11
+PASS Preview, save and reload E2E11
+START HR correction recalculates salary and source reupload preserves correction
+PASS HR correction recalculates salary and source reupload preserves correction
+START Reconcile saved salary totals and test wallet
+PASS Reconcile saved salary totals and test wallet
+START Viewer is refused actual mutation requests
+PASS Viewer is refused actual mutation requests

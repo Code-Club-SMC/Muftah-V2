@@ -16,9 +16,17 @@ export const useProcessLeaveApproval = () => {
             queryClient.invalidateQueries({ queryKey: ["attendance"] });
             queryClient.invalidateQueries({ queryKey: ["leave-approvals"] });
             queryClient.invalidateQueries({ queryKey: ["overtime-approvals"] });
+            queryClient.invalidateQueries({ queryKey: ["daily-attendance"] });
+            queryClient.invalidateQueries({ queryKey: ["employee-attendance-log"] });
+            queryClient.invalidateQueries({ queryKey: ["employees"] });
+            queryClient.invalidateQueries({ queryKey: ["payrolls"] });
+            queryClient.invalidateQueries({ queryKey: ["payroll"] });
+            queryClient.invalidateQueries({ queryKey: ["payroll-dashboard"] });
+            queryClient.invalidateQueries({ queryKey: ["payslip-preview"] });
+            queryClient.invalidateQueries({ queryKey: ["employee-payroll-history"] });
             const status = data.leaveApprovalStatus;
             toast.success(
-                `Leave ${status === "approved" ? "approved — no salary deduction" : status === "rejected" ? "rejected — deduction will apply" : "reset to pending"}`
+                `Leave ${status === "approved" ? "approved" : status === "rejected" ? "rejected" : "reset to pending"}`
             );
         },
         onError: (err) => {

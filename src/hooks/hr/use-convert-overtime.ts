@@ -10,9 +10,15 @@ export function useConvertOvertimeToCompOff() {
       return await convertOvertimeToCompOffFn({ data });
     },
     onSuccess: (res) => {
-      queryClient.invalidateQueries({ queryKey: ["hr", "overtime-approvals"] });
-      queryClient.invalidateQueries({ queryKey: ["hr", "attendance-log"] });
-      queryClient.invalidateQueries({ queryKey: ["hr", "employees"] });
+      queryClient.invalidateQueries({ queryKey: ["overtime-approvals"] });
+      queryClient.invalidateQueries({ queryKey: ["daily-attendance"] });
+      queryClient.invalidateQueries({ queryKey: ["employee-attendance-log"] });
+      queryClient.invalidateQueries({ queryKey: ["employees"] });
+      queryClient.invalidateQueries({ queryKey: ["payrolls"] });
+      queryClient.invalidateQueries({ queryKey: ["payroll"] });
+      queryClient.invalidateQueries({ queryKey: ["payroll-dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["payslip-preview"] });
+      queryClient.invalidateQueries({ queryKey: ["employee-payroll-history"] });
       toast.success("Overtime Converted", {
         description: res.message,
       });
