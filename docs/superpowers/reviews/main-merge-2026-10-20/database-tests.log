@@ -1,0 +1,12 @@
+$ vitest run --config vitest.integration.config.ts src/__tests__/integration/settlement-service.integration.test.ts src/__tests__/integration/batch-packing.test.ts src/__tests__/integration/mixing-stock-creation.test.ts "--maxWorkers=1"
+The plugin "vite-tsconfig-paths" is detected. Vite now supports tsconfig paths resolution natively via the resolve.tsconfigPaths option. You can remove the plugin and set resolve.tsconfigPaths: true in your Vite config instead.
+
+ RUN  v4.1.5 /home/abdul-rehman/Projects/titan-new
+
+(node:175345) DeprecationWarning: Calling client.query() when the client is already executing a query is deprecated and will be removed in pg@9.0. Use async/await or an external async flow control mechanism instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+
+ Test Files  3 passed (3)
+      Tests  13 passed (13)
+   Start at  17:26:51
+   Duration  8.75s (transform 1.18s, setup 0ms, import 3.62s, tests 4.44s, environment 0ms)

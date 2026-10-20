@@ -1,0 +1,8 @@
+{
+  "database": "titan_merge_4dda4bb39f603ff6_test",
+  "startedAt": "2026-10-20T12:26:46.891Z",
+  "migrations": "passed",
+  "tests": "passed",
+  "dropped": true,
+  "finishedAt": "2026-10-20T12:27:00.751Z"
+}

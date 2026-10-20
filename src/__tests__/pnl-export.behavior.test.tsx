@@ -21,14 +21,14 @@ afterEach(cleanup);
 it("PDF explains browser saving before opening printing and rechecks disabled state", () => {
   const print = vi.spyOn(window, "print").mockImplementation(() => {});
   const { rerender } = render(
-    <PnlExportBar source="offline" dateFrom="2026-10-13" dateTo="2026-10-13" />,
+    <PnlExportBar source="offline_import" dateFrom="2026-10-13" dateTo="2026-10-13" />,
   );
   fireEvent.click(screen.getByRole("button", { name: "Save as PDF" }));
   expect(screen.getByRole("status").textContent).toContain(
     "select Save as PDF",
   );
   expect(print).not.toHaveBeenCalled();
-  rerender(<PnlExportBar disabled source="offline" />);
+  rerender(<PnlExportBar disabled source="offline_import" />);
   for (const name of [
     "Export",
     "Download CSV",
@@ -41,7 +41,7 @@ it("PDF explains browser saving before opening printing and rechecks disabled st
     );
   fireEvent.click(screen.getByRole("button", { name: "Open print dialog" }));
   expect(print).not.toHaveBeenCalled();
-  rerender(<PnlExportBar source="offline" />);
+  rerender(<PnlExportBar source="offline_import" />);
   fireEvent.click(screen.getByRole("button", { name: "Open print dialog" }));
   expect(print).toHaveBeenCalledTimes(1);
   print.mockRestore();

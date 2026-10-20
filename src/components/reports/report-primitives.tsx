@@ -145,7 +145,7 @@ export function ReportCell({
   muted = false,
   className = "",
 }: {
-  children: React.ReactNode;
+  children?: React.ReactNode;
   align?: "left" | "right" | "center";
   mono?: boolean;
   bold?: boolean;

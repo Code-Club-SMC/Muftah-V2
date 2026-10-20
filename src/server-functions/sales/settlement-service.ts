@@ -436,6 +436,8 @@ export async function recalculateInvoiceSettlement(
 	const paymentTotals = calculateSettlement(
 		netReceivable,
 		await listSettlementPayments(tx, invoice.id),
+		// Approved returns may leave existing receipts above the reduced receivable.
+		{ allowCreditBalance: true },
 	);
 	const totals: SettlementTotals = { ...paymentTotals, totalPrice };
 	assertSettlementDueDate(totals, paymentDueDate);

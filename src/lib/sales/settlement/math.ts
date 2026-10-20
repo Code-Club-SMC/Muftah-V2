@@ -19,6 +19,7 @@ function sumPayments(
 export function calculateSettlement(
 	totalPrice: number,
 	payments: SettlementPayment[],
+	options: { allowCreditBalance?: boolean } = {},
 ): SettlementTotals {
 	if (!Number.isFinite(totalPrice))
 		throw new Error("Invoice total must be finite");
@@ -34,7 +35,9 @@ export function calculateSettlement(
 
 	const paidAmount = sumPayments(payments, "confirmed");
 	const pendingAmount = sumPayments(payments, "pending");
-	// const allocatedAmount = new Big(paidAmount).plus(pendingAmount);
+	if (!options.allowCreditBalance && new Big(paidAmount).plus(pendingAmount).gt(total)) {
+		throw new Error("Payments cannot exceed invoice total");
+	}
 
 	const outstandingAmount = roundMoney(new Big(total).minus(paidAmount));
 	const payLaterAmount = roundMoney(

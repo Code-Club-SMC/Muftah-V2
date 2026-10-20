@@ -1,0 +1,1493 @@
+$ vitest run
+The plugin "vite-tsconfig-paths" is detected. Vite now supports tsconfig paths resolution natively via the resolve.tsconfigPaths option. You can remove the plugin and set resolve.tsconfigPaths: true in your Vite config instead.
+
+ RUN  v4.1.5 /home/abdul-rehman/Projects/titan-new
+
+ ❯ src/lib/sales/settlement/math.test.ts (15 tests | 1 failed) 42ms
+     × rejects confirmed plus pending allocation above invoice total 8ms
+ ❯ src/lib/order-booker-trip-attendance-phase4.test.ts (4 tests | 1 failed) 44ms
+     × fetches punch timelines only for standard punch-driven employees 38ms
+ ❯ src/lib/validators/hr-validators.test.ts (4 tests | 3 failed) 23ms
+     × accepts a shifts array with start and end times 13ms
+     × accepts multiple shifts 1ms
+     × keeps shifts on employee updates 3ms
+ ❯ src/db/schemas/offline-sales-schema.test.ts (0 test)
+ ❯ src/components/hr/attendance/edit-attendance-form.behavior.test.tsx (3 tests | 3 failed) 3741ms
+     × shows suggested OT and prefills the request only once 1487ms
+     × requires a reason for OT, clears it at zero, and never calls save without it 1125ms
+     × shows a stale warning and blocks save when requested OT is above the latest suggestion 1124ms
+ ❯ src/__tests__/integration/batch-packing.test.ts (11 tests | 11 failed) 47ms
+     × posts the whole 500kg receipt atomically and replays without duplicate stock 8ms
+     × keeps partial cartons and oversized outside counts distinct, consumes measured bulk and absorbs loss cost 2ms
+     × rolls back all lines on shortages and rejects wrong formulas, assignment and read-only permission 1ms
+     × dispatches outside packs without changing cartons, restores them on reversal and good return, then transfers them 1ms
+     × keeps completed legacy reservation untouched 1ms
+     × allocates tiny chemical costs cumulatively across repeated receipts and loss 1ms
+     × retains legacy reserved cost and bulk while splitting the remaining tiny cost 3ms
+     × corrects outside packs with quantity and value audits while preserving physical cartons 1ms
+     × normalizes legacy no-carton stock on a new receipt, correction and transfer 2ms
+     × uses recorded physical carton targets when outside packs exceed capacity 23ms
+     × serializes concurrent submissions and retries without overdraw 1ms
+ ❯ src/__tests__/integration/mixing-stock-creation.test.ts (1 test | 1 failed) 22ms
+     × rejects all shortages without creating or consuming, then rechecks stock at start 18ms
+ ❯ src/lib/production-run-accounting.test.ts (10 tests | 2 failed) 74ms
+     × prefetches paginated active mixing work and the packaging status rendered by operators 45ms
+     × requires a single formula selection for packaging recipes 8ms
+ ❯ src/components/attendance/scan-terminal.test.ts (4 tests | 1 failed) 22ms
+     × mounts the scanner outside the protected layout and keeps it out of the sidebar 17ms
+
+⎯⎯⎯⎯⎯⎯ Failed Suites 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/db/schemas/offline-sales-schema.test.ts [ src/db/schemas/offline-sales-schema.test.ts ]
+Error: ENOENT: no such file or directory, open '/home/abdul-rehman/Projects/titan-new/src/db/migrations/0011_smiling_puma.sql'
+ ❯ src/db/schemas/offline-sales-schema.test.ts:13:25
+     11|   "utf8",
+     12| );
+     13| const migrationSource = readFileSync(
+       |                         ^
+     14|   resolve(process.cwd(), "src/db/migrations/0011_smiling_puma.sql"),
+     15|   "utf8",
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/24]⎯
+
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 23 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/lib/order-booker-trip-attendance-phase4.test.ts > order-booker trip attendance phase 4 semantics > fetches punch timelines only for standard punch-driven employees
+AssertionError: expected 'import { createServerFn } from "@tans…' to contain '.filter((employee) => !employee.isOrd…'
+
+- Expected
++ Received
+
+- .filter((employee) => !employee.isOrderBooker && !employee.isSalesman)
++ import { createServerFn } from "@tanstack/react-start";
++ import { db } from "@/db";
++ import { requireHrViewMiddleware } from "@/lib/middlewares";
++ import { z } from "zod";
++ import { and, asc, eq, gte, inArray, lt, lte, sql } from "drizzle-orm";
++ import { attendancePunches, employees } from "@/db/schemas/hr-schema";
++ import {
++   creditRecoveryAttempts,
++   orders,
++   salesmen,
++   drivers,
++   driverTrips,
++ } from "@/db/schemas/sales-erp-schema";
++ import { getSalesmanBusinessDateRange } from "@/server-functions/sales/salesman-attendance-sync";
++
++ export const getDailyAttendanceFn = createServerFn()
++   .middleware([requireHrViewMiddleware])
++   .inputValidator(z.object({ date: z.string() }))
++   .handler(async ({ data }) => {
++     const { date } = data;
++
++     const allEmployees = await db.query.employees.findMany({
++       where: and(
++         inArray(employees.status, ["active", "on_leave"]),
++         lte(employees.joiningDate, date),
++       ),
++       with: {
++         attendance: {
++           where: (table, { eq }) => eq(table.date, date),
++         },
++       },
++       orderBy: (table, { asc }) => [asc(table.firstName), asc(table.lastName)],
++     });
++
++     const punchDrivenEmployeeIds = allEmployees
++       .filter((employee) => !employee.isOrderBooker && !employee.isSalesman && !employee.isDriver)
++       .map((employee) => employee.id);
++
++     const punches =
++       punchDrivenEmployeeIds.length > 0
++         ? await db.query.attendancePunches.findMany({
++             where: and(
++               inArray(attendancePunches.employeeId, punchDrivenEmployeeIds),
++               eq(attendancePunches.attendanceDate, date),
++             ),
++             orderBy: [asc(attendancePunches.timestamp)],
++           })
++         : [];
++
++     const punchesByEmployee = new Map<string, typeof punches>();
++     for (const punch of punches) {
++       const current = punchesByEmployee.get(punch.employeeId) ?? [];
++       current.push(punch);
++       punchesByEmployee.set(punch.employeeId, current);
++     }
++
++     // Activity tracking for salesmen
++     const salesmanEmployees = allEmployees.filter((e) => e.isSalesman);
++     const salesmanEmployeeIds = salesmanEmployees.map((e) => e.id);
++
++     const linkedSalesmen =
++       salesmanEmployeeIds.length > 0
++         ? await db.query.salesmen.findMany({
++             where: inArray(salesmen.employeeId, salesmanEmployeeIds),
++             columns: { id: true, employeeId: true },
++           })
++         : [];
++
++     const salesmanIdToEmployeeId = new Map(
++       linkedSalesmen.map((s) => [s.id, s.employeeId!]),
++     );
++     const salesmanIds = linkedSalesmen.map((s) => s.id);
++
++     const { start, endExclusive } = getSalesmanBusinessDateRange(date);
++
++     const [deliveries, recoveries] =
++       salesmanIds.length > 0
++         ? await Promise.all([
++             db
++               .select({
++                 salesmanId: orders.fulfilledBySalesmanId,
++                 count: sql<number>`count(*)`,
++               })
++               .from(orders)
++               .where(
++                 and(
++                   inArray(orders.fulfilledBySalesmanId, salesmanIds),
++                   eq(orders.status, "delivered"),
++                   gte(orders.fulfilledAt, start),
++                   lt(orders.fulfilledAt, endExclusive),
++                 ),
++               )
++               .groupBy(orders.fulfilledBySalesmanId),
++             db
++               .select({
++                 salesmanId: creditRecoveryAttempts.assignedToId,
++                 count: sql<number>`count(*)`,
++               })
++               .from(creditRecoveryAttempts)
++               .where(
++                 and(
++                   inArray(creditRecoveryAttempts.assignedToId, salesmanIds),
++                   gte(creditRecoveryAttempts.attemptedAt, start),
++                   lt(creditRecoveryAttempts.attemptedAt, endExclusive),
++                 ),
++               )
++               .groupBy(creditRecoveryAttempts.assignedToId),
++           ])
++         : [[], []];
++
++     const deliveryCountByEmployee = new Map<string, number>();
++     for (const delivery of deliveries) {
++       if (delivery.salesmanId) {
++         const empId = salesmanIdToEmployeeId.get(delivery.salesmanId);
++         if (empId) {
++           deliveryCountByEmployee.set(empId, Number(delivery.count));
++         }
++       }
++     }
++
++     const recoveryCountByEmployee = new Map<string, number>();
++     for (const recovery of recoveries) {
++       if (recovery.salesmanId) {
++         const empId = salesmanIdToEmployeeId.get(recovery.salesmanId);
++         if (empId) {
++           recoveryCountByEmployee.set(empId, Number(recovery.count));
++         }
++       }
++     }
++
++     // Activity tracking for drivers
++     const driverEmployees = allEmployees.filter((e) => e.isDriver);
++     const driverEmployeeIds = driverEmployees.map((e) => e.id);
++
++     const linkedDrivers =
++       driverEmployeeIds.length > 0
++         ? await db.query.drivers.findMany({
++             where: inArray(drivers.employeeId, driverEmployeeIds),
++             columns: { id: true, employeeId: true },
++           })
++         : [];
++
++     const driverIdToEmployeeId = new Map(
++       linkedDrivers.map((d) => [d.id, d.employeeId!]),
++     );
++     const driverIds = linkedDrivers.map((d) => d.id);
++
++     const driverTripStats =
++       driverIds.length > 0
++         ? await db
++             .select({
++               driverId: driverTrips.driverId,
++               tripsCount: sql<number>`count(*)`,
++               totalDistanceKm: sql<number>`coalesce(sum(${driverTrips.distanceKm}), 0)`,
++               totalTadaAmount: sql<number>`coalesce(sum(${driverTrips.tadaAmount}), 0)`,
++             })
++             .from(driverTrips)
++             .where(
++               and(
++                 inArray(driverTrips.driverId, driverIds),
++                 gte(driverTrips.tripDate, start),
++                 lt(driverTrips.tripDate, endExclusive),
++               ),
++             )
++             .groupBy(driverTrips.driverId)
++         : [];
++
++     const driverActivityByEmployee = new Map<
++       string,
++       { tripsCount: number; totalDistanceKm: number; totalTadaAmount: number }
++     >();
++     for (const stat of driverTripStats) {
++       const empId = driverIdToEmployeeId.get(stat.driverId);
++       if (empId) {
++         driverActivityByEmployee.set(empId, {
++           tripsCount: Number(stat.tripsCount || 0),
++           totalDistanceKm: Number(stat.totalDistanceKm || 0),
++           totalTadaAmount: Number(stat.totalTadaAmount || 0),
++         });
++       }
++     }
++
++     return allEmployees.map((employee) => ({
++       ...employee,
++       dailyPunches: punchesByEmployee.get(employee.id) ?? [],
++       salesmanActivity: employee.isSalesman
++         ? {
++             deliveriesCount: deliveryCountByEmployee.get(employee.id) ?? 0,
++             recoveryCount: recoveryCountByEmployee.get(employee.id) ?? 0,
++           }
++         : undefined,
++       driverActivity: employee.isDriver
++         ? driverActivityByEmployee.get(employee.id) ?? {
++             tripsCount: 0,
++             totalDistanceKm: 0,
++             totalTadaAmount: 0,
++           }
++         : undefined,
++     }));
++   });
++
+
+ ❯ src/lib/order-booker-trip-attendance-phase4.test.ts:30:35
+     28|   it("fetches punch timelines only for standard punch-driven employees…
+     29|     expect(dailyAttendanceSource).toContain("const punchDrivenEmployee…
+     30|     expect(dailyAttendanceSource).toContain(
+       |                                   ^
+     31|       ".filter((employee) => !employee.isOrderBooker && !employee.isSa…
+     32|     );
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/24]⎯
+
+ FAIL  src/lib/production-run-accounting.test.ts > two phase production regression guards > prefetches paginated active mixing work and the packaging status rendered by operators
+AssertionError: expected 'import { createFileRoute } from "@tan…' to contain '["operator-mixing-runs", "list", { pa…'
+
+- Expected
++ Received
+
+- ["operator-mixing-runs", "list", { page: 1, search: "" }]
++ import { createFileRoute } from "@tanstack/react-router";
++ import { Suspense } from "react";
++ import { GenericLoader } from "@/components/custom/generic-loader";
++ import { getMixingRunsFn } from "@/server-functions/manufacturing/mixing/get-mixing-runs-fn";
++ import { getPackagingAllocationsFn } from "@/server-functions/manufacturing/packaging/get-packaging-allocations-fn";
++ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
++ import { MixingOperatorInterface } from "@/components/operator/mixing-operator-interface";
++ import { PackagingOperatorInterface } from "@/components/operator/packaging-operator-interface";
++
++ export const Route = createFileRoute("/_protected/operator/")({
++   loader: async ({ context }) => {
++     void context.queryClient.prefetchQuery({
++       queryKey: ["operator-mixing-runs", "list", { page: 1, search: "", stage: "all" }],
++       queryFn: () =>
++         getMixingRunsFn({
++           data: {
++             statuses: ["in_progress", "scheduled", "completed"],
++             page: 1,
++             limit: 10,
++             search: "",
++           },
++         }),
++     });
++     void context.queryClient.prefetchQuery({
++       queryKey: ["operator-packaging", "list", "in_progress"],
++       queryFn: () =>
++         getPackagingAllocationsFn({ data: { status: "in_progress" } }),
++     });
++   },
++   component: RouteComponent,
++ });
++
++ function RouteComponent() {
++   return (
++     <main className="flex-1 overflow-y-auto min-h-screen">
++       <div className="space-y-6">
++         <div className="p-4 pb-0 sm:p-6 sm:pb-0">
++           <h2 className="text-3xl font-bold tracking-tight">
++             Production Workstation
++           </h2>
++           <p className="text-muted-foreground mt-2">
++             Open a batch to record mixing or enter its finished packing.
++           </p>
++         </div>
++
++         <Tabs defaultValue="mixing" className="px-4 sm:px-6">
++           <TabsList className="mb-4">
++             <TabsTrigger value="mixing">Batches</TabsTrigger>
++             <TabsTrigger value="packaging">Existing packing jobs</TabsTrigger>
++           </TabsList>
++
++           <TabsContent value="mixing">
++             <Suspense fallback={<GenericLoader title="Loading..." />}>
++               <MixingOperatorInterface />
++             </Suspense>
++           </TabsContent>
++
++           <TabsContent value="packaging">
++             <Suspense fallback={<GenericLoader title="Loading..." />}>
++               <PackagingOperatorInterface />
++             </Suspense>
++           </TabsContent>
++         </Tabs>
++       </div>
++     </main>
++   );
++ }
++
+
+ ❯ src/lib/production-run-accounting.test.ts:75:19
+     73|     const mixing = read("src/components/operator/mixing-operator-inter…
+     74|     const packaging = read("src/components/operator/packaging-operator…
+     75|     expect(route).toContain('["operator-mixing-runs", "list", { page: …
+       |                   ^
+     76|     expect(mixing).toContain('["operator-mixing-runs", "list", { page,…
+     77|     for (const source of [route, mixing]) {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/24]⎯
+
+ FAIL  src/lib/production-run-accounting.test.ts > two phase production regression guards > requires a single formula selection for packaging recipes
+AssertionError: Target cannot be null or undefined.
+ ❯ src/lib/production-run-accounting.test.ts:91:58
+     89|   it("requires a single formula selection for packaging recipes", () =…
+     90|     const form = read("src/components/recipes/create-recipe-from.tsx");
+     91|     expect(form.match(/<form.Field name="formulaId">/g)).toHaveLength(…
+       |                                                          ^
+     92|     expect(form).not.toContain('title="Chemical Formulation"');
+     93|     expect(form).toContain("usageBasis: tempPkgUnit");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/24]⎯
+
+ FAIL  src/__tests__/integration/batch-packing.test.ts > batch packing isolated PostgreSQL > posts the whole 500kg receipt atomically and replays without duplicate stock
+Error: Use isolated TEST_DATABASE_URL
+ ❯ fixture src/__tests__/integration/batch-packing.test.ts:41:107
+     39| }
+     40| async function fixture(check: (tx: Tx, f: Awaited<ReturnType<typeof se…
+     41|   if (!process.env.TEST_DATABASE_URL || process.env.DATABASE_URL !== p…
+       |                                                                                                           ^
+     42|   try { await db.transaction(async tx => { await check(tx, await seed(…
+     43|   catch (error) { if (error !== rollback) throw error; }
+ ❯ src/__tests__/integration/batch-packing.test.ts:48:98
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/24]⎯
+
+ FAIL  src/__tests__/integration/batch-packing.test.ts > batch packing isolated PostgreSQL > keeps partial cartons and oversized outside counts distinct, consumes measured bulk and absorbs loss cost
+Error: Use isolated TEST_DATABASE_URL
+ ❯ fixture src/__tests__/integration/batch-packing.test.ts:41:107
+     39| }
+     40| async function fixture(check: (tx: Tx, f: Awaited<ReturnType<typeof se…
+     41|   if (!process.env.TEST_DATABASE_URL || process.env.DATABASE_URL !== p…
+       |                                                                                                           ^
+     42|   try { await db.transaction(async tx => { await check(tx, await seed(…
+     43|   catch (error) { if (error !== rollback) throw error; }
+ ❯ src/__tests__/integration/batch-packing.test.ts:67:127
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/24]⎯
+
+ FAIL  src/__tests__/integration/batch-packing.test.ts > batch packing isolated PostgreSQL > rolls back all lines on shortages and rejects wrong formulas, assignment and read-only permission
+Error: Use isolated TEST_DATABASE_URL
+ ❯ fixture src/__tests__/integration/batch-packing.test.ts:41:107
+     39| }
+     40| async function fixture(check: (tx: Tx, f: Awaited<ReturnType<typeof se…
+     41|   if (!process.env.TEST_DATABASE_URL || process.env.DATABASE_URL !== p…
+       |                                                                                                           ^
+     42|   try { await db.transaction(async tx => { await check(tx, await seed(…
+     43|   catch (error) { if (error !== rollback) throw error; }
+ ❯ src/__tests__/integration/batch-packing.test.ts:81:119
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/24]⎯
+
+ FAIL  src/__tests__/integration/batch-packing.test.ts > batch packing isolated PostgreSQL > dispatches outside packs without changing cartons, restores them on reversal and good return, then transfers them
+Error: Use isolated TEST_DATABASE_URL
+ ❯ fixture src/__tests__/integration/batch-packing.test.ts:41:107
+     39| }
+     40| async function fixture(check: (tx: Tx, f: Awaited<ReturnType<typeof se…
+     41|   if (!process.env.TEST_DATABASE_URL || process.env.DATABASE_URL !== p…
+       |                                                                                                           ^
+     42|   try { await db.transaction(async tx => { await check(tx, await seed(…
+     43|   catch (error) { if (error !== rollback) throw error; }
+ ❯ src/__tests__/integration/batch-packing.test.ts:95:135
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/24]⎯
+
+ FAIL  src/__tests__/integration/batch-packing.test.ts > batch packing isolated PostgreSQL > keeps completed legacy reservation untouched
+Error: Use isolated TEST_DATABASE_URL
+ ❯ fixture src/__tests__/integration/batch-packing.test.ts:41:107
+     39| }
+     40| async function fixture(check: (tx: Tx, f: Awaited<ReturnType<typeof se…
+     41|   if (!process.env.TEST_DATABASE_URL || process.env.DATABASE_URL !== p…
+       |                                                                                                           ^
+     42|   try { await db.transaction(async tx => { await check(tx, await seed(…
+     43|   catch (error) { if (error !== rollback) throw error; }
+ ❯ src/__tests__/integration/batch-packing.test.ts:119:66
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/24]⎯
+
+ FAIL  src/__tests__/integration/batch-packing.test.ts > batch packing isolated PostgreSQL > allocates tiny chemical costs cumulatively across repeated receipts and loss
+Error: Use isolated TEST_DATABASE_URL
+ ❯ fixture src/__tests__/integration/batch-packing.test.ts:41:107
+     39| }
+     40| async function fixture(check: (tx: Tx, f: Awaited<ReturnType<typeof se…
+     41|   if (!process.env.TEST_DATABASE_URL || process.env.DATABASE_URL !== p…
+       |                                                                                                           ^
+     42|   try { await db.transaction(async tx => { await check(tx, await seed(…
+     43|   catch (error) { if (error !== rollback) throw error; }
+ ❯ src/__tests__/integration/batch-packing.test.ts:124:98
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/24]⎯
+
+ FAIL  src/__tests__/integration/batch-packing.test.ts > batch packing isolated PostgreSQL > retains legacy reserved cost and bulk while splitting the remaining tiny cost
+Error: Use isolated TEST_DATABASE_URL
+ ❯ fixture src/__tests__/integration/batch-packing.test.ts:41:107
+     39| }
+     40| async function fixture(check: (tx: Tx, f: Awaited<ReturnType<typeof se…
+     41|   if (!process.env.TEST_DATABASE_URL || process.env.DATABASE_URL !== p…
+       |                                                                                                           ^
+     42|   try { await db.transaction(async tx => { await check(tx, await seed(…
+     43|   catch (error) { if (error !== rollback) throw error; }
+ ❯ src/__tests__/integration/batch-packing.test.ts:134:99
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[11/24]⎯
+
+ FAIL  src/__tests__/integration/batch-packing.test.ts > batch packing isolated PostgreSQL > corrects outside packs with quantity and value audits while preserving physical cartons
+Error: Use isolated TEST_DATABASE_URL
+ ❯ fixture src/__tests__/integration/batch-packing.test.ts:41:107
+     39| }
+     40| async function fixture(check: (tx: Tx, f: Awaited<ReturnType<typeof se…
+     41|   if (!process.env.TEST_DATABASE_URL || process.env.DATABASE_URL !== p…
+       |                                                                                                           ^
+     42|   try { await db.transaction(async tx => { await check(tx, await seed(…
+     43|   catch (error) { if (error !== rollback) throw error; }
+ ❯ src/__tests__/integration/batch-packing.test.ts:143:109
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[12/24]⎯
+
+ FAIL  src/__tests__/integration/batch-packing.test.ts > batch packing isolated PostgreSQL > normalizes legacy no-carton stock on a new receipt, correction and transfer
+Error: Use isolated TEST_DATABASE_URL
+ ❯ fixture src/__tests__/integration/batch-packing.test.ts:41:107
+     39| }
+     40| async function fixture(check: (tx: Tx, f: Awaited<ReturnType<typeof se…
+     41|   if (!process.env.TEST_DATABASE_URL || process.env.DATABASE_URL !== p…
+       |                                                                                                           ^
+     42|   try { await db.transaction(async tx => { await check(tx, await seed(…
+     43|   catch (error) { if (error !== rollback) throw error; }
+ ❯ src/__tests__/integration/batch-packing.test.ts:170:97
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[13/24]⎯
+
+ FAIL  src/__tests__/integration/batch-packing.test.ts > batch packing isolated PostgreSQL > uses recorded physical carton targets when outside packs exceed capacity
+Error: connect EPERM 127.0.0.1:5433 - Local (undefined:undefined)
+ ❯ node_modules/pg-pool/index.js:45:11
+ ❯ NodePgSession.transaction node_modules/src/node-postgres/session.ts:254:23
+ ❯ src/__tests__/integration/batch-packing.test.ts:184:15
+    182|   }));
+    183|   it("uses recorded physical carton targets when outside packs exceed …
+    184|     const f = await db.transaction(seed);
+       |               ^
+    185|     try {
+    186|     const result = await db.transaction(tx => recordBatchPackingCore(t…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[14/24]⎯
+
+ FAIL  src/__tests__/integration/batch-packing.test.ts > batch packing isolated PostgreSQL > serializes concurrent submissions and retries without overdraw
+Error: Use isolated TEST_DATABASE_URL
+ ❯ src/__tests__/integration/batch-packing.test.ts:198:109
+    196|   });
+    197|   it("serializes concurrent submissions and retries without overdraw",…
+    198|     if (!process.env.TEST_DATABASE_URL || process.env.DATABASE_URL !==…
+       |                                                                                                             ^
+    199|     // Committed fixtures are confined to the disposable isolated test…
+    200|     const f = await db.transaction(seed);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[15/24]⎯
+
+ FAIL  src/__tests__/integration/mixing-stock-creation.test.ts > mixing creation stock checks against PostgreSQL > rejects all shortages without creating or consuming, then rechecks stock at start
+Error: Requires isolated test database
+ ❯ src/__tests__/integration/mixing-stock-creation.test.ts:65:13
+     63|       process.env.DATABASE_URL !== process.env.TEST_DATABASE_URL
+     64|     )
+     65|       throw new Error("Requires isolated test database");
+       |             ^
+     66|     const rollback = new Error("rollback fixture");
+     67|     try {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[16/24]⎯
+
+ FAIL  src/components/attendance/scan-terminal.test.ts > scan terminal UI source > mounts the scanner outside the protected layout and keeps it out of the sidebar
+AssertionError: expected 'import { createFileRoute, redirect } …' to contain 'component: ScanTerminal'
+
+- Expected
++ Received
+
+- component: ScanTerminal
++ import { createFileRoute, redirect } from "@tanstack/react-router";
++ import { hasPermission } from "@/lib/rbac";
++ import { getViewerAccessFn } from "@/server-functions/auth/get-viewer-access-fn";
++
++ export const Route = createFileRoute("/attendance/scan")({
++   beforeLoad: async ({ location }) => {
++     const viewerAccess = await getViewerAccessFn();
++     if (!viewerAccess)
++       throw redirect({ to: "/login", search: { redirect: location.href } });
++     if (hasPermission(viewerAccess.permissions, "hr.view"))
++       throw redirect({ to: "/hr/attendance" });
++     return { viewerAccess };
++   },
++   component: RetiredAttendanceTerminal,
++ });
++
++ function RetiredAttendanceTerminal() {
++   return (
++     <main className="flex min-h-screen flex-col items-center justify-center gap-4 bg-background p-8 text-center text-foreground">
++       <h1 className="text-2xl font-semibold">Attendance recording has moved</h1>
++       <p className="max-w-md text-muted-foreground">
++         HR now uploads the device punch report from the Attendance page. Contact
++         HR to correct a missing or incorrect punch.
++       </p>
++     </main>
++   );
++ }
++
+
+ ❯ src/components/attendance/scan-terminal.test.ts:20:25
+     18|     expect(routeSource).toContain("getViewerAccessFn");
+     19|     expect(routeSource).toContain("hasPermission");
+     20|     expect(routeSource).toContain("component: ScanTerminal");
+       |                         ^
+     21|     expect(navigationSource).not.toContain('title: "Attendance Termina…
+     22|     expect(navigationSource).not.toContain('url: "/attendance/scan"');
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[17/24]⎯
+
+ FAIL  src/lib/validators/hr-validators.test.ts > employee validator shift timing support > accepts a shifts array with start and end times
+ZodError: [
+  {
+    "expected": "boolean",
+    "code": "invalid_type",
+    "path": [
+      "isDriver"
+    ],
+    "message": "Invalid input: expected boolean, received undefined"
+  }
+]
+ ❯ src/lib/validators/hr-validators.test.ts:45:41
+     43| describe("employee validator shift timing support", () => {
+     44|   it("accepts a shifts array with start and end times", () => {
+     45|     const parsed = createEmployeeSchema.parse({
+       |                                         ^
+     46|       ...buildEmployeeInput(),
+     47|       shifts: [{ start: "08:00", end: "17:00" }],
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[18/24]⎯
+
+ FAIL  src/lib/validators/hr-validators.test.ts > employee validator shift timing support > accepts multiple shifts
+ZodError: [
+  {
+    "expected": "boolean",
+    "code": "invalid_type",
+    "path": [
+      "isDriver"
+    ],
+    "message": "Invalid input: expected boolean, received undefined"
+  }
+]
+ ❯ src/lib/validators/hr-validators.test.ts:54:41
+     52|
+     53|   it("accepts multiple shifts", () => {
+     54|     const parsed = createEmployeeSchema.parse({
+       |                                         ^
+     55|       ...buildEmployeeInput(),
+     56|       shifts: [
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[19/24]⎯
+
+ FAIL  src/lib/validators/hr-validators.test.ts > employee validator shift timing support > keeps shifts on employee updates
+ZodError: [
+  {
+    "expected": "boolean",
+    "code": "invalid_type",
+    "path": [
+      "isDriver"
+    ],
+    "message": "Invalid input: expected boolean, received undefined"
+  }
+]
+ ❯ src/lib/validators/hr-validators.test.ts:75:41
+     73|
+     74|   it("keeps shifts on employee updates", () => {
+     75|     const parsed = updateEmployeeSchema.parse({
+       |                                         ^
+     76|       ...buildEmployeeInput(),
+     77|       id: "emp_123",
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[20/24]⎯
+
+ FAIL  src/components/hr/attendance/edit-attendance-form.behavior.test.tsx > edit attendance form overtime behavior > shows suggested OT and prefills the request only once
+TestingLibraryElementError: Unable to find an element with the display value: 2.00.
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<form[39m
+      [33mclass[39m=[32m"space-y-0 py-1"[39m
+    [36m>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"group/field-group @container/field-group flex w-full flex-col gap-7 data-[slot=checkbox-group]:gap-3 *:data-[slot=field-group]:gap-4 space-y-0"[39m
+        [33mdata-slot[39m=[32m"field-group"[39m
+      [36m>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"py-6 px-5 bg-card/40 border border-border/40 rounded-2xl mb-5 shadow-sm backdrop-blur-sm"[39m
+        [36m>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"flex items-center gap-3 mb-6 pb-3.5 border-b border-border/50"[39m
+          [36m>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"p-2 bg-primary/10 text-primary rounded-lg"[39m
+            [36m>[39m
+              [36m<svg[39m
+                [33maria-hidden[39m=[32m"true"[39m
+                [33mclass[39m=[32m"lucide lucide-calendar-days size-4.5"[39m
+                [33mfill[39m=[32m"none"[39m
+                [33mheight[39m=[32m"24"[39m
+                [33mstroke[39m=[32m"currentColor"[39m
+                [33mstroke-linecap[39m=[32m"round"[39m
+                [33mstroke-linejoin[39m=[32m"round"[39m
+                [33mstroke-width[39m=[32m"2.5"[39m
+                [33mviewBox[39m=[32m"0 0 24 24"[39m
+                [33mwidth[39m=[32m"24"[39m
+                [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+              [36m>[39m
+                [36m<path[39m
+                  [33md[39m=[32m"M8 2v4"[39m
+                [36m/>[39m
+                [36m<path[39m
+                  [33md[39m=[32m"M16 2v4"[39m
+                [36m/>[39m
+                [36m<rect[39m
+                  [33mheight[39m=[32m"18"[39m
+                  [33mrx[39m=[32m"2"[39m
+                  [33mwidth[39m=[32m"18"[39m
+                  [33mx[39m=[32m"3"[39m
+                  [33my[39m=[32m"4"[39m
+                [36m/>[39m
+                [36m<path[39m
+                  [33md[39m=[32m"M3 10h18"[39m
+                [36m/>[39m
+                [36m<path[39m
+                  [33md[39m=[32m"M8 14h.01"[39m
+                [36m/>[39m
+                [36m<path[39m
+                  [33md[39m=[32m"M12 14h.01"[39m
+                [36m/>[39m
+                [36m<path[39m
+                  [33md[39m=[32m"M16 14h.01"[39m
+                [36m/>[39m
+                [36m<path[39m
+                  [33md[39m=[32m"M8 18h.01"[39m
+                [36m/>[39m
+                [36m<path[39m
+                  [33md[39m=[32m"M12 18h.01"[39m
+                [36m/>[39m
+                [36m<path[39m
+                  [33md[39m=[32m"M16 18h.01"[39m
+                [36m/>[39m
+              [36m</svg>[39m
+            [36m</div>[39m
+            [36m<h3[39m
+              [33mclass[39m=[32m"text-[14px] font-bold text-foreground tracking-wide uppercase"[39m
+            [36m>[39m
+              [0mAttendance Status[0m
+            [36m</h3>[39m
+          [36m</div>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"pl-0"[39m
+          [36m>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"group/field flex w-full gap-3 data-[invalid=true]:text-destructive flex-col *:w-full [&>.sr-only]:w-auto space-y-1.5"[39m
+              [33mdata-orientation[39m=[32m"vertical"[39m
+              [33mdata-slot[39m=[32m"field"[39m
+              [33mrole[39m=[32m"group"[39m
+            [36m>[39m
+              [36m<label[39m
+                [33mclass[39m=[32m"items-center text-sm font-medium select-none group-data-[disabled=true]:pointer-events-none group-data-[disabled=true]:opacity-50 peer-disabled:cursor-not-allowed peer-disabled:opacity-50 group/field-label peer/field-label flex w-fit gap-2 leading-snug group-data-[disabled=true]/field:opacity-50 has-data-checked:border-primary/30 has-data-checked:bg-primary/5 has-[>[data-slot=field]]:rounded-xl has-[>[data-slot=field]]:border *:data-[slot=field]:p-4 dark:has-data-checked:border-primary/20 dark:has-data-checked:bg-primary/10 has-[>[data-slot=field]]:w-full has-[>[data-slot=field]]:flex-col sr-only"[39m
+                [33mdata-slot[39m=[32m"field-label"[39m
+              [36m>[39m
+                [0mStatus[0m
+              [36m</label>[39m
+              [36m<div[39m
+                [33maria-label[39m=[32m"Attendance status"[39m
+                [33mclass[39m=[32m"grid grid-cols-2 gap-3"[39m
+                [33mrole[39m=[32m"radiogroup"[39m
+              [36m>[39m
+                [36m<button[39m
+                  [33maria-checked[39m=[32m"true"[39m
+                  [33maria-disabled[39m=[32m"false"[39m
+                  [33mclass[39m=[32m"relative flex flex-col items-center justify-center gap-2.5 rounded-xl p-4 transition-all duration-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring border-2 bg-emerald-50 dark:bg-emerald-500/10 border-emerald-500/30 dark:border-emerald-500/40 shadow-sm scale-[1.02]"[39m
+                  [33mid[39m=[32m"status-option-present"[39m
+                  [33mrole[39m=[32m"radio"[39m
+                  [33mtabindex[39m=[32m"0"[39m
+                  [33mtype[39m=[32m"button"[39m
+                [36m>[39m
+                  [36m<svg[39m
+                    [33maria-hidden[39m=[32m"true"[39m
+                    [33mclass[39m=[32m"lucide lucide-circle-check size-7 transition-colors text-emerald-600 dark:text-emerald-500"[39m
+                    [33mfill[39m=[32m"none"[39m
+                    [33mheight[39m=[32m"24"[39m
+                    [33mstroke[39m=[32m"currentColor"[39m
+                    [33mstroke-linecap[39m=[32m"round"[39m
+                    [33mstroke-linejoin[39m=[32m"round"[39m
+                    [33mstroke-width[39m=[32m"2.5"[39m
+                    [33mviewBox[39m=[32m"0 0 24 24"[39m
+                    [33mwidth[39m=[32m"24"[39m
+                    [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+                  [36m>[39m
+                    [36m<circle[39m
+                      [33mcx[39m=[32m"12"[39m
+                      [33mcy[39m=[32m"12"[39m
+                      [33mr[39m=[32m"10"[39m
+                    [36m/>[39m
+                    [36m<path[39m
+                      [33md[39m=[32m"m9 12 2 2 4-4"[39m
+                    [36m/>[39m
+                  [36m</svg>[39m
+                  [36m<span[39m
+                    [33mclass[39m=[32m"text-[13px] font-bold tracking-wide transition-colors text-emerald-600 dark:text-emerald-500"[39m
+                  [36m>[39m
+                    [0mPresent[0m
+                  [36m</span>[39m
+                  [36m<div[39m
+                    [33maria-hidden[39m=[32m"true"[39m
+                    [33mclass...
+
+Ignored nodes: comments, script, style
+[36m<html>[39m
+  [36m<head />[39m
+  [36m<body>[39m
+    [36m<div>[39m
+      [36m<form[39m
+        [33mclass[39m=[32m"space-y-0 py-1"[39m
+      [36m>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"group/field-group @container/field-group flex w-full flex-col gap-7 data-[slot=checkbox-group]:gap-3 *:data-[slot=field-group]:gap-4 space-y-0"[39m
+          [33mdata-slot[39m=[32m"field-group"[39m
+        [36m>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"py-6 px-5 bg-card/40 border border-border/40 rounded-2xl mb-5 shadow-sm backdrop-blur-sm"[39m
+          [36m>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"flex items-center gap-3 mb-6 pb-3.5 border-b border-border/50"[39m
+            [36m>[39m
+              [36m<div[39m
+                [33mclass[39m=[32m"p-2 bg-primary/10 text-primary rounded-lg"[39m
+              [36m>[39m
+                [36m<svg[39m
+                  [33maria-hidden[39m=[32m"true"[39m
+                  [33mclass[39m=[32m"lucide lucide-calendar-days size-4.5"[39m
+                  [33mfill[39m=[32m"none"[39m
+                  [33mheight[39m=[32m"24"[39m
+                  [33mstroke[39m=[32m"currentColor"[39m
+                  [33mstroke-linecap[39m=[32m"round"[39m
+                  [33mstroke-linejoin[39m=[32m"round"[39m
+                  [33mstroke-width[39m=[32m"2.5"[39m
+                  [33mviewBox[39m=[32m"0 0 24 24"[39m
+                  [33mwidth[39m=[32m"24"[39m
+                  [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+                [36m>[39m
+                  [36m<path[39m
+                    [33md[39m=[32m"M8 2v4"[39m
+                  [36m/>[39m
+                  [36m<path[39m
+                    [33md[39m=[32m"M16 2v4"[39m
+                  [36m/>[39m
+                  [36m<rect[39m
+                    [33mheight[39m=[32m"18"[39m
+                    [33mrx[39m=[32m"2"[39m
+                    [33mwidth[39m=[32m"18"[39m
+                    [33mx[39m=[32m"3"[39m
+                    [33my[39m=[32m"4"[39m
+                  [36m/>[39m
+                  [36m<path[39m
+                    [33md[39m=[32m"M3 10h18"[39m
+                  [36m/>[39m
+                  [36m<path[39m
+                    [33md[39m=[32m"M8 14h.01"[39m
+                  [36m/>[39m
+                  [36m<path[39m
+                    [33md[39m=[32m"M12 14h.01"[39m
+                  [36m/>[39m
+                  [36m<path[39m
+                    [33md[39m=[32m"M16 14h.01"[39m
+                  [36m/>[39m
+                  [36m<path[39m
+                    [33md[39m=[32m"M8 18h.01"[39m
+                  [36m/>[39m
+                  [36m<path[39m
+                    [33md[39m=[32m"M12 18h.01"[39m
+                  [36m/>[39m
+                  [36m<path[39m
+                    [33md[39m=[32m"M16 18h.01"[39m
+                  [36m/>[39m
+                [36m</svg>[39m
+              [36m</div>[39m
+              [36m<h3[39m
+                [33mclass[39m=[32m"text-[14px] font-bold text-foreground tracking-wide uppercase"[39m
+              [36m>[39m
+                [0mAttendance Status[0m
+              [36m</h3>[39m
+            [36m</div>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"pl-0"[39m
+            [36m>[39m
+              [36m<div[39m
+                [33mclass[39m=[32m"group/field flex w-full gap-3 data-[invalid=true]:text-destructive flex-col *:w-full [&>.sr-only]:w-auto space-y-1.5"[39m
+                [33mdata-orientation[39m=[32m"vertical"[39m
+                [33mdata-slot[39m=[32m"field"[39m
+                [33mrole[39m=[32m"group"[39m
+              [36m>[39m
+                [36m<label[39m
+                  [33mclass[39m=[32m"items-center text-sm font-medium select-none group-data-[disabled=true]:pointer-events-none group-data-[disabled=true]:opacity-50 peer-disabled:cursor-not-allowed peer-disabled:opacity-50 group/field-label peer/field-label flex w-fit gap-2 leading-snug group-data-[disabled=true]/field:opacity-50 has-data-checked:border-primary/30 has-data-checked:bg-primary/5 has-[>[data-slot=field]]:rounded-xl has-[>[data-slot=field]]:border *:data-[slot=field]:p-4 dark:has-data-checked:border-primary/20 dark:has-data-checked:bg-primary/10 has-[>[data-slot=field]]:w-full has-[>[data-slot=field]]:flex-col sr-only"[39m
+                  [33mdata-slot[39m=[32m"field-label"[39m
+                [36m>[39m
+                  [0mStatus[0m
+                [36m</label>[39m
+                [36m<div[39m
+                  [33maria-label[39m=[32m"Attendance status"[39m
+                  [33mclass[39m=[32m"grid grid-cols-2 gap-3"[39m
+                  [33mrole[39m=[32m"radiogroup"[39m
+                [36m>[39m
+                  [36m<button[39m
+                    [33maria-checked[39m=[32m"true"[39m
+                    [33maria-disabled[39m=[32m"false"[39m
+                    [33mclass[39m=[32m"relative flex flex-col items-center justify-center gap-2.5 rounded-xl p-4 transition-all duration-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring border-2 bg-emerald-50 dark:bg-emerald-500/10 border-emerald-500/30 dark:border-emerald-500/40 shadow-sm scale-[1.02]"[39m
+                    [33mid[39m=[32m"status-option-present"[39m
+                    [33mrole[39m=[32m"radio"[39m
+                    [33mtabindex[39m=[32m"0"[39m
+                    [33mtype[39m=[32m"button"[39m
+                  [36m>[39m
+                    [36m<svg[39m
+                      [33maria-hidden[39m=[32m"true"[39m
+                      [33mclass[39m=[32m"lucide lucide-circle-check size-7 transition-colors text-emerald-600 dark:text-emerald-500"[39m
+                      [33mfill[39m=[32m"none"[39m
+                      [33mheight[39m=[32m"24"[39m
+                      [33mstroke[39m=[32m"currentColor"[39m
+                      [33mstroke-linecap[39m=[32m"round"[39m
+                      [33mstroke-linejoin[39m=[32m"round"[39m
+                      [33mstroke-width[39m=[32m"2.5"[39m
+                      [33mviewBox[39m=[32m"0 0 24 24"[39m
+                      [33mwidth[39m=[32m"24"[39m
+                      [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+                    [36m>[39m
+                      [36m<circle[39m
+                        [33mcx[39m=[32m"12"[39m
+                        [33mcy[39m=[32m"12"[39m
+                        [33mr[39m=[32m"10"[39m
+                      [36m/>[39m
+                      [36m<path[39m
+                        [33md[39m=[32m"m9 12 2 2 4-4"[39m
+                      [36m/>[39m
+                    [36m</svg>[39m
+                    [36m<span[39m
+                      [33mclass[39m=[32m"text-[13px] font-bold tracking-wi...
+ ❯ Proxy.waitForWrapper node_modules/@testing-library/dom/dist/wait-for.js:163:27
+ ❯ src/components/hr/attendance/edit-attendance-form.behavior.test.tsx:113:11
+    111|     fireEvent.click(screen.getByRole("button", { name: "Emit 10h Summa…
+    112|
+    113|     await waitFor(() => {
+       |           ^
+    114|       expect(screen.getByText("Suggested OT")).toBeTruthy();
+    115|       expect(screen.getByDisplayValue("2.00")).toBeTruthy();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[21/24]⎯
+
+ FAIL  src/components/hr/attendance/edit-attendance-form.behavior.test.tsx > edit attendance form overtime behavior > requires a reason for OT, clears it at zero, and never calls save without it
+TestingLibraryElementError: Unable to find an element with the display value: 2.00.
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<form[39m
+      [33mclass[39m=[32m"space-y-0 py-1"[39m
+    [36m>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"group/field-group @container/field-group flex w-full flex-col gap-7 data-[slot=checkbox-group]:gap-3 *:data-[slot=field-group]:gap-4 space-y-0"[39m
+        [33mdata-slot[39m=[32m"field-group"[39m
+      [36m>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"py-6 px-5 bg-card/40 border border-border/40 rounded-2xl mb-5 shadow-sm backdrop-blur-sm"[39m
+        [36m>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"flex items-center gap-3 mb-6 pb-3.5 border-b border-border/50"[39m
+          [36m>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"p-2 bg-primary/10 text-primary rounded-lg"[39m
+            [36m>[39m
+              [36m<svg[39m
+                [33maria-hidden[39m=[32m"true"[39m
+                [33mclass[39m=[32m"lucide lucide-calendar-days size-4.5"[39m
+                [33mfill[39m=[32m"none"[39m
+                [33mheight[39m=[32m"24"[39m
+                [33mstroke[39m=[32m"currentColor"[39m
+                [33mstroke-linecap[39m=[32m"round"[39m
+                [33mstroke-linejoin[39m=[32m"round"[39m
+                [33mstroke-width[39m=[32m"2.5"[39m
+                [33mviewBox[39m=[32m"0 0 24 24"[39m
+                [33mwidth[39m=[32m"24"[39m
+                [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+              [36m>[39m
+                [36m<path[39m
+                  [33md[39m=[32m"M8 2v4"[39m
+                [36m/>[39m
+                [36m<path[39m
+                  [33md[39m=[32m"M16 2v4"[39m
+                [36m/>[39m
+                [36m<rect[39m
+                  [33mheight[39m=[32m"18"[39m
+                  [33mrx[39m=[32m"2"[39m
+                  [33mwidth[39m=[32m"18"[39m
+                  [33mx[39m=[32m"3"[39m
+                  [33my[39m=[32m"4"[39m
+                [36m/>[39m
+                [36m<path[39m
+                  [33md[39m=[32m"M3 10h18"[39m
+                [36m/>[39m
+                [36m<path[39m
+                  [33md[39m=[32m"M8 14h.01"[39m
+                [36m/>[39m
+                [36m<path[39m
+                  [33md[39m=[32m"M12 14h.01"[39m
+                [36m/>[39m
+                [36m<path[39m
+                  [33md[39m=[32m"M16 14h.01"[39m
+                [36m/>[39m
+                [36m<path[39m
+                  [33md[39m=[32m"M8 18h.01"[39m
+                [36m/>[39m
+                [36m<path[39m
+                  [33md[39m=[32m"M12 18h.01"[39m
+                [36m/>[39m
+                [36m<path[39m
+                  [33md[39m=[32m"M16 18h.01"[39m
+                [36m/>[39m
+              [36m</svg>[39m
+            [36m</div>[39m
+            [36m<h3[39m
+              [33mclass[39m=[32m"text-[14px] font-bold text-foreground tracking-wide uppercase"[39m
+            [36m>[39m
+              [0mAttendance Status[0m
+            [36m</h3>[39m
+          [36m</div>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"pl-0"[39m
+          [36m>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"group/field flex w-full gap-3 data-[invalid=true]:text-destructive flex-col *:w-full [&>.sr-only]:w-auto space-y-1.5"[39m
+              [33mdata-orientation[39m=[32m"vertical"[39m
+              [33mdata-slot[39m=[32m"field"[39m
+              [33mrole[39m=[32m"group"[39m
+            [36m>[39m
+              [36m<label[39m
+                [33mclass[39m=[32m"items-center text-sm font-medium select-none group-data-[disabled=true]:pointer-events-none group-data-[disabled=true]:opacity-50 peer-disabled:cursor-not-allowed peer-disabled:opacity-50 group/field-label peer/field-label flex w-fit gap-2 leading-snug group-data-[disabled=true]/field:opacity-50 has-data-checked:border-primary/30 has-data-checked:bg-primary/5 has-[>[data-slot=field]]:rounded-xl has-[>[data-slot=field]]:border *:data-[slot=field]:p-4 dark:has-data-checked:border-primary/20 dark:has-data-checked:bg-primary/10 has-[>[data-slot=field]]:w-full has-[>[data-slot=field]]:flex-col sr-only"[39m
+                [33mdata-slot[39m=[32m"field-label"[39m
+              [36m>[39m
+                [0mStatus[0m
+              [36m</label>[39m
+              [36m<div[39m
+                [33maria-label[39m=[32m"Attendance status"[39m
+                [33mclass[39m=[32m"grid grid-cols-2 gap-3"[39m
+                [33mrole[39m=[32m"radiogroup"[39m
+              [36m>[39m
+                [36m<button[39m
+                  [33maria-checked[39m=[32m"true"[39m
+                  [33maria-disabled[39m=[32m"false"[39m
+                  [33mclass[39m=[32m"relative flex flex-col items-center justify-center gap-2.5 rounded-xl p-4 transition-all duration-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring border-2 bg-emerald-50 dark:bg-emerald-500/10 border-emerald-500/30 dark:border-emerald-500/40 shadow-sm scale-[1.02]"[39m
+                  [33mid[39m=[32m"status-option-present"[39m
+                  [33mrole[39m=[32m"radio"[39m
+                  [33mtabindex[39m=[32m"0"[39m
+                  [33mtype[39m=[32m"button"[39m
+                [36m>[39m
+                  [36m<svg[39m
+                    [33maria-hidden[39m=[32m"true"[39m
+                    [33mclass[39m=[32m"lucide lucide-circle-check size-7 transition-colors text-emerald-600 dark:text-emerald-500"[39m
+                    [33mfill[39m=[32m"none"[39m
+                    [33mheight[39m=[32m"24"[39m
+                    [33mstroke[39m=[32m"currentColor"[39m
+                    [33mstroke-linecap[39m=[32m"round"[39m
+                    [33mstroke-linejoin[39m=[32m"round"[39m
+                    [33mstroke-width[39m=[32m"2.5"[39m
+                    [33mviewBox[39m=[32m"0 0 24 24"[39m
+                    [33mwidth[39m=[32m"24"[39m
+                    [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+                  [36m>[39m
+                    [36m<circle[39m
+                      [33mcx[39m=[32m"12"[39m
+                      [33mcy[39m=[32m"12"[39m
+                      [33mr[39m=[32m"10"[39m
+                    [36m/>[39m
+                    [36m<path[39m
+                      [33md[39m=[32m"m9 12 2 2 4-4"[39m
+                    [36m/>[39m
+                  [36m</svg>[39m
+                  [36m<span[39m
+                    [33mclass[39m=[32m"text-[13px] font-bold tracking-wide transition-colors text-emerald-600 dark:text-emerald-500"[39m
+                  [36m>[39m
+                    [0mPresent[0m
+                  [36m</span>[39m
+                  [36m<div[39m
+                    [33maria-hidden[39m=[32m"true"[39m
+                    [33mclass...
+
+Ignored nodes: comments, script, style
+[36m<html>[39m
+  [36m<head />[39m
+  [36m<body>[39m
+    [36m<div>[39m
+      [36m<form[39m
+        [33mclass[39m=[32m"space-y-0 py-1"[39m
+      [36m>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"group/field-group @container/field-group flex w-full flex-col gap-7 data-[slot=checkbox-group]:gap-3 *:data-[slot=field-group]:gap-4 space-y-0"[39m
+          [33mdata-slot[39m=[32m"field-group"[39m
+        [36m>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"py-6 px-5 bg-card/40 border border-border/40 rounded-2xl mb-5 shadow-sm backdrop-blur-sm"[39m
+          [36m>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"flex items-center gap-3 mb-6 pb-3.5 border-b border-border/50"[39m
+            [36m>[39m
+              [36m<div[39m
+                [33mclass[39m=[32m"p-2 bg-primary/10 text-primary rounded-lg"[39m
+              [36m>[39m
+                [36m<svg[39m
+                  [33maria-hidden[39m=[32m"true"[39m
+                  [33mclass[39m=[32m"lucide lucide-calendar-days size-4.5"[39m
+                  [33mfill[39m=[32m"none"[39m
+                  [33mheight[39m=[32m"24"[39m
+                  [33mstroke[39m=[32m"currentColor"[39m
+                  [33mstroke-linecap[39m=[32m"round"[39m
+                  [33mstroke-linejoin[39m=[32m"round"[39m
+                  [33mstroke-width[39m=[32m"2.5"[39m
+                  [33mviewBox[39m=[32m"0 0 24 24"[39m
+                  [33mwidth[39m=[32m"24"[39m
+                  [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+                [36m>[39m
+                  [36m<path[39m
+                    [33md[39m=[32m"M8 2v4"[39m
+                  [36m/>[39m
+                  [36m<path[39m
+                    [33md[39m=[32m"M16 2v4"[39m
+                  [36m/>[39m
+                  [36m<rect[39m
+                    [33mheight[39m=[32m"18"[39m
+                    [33mrx[39m=[32m"2"[39m
+                    [33mwidth[39m=[32m"18"[39m
+                    [33mx[39m=[32m"3"[39m
+                    [33my[39m=[32m"4"[39m
+                  [36m/>[39m
+                  [36m<path[39m
+                    [33md[39m=[32m"M3 10h18"[39m
+                  [36m/>[39m
+                  [36m<path[39m
+                    [33md[39m=[32m"M8 14h.01"[39m
+                  [36m/>[39m
+                  [36m<path[39m
+                    [33md[39m=[32m"M12 14h.01"[39m
+                  [36m/>[39m
+                  [36m<path[39m
+                    [33md[39m=[32m"M16 14h.01"[39m
+                  [36m/>[39m
+                  [36m<path[39m
+                    [33md[39m=[32m"M8 18h.01"[39m
+                  [36m/>[39m
+                  [36m<path[39m
+                    [33md[39m=[32m"M12 18h.01"[39m
+                  [36m/>[39m
+                  [36m<path[39m
+                    [33md[39m=[32m"M16 18h.01"[39m
+                  [36m/>[39m
+                [36m</svg>[39m
+              [36m</div>[39m
+              [36m<h3[39m
+                [33mclass[39m=[32m"text-[14px] font-bold text-foreground tracking-wide uppercase"[39m
+              [36m>[39m
+                [0mAttendance Status[0m
+              [36m</h3>[39m
+            [36m</div>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"pl-0"[39m
+            [36m>[39m
+              [36m<div[39m
+                [33mclass[39m=[32m"group/field flex w-full gap-3 data-[invalid=true]:text-destructive flex-col *:w-full [&>.sr-only]:w-auto space-y-1.5"[39m
+                [33mdata-orientation[39m=[32m"vertical"[39m
+                [33mdata-slot[39m=[32m"field"[39m
+                [33mrole[39m=[32m"group"[39m
+              [36m>[39m
+                [36m<label[39m
+                  [33mclass[39m=[32m"items-center text-sm font-medium select-none group-data-[disabled=true]:pointer-events-none group-data-[disabled=true]:opacity-50 peer-disabled:cursor-not-allowed peer-disabled:opacity-50 group/field-label peer/field-label flex w-fit gap-2 leading-snug group-data-[disabled=true]/field:opacity-50 has-data-checked:border-primary/30 has-data-checked:bg-primary/5 has-[>[data-slot=field]]:rounded-xl has-[>[data-slot=field]]:border *:data-[slot=field]:p-4 dark:has-data-checked:border-primary/20 dark:has-data-checked:bg-primary/10 has-[>[data-slot=field]]:w-full has-[>[data-slot=field]]:flex-col sr-only"[39m
+                  [33mdata-slot[39m=[32m"field-label"[39m
+                [36m>[39m
+                  [0mStatus[0m
+                [36m</label>[39m
+                [36m<div[39m
+                  [33maria-label[39m=[32m"Attendance status"[39m
+                  [33mclass[39m=[32m"grid grid-cols-2 gap-3"[39m
+                  [33mrole[39m=[32m"radiogroup"[39m
+                [36m>[39m
+                  [36m<button[39m
+                    [33maria-checked[39m=[32m"true"[39m
+                    [33maria-disabled[39m=[32m"false"[39m
+                    [33mclass[39m=[32m"relative flex flex-col items-center justify-center gap-2.5 rounded-xl p-4 transition-all duration-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring border-2 bg-emerald-50 dark:bg-emerald-500/10 border-emerald-500/30 dark:border-emerald-500/40 shadow-sm scale-[1.02]"[39m
+                    [33mid[39m=[32m"status-option-present"[39m
+                    [33mrole[39m=[32m"radio"[39m
+                    [33mtabindex[39m=[32m"0"[39m
+                    [33mtype[39m=[32m"button"[39m
+                  [36m>[39m
+                    [36m<svg[39m
+                      [33maria-hidden[39m=[32m"true"[39m
+                      [33mclass[39m=[32m"lucide lucide-circle-check size-7 transition-colors text-emerald-600 dark:text-emerald-500"[39m
+                      [33mfill[39m=[32m"none"[39m
+                      [33mheight[39m=[32m"24"[39m
+                      [33mstroke[39m=[32m"currentColor"[39m
+                      [33mstroke-linecap[39m=[32m"round"[39m
+                      [33mstroke-linejoin[39m=[32m"round"[39m
+                      [33mstroke-width[39m=[32m"2.5"[39m
+                      [33mviewBox[39m=[32m"0 0 24 24"[39m
+                      [33mwidth[39m=[32m"24"[39m
+                      [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+                    [36m>[39m
+                      [36m<circle[39m
+                        [33mcx[39m=[32m"12"[39m
+                        [33mcy[39m=[32m"12"[39m
+                        [33mr[39m=[32m"10"[39m
+                      [36m/>[39m
+                      [36m<path[39m
+                        [33md[39m=[32m"m9 12 2 2 4-4"[39m
+                      [36m/>[39m
+                    [36m</svg>[39m
+                    [36m<span[39m
+                      [33mclass[39m=[32m"text-[13px] font-bold tracking-wi...
+ ❯ Proxy.waitForWrapper node_modules/@testing-library/dom/dist/wait-for.js:163:27
+ ❯ src/components/hr/attendance/edit-attendance-form.behavior.test.tsx:135:11
+    133|     fireEvent.click(screen.getByRole("button", { name: "Emit 10h Summa…
+    134|
+    135|     await waitFor(() => {
+       |           ^
+    136|       expect(screen.getByDisplayValue("2.00")).toBeTruthy();
+    137|     });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[22/24]⎯
+
+ FAIL  src/components/hr/attendance/edit-attendance-form.behavior.test.tsx > edit attendance form overtime behavior > shows a stale warning and blocks save when requested OT is above the latest suggestion
+TestingLibraryElementError: Unable to find an element with the display value: 2.00.
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<form[39m
+      [33mclass[39m=[32m"space-y-0 py-1"[39m
+    [36m>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"group/field-group @container/field-group flex w-full flex-col gap-7 data-[slot=checkbox-group]:gap-3 *:data-[slot=field-group]:gap-4 space-y-0"[39m
+        [33mdata-slot[39m=[32m"field-group"[39m
+      [36m>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"py-6 px-5 bg-card/40 border border-border/40 rounded-2xl mb-5 shadow-sm backdrop-blur-sm"[39m
+        [36m>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"flex items-center gap-3 mb-6 pb-3.5 border-b border-border/50"[39m
+          [36m>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"p-2 bg-primary/10 text-primary rounded-lg"[39m
+            [36m>[39m
+              [36m<svg[39m
+                [33maria-hidden[39m=[32m"true"[39m
+                [33mclass[39m=[32m"lucide lucide-calendar-days size-4.5"[39m
+                [33mfill[39m=[32m"none"[39m
+                [33mheight[39m=[32m"24"[39m
+                [33mstroke[39m=[32m"currentColor"[39m
+                [33mstroke-linecap[39m=[32m"round"[39m
+                [33mstroke-linejoin[39m=[32m"round"[39m
+                [33mstroke-width[39m=[32m"2.5"[39m
+                [33mviewBox[39m=[32m"0 0 24 24"[39m
+                [33mwidth[39m=[32m"24"[39m
+                [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+              [36m>[39m
+                [36m<path[39m
+                  [33md[39m=[32m"M8 2v4"[39m
+                [36m/>[39m
+                [36m<path[39m
+                  [33md[39m=[32m"M16 2v4"[39m
+                [36m/>[39m
+                [36m<rect[39m
+                  [33mheight[39m=[32m"18"[39m
+                  [33mrx[39m=[32m"2"[39m
+                  [33mwidth[39m=[32m"18"[39m
+                  [33mx[39m=[32m"3"[39m
+                  [33my[39m=[32m"4"[39m
+                [36m/>[39m
+                [36m<path[39m
+                  [33md[39m=[32m"M3 10h18"[39m
+                [36m/>[39m
+                [36m<path[39m
+                  [33md[39m=[32m"M8 14h.01"[39m
+                [36m/>[39m
+                [36m<path[39m
+                  [33md[39m=[32m"M12 14h.01"[39m
+                [36m/>[39m
+                [36m<path[39m
+                  [33md[39m=[32m"M16 14h.01"[39m
+                [36m/>[39m
+                [36m<path[39m
+                  [33md[39m=[32m"M8 18h.01"[39m
+                [36m/>[39m
+                [36m<path[39m
+                  [33md[39m=[32m"M12 18h.01"[39m
+                [36m/>[39m
+                [36m<path[39m
+                  [33md[39m=[32m"M16 18h.01"[39m
+                [36m/>[39m
+              [36m</svg>[39m
+            [36m</div>[39m
+            [36m<h3[39m
+              [33mclass[39m=[32m"text-[14px] font-bold text-foreground tracking-wide uppercase"[39m
+            [36m>[39m
+              [0mAttendance Status[0m
+            [36m</h3>[39m
+          [36m</div>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"pl-0"[39m
+          [36m>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"group/field flex w-full gap-3 data-[invalid=true]:text-destructive flex-col *:w-full [&>.sr-only]:w-auto space-y-1.5"[39m
+              [33mdata-orientation[39m=[32m"vertical"[39m
+              [33mdata-slot[39m=[32m"field"[39m
+              [33mrole[39m=[32m"group"[39m
+            [36m>[39m
+              [36m<label[39m
+                [33mclass[39m=[32m"items-center text-sm font-medium select-none group-data-[disabled=true]:pointer-events-none group-data-[disabled=true]:opacity-50 peer-disabled:cursor-not-allowed peer-disabled:opacity-50 group/field-label peer/field-label flex w-fit gap-2 leading-snug group-data-[disabled=true]/field:opacity-50 has-data-checked:border-primary/30 has-data-checked:bg-primary/5 has-[>[data-slot=field]]:rounded-xl has-[>[data-slot=field]]:border *:data-[slot=field]:p-4 dark:has-data-checked:border-primary/20 dark:has-data-checked:bg-primary/10 has-[>[data-slot=field]]:w-full has-[>[data-slot=field]]:flex-col sr-only"[39m
+                [33mdata-slot[39m=[32m"field-label"[39m
+              [36m>[39m
+                [0mStatus[0m
+              [36m</label>[39m
+              [36m<div[39m
+                [33maria-label[39m=[32m"Attendance status"[39m
+                [33mclass[39m=[32m"grid grid-cols-2 gap-3"[39m
+                [33mrole[39m=[32m"radiogroup"[39m
+              [36m>[39m
+                [36m<button[39m
+                  [33maria-checked[39m=[32m"true"[39m
+                  [33maria-disabled[39m=[32m"false"[39m
+                  [33mclass[39m=[32m"relative flex flex-col items-center justify-center gap-2.5 rounded-xl p-4 transition-all duration-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring border-2 bg-emerald-50 dark:bg-emerald-500/10 border-emerald-500/30 dark:border-emerald-500/40 shadow-sm scale-[1.02]"[39m
+                  [33mid[39m=[32m"status-option-present"[39m
+                  [33mrole[39m=[32m"radio"[39m
+                  [33mtabindex[39m=[32m"0"[39m
+                  [33mtype[39m=[32m"button"[39m
+                [36m>[39m
+                  [36m<svg[39m
+                    [33maria-hidden[39m=[32m"true"[39m
+                    [33mclass[39m=[32m"lucide lucide-circle-check size-7 transition-colors text-emerald-600 dark:text-emerald-500"[39m
+                    [33mfill[39m=[32m"none"[39m
+                    [33mheight[39m=[32m"24"[39m
+                    [33mstroke[39m=[32m"currentColor"[39m
+                    [33mstroke-linecap[39m=[32m"round"[39m
+                    [33mstroke-linejoin[39m=[32m"round"[39m
+                    [33mstroke-width[39m=[32m"2.5"[39m
+                    [33mviewBox[39m=[32m"0 0 24 24"[39m
+                    [33mwidth[39m=[32m"24"[39m
+                    [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+                  [36m>[39m
+                    [36m<circle[39m
+                      [33mcx[39m=[32m"12"[39m
+                      [33mcy[39m=[32m"12"[39m
+                      [33mr[39m=[32m"10"[39m
+                    [36m/>[39m
+                    [36m<path[39m
+                      [33md[39m=[32m"m9 12 2 2 4-4"[39m
+                    [36m/>[39m
+                  [36m</svg>[39m
+                  [36m<span[39m
+                    [33mclass[39m=[32m"text-[13px] font-bold tracking-wide transition-colors text-emerald-600 dark:text-emerald-500"[39m
+                  [36m>[39m
+                    [0mPresent[0m
+                  [36m</span>[39m
+                  [36m<div[39m
+                    [33maria-hidden[39m=[32m"true"[39m
+                    [33mclass...
+
+Ignored nodes: comments, script, style
+[36m<html>[39m
+  [36m<head />[39m
+  [36m<body>[39m
+    [36m<div>[39m
+      [36m<form[39m
+        [33mclass[39m=[32m"space-y-0 py-1"[39m
+      [36m>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"group/field-group @container/field-group flex w-full flex-col gap-7 data-[slot=checkbox-group]:gap-3 *:data-[slot=field-group]:gap-4 space-y-0"[39m
+          [33mdata-slot[39m=[32m"field-group"[39m
+        [36m>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"py-6 px-5 bg-card/40 border border-border/40 rounded-2xl mb-5 shadow-sm backdrop-blur-sm"[39m
+          [36m>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"flex items-center gap-3 mb-6 pb-3.5 border-b border-border/50"[39m
+            [36m>[39m
+              [36m<div[39m
+                [33mclass[39m=[32m"p-2 bg-primary/10 text-primary rounded-lg"[39m
+              [36m>[39m
+                [36m<svg[39m
+                  [33maria-hidden[39m=[32m"true"[39m
+                  [33mclass[39m=[32m"lucide lucide-calendar-days size-4.5"[39m
+                  [33mfill[39m=[32m"none"[39m
+                  [33mheight[39m=[32m"24"[39m
+                  [33mstroke[39m=[32m"currentColor"[39m
+                  [33mstroke-linecap[39m=[32m"round"[39m
+                  [33mstroke-linejoin[39m=[32m"round"[39m
+                  [33mstroke-width[39m=[32m"2.5"[39m
+                  [33mviewBox[39m=[32m"0 0 24 24"[39m
+                  [33mwidth[39m=[32m"24"[39m
+                  [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+                [36m>[39m
+                  [36m<path[39m
+                    [33md[39m=[32m"M8 2v4"[39m
+                  [36m/>[39m
+                  [36m<path[39m
+                    [33md[39m=[32m"M16 2v4"[39m
+                  [36m/>[39m
+                  [36m<rect[39m
+                    [33mheight[39m=[32m"18"[39m
+                    [33mrx[39m=[32m"2"[39m
+                    [33mwidth[39m=[32m"18"[39m
+                    [33mx[39m=[32m"3"[39m
+                    [33my[39m=[32m"4"[39m
+                  [36m/>[39m
+                  [36m<path[39m
+                    [33md[39m=[32m"M3 10h18"[39m
+                  [36m/>[39m
+                  [36m<path[39m
+                    [33md[39m=[32m"M8 14h.01"[39m
+                  [36m/>[39m
+                  [36m<path[39m
+                    [33md[39m=[32m"M12 14h.01"[39m
+                  [36m/>[39m
+                  [36m<path[39m
+                    [33md[39m=[32m"M16 14h.01"[39m
+                  [36m/>[39m
+                  [36m<path[39m
+                    [33md[39m=[32m"M8 18h.01"[39m
+                  [36m/>[39m
+                  [36m<path[39m
+                    [33md[39m=[32m"M12 18h.01"[39m
+                  [36m/>[39m
+                  [36m<path[39m
+                    [33md[39m=[32m"M16 18h.01"[39m
+                  [36m/>[39m
+                [36m</svg>[39m
+              [36m</div>[39m
+              [36m<h3[39m
+                [33mclass[39m=[32m"text-[14px] font-bold text-foreground tracking-wide uppercase"[39m
+              [36m>[39m
+                [0mAttendance Status[0m
+              [36m</h3>[39m
+            [36m</div>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"pl-0"[39m
+            [36m>[39m
+              [36m<div[39m
+                [33mclass[39m=[32m"group/field flex w-full gap-3 data-[invalid=true]:text-destructive flex-col *:w-full [&>.sr-only]:w-auto space-y-1.5"[39m
+                [33mdata-orientation[39m=[32m"vertical"[39m
+                [33mdata-slot[39m=[32m"field"[39m
+                [33mrole[39m=[32m"group"[39m
+              [36m>[39m
+                [36m<label[39m
+                  [33mclass[39m=[32m"items-center text-sm font-medium select-none group-data-[disabled=true]:pointer-events-none group-data-[disabled=true]:opacity-50 peer-disabled:cursor-not-allowed peer-disabled:opacity-50 group/field-label peer/field-label flex w-fit gap-2 leading-snug group-data-[disabled=true]/field:opacity-50 has-data-checked:border-primary/30 has-data-checked:bg-primary/5 has-[>[data-slot=field]]:rounded-xl has-[>[data-slot=field]]:border *:data-[slot=field]:p-4 dark:has-data-checked:border-primary/20 dark:has-data-checked:bg-primary/10 has-[>[data-slot=field]]:w-full has-[>[data-slot=field]]:flex-col sr-only"[39m
+                  [33mdata-slot[39m=[32m"field-label"[39m
+                [36m>[39m
+                  [0mStatus[0m
+                [36m</label>[39m
+                [36m<div[39m
+                  [33maria-label[39m=[32m"Attendance status"[39m
+                  [33mclass[39m=[32m"grid grid-cols-2 gap-3"[39m
+                  [33mrole[39m=[32m"radiogroup"[39m
+                [36m>[39m
+                  [36m<button[39m
+                    [33maria-checked[39m=[32m"true"[39m
+                    [33maria-disabled[39m=[32m"false"[39m
+                    [33mclass[39m=[32m"relative flex flex-col items-center justify-center gap-2.5 rounded-xl p-4 transition-all duration-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring border-2 bg-emerald-50 dark:bg-emerald-500/10 border-emerald-500/30 dark:border-emerald-500/40 shadow-sm scale-[1.02]"[39m
+                    [33mid[39m=[32m"status-option-present"[39m
+                    [33mrole[39m=[32m"radio"[39m
+                    [33mtabindex[39m=[32m"0"[39m
+                    [33mtype[39m=[32m"button"[39m
+                  [36m>[39m
+                    [36m<svg[39m
+                      [33maria-hidden[39m=[32m"true"[39m
+                      [33mclass[39m=[32m"lucide lucide-circle-check size-7 transition-colors text-emerald-600 dark:text-emerald-500"[39m
+                      [33mfill[39m=[32m"none"[39m
+                      [33mheight[39m=[32m"24"[39m
+                      [33mstroke[39m=[32m"currentColor"[39m
+                      [33mstroke-linecap[39m=[32m"round"[39m
+                      [33mstroke-linejoin[39m=[32m"round"[39m
+                      [33mstroke-width[39m=[32m"2.5"[39m
+                      [33mviewBox[39m=[32m"0 0 24 24"[39m
+                      [33mwidth[39m=[32m"24"[39m
+                      [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+                    [36m>[39m
+                      [36m<circle[39m
+                        [33mcx[39m=[32m"12"[39m
+                        [33mcy[39m=[32m"12"[39m
+                        [33mr[39m=[32m"10"[39m
+                      [36m/>[39m
+                      [36m<path[39m
+                        [33md[39m=[32m"m9 12 2 2 4-4"[39m
+                      [36m/>[39m
+                    [36m</svg>[39m
+                    [36m<span[39m
+                      [33mclass[39m=[32m"text-[13px] font-bold tracking-wi...
+ ❯ Proxy.waitForWrapper node_modules/@testing-library/dom/dist/wait-for.js:163:27
+ ❯ src/components/hr/attendance/edit-attendance-form.behavior.test.tsx:183:11
+    181|     fireEvent.click(screen.getByRole("button", { name: "Emit 10h Summa…
+    182|
+    183|     await waitFor(() => {
+       |           ^
+    184|       expect(screen.getByDisplayValue("2.00")).toBeTruthy();
+    185|     });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[23/24]⎯
+
+ FAIL  src/lib/sales/settlement/math.test.ts > invoice settlement math > rejects confirmed plus pending allocation above invoice total
+AssertionError: expected [Function] to throw an error
+
+- Expected:
+null
+
++ Received:
+undefined
+
+ ❯ src/lib/sales/settlement/math.test.ts:70:5
+     68|     { amount: 30, status: "pending", method: "bank_transfer" },
+     69|    ]),
+     70|   ).toThrow("Payments cannot exceed invoice total");
+       |     ^
+     71|  });
+     72|  it("rejects a new confirmed overpayment but preserves credits from ap…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[24/24]⎯
+
+
+ Test Files  9 failed | 158 passed | 12 skipped (179)
+      Tests  23 failed | 1163 passed | 134 skipped (1320)
+   Start at  17:19:42
+   Duration  272.13s (transform 11.40s, setup 3.92s, import 317.66s, tests 143.23s, environment 289.39s)
+
+error: script "test" exited with code 1
