@@ -34,6 +34,12 @@ export type DeviceImportRowPreview = {
   date: string | null;
   attendanceDates?: string[];
   punchTimes: string[];
+  /** Per-punch direction and owning attendance date, in report order. */
+  punchDetails?: {
+    time: string;
+    direction: "in" | "out" | null;
+    attendanceDate: string | null;
+  }[];
   status: DeviceImportRowStatus;
   messages: string[];
   newPunchCount: number;

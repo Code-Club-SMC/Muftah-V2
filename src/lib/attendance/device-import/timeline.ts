@@ -15,6 +15,8 @@ export type DevicePlannedPunch = {
   reportDate: string;
   direction: "in" | "out";
   existingPunchId: string | null;
+  /** Set when an existing punch is reassigned to another attendance date. */
+  movedFromDate?: string;
 };
 export type DevicePlannedRow = {
   row: DevicePunchReportRow;
@@ -75,9 +77,10 @@ export function planDeviceEmployeeRows(input: {
   shifts: { start: string; end: string }[];
   now: Date;
 }): DevicePlannedRow[] {
-  const existing = [...input.existingPunches].sort(
-    (a, b) => millis(a.timestamp) - millis(b.timestamp),
-  );
+  // Copies: overnight check-ins are reassigned in place while planning.
+  const existing = input.existingPunches
+    .map((p) => ({ ...p }))
+    .sort((a, b) => millis(a.timestamp) - millis(b.timestamp));
   const byTimestamp = new Map<number, DeviceTimelinePunch[]>();
   const byDay = new Map<string, DeviceTimelinePunch[]>();
   for (const punch of existing) {
@@ -93,6 +96,11 @@ export function planDeviceEmployeeRows(input: {
   const today = toPKTDate(input.now);
   const results: DevicePlannedRow[] = [];
   let lastAdded: DeviceTimelinePunch | undefined;
+  // Planned punch and its row for each punch added by this upload.
+  const addedBy = new Map<
+    DeviceTimelinePunch,
+    { result: DevicePlannedRow; planned: DevicePlannedPunch }
+  >();
 
   for (const row of [...input.rows].sort(
     (a, b) =>
@@ -132,6 +140,8 @@ export function planDeviceEmployeeRows(input: {
     const additions = new Map<string, DeviceTimelinePunch[]>();
     let previousAdded = lastAdded;
     let conflict: string | null = null;
+    // Overnight shifts count on the checkout date, so the open IN moves there.
+    let overnightIn: DeviceTimelinePunch | null = null;
     for (const time of row.punches) {
       const timestamp: Date = new Date(`${row.date}T${time}:00+05:00`);
       const stamp = timestamp.getTime();
@@ -171,7 +181,14 @@ export function planDeviceEmployeeRows(input: {
         if (previous.attendanceDate === row.date) direction = "out";
         else if (mayCloseOvernight(previous, timestamp, input.shifts)) {
           direction = "out";
-          attendanceDate = previous.attendanceDate;
+          overnightIn = previous;
+          affected.add(previous.attendanceDate);
+          if (input.lockedDates.has(previous.attendanceDate)) {
+            conflict =
+              "The overnight check-in belongs to approved or paid payroll.";
+            result.status = "blocked";
+            break;
+          }
         }
       }
       const day = attendance.get(attendanceDate);
@@ -196,13 +213,14 @@ export function planDeviceEmployeeRows(input: {
         result.status = "blocked";
         break;
       }
-      result.punches.push({
+      const planned: DevicePlannedPunch = {
         timestamp,
         direction,
         attendanceDate,
         reportDate: row.date,
         existingPunchId: null,
-      });
+      };
+      result.punches.push(planned);
       affected.add(attendanceDate);
       previousAdded = {
         id: `device:${row.rowNumber}:${time}`,
@@ -210,15 +228,20 @@ export function planDeviceEmployeeRows(input: {
         attendanceDate,
         direction,
       };
+      addedBy.set(previousAdded, { result, planned });
       const list = additions.get(attendanceDate) ?? [];
       list.push(previousAdded);
       additions.set(attendanceDate, list);
     }
+    const movedIn = overnightIn;
     const merged = new Map<string, DeviceTimelinePunch[]>();
     for (const date of affected) {
       const punches = [
-        ...(byDay.get(date) ?? []),
+        ...(byDay.get(date) ?? []).filter((p) => p !== movedIn),
         ...(additions.get(date) ?? []),
+        ...(movedIn && date === row.date
+          ? [{ ...movedIn, attendanceDate: row.date }]
+          : []),
       ].sort((a, b) => millis(a.timestamp) - millis(b.timestamp));
       merged.set(date, punches);
       if (!isPunchTimelineValid(punches))
@@ -232,9 +255,46 @@ export function planDeviceEmployeeRows(input: {
       result.punches = [];
       continue;
     }
+    if (movedIn) {
+      const fromDate = movedIn.attendanceDate;
+      const source = addedBy.get(movedIn);
+      if (source) {
+        // IN came from an earlier row of this upload; it is not saved yet.
+        source.planned.attendanceDate = row.date;
+        if (!source.result.punches.some((p) => p.attendanceDate === fromDate))
+          source.result.attendanceDates = source.result.attendanceDates.filter(
+            (date) => date !== fromDate,
+          );
+        if (!source.result.attendanceDates.includes(row.date))
+          source.result.attendanceDates = [
+            ...source.result.attendanceDates,
+            row.date,
+          ].sort();
+      } else {
+        result.punches.unshift({
+          timestamp: new Date(movedIn.timestamp),
+          direction: "in",
+          attendanceDate: row.date,
+          reportDate: fromDate,
+          existingPunchId: movedIn.id,
+          movedFromDate: fromDate,
+        });
+      }
+      // Keep the moved punch identity so later rows can find it by reference.
+      movedIn.attendanceDate = row.date;
+      const target = merged.get(row.date)!;
+      merged.set(
+        row.date,
+        target.map((p) => (p.id === movedIn.id ? movedIn : p)),
+      );
+      if (!merged.get(fromDate)?.length)
+        result.attendanceDates = result.attendanceDates.filter(
+          (date) => date !== fromDate,
+        );
+    }
     for (const [date, punches] of merged) byDay.set(date, punches);
     lastAdded = previousAdded;
-    if (!result.punches.some((p) => !p.existingPunchId))
+    if (!result.punches.some((p) => !p.existingPunchId || p.movedFromDate))
       result.status = "unchanged";
   }
 

@@ -65,6 +65,20 @@ function getPunchDrivenSource(
     : "manual";
 }
 
+async function refundCompensatoryHours(
+  tx: AttendanceTx,
+  employeeId: string,
+  hours: number,
+) {
+  if (!Number.isFinite(hours) || hours <= 0.0001) return;
+  await tx
+    .update(employees)
+    .set({
+      compensatoryHoursBalance: sql`COALESCE(${employees.compensatoryHoursBalance}, 0) + ${hours.toFixed(2)}`,
+    })
+    .where(eq(employees.id, employeeId));
+}
+
 export async function recomputeAttendanceRow(
   tx: AttendanceTx,
   employeeId: string,
@@ -101,6 +115,11 @@ export async function recomputeAttendanceRow(
 
   if (punches.length === 0) {
     if (existingAttendance?.status === "present") {
+      await refundCompensatoryHours(
+        tx,
+        employeeId,
+        Number(existingAttendance.compensatoryHoursUsed || "0"),
+      );
       await tx
         .delete(attendance)
         .where(eq(attendance.id, existingAttendance.id));
@@ -122,9 +141,7 @@ export async function recomputeAttendanceRow(
       forceNightShift:
         options.forceNightShift ||
         punches.some(
-          (punch) =>
-            punch.direction === "out" &&
-            toPKTDate(punch.timestamp) > attendanceDate,
+          (punch) => toPKTDate(punch.timestamp) !== attendanceDate,
         ),
     },
   );
@@ -143,12 +160,23 @@ export async function recomputeAttendanceRow(
 
   const manualFieldStrategy = options.manualFieldStrategy ?? "preserve";
 
+  // Banked hours covering a short present day stay, capped to the new shortfall.
+  // Anything no longer needed (or a comp-off leave row turning present) is refunded.
+  const previousCompUsed = Number(existingAttendance?.compensatoryHoursUsed || "0");
+  const keptCompUsed =
+    existingAttendance?.status === "present" && previousCompUsed > 0
+      ? Math.min(
+          previousCompUsed,
+          Math.max(0, effectiveStandardHours - Number(computed.dutyHours)),
+        )
+      : 0;
+
   const updateData = {
     status: "present" as const,
     isApprovedLeave: false,
     leaveType: null,
     leaveApprovalStatus: "none",
-    compensatoryHoursUsed: "0",
+    compensatoryHoursUsed: keptCompUsed > 0 ? keptCompUsed.toFixed(2) : "0",
     checkIn: computed.checkIn,
     checkOut: computed.checkOut,
     dutyHours: computed.dutyHours,
@@ -216,21 +244,8 @@ export async function recomputeAttendanceRow(
     updatedAt: new Date(),
   };
 
-  // Switching a leave row to punch-backed presence refunds reserved hours once.
-  // Clearing the persisted leave metadata above makes repeated recomputation idempotent.
-  if (existingAttendance?.leaveType === "compensatory") {
-    const previousCompUsed = Number(
-      existingAttendance.compensatoryHoursUsed || "0",
-    );
-    if (Number.isFinite(previousCompUsed) && previousCompUsed > 0) {
-      await tx
-        .update(employees)
-        .set({
-          compensatoryHoursBalance: sql`COALESCE(${employees.compensatoryHoursBalance}, 0) + ${previousCompUsed}`,
-        })
-        .where(eq(employees.id, employeeId));
-    }
-  }
+  // Clearing or capping the persisted hours above makes repeated recomputation idempotent.
+  await refundCompensatoryHours(tx, employeeId, previousCompUsed - keptCompUsed);
 
   const [upserted] = await tx
     .insert(attendance)

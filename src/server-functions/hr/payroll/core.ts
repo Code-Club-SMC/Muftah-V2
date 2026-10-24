@@ -8,6 +8,7 @@ import {
   nightShiftRates,
   travelLogs,
   bradfordAuditLog,
+  compensatoryCashOuts,
   hrPayrollSettings,
   HR_PAYROLL_SETTINGS_SINGLETON_ID,
 } from "@/db/schemas/hr-schema";
@@ -31,6 +32,7 @@ import {
 } from "@/lib/types/hr-types";
 
 import { assertDeviceAttendanceResolved, lockAttendancePayrollWrites } from "@/lib/attendance/device-import/payroll.server";
+import { compCashOutAmount } from "@/lib/attendance/compensatory-bank";
 
 function getEffectiveSalaryDate(payrollPeriod: { startDate: string; endDate: string }): string {
   const todayStr = format(new Date(), "yyyy-MM-dd");
@@ -190,6 +192,42 @@ export async function syncPayrollTotal(
   return row?.total || "0";
 }
 
+/**
+ * Pending comp-off cash-outs the payslip for this payroll + employee should pay:
+ * unpaid ones, plus any already linked to the slip being regenerated.
+ */
+async function loadPayableCashOuts(
+  employeeId: string,
+  payrollId: string | null | undefined,
+  overtimeRatePerHour: number,
+) {
+  const existingSlip = payrollId
+    ? await db.query.payslips.findFirst({
+        where: and(eq(payslips.payrollId, payrollId), eq(payslips.employeeId, employeeId)),
+        columns: { id: true },
+      })
+    : undefined;
+  const rows = await db.query.compensatoryCashOuts.findMany({
+    where: and(
+      eq(compensatoryCashOuts.employeeId, employeeId),
+      eq(compensatoryCashOuts.status, "pending"),
+    ),
+  });
+  const payable = rows
+    .filter((row) => !row.paidInPayslipId || row.paidInPayslipId === existingSlip?.id)
+    .map((row) => ({
+      id: row.id,
+      hours: Number(row.hours),
+      amount: compCashOutAmount(Number(row.hours), overtimeRatePerHour),
+    }));
+  return {
+    rows: payable,
+    rate: overtimeRatePerHour,
+    hours: payable.reduce((sum, row) => sum + row.hours, 0),
+    amount: payable.reduce((sum, row) => sum + row.amount, 0),
+  };
+}
+
 export async function reversePayslipSideEffects(
   tx: DbTransaction,
   payslipId: string,
@@ -268,6 +306,11 @@ export async function reversePayslipSideEffects(
   await tx
     .delete(bradfordAuditLog)
     .where(eq(bradfordAuditLog.payslipId, payslipId));
+
+  await tx
+    .update(compensatoryCashOuts)
+    .set({ paidInPayslipId: null, ratePerHour: null, amount: null, updatedAt: new Date() })
+    .where(eq(compensatoryCashOuts.paidInPayslipId, payslipId));
 }
 
 async function getPreviousDeficitForPeriod(
@@ -646,6 +689,15 @@ export async function generateEmployeePayslipCore(
     ),
   );
 
+  // -- 6.55 Banked comp-off hours being cashed out ----------------------------
+  const cashOuts = await loadPayableCashOuts(
+    employeeId,
+    input.payrollId,
+    payslipCalc.calculationMeta.overtimeRatePerHour,
+  );
+  payslipCalc.grossSalary += cashOuts.amount;
+  payslipCalc.netSalary += cashOuts.amount;
+
   // -- 6.6 Fetch carried-forward deficit from previous payslip ----------------
   const previousDeficit = await getPreviousDeficitForPeriod(
     employeeId,
@@ -748,6 +800,8 @@ export async function generateEmployeePayslipCore(
 
         // Carry-forward deficit (when deductions exceed earnings)
         carriedForwardDeficit: carriedForwardDeficit.toString(),
+        compCashOutHours: cashOuts.hours.toFixed(2),
+        compCashOutAmount: cashOuts.amount.toFixed(2),
 
         // Arrears audit trail -- stored permanently so future missed-cycle
         // detection queries skip these months for this employee.
@@ -759,6 +813,31 @@ export async function generateEmployeePayslipCore(
         attendanceAdjustments: attendanceAdjustments || {},
       })
       .returning();
+
+    // 8b-2. Mark the cash-outs as paid by this slip
+    for (const row of cashOuts.rows) {
+      const [linked] = await tx
+        .update(compensatoryCashOuts)
+        .set({
+          paidInPayslipId: slip.id,
+          ratePerHour: cashOuts.rate.toFixed(4),
+          amount: row.amount.toFixed(2),
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(compensatoryCashOuts.id, row.id),
+            eq(compensatoryCashOuts.status, "pending"),
+            isNull(compensatoryCashOuts.paidInPayslipId),
+          ),
+        )
+        .returning({ id: compensatoryCashOuts.id });
+      if (!linked) {
+        throw new Error(
+          "Comp-off cash-outs changed during payroll generation. Please recalculate the payslip.",
+        );
+      }
+    }
 
     // 8c. Record advance installments and track progress
     if (advanceIdsToProcess.length > 0) {
@@ -871,6 +950,7 @@ export async function generateEmployeePayslipCore(
     arrearsAmount: arrearsAmt,
     arrearsFromMonths: arrearsMonths,
     totalNetWithArrears,
+    compCashOut: { hours: cashOuts.hours, amount: cashOuts.amount, ratePerHour: cashOuts.rate },
     walletDebited: null,
   };
 }
@@ -1172,6 +1252,15 @@ export async function simulateEmployeePayslipCore(
     ),
   );
 
+  // -- 6.55 Banked comp-off hours being cashed out ----------------------------
+  const cashOuts = await loadPayableCashOuts(
+    employeeId,
+    input.payrollId,
+    payslipCalc.calculationMeta.overtimeRatePerHour,
+  );
+  payslipCalc.grossSalary += cashOuts.amount;
+  payslipCalc.netSalary += cashOuts.amount;
+
   // -- 6.6 Fetch carried-forward deficit from previous payslip ----------------
   const previousDeficit = await getPreviousDeficitForPeriod(
     employeeId,
@@ -1205,6 +1294,7 @@ export async function simulateEmployeePayslipCore(
     totalNetWithArrears,
     carriedForwardDeficit,
     previousDeficit,
+    compCashOut: { hours: cashOuts.hours, amount: cashOuts.amount, ratePerHour: cashOuts.rate },
     commissionBreakdown: commissionBreakdownSnapshot,
     advanceProcessRecords: advanceIdsToProcess,
     salaryRevision: {

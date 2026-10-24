@@ -19,7 +19,7 @@ import { invalidateDraftPayrollsForAttendance } from "../offline/payroll-invalid
 import { parseDevicePunchReport } from "./parser.server";
 import { planDeviceEmployeeRows, type DevicePlannedRow } from "./timeline";
 import { lockAttendancePayrollWrites } from "./payroll.server";
-import { toPKTDate } from "../time";
+import { toPKTDate, toPKTTime } from "../time";
 import {
   DEVICE_IMPORT_MAX_BYTES,
   type DeviceImportPreview,
@@ -259,6 +259,18 @@ async function buildPlans(
         date: plan.row.date,
         attendanceDates: plan.attendanceDates,
         punchTimes: plan.row.punches,
+        punchDetails: plan.row.punches.map((time) => {
+          const planned = plan.punches.find(
+            (p) =>
+              toPKTDate(p.timestamp) === plan.row.date &&
+              toPKTTime(p.timestamp).slice(0, 5) === time,
+          );
+          return {
+            time,
+            direction: planned?.direction ?? null,
+            attendanceDate: planned?.attendanceDate ?? null,
+          };
+        }),
         status: plan.status,
         messages: plan.messages,
         newPunchCount: plan.punches.filter((p) => !p.existingPunchId).length,
@@ -374,30 +386,43 @@ export async function confirmDeviceAttendance(
         await tx
           .insert(attendancePunches)
           .values(added.slice(offset, offset + 500));
+      const moved = proposed.filter((p) => p.movedFromDate);
+      for (const p of moved) {
+        await tx
+          .update(attendancePunches)
+          .set({ attendanceDate: p.attendanceDate })
+          .where(eq(attendancePunches.id, p.existingPunchId!));
+        await tx
+          .update(deviceAttendancePunchClaims)
+          .set({ attendanceDate: p.attendanceDate })
+          .where(eq(deviceAttendancePunchClaims.punchId, p.existingPunchId!));
+      }
       const ids = new Map(added.map((p) => [p.timestamp.getTime(), p.id]));
-      const newClaims = proposed.map((p) => ({
-        importId: batch.id,
-        employeeId: employee.id,
-        timestamp: p.timestamp,
-        reportDate: p.reportDate,
-        attendanceDate: p.attendanceDate,
-        direction: p.direction,
-        punchId: p.existingPunchId ?? ids.get(p.timestamp.getTime())!,
-      }));
+      const newClaims = proposed
+        .filter((p) => !p.movedFromDate)
+        .map((p) => ({
+          importId: batch.id,
+          employeeId: employee.id,
+          timestamp: p.timestamp,
+          reportDate: p.reportDate,
+          attendanceDate: p.attendanceDate,
+          direction: p.direction,
+          punchId: p.existingPunchId ?? ids.get(p.timestamp.getTime())!,
+        }));
       for (let offset = 0; offset < newClaims.length; offset += 500)
         await tx
           .insert(deviceAttendancePunchClaims)
           .values(newClaims.slice(offset, offset + 500));
       const affectedDates = [
-        ...new Set(added.map((p) => p.attendanceDate)),
+        ...new Set([
+          ...added.map((p) => p.attendanceDate),
+          ...moved.flatMap((p) => [p.movedFromDate!, p.attendanceDate]),
+        ]),
       ].sort();
       for (const date of affectedDates) {
         await recomputeAttendanceRow(tx, employee.id, date, {
-          forceNightShift: added.some(
-            (p) =>
-              p.attendanceDate === date &&
-              p.direction === "out" &&
-              toPKTDate(p.timestamp) !== date,
+          forceNightShift: [...added, ...moved].some(
+            (p) => p.attendanceDate === date && toPKTDate(p.timestamp) !== date,
           ),
         });
         await invalidateDraftPayrollsForAttendance(tx, {

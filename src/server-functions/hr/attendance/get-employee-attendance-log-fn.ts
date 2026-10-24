@@ -1,9 +1,15 @@
 import { createServerFn } from "@tanstack/react-start";
 import { db } from "@/db";
-import { attendance, attendancePunches, employees } from "@/db/schemas/hr-schema";
+import {
+  attendance,
+  attendancePunches,
+  employees,
+  payrolls,
+} from "@/db/schemas/hr-schema";
+import { nowPKTDate } from "@/lib/attendance/time";
 import { requireHrViewMiddleware } from "@/lib/middlewares";
 import { z } from "zod";
-import { and, asc, between, eq } from "drizzle-orm";
+import { and, asc, between, eq, gte, inArray, lte } from "drizzle-orm";
 
 export const getEmployeeAttendanceLogFn = createServerFn()
   .middleware([requireHrViewMiddleware])
@@ -42,6 +48,15 @@ export const getEmployeeAttendanceLogFn = createServerFn()
       ],
     });
 
+    const lockedPayrolls = await db.query.payrolls.findMany({
+      where: and(
+        lte(payrolls.startDate, endDate),
+        gte(payrolls.endDate, startDate),
+        inArray(payrolls.status, ["approved", "paid"]),
+      ),
+      columns: { startDate: true, endDate: true },
+    });
+
     const punchesByDate = punches.reduce<Record<string, typeof punches>>(
       (acc, punch) => {
         if (!acc[punch.attendanceDate]) {
@@ -57,5 +72,7 @@ export const getEmployeeAttendanceLogFn = createServerFn()
       employee,
       records,
       punchesByDate,
+      lockedPayrolls,
+      today: nowPKTDate(),
     };
   });

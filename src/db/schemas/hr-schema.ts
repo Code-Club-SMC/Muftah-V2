@@ -461,6 +461,10 @@ export const payslips = pgTable(
   // as a priority deduction in the next pay cycle.
   carriedForwardDeficit: decimal("carried_forward_deficit", { precision: 12, scale: 2 }).default("0"),
 
+  // Banked comp-off hours paid out in this payslip (cash-out or final settlement)
+  compCashOutHours: decimal("comp_cash_out_hours", { precision: 6, scale: 2 }).default("0").notNull(),
+  compCashOutAmount: decimal("comp_cash_out_amount", { precision: 12, scale: 2 }).default("0").notNull(),
+
   // Commission Breakdown Snapshot
   // Frozen at payroll generation time — per-order commission detail.
   // Structure: [{ orderId, orderRef, orderDate, orderValue, rate, amount }]
@@ -618,6 +622,38 @@ export const advanceInstallments = pgTable("advance_installments", {
 
   ...timestamps,
 });
+
+// --- COMP-OFF CASH-OUTS ---
+// Banked hours leave the employee's balance when HR records the cash-out.
+// The next generated payslip pays them at the overtime rate and links itself here.
+export const compensatoryCashOuts = pgTable("compensatory_cash_outs", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => createId()),
+
+  employeeId: text("employee_id")
+    .notNull()
+    .references(() => employees.id, { onDelete: "cascade" }),
+
+  hours: decimal("hours", { precision: 6, scale: 2 }).notNull(),
+  kind: text("kind", { enum: ["cash_out", "final_settlement"] }).notNull(),
+  status: text("status", { enum: ["pending", "cancelled"] }).default("pending").notNull(),
+  requestedDate: date("requested_date").notNull(),
+  notes: text("notes"),
+
+  paidInPayslipId: text("paid_in_payslip_id").references(() => payslips.id, {
+    onDelete: "set null",
+  }),
+  ratePerHour: decimal("rate_per_hour", { precision: 12, scale: 4 }),
+  amount: decimal("amount", { precision: 12, scale: 2 }),
+
+  createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
+
+  ...timestamps,
+}, (table) => ({
+  employeeIdx: index("idx_comp_cash_outs_employee").on(table.employeeId),
+  payslipIdx: index("idx_comp_cash_outs_payslip").on(table.paidInPayslipId),
+}));
 
 // --- BRADFORD FACTOR AUDIT LOG ---
 export const bradfordAuditLog = pgTable("bradford_audit_log", {
@@ -863,5 +899,16 @@ export const bradfordAuditLogRelations = relations(bradfordAuditLog, ({ one }) =
   performer: one(user, {
     fields: [bradfordAuditLog.performedBy],
     references: [user.id],
+  }),
+}));
+
+export const compensatoryCashOutRelations = relations(compensatoryCashOuts, ({ one }) => ({
+  employee: one(employees, {
+    fields: [compensatoryCashOuts.employeeId],
+    references: [employees.id],
+  }),
+  payslip: one(payslips, {
+    fields: [compensatoryCashOuts.paidInPayslipId],
+    references: [payslips.id],
   }),
 }));

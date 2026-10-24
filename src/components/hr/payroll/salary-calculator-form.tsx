@@ -548,6 +548,13 @@ export const SalaryCalculatorForm = ({ employeeId, month, onSuccess, isOpen }: S
                                         ) : null;
                                     })()}
                                     <SummaryRow label="Overtime Pay" value={calculation.overtimeAmount} highlight />
+                                    {calculation.compCashOut?.amount > 0 && (
+                                        <SummaryRow
+                                            label={`Comp-off cash-out (${calculation.compCashOut.hours}h)`}
+                                            value={calculation.compCashOut.amount}
+                                            tooltip="Banked hours HR cashed out, paid at the overtime rate"
+                                        />
+                                    )}
                                     <SummaryRow label="Incentives & TA/DA" value={calculation.incentiveAmount} highlight />
                                     <SummaryRow label="Commission" value={calculation.commissionAmount} highlight />
                                     <SummaryRow label="Bonus & Eid Allowance" value={calculation.bonusAmount} highlight />

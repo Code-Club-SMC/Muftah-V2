@@ -26,6 +26,16 @@ vi.mock("@/server-functions/hr/attendance/get-daily-attendance-fn", () => ({
 vi.mock("@/hooks/use-viewer-access", () => ({
   useViewerAccess: () => ({ data: { permissions: mocks.permissions } }),
 }));
+vi.mock("@tanstack/react-router", () => ({
+  Link: ({ children, params, search, to, ...props }: Record<string, any>) => (
+    <a
+      href={`${to.replace("$employeeId", params.employeeId)}?from=${search.from}&to=${search.to}`}
+      {...props}
+    >
+      {children}
+    </a>
+  ),
+}));
 vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 vi.mock("@/components/custom/responsive-sheet", () => ({
   ResponsiveSheet: ({
@@ -385,5 +395,47 @@ describe("device import sheet behavior", () => {
     expect(screen.getByText("HR management access required")).toBeTruthy();
     expect(screen.queryByLabelText("Device report")).toBeNull();
     expect(mocks.list).not.toHaveBeenCalled();
+  });
+
+  it("highlights rows needing attention and filters the preview", async () => {
+    setup();
+    await uploadReport();
+    const reviewRow = screen
+      .getByRole("button", { name: "Review attendance row 4" })
+      .closest("tr")!;
+    expect(reviewRow.getAttribute("data-status")).toBe("needs_review");
+    expect(reviewRow.className).toContain("bg-amber-500/10");
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Show only rows needing attention" }),
+    );
+    expect(screen.getByText("Showing 3 of 4 rows")).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: "Review attendance row 3" }),
+    ).toBeNull();
+
+    fireEvent.change(screen.getByLabelText("Search rows"), {
+      target: { value: "sara" },
+    });
+    expect(screen.getByText("Showing 1 of 4 rows")).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Review attendance row 5" }),
+    ).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText("Search rows"), {
+      target: { value: "nobody" },
+    });
+    expect(screen.getByText("No rows match these filters.")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
+    expect(
+      screen
+        .getAllByRole("link", { name: "Open Ali Khan's month" })
+        [0].getAttribute("href"),
+    ).toBe("/hr/attendance/employee-1?from=2026-10-01&to=2026-10-31");
+
+    expect(
+      screen.getByRole("button", { name: "Review attendance row 3" }),
+    ).toBeTruthy();
   });
 });

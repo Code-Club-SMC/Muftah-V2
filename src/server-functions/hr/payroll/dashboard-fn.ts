@@ -443,6 +443,7 @@ export const previewEmployeePayslipFn = createServerFn()
       arrearsFromMonths: simulation.arrearsFromMonths,
       carriedForwardDeficit: simulation.carriedForwardDeficit,
       previousDeficit: simulation.previousDeficit,
+      compCashOut: simulation.compCashOut,
       commissionBreakdown: simulation.commissionBreakdown,
       salaryRevision: simulation.salaryRevision,
       missedCycles,

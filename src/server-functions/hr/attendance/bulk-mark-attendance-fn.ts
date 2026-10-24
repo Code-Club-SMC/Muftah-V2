@@ -79,8 +79,8 @@ export const bulkMarkAttendanceFn = createServerFn()
         if (status === "leave") {
           assertWorkingLeaveDate(date, employee.restDays, existingAttendance?.status);
         }
-        if (existingAttendance?.leaveType === "compensatory") {
-          await adjustCompensatoryReservation(tx, employeeId, existingAttendance.compensatoryHoursUsed, "0");
+        if (Number(existingAttendance?.compensatoryHoursUsed || "0") > 0) {
+          await adjustCompensatoryReservation(tx, employeeId, existingAttendance?.compensatoryHoursUsed, "0");
         }
         
         await tx
