@@ -1,3 +1,5 @@
+import type { DeviceImportCycleGap } from "./coverage";
+
 export const DEVICE_IMPORT_MAX_BYTES = 10 * 1024 * 1024;
 export const DEVICE_IMPORT_MAX_ROWS = 20_000;
 
@@ -53,4 +55,6 @@ export type DeviceImportPreview = {
   status: "preview" | "completed";
   rows: DeviceImportRowPreview[];
   employees: { id: string; employeeCode: string; name: string }[];
+  /** Payroll months (16th to 15th) the report only partly covers. */
+  cycleGaps?: DeviceImportCycleGap[];
 };

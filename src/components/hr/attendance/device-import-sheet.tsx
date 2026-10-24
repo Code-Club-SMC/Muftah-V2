@@ -80,6 +80,7 @@ const formatPunchTime = (time: string) => {
   if (Number.isNaN(hours) || Number.isNaN(minutes)) return time;
   return `${hours % 12 || 12}:${String(minutes).padStart(2, "0")} ${hours < 12 ? "AM" : "PM"}`;
 };
+const formatGapDate = (date: string) => format(parseISO(date), "MMM d");
 // Matches the 20:00 night-shift start used by attendance recompute.
 const isNightPunch = (time: string) => {
   const hours = Number(time.slice(0, 2));
@@ -464,6 +465,36 @@ export function DeviceImportSheet({ open, onOpenChange }: Props) {
                   </FieldGroup>
                 )}
 
+                {preview.cycleGaps?.map((gap) => (
+                  <Alert
+                    key={gap.startDate}
+                    className="border-amber-500/40 bg-amber-500/10"
+                  >
+                    <AlertTitle className="text-amber-700 dark:text-amber-400">
+                      {gap.label} payroll month is incomplete
+                    </AlertTitle>
+                    <AlertDescription>
+                      <p>
+                        The payroll month runs {gap.range}. No attendance is
+                        recorded for {gap.missingDayCount}{" "}
+                        {gap.missingDayCount === 1 ? "day" : "days"}:{" "}
+                        {gap.missingRanges
+                          .map(({ start, end }) =>
+                            start === end
+                              ? formatGapDate(start)
+                              : `${formatGapDate(start)} – ${formatGapDate(end)}`,
+                          )
+                          .join(", ")}
+                        .
+                      </p>
+                      <p>
+                        You can still import this report. Upload the device
+                        report for the missing dates, or mark them in
+                        Attendance Management, before running payroll.
+                      </p>
+                    </AlertDescription>
+                  </Alert>
+                ))}
                 {reviewCount > 0 && (
                   <Alert className="border-amber-500/40 bg-amber-500/10">
                     <AlertTitle className="text-amber-700 dark:text-amber-400">

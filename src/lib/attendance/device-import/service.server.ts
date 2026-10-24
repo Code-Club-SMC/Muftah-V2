@@ -19,7 +19,8 @@ import { invalidateDraftPayrollsForAttendance } from "../offline/payroll-invalid
 import { parseDevicePunchReport } from "./parser.server";
 import { planDeviceEmployeeRows, type DevicePlannedRow } from "./timeline";
 import { lockAttendancePayrollWrites } from "./payroll.server";
-import { toPKTDate, toPKTTime } from "../time";
+import { nowPKTDate, toPKTDate, toPKTTime } from "../time";
+import { findPayrollCycleGaps, payrollCyclesForDates } from "./coverage";
 import {
   DEVICE_IMPORT_MAX_BYTES,
   type DeviceImportPreview,
@@ -277,6 +278,24 @@ async function buildPlans(
         dutyHours: plan.dutyHours,
       });
   }
+  const reportDates = [
+    ...new Set(batch.report.rows.flatMap((r) => (r.date ? [r.date] : []))),
+  ];
+  const cycles = payrollCyclesForDates(reportDates);
+  const recorded = cycles.length
+    ? await tx.query.attendance.findMany({
+        columns: { date: true },
+        where: and(
+          gte(attendance.date, cycles[0].cycleStart),
+          lte(attendance.date, cycles.at(-1)!.cycleEnd),
+        ),
+      })
+    : [];
+  const cycleGaps = findPayrollCycleGaps({
+    reportDates,
+    recordedDates: recorded.map((r) => r.date),
+    today: nowPKTDate(),
+  });
   return {
     employeePlans,
     resolved,
@@ -300,6 +319,7 @@ async function buildPlans(
           employeeCode: e.employeeCode,
           name: name(e),
         })),
+      cycleGaps,
     } satisfies DeviceImportPreview,
   };
 }

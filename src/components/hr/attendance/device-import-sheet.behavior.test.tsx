@@ -167,6 +167,33 @@ describe("device import sheet behavior", () => {
     window.HTMLElement.prototype.releasePointerCapture = vi.fn();
   });
 
+  it("warns when the report leaves payroll month dates uncovered", async () => {
+    mocks.upload.mockResolvedValue({
+      ...structuredClone(report),
+      cycleGaps: [
+        {
+          label: "October 2026",
+          range: "Sep 16 – Oct 15, 2026",
+          startDate: "2026-09-16",
+          endDate: "2026-10-15",
+          missingRanges: [
+            { start: "2026-09-16", end: "2026-09-29" },
+            { start: "2026-10-15", end: "2026-10-15" },
+          ],
+          missingDayCount: 15,
+        },
+      ],
+    });
+    setup();
+    await uploadReport();
+    expect(
+      screen.getByText("October 2026 payroll month is incomplete"),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(/No attendance is recorded for 15 days: Sep 16 – Sep 29, Oct 15\./),
+    ).toBeTruthy();
+  });
+
   it("uploads the selected file, displays exceptions and imports historical open punches", async () => {
     mocks.preview.mockResolvedValue({
       ...structuredClone(report),
