@@ -52,17 +52,39 @@ describe("device punch planning", () => {
     expect(result.status).toBe("ready");
     expect(result.messages.join(" ")).toContain("open");
   });
-  it("closes an overnight interval on its original date across report rows", () => {
+  it("counts an overnight shift on the checkout date across report rows", () => {
     const results = plan([
       row("2026-10-12", ["22:00"]),
       row("2026-10-13", ["06:00"], 4),
     ]);
+    expect(results[0].punches[0]).toMatchObject({
+      direction: "in",
+      attendanceDate: "2026-10-13",
+    });
     expect(results[1].punches[0]).toMatchObject({
       direction: "out",
-      attendanceDate: "2026-10-12",
+      attendanceDate: "2026-10-13",
     });
+    expect(results[0].attendanceDates).toEqual(["2026-10-13"]);
     expect(results[0].status).toBe("ready");
-    expect(results[0].dutyHours).toBe("8.00");
+    expect(results[1].dutyHours).toBe("8.00");
+  });
+  it("counts an 8 PM to 1 AM shift on the checkout date", () => {
+    const results = plan([
+      row("2026-10-01", ["20:00"]),
+      row("2026-10-02", ["01:00"], 4),
+    ]);
+    expect(results.flatMap((r) => r.punches)).toEqual([
+      expect.objectContaining({
+        direction: "in",
+        attendanceDate: "2026-10-02",
+      }),
+      expect.objectContaining({
+        direction: "out",
+        attendanceDate: "2026-10-02",
+      }),
+    ]);
+    expect(results[1].dutyHours).toBe("5.00");
   });
   it("does not close a missed daytime checkout using tomorrow's arrival", () => {
     const results = plan([
@@ -72,7 +94,7 @@ describe("device punch planning", () => {
     expect(results[0].status).toBe("needs_review");
     expect(results[1].punches[0].direction).toBe("in");
   });
-  it("closes an overnight IN from an earlier upload on the original date", () => {
+  it("moves an overnight IN from an earlier upload to the checkout date", () => {
     const [result] = plan([row("2026-10-13", ["06:00"])], {
       existingPunches: [
         {
@@ -83,11 +105,20 @@ describe("device punch planning", () => {
         },
       ],
     });
-    expect(result.attendanceDates).toEqual(["2026-10-12"]);
-    expect(result.punches[0]).toMatchObject({
-      direction: "out",
-      attendanceDate: "2026-10-12",
-    });
+    expect(result.attendanceDates).toEqual(["2026-10-13"]);
+    expect(result.punches).toEqual([
+      expect.objectContaining({
+        direction: "in",
+        attendanceDate: "2026-10-13",
+        existingPunchId: "night-in",
+        movedFromDate: "2026-10-12",
+      }),
+      expect.objectContaining({
+        direction: "out",
+        attendanceDate: "2026-10-13",
+        existingPunchId: null,
+      }),
+    ]);
     expect(result.dutyHours).toBe("8.00");
   });
   it("retains deleted/corrected claims instead of restoring original raw times", () => {

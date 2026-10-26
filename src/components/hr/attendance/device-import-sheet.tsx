@@ -1,5 +1,7 @@
 import { useId, useState, type ComponentProps } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
+import { endOfMonth, format, parseISO, startOfMonth } from "date-fns";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { FileUploadIcon } from "@hugeicons/core-free-icons";
 import { ResponsiveSheet } from "@/components/custom/responsive-sheet";
@@ -63,6 +65,27 @@ const statusLabels: Record<DeviceImportRowStatus, string> = {
   blocked: "Blocked",
   imported: "Imported",
 };
+type StatusFilter = "all" | "attention" | DeviceImportRowStatus;
+const statusFilterLabels: Record<StatusFilter, string> = {
+  all: "All rows",
+  attention: "Needs attention",
+  ...statusLabels,
+};
+const needsAttention = (status: DeviceImportRowStatus) =>
+  status === "needs_review" || status === "blocked";
+
+// Device reports use 24-hour "HH:mm"; HR reads 12-hour times.
+const formatPunchTime = (time: string) => {
+  const [hours, minutes] = time.split(":").map(Number);
+  if (Number.isNaN(hours) || Number.isNaN(minutes)) return time;
+  return `${hours % 12 || 12}:${String(minutes).padStart(2, "0")} ${hours < 12 ? "AM" : "PM"}`;
+};
+const formatGapDate = (date: string) => format(parseISO(date), "MMM d");
+// Matches the 20:00 night-shift start used by attendance recompute.
+const isNightPunch = (time: string) => {
+  const hours = Number(time.slice(0, 2));
+  return hours >= 20 || hours < 6;
+};
 
 type Props = { open: boolean; onOpenChange: (open: boolean) => void };
 
@@ -82,6 +105,9 @@ export function DeviceImportSheet({ open, onOpenChange }: Props) {
   const [lastImportCount, setLastImportCount] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(0);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [dateFilter, setDateFilter] = useState("all");
   const [reviewTarget, setReviewTarget] = useState<{
     employeeId: string;
     date: string;
@@ -113,6 +139,11 @@ export function DeviceImportSheet({ open, onOpenChange }: Props) {
           : unknownIds,
       ),
     ]);
+    if (result.importId !== preview?.importId) {
+      setSearch("");
+      setStatusFilter("all");
+      setDateFilter("all");
+    }
     setPreview(result);
     setPreviewStale(false);
     setPage(0);
@@ -194,9 +225,7 @@ export function DeviceImportSheet({ open, onOpenChange }: Props) {
   };
 
   const rows = preview?.rows ?? [];
-  const reviewCount = rows.filter(
-    (row) => row.status === "needs_review" || row.status === "blocked",
-  ).length;
+  const reviewCount = rows.filter((row) => needsAttention(row.status)).length;
   const newPunchCount = rows.reduce(
     (count, row) => count + (row.status === "blocked" ? 0 : row.newPunchCount),
     0,
@@ -211,7 +240,28 @@ export function DeviceImportSheet({ open, onOpenChange }: Props) {
         .map((row) => [row.personId, row]),
     ).values(),
   ];
-  const pageCount = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  const query = search.trim().toLowerCase();
+  const filteredRows = rows.filter(
+    (row) =>
+      (statusFilter === "all" ||
+        (statusFilter === "attention"
+          ? needsAttention(row.status)
+          : row.status === statusFilter)) &&
+      (dateFilter === "all" ||
+        row.date === dateFilter ||
+        Boolean(row.attendanceDates?.includes(dateFilter))) &&
+      (!query ||
+        [row.personId, row.personName, row.employeeName].some((value) =>
+          value?.toLowerCase().includes(query),
+        )),
+  );
+  const filtersActive =
+    Boolean(query) || statusFilter !== "all" || dateFilter !== "all";
+  const pageCount = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
+  const updateFilter = (apply: () => void) => {
+    apply();
+    setPage(0);
+  };
 
   return (
     <>
@@ -337,8 +387,20 @@ export function DeviceImportSheet({ open, onOpenChange }: Props) {
                       {newPunchCount}
                     </dd>
                   </div>
-                  <div>
-                    <dt className="text-xs text-muted-foreground">
+                  <div
+                    className={
+                      reviewCount > 0
+                        ? "-m-2 rounded-md bg-amber-500/10 p-2 text-amber-700 dark:text-amber-400"
+                        : undefined
+                    }
+                  >
+                    <dt
+                      className={
+                        reviewCount > 0
+                          ? "text-xs"
+                          : "text-xs text-muted-foreground"
+                      }
+                    >
                       Review rows
                     </dt>
                     <dd className="text-2xl font-semibold tabular-nums">
@@ -403,13 +465,58 @@ export function DeviceImportSheet({ open, onOpenChange }: Props) {
                   </FieldGroup>
                 )}
 
+                {preview.cycleGaps?.map((gap) => (
+                  <Alert
+                    key={gap.startDate}
+                    className="border-amber-500/40 bg-amber-500/10"
+                  >
+                    <AlertTitle className="text-amber-700 dark:text-amber-400">
+                      {gap.label} payroll month is incomplete
+                    </AlertTitle>
+                    <AlertDescription>
+                      <p>
+                        The payroll month runs {gap.range}. No attendance is
+                        recorded for {gap.missingDayCount}{" "}
+                        {gap.missingDayCount === 1 ? "day" : "days"}:{" "}
+                        {gap.missingRanges
+                          .map(({ start, end }) =>
+                            start === end
+                              ? formatGapDate(start)
+                              : `${formatGapDate(start)} – ${formatGapDate(end)}`,
+                          )
+                          .join(", ")}
+                        .
+                      </p>
+                      <p>
+                        You can still import this report. Upload the device
+                        report for the missing dates, or mark them in
+                        Attendance Management, before running payroll.
+                      </p>
+                    </AlertDescription>
+                  </Alert>
+                ))}
                 {reviewCount > 0 && (
-                  <Alert>
-                    <AlertTitle>{reviewCount} rows need HR review</AlertTitle>
+                  <Alert className="border-amber-500/40 bg-amber-500/10">
+                    <AlertTitle className="text-amber-700 dark:text-amber-400">
+                      {reviewCount} rows need HR review
+                    </AlertTitle>
                     <AlertDescription>
                       Rows with valid new punches can import even when a
                       checkout is missing. Correct flagged days in Attendance
                       Management before payroll. Blocked rows stay unchanged.
+                      {statusFilter !== "attention" && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="mt-2"
+                          onClick={() =>
+                            updateFilter(() => setStatusFilter("attention"))
+                          }
+                        >
+                          Show only rows needing attention
+                        </Button>
+                      )}
                     </AlertDescription>
                   </Alert>
                 )}
@@ -452,6 +559,96 @@ export function DeviceImportSheet({ open, onOpenChange }: Props) {
                       : `Import ${newPunchCount} new punches`}
                   </Button>
                 </div>
+                <div className="grid gap-3 sm:grid-cols-[1fr_auto_auto_auto] sm:items-end">
+                  <Field>
+                    <FieldLabel htmlFor={`${inputId}-search`}>
+                      Search rows
+                    </FieldLabel>
+                    <Input
+                      id={`${inputId}-search`}
+                      type="search"
+                      placeholder="Person ID or name"
+                      value={search}
+                      onChange={(event) =>
+                        updateFilter(() => setSearch(event.target.value))
+                      }
+                    />
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor={`${inputId}-status`}>Status</FieldLabel>
+                    <Select
+                      value={statusFilter}
+                      onValueChange={(value) =>
+                        updateFilter(() =>
+                          setStatusFilter(value as StatusFilter),
+                        )
+                      }
+                    >
+                      <SelectTrigger
+                        id={`${inputId}-status`}
+                        className="w-full sm:w-44"
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectGroup>
+                          {(
+                            Object.keys(statusFilterLabels) as StatusFilter[]
+                          ).map((status) => (
+                            <SelectItem key={status} value={status}>
+                              {statusFilterLabels[status]}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor={`${inputId}-date`}>Date</FieldLabel>
+                    <Select
+                      value={dateFilter}
+                      onValueChange={(value) =>
+                        updateFilter(() => setDateFilter(value))
+                      }
+                    >
+                      <SelectTrigger
+                        id={`${inputId}-date`}
+                        className="w-full sm:w-40"
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectGroup>
+                          <SelectItem value="all">All dates</SelectItem>
+                          {[...new Set(dates)].map((date) => (
+                            <SelectItem key={date} value={date}>
+                              {date}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    disabled={!filtersActive}
+                    onClick={() =>
+                      updateFilter(() => {
+                        setSearch("");
+                        setStatusFilter("all");
+                        setDateFilter("all");
+                      })
+                    }
+                  >
+                    Clear filters
+                  </Button>
+                </div>
+                {filtersActive && (
+                  <p className="text-sm text-muted-foreground">
+                    Showing {filteredRows.length} of {rows.length} rows
+                  </p>
+                )}
                 <div className="rounded-lg border">
                   <Table>
                     <TableHeader>
@@ -464,10 +661,30 @@ export function DeviceImportSheet({ open, onOpenChange }: Props) {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {rows
+                      {filteredRows.length === 0 && (
+                        <TableRow>
+                          <TableCell
+                            colSpan={5}
+                            className="py-8 text-center text-muted-foreground"
+                          >
+                            No rows match these filters.
+                          </TableCell>
+                        </TableRow>
+                      )}
+                      {filteredRows
                         .slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
                         .map((row) => (
-                          <TableRow key={row.rowNumber}>
+                          <TableRow
+                            key={row.rowNumber}
+                            data-status={row.status}
+                            className={
+                              row.status === "needs_review"
+                                ? "border-l-4 border-l-amber-500 bg-amber-500/10 hover:bg-amber-500/15"
+                                : row.status === "blocked"
+                                  ? "border-l-4 border-l-destructive bg-destructive/10 hover:bg-destructive/15"
+                                  : undefined
+                            }
+                          >
                             <TableCell>
                               <p>
                                 #{row.rowNumber} · {row.personId}
@@ -480,9 +697,37 @@ export function DeviceImportSheet({ open, onOpenChange }: Props) {
                             </TableCell>
                             <TableCell>
                               <p>{row.date ?? "Missing date"}</p>
-                              <p className="text-muted-foreground">
-                                {row.punchTimes.join(", ") || "No punches"}
-                              </p>
+                              {row.punchTimes.length === 0 ? (
+                                <p className="text-muted-foreground">
+                                  No punches
+                                </p>
+                              ) : (
+                                <ul className="flex flex-col gap-0.5 text-muted-foreground">
+                                  {(
+                                    row.punchDetails ??
+                                    row.punchTimes.map((time) => ({
+                                      time,
+                                      direction: null,
+                                      attendanceDate: null,
+                                    }))
+                                  ).map((punch, index) => (
+                                    <li key={`${punch.time}-${index}`}>
+                                      <span className="tabular-nums text-foreground">
+                                        {formatPunchTime(punch.time)}
+                                      </span>
+                                      {punch.direction &&
+                                        ` · ${punch.direction.toUpperCase()}`}
+                                      {isNightPunch(punch.time) && " · Night"}
+                                      {punch.attendanceDate &&
+                                        punch.attendanceDate !== row.date && (
+                                          <span className="text-amber-700 dark:text-amber-400">
+                                            {` · counted on ${punch.attendanceDate}`}
+                                          </span>
+                                        )}
+                                    </li>
+                                  ))}
+                                </ul>
+                              )}
                             </TableCell>
                             <TableCell className="max-w-80 whitespace-normal">
                               <Badge
@@ -492,6 +737,11 @@ export function DeviceImportSheet({ open, onOpenChange }: Props) {
                                     : row.status === "needs_review"
                                       ? "outline"
                                       : "secondary"
+                                }
+                                className={
+                                  row.status === "needs_review"
+                                    ? "border-amber-500/50 bg-amber-500/20 font-semibold text-amber-700 dark:text-amber-400"
+                                    : undefined
                                 }
                               >
                                 {statusLabels[row.status]}
@@ -504,7 +754,13 @@ export function DeviceImportSheet({ open, onOpenChange }: Props) {
                               {row.messages.map((message, index) => (
                                 <p
                                   key={index}
-                                  className="mt-1 text-xs text-muted-foreground"
+                                  className={
+                                    row.status === "needs_review"
+                                      ? "mt-1 text-xs font-medium text-amber-700 dark:text-amber-400"
+                                      : row.status === "blocked"
+                                        ? "mt-1 text-xs font-medium text-destructive"
+                                        : "mt-1 text-xs text-muted-foreground"
+                                  }
                                 >
                                   {message}
                                 </p>
@@ -542,6 +798,32 @@ export function DeviceImportSheet({ open, onOpenChange }: Props) {
                                     : "Review day"}
                                 </Button>
                               ))}
+                              {row.employeeId && row.date && (
+                                <Button
+                                  asChild
+                                  variant="link"
+                                  size="sm"
+                                  className="px-0"
+                                >
+                                  <Link
+                                    to="/hr/attendance/$employeeId"
+                                    params={{ employeeId: row.employeeId }}
+                                    search={{
+                                      from: format(
+                                        startOfMonth(parseISO(row.date)),
+                                        "yyyy-MM-dd",
+                                      ),
+                                      to: format(
+                                        endOfMonth(parseISO(row.date)),
+                                        "yyyy-MM-dd",
+                                      ),
+                                    }}
+                                    aria-label={`Open ${row.employeeName ?? row.personId}'s month`}
+                                  >
+                                    Employee month
+                                  </Link>
+                                </Button>
+                              )}
                             </TableCell>
                           </TableRow>
                         ))}

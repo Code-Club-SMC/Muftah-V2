@@ -35,6 +35,8 @@ export type PayslipData = {
     basicSalary: string;
     allowanceBreakdown: Record<string, number> | null;
     overtimeAmount: string | null;
+    compCashOutHours?: string | null;
+    compCashOutAmount?: string | null;
     nightShiftAllowanceAmount: string | null;
     incentiveAmount: string | null;
     commissionAmount: string | null;
@@ -194,6 +196,9 @@ export const PayslipView = ({
         ...dynamicAllowances,
         ...(toN(payslip.overtimeAmount) > 0
             ? [{ label: "Overtime Amount", value: toN(payslip.overtimeAmount) }]
+            : []),
+        ...(toN(payslip.compCashOutAmount) > 0
+            ? [{ label: `Comp-off Cash-out (${toN(payslip.compCashOutHours)}h)`, value: toN(payslip.compCashOutAmount) }]
             : []),
         ...(toN(payslip.nightShiftAllowanceAmount) > 0
             ? [{ label: "Night Shift Allowance", value: toN(payslip.nightShiftAllowanceAmount) }]

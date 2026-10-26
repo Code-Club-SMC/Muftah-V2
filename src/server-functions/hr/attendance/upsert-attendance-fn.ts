@@ -131,10 +131,10 @@ export const upsertAttendanceFn = createServerFn()
           ? (rest.compensatoryHoursUsed ?? "0") : "0";
       const isFieldWorker = Boolean(employee.isOrderBooker || employee.isSalesman || employee.isDriver);
       const usesPunchDrivenPresentRow = !isFieldWorker && rest.status === "present" && hasPunches;
-      // Punch recomputation already refunds the reservation when it resets a leave row.
+      // Punch recomputation refunds reserved hours itself, including banked cover on present rows.
       if (!usesPunchDrivenPresentRow) {
         await adjustCompensatoryReservation(tx, employeeId,
-          previousAttendance?.leaveType === "compensatory" ? previousAttendance.compensatoryHoursUsed : "0",
+          previousAttendance?.compensatoryHoursUsed ?? "0",
           compensatoryHoursUsed);
       }
 
@@ -260,7 +260,8 @@ export const upsertAttendanceFn = createServerFn()
           leaveType: null,
           leaveApprovalStatus: "none" as const,
           earlyDepartureStatus: punchDrivenEarlyLeave,
-          compensatoryHoursUsed: "0",
+          // Recomputation already capped any banked cover and refunded the rest.
+          compensatoryHoursUsed: punchDrivenAttendance.compensatoryHoursUsed ?? "0",
           overtimeRemarks: hasRequestedPunchDrivenOvertime
             ? trimmedOvertimeRemarks
             : null,

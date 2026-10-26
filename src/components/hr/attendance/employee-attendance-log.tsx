@@ -1,6 +1,6 @@
+import { useState } from "react";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { getEmployeeAttendanceLogFn } from "@/server-functions/hr/attendance/get-employee-attendance-log-fn";
-import { calculateTotalShiftHours } from "@/lib/attendance/time";
 import {
   format,
   parseISO,
@@ -9,6 +9,7 @@ import {
   eachDayOfInterval,
 } from "date-fns";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Clock,
   User,
@@ -17,6 +18,7 @@ import {
   CalendarClock,
   TrendingUp,
   MoonStar,
+  TriangleAlert,
 } from "lucide-react";
 import { formatDuration } from "@/lib/utils";
 import { useParams } from "@tanstack/react-router";
@@ -27,6 +29,23 @@ import {
   PunchTimelinePreview,
   type PunchTimelineItem,
 } from "./punch-timeline-preview";
+import { EditAttendanceSheet } from "./edit-attendance-sheet";
+import {
+  dayIssueLabels,
+  getDayIssues,
+  isRestDate,
+  standardHoursFor,
+  type DayIssue,
+  type DayIssueKind,
+  type DayIssueSeverity,
+} from "@/lib/attendance/day-issues";
+import { useViewerAccess } from "@/hooks/use-viewer-access";
+import { useProcessOvertime } from "@/hooks/hr/use-process-overtime";
+import { useProcessLeaveApproval } from "@/hooks/hr/use-process-leave-approval";
+import { hasPermission } from "@/lib/rbac";
+import { useApplyCompensatoryCover } from "@/hooks/hr/use-compensatory-bank";
+import { maxCoverHours } from "@/lib/attendance/compensatory-bank";
+import { CompensatoryBankPanel } from "./compensatory-bank-panel";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -47,18 +66,13 @@ type DayRow = {
   record: any | undefined;
   punches: PunchTimelineItem[];
   standardDutyHours: number;
+  issues: DayIssue[];
+  locked: boolean;
 };
 
-// ── Helper ─────────────────────────────────────────────────────────────────
+type IssueFilter = "all" | "open" | DayIssueKind;
 
-/**
- * Returns true when the given ISO date string falls on one of the
- * employee's configured rest days (0=Sun … 6=Sat).
- */
-function checkIsRestDay(dateStr: string, restDays: number[]): boolean {
-  if (!restDays.length) return false;
-  return restDays.includes(parseISO(dateStr).getDay());
-}
+// ── Helper ─────────────────────────────────────────────────────────────────
 
 function formatTimeLabel(value?: string | null): string | null {
   if (!value) return null;
@@ -78,6 +92,36 @@ function formatScheduledShift(
     .join(" / ");
 }
 
+const severityRank: Record<DayIssueSeverity, number> = {
+  action: 3,
+  deduction: 2,
+  info: 1,
+};
+
+const severityBadge: Record<DayIssueSeverity, string> = {
+  action:
+    "border-amber-500/50 bg-amber-500/15 text-amber-700 dark:text-amber-400",
+  deduction:
+    "border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-400",
+  info: "border-border bg-muted/40 text-muted-foreground",
+};
+
+const severityRow: Record<DayIssueSeverity, string> = {
+  action: "border-l-4 border-l-amber-500 bg-amber-500/10 hover:bg-amber-500/15",
+  deduction: "border-l-4 border-l-rose-500 bg-rose-500/5 hover:bg-rose-500/10",
+  info: "",
+};
+
+function worstSeverity(issues: DayIssue[]): DayIssueSeverity | null {
+  return issues.reduce<DayIssueSeverity | null>(
+    (worst, issue) =>
+      !worst || severityRank[issue.severity] > severityRank[worst]
+        ? issue.severity
+        : worst,
+    null,
+  );
+}
+
 // ── Component ──────────────────────────────────────────────────────────────
 
 export const EmployeeAttendanceLog = ({
@@ -92,7 +136,13 @@ export const EmployeeAttendanceLog = ({
   const routeEmployeeId = params.employeeId;
   const employeeId = propId || routeEmployeeId;
 
-  if (!employeeId) return null;
+  const [issueFilter, setIssueFilter] = useState<IssueFilter>("all");
+  const [editDate, setEditDate] = useState<string | null>(null);
+  const { data: viewer } = useViewerAccess();
+  const canManage = hasPermission(viewer?.permissions ?? [], "hr.manage");
+  const overtime = useProcessOvertime();
+  const leave = useProcessLeaveApproval();
+  const cover = useApplyCompensatoryCover();
 
   const today = new Date();
   const currentMonth = month || format(today, "yyyy-MM");
@@ -106,14 +156,20 @@ export const EmployeeAttendanceLog = ({
   const { data } = useSuspenseQuery({
     queryKey: ["employee-attendance-log", employeeId, startDate, endDate],
     queryFn: () =>
-      getEmployeeAttendanceLogFn({ data: { employeeId, startDate, endDate } }),
+      getEmployeeAttendanceLogFn({
+        data: { employeeId: employeeId!, startDate, endDate },
+      }),
     gcTime: 0,
   });
 
-  const { employee, records, punchesByDate } = data;
+  if (!employeeId) return null;
+
+  const { employee, records, punchesByDate, lockedPayrolls, today: todayPKT } =
+    data;
 
   // Rest days configured for this employee — default to Sunday if not set
   const restDays: number[] = (employee as any).restDays ?? [0];
+  const standardHours = standardHoursFor(employee);
 
   const days = eachDayOfInterval({
     start: parseISO(startDate),
@@ -122,7 +178,7 @@ export const EmployeeAttendanceLog = ({
 
   // ── Stats — include worked duty and overtime from rest days, but exempt undertime ──────
   const activeRecords = records.filter(
-    (r: any) => !checkIsRestDay(r.date, restDays) || r.status === "present",
+    (r: any) => !isRestDate(r.date, restDays) || r.status === "present",
   );
 
   const stats = {
@@ -142,12 +198,10 @@ export const EmployeeAttendanceLog = ({
       .toFixed(1),
     totalUndertime: records
       .reduce((acc: number, r: any) => {
-        if (checkIsRestDay(r.date, restDays)) return acc; // Never penalize rest days
+        if (isRestDate(r.date, restDays)) return acc; // Never penalize rest days
         const duty = parseFloat(r.dutyHours || "0");
-        const shiftHours = calculateTotalShiftHours(employee.shifts);
-        const standard = shiftHours > 0 ? shiftHours : (employee.standardDutyHours || 8);
-        if (r.status === "present" && duty < standard) {
-          return acc + (standard - duty);
+        if (r.status === "present" && duty < standardHours) {
+          return acc + (standardHours - duty);
         }
         return acc;
       }, 0)
@@ -158,33 +212,56 @@ export const EmployeeAttendanceLog = ({
   // ── Table rows ─────────────────────────────────────────────────────────
   const tableRows: DayRow[] = days.map((day, idx) => {
     const dateStr = format(day, "yyyy-MM-dd");
+    const record = records.find((r: any) => r.date === dateStr);
+    const punches = punchesByDate[dateStr] ?? [];
+    const locked = lockedPayrolls.some(
+      (p) => p.startDate <= dateStr && p.endDate >= dateStr,
+    );
     return {
       idx,
       dateStr,
       day,
-      isRestDay: checkIsRestDay(dateStr, restDays),
-      record: records.find((r: any) => r.date === dateStr),
-      punches: punchesByDate[dateStr] ?? [],
-      standardDutyHours: employee.standardDutyHours || 8,
+      isRestDay: isRestDate(dateStr, restDays),
+      record,
+      punches,
+      standardDutyHours: standardHours,
+      locked,
+      issues: getDayIssues({
+        date: dateStr,
+        today: todayPKT,
+        employee,
+        record,
+        punches,
+        lockedPayroll: locked,
+      }),
     };
   });
 
+  const issueCounts = new Map<DayIssueKind, { count: number; severity: DayIssueSeverity }>();
+  for (const row of tableRows)
+    for (const issue of row.issues) {
+      const current = issueCounts.get(issue.kind);
+      issueCounts.set(issue.kind, {
+        count: (current?.count ?? 0) + 1,
+        severity: issue.severity,
+      });
+    }
+  const openDays = tableRows.filter((row) =>
+    row.issues.some((issue) => issue.severity === "action"),
+  ).length;
+  const visibleRows = tableRows.filter((row) =>
+    issueFilter === "all"
+      ? true
+      : issueFilter === "open"
+        ? row.issues.some((issue) => issue.severity === "action")
+        : row.issues.some((issue) => issue.kind === issueFilter),
+  );
+  const editRow = tableRows.find((row) => row.dateStr === editDate);
+  const busy = overtime.isPending || leave.isPending || cover.isPending;
+  const bankBalance = Number(employee.compensatoryHoursBalance ?? 0);
+
   // ── Columns ────────────────────────────────────────────────────────────
   const columns: ColumnDef<DayRow>[] = [
-    {
-      id: "no",
-      header: "#",
-      cell: ({ row }) => (
-        <span
-          className={cn(
-            "text-muted-foreground font-mono text-xs tabular-nums",
-            row.original.isRestDay && "opacity-40",
-          )}
-        >
-          {row.original.idx + 1}
-        </span>
-      ),
-    },
     {
       id: "date",
       header: "Date",
@@ -263,55 +340,6 @@ export const EmployeeAttendanceLog = ({
       },
     },
     {
-      id: "overtime",
-      header: "OT Review",
-      cell: ({ row }) => {
-        if (row.original.isRestDay && !row.original.record)
-          return <span className="text-muted-foreground/40 text-xs">—</span>;
-        const record = row.original.record;
-        if (!record)
-          return <span className="text-muted-foreground text-xs">—</span>;
-        const ot = parseFloat(record.overtimeHours || "0");
-        if (ot <= 0)
-          return <span className="text-muted-foreground text-xs">—</span>;
-
-        if (record.overtimeStatus === "approved") {
-          return (
-            <div className="flex flex-col">
-              <span className="text-emerald-600 font-bold text-xs tabular-nums">
-                +{record.overtimeHours}
-              </span>
-              <span className="text-[9px] font-black text-emerald-500 uppercase tracking-tighter">
-                Approved
-              </span>
-            </div>
-          );
-        }
-        if (record.overtimeStatus === "pending") {
-          return (
-            <div className="flex flex-col">
-              <span className="text-amber-500 font-bold text-xs tabular-nums">
-                +{record.overtimeHours}
-              </span>
-              <span className="text-[9px] font-black text-amber-500 uppercase tracking-tighter">
-                Pending Admin
-              </span>
-            </div>
-          );
-        }
-        return (
-          <div className="flex flex-col">
-            <span className="text-rose-600 font-bold text-xs tabular-nums line-through opacity-70">
-              +{record.overtimeHours}
-            </span>
-            <span className="text-[9px] font-black text-rose-500 uppercase tracking-tighter">
-              Rejected
-            </span>
-          </div>
-        );
-      },
-    },
-    {
       id: "status",
       header: "Status",
       cell: ({ row }) => {
@@ -339,8 +367,6 @@ export const EmployeeAttendanceLog = ({
               "bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/30 dark:text-indigo-400",
             holiday:
               "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/30 dark:text-blue-400",
-            restDay:
-              "bg-slate-50  border-slate-200 dark:bg-slate-950/30 dark:text-slate-400",
           };
           return (
             <div className="flex items-center gap-1.5 flex-wrap">
@@ -370,10 +396,33 @@ export const EmployeeAttendanceLog = ({
             variant="outline"
             className="text-[10px] border-slate-300 text-slate-500 font-bold uppercase px-2 py-0"
           >
-            Pending
+            {row.original.dateStr > todayPKT ? "Upcoming" : "Unmarked"}
           </Badge>
         );
       },
+    },
+    {
+      id: "issues",
+      header: "Issues",
+      cell: ({ row }) =>
+        row.original.issues.length ? (
+          <div className="flex max-w-72 flex-wrap gap-1">
+            {row.original.issues.map((issue) => (
+              <Badge
+                key={issue.kind}
+                variant="outline"
+                className={cn(
+                  "text-[10px] font-semibold px-1.5 py-0",
+                  severityBadge[issue.severity],
+                )}
+              >
+                {issue.label}
+              </Badge>
+            ))}
+          </div>
+        ) : (
+          <span className="text-muted-foreground/40 text-xs">—</span>
+        ),
     },
     {
       id: "notes",
@@ -388,6 +437,115 @@ export const EmployeeAttendanceLog = ({
       },
     },
   ];
+
+  if (canManage)
+    columns.push({
+      id: "actions",
+      header: "Action",
+      cell: ({ row }) => {
+        const { record, issues, locked, dateStr } = row.original;
+        if (locked || dateStr < employee.joiningDate || dateStr > todayPKT)
+          return null;
+        const has = (kind: DayIssueKind) =>
+          issues.some((issue) => issue.kind === kind);
+        return (
+          <div className="flex flex-wrap gap-1">
+            {record && has("overtime_pending") && (
+              <>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() =>
+                    overtime.mutate({ id: record.id, status: "approved" })
+                  }
+                >
+                  Approve OT
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={busy}
+                  onClick={() =>
+                    overtime.mutate({ id: record.id, status: "rejected" })
+                  }
+                >
+                  Reject OT
+                </Button>
+              </>
+            )}
+            {record && has("undertime") && !row.original.isRestDay && (() => {
+              const currentCover = Number(record.compensatoryHoursUsed || "0");
+              const coverable = maxCoverHours({
+                standardHours: row.original.standardDutyHours,
+                dutyHours: Number(record.dutyHours || "0"),
+                balance: bankBalance,
+                currentCover,
+              });
+              return coverable > currentCover ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() =>
+                    cover.mutate({ attendanceId: record.id, hours: coverable })
+                  }
+                >
+                  Use {formatDuration(coverable)} from bank
+                </Button>
+              ) : null;
+            })()}
+            {record && has("bank_cover") && (
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={busy}
+                onClick={() => cover.mutate({ attendanceId: record.id, hours: 0 })}
+              >
+                Remove bank cover
+              </Button>
+            )}
+            {record && has("leave_pending") && (
+              <>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() =>
+                    leave.mutate({ id: record.id, status: "approved" })
+                  }
+                >
+                  Approve leave
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={busy}
+                  onClick={() =>
+                    leave.mutate({ id: record.id, status: "rejected" })
+                  }
+                >
+                  Reject leave
+                </Button>
+              </>
+            )}
+            <Button
+              size="sm"
+              variant={
+                issues.some((issue) => issue.severity === "action")
+                  ? "default"
+                  : "outline"
+              }
+              disabled={busy}
+              aria-label={`Edit attendance on ${dateStr}`}
+              onClick={() => setEditDate(dateStr)}
+            >
+              {record ? "Fix" : "Mark"}
+            </Button>
+          </div>
+        );
+      },
+    });
 
   return (
     <div className="space-y-6">
@@ -485,14 +643,135 @@ export const EmployeeAttendanceLog = ({
         </div>
       </div>
 
+      {/* ── Balances ─────────────────────────────────────────────────────── */}
+      <div className="flex flex-wrap gap-x-6 gap-y-2 rounded-xl border bg-muted/20 px-4 py-3 text-sm">
+        <span>
+          <span className="text-muted-foreground">Annual leave left: </span>
+          <span className="font-semibold tabular-nums">
+            {employee.annualLeaveBalance ?? 0} /{" "}
+            {employee.annualLeaveAllowance ?? 14}
+          </span>
+        </span>
+        <span>
+          <span className="text-muted-foreground">Sick leave left: </span>
+          <span className="font-semibold tabular-nums">
+            {employee.sickLeaveBalance ?? 0}
+          </span>
+        </span>
+        <span>
+          <span className="text-muted-foreground">Comp-off bank: </span>
+          <span className="font-semibold tabular-nums">
+            {Number(employee.compensatoryHoursBalance ?? 0)}h
+          </span>
+        </span>
+        <span>
+          <span className="text-muted-foreground">Expected per day: </span>
+          <span className="font-semibold tabular-nums">
+            {formatDuration(standardHours)}
+          </span>
+        </span>
+      </div>
+
+      <CompensatoryBankPanel
+        employeeId={employee.id}
+        balance={bankBalance}
+        canManage={canManage}
+      />
+
+      {/* ── Issue summary ────────────────────────────────────────────────── */}
+      <section
+        aria-label="Attendance issues"
+        className={cn(
+          "flex flex-col gap-3 rounded-xl border p-4",
+          openDays > 0 && "border-amber-500/40 bg-amber-500/5",
+        )}
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 className="flex items-center gap-2 text-sm font-semibold">
+            {openDays > 0 && (
+              <TriangleAlert className="size-4 text-amber-600 dark:text-amber-400" />
+            )}
+            {openDays > 0
+              ? `${openDays} days need HR action`
+              : "No days need HR action"}
+          </h3>
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              variant={issueFilter === "open" ? "default" : "outline"}
+              disabled={openDays === 0}
+              onClick={() =>
+                setIssueFilter(issueFilter === "open" ? "all" : "open")
+              }
+            >
+              Only days needing action
+            </Button>
+            {issueFilter !== "all" && (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setIssueFilter("all")}
+              >
+                Show all days
+              </Button>
+            )}
+          </div>
+        </div>
+        {issueCounts.size > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {[...issueCounts.entries()]
+              .sort(
+                ([, a], [, b]) =>
+                  severityRank[b.severity] - severityRank[a.severity],
+              )
+              .map(([kind, { count, severity }]) => (
+                <button
+                  key={kind}
+                  type="button"
+                  aria-pressed={issueFilter === kind}
+                  onClick={() =>
+                    setIssueFilter(issueFilter === kind ? "all" : kind)
+                  }
+                  className={cn(
+                    "rounded-md border px-2 py-1 text-xs font-semibold transition-colors",
+                    severityBadge[severity],
+                    issueFilter === kind && "ring-2 ring-primary",
+                  )}
+                >
+                  {dayIssueLabels[kind]} · {count}
+                </button>
+              ))}
+          </div>
+        )}
+        <p className="text-xs text-muted-foreground">
+          Amber = HR must decide. Red = reduces pay. Grey = for information.
+        </p>
+      </section>
+
       {/* ── Attendance DataTable ─────────────────────────────────────────── */}
       <DataTable
         columns={columns}
-        data={tableRows}
+        data={visibleRows}
         showSearch={false}
         showViewOptions={false}
         pageSize={31}
+        getRowClassName={(row) => {
+          const worst = worstSeverity(row.issues);
+          return worst ? severityRow[worst] : undefined;
+        }}
       />
+
+      {editRow && (
+        <EditAttendanceSheet
+          open
+          onOpenChange={(next) => {
+            if (!next) setEditDate(null);
+          }}
+          employee={employee}
+          attendance={editRow.record ?? null}
+          date={editRow.dateStr}
+        />
+      )}
     </div>
   );
 };

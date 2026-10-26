@@ -56,6 +56,7 @@ interface DataTableProps<TData, TValue> {
   onPaginationChange?: (updater: any) => void;
   autoResetPageIndex?: boolean;
   totalRecords?: number;
+  getRowClassName?: (row: TData) => string | undefined;
 }
 
 export function DataTable<TData, TValue>({
@@ -81,6 +82,7 @@ export function DataTable<TData, TValue>({
   onPaginationChange,
   autoResetPageIndex = true,
   totalRecords,
+  getRowClassName,
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
@@ -224,7 +226,10 @@ export function DataTable<TData, TValue>({
               table.getRowModel().rows.map((row) => (
                 <TableRow
                   key={row.id}
-                  className="hover:bg-muted/30 border-b border-border/30 transition-colors last:border-0 data-[state=selected]:bg-muted"
+                  className={cn(
+                    "hover:bg-muted/30 border-b border-border/30 transition-colors last:border-0 data-[state=selected]:bg-muted",
+                    getRowClassName?.(row.original),
+                  )}
                 >
                   {row.getVisibleCells().map((cell) => (
                     <TableCell

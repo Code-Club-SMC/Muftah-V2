@@ -293,7 +293,7 @@ export const bulkMarkAttendanceRangeFn = createServerFn()
           if (template.status === "leave") {
             assertWorkingLeaveDate(dateStr, emp.restDays, previous?.status);
           }
-          if (previous?.leaveType === "compensatory") {
+          if (previous && Number(previous.compensatoryHoursUsed || "0") > 0) {
             await adjustCompensatoryReservation(tx, emp.id, previous.compensatoryHoursUsed, "0");
           }
           changedDates.set(emp.id, [
