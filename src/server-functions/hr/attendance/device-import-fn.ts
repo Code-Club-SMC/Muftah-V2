@@ -4,8 +4,11 @@ import { requireHrManageMiddleware } from "@/lib/middlewares";
 import { DEVICE_IMPORT_MAX_BYTES } from "@/lib/attendance/device-import/contracts";
 import {
   confirmDeviceAttendance,
+  discardDeviceAttendanceImport,
   listDeviceAttendanceImports,
   previewDeviceAttendance,
+  undoDeviceAttendanceImport,
+  unlinkDevicePerson,
   uploadDeviceAttendance,
 } from "@/lib/attendance/device-import/service.server";
 
@@ -15,6 +18,8 @@ const selectionSchema = z.object({
     .record(z.string().min(1).max(128), z.string().min(1).max(100))
     .optional(),
 });
+
+const importSchema = z.object({ importId: z.string().min(1).max(100) });
 
 export const uploadDeviceAttendanceFn = createServerFn({ method: "POST" })
   .middleware([requireHrManageMiddleware])
@@ -49,3 +54,22 @@ export const confirmDeviceAttendanceFn = createServerFn({ method: "POST" })
 export const listDeviceAttendanceImportsFn = createServerFn({ method: "GET" })
   .middleware([requireHrManageMiddleware])
   .handler(() => listDeviceAttendanceImports());
+
+export const undoDeviceAttendanceImportFn = createServerFn({ method: "POST" })
+  .middleware([requireHrManageMiddleware])
+  .inputValidator(importSchema)
+  .handler(({ data, context }) =>
+    undoDeviceAttendanceImport(data.importId, context.session.user.id),
+  );
+
+export const discardDeviceAttendanceImportFn = createServerFn({
+  method: "POST",
+})
+  .middleware([requireHrManageMiddleware])
+  .inputValidator(importSchema)
+  .handler(({ data }) => discardDeviceAttendanceImport(data.importId));
+
+export const unlinkDevicePersonFn = createServerFn({ method: "POST" })
+  .middleware([requireHrManageMiddleware])
+  .inputValidator(z.object({ personId: z.string().min(1).max(128) }))
+  .handler(({ data }) => unlinkDevicePerson(data.personId));

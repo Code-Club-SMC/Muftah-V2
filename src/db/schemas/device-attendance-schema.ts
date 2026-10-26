@@ -24,7 +24,7 @@ export const deviceAttendanceImports = pgTable(
     filename: text("filename").notNull(),
     fileSha256: text("file_sha256").notNull(),
     report: jsonb("report").$type<DevicePunchReport>().notNull(),
-    status: text("status", { enum: ["preview", "completed"] })
+    status: text("status", { enum: ["preview", "completed", "undone"] })
       .notNull()
       .default("preview"),
     resultRows: jsonb("result_rows").$type<DeviceImportRowPreview[]>(),
@@ -36,9 +36,12 @@ export const deviceAttendanceImports = pgTable(
       .notNull()
       .defaultNow(),
     completedAt: timestamp("completed_at", { withTimezone: true }),
+    undoneByUserId: text("undone_by_user_id").references(() => user.id),
+    undoneAt: timestamp("undone_at", { withTimezone: true }),
   },
   (table) => [
     index("device_attendance_imports_created_idx").on(table.createdAt),
+    index("device_attendance_imports_sha_idx").on(table.fileSha256),
   ],
 );
 

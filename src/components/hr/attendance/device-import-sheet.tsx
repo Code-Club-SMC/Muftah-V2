@@ -6,6 +6,17 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { FileUploadIcon } from "@hugeicons/core-free-icons";
 import { ResponsiveSheet } from "@/components/custom/responsive-sheet";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -43,7 +54,10 @@ import {
 import {
   useConfirmDeviceAttendance,
   useDeviceAttendanceImports,
+  useDiscardDeviceAttendanceImport,
   usePreviewDeviceAttendance,
+  useUndoDeviceAttendanceImport,
+  useUnlinkDevicePerson,
   useUploadDeviceAttendance,
 } from "@/hooks/hr/use-device-attendance";
 import { useViewerAccess } from "@/hooks/use-viewer-access";
@@ -52,6 +66,7 @@ import {
   type DeviceImportMappings,
   type DeviceImportPreview,
   type DeviceImportRowStatus,
+  type DeviceImportStatus,
 } from "@/lib/attendance/device-import/contracts";
 import { hasPermission } from "@/lib/rbac";
 import { getDailyAttendanceFn } from "@/server-functions/hr/attendance/get-daily-attendance-fn";
@@ -70,6 +85,11 @@ const statusFilterLabels: Record<StatusFilter, string> = {
   all: "All rows",
   attention: "Needs attention",
   ...statusLabels,
+};
+const importStatusLabels: Record<DeviceImportStatus, string> = {
+  preview: "Preview",
+  completed: "Import completed",
+  undone: "Import undone",
 };
 const needsAttention = (status: DeviceImportRowStatus) =>
   status === "needs_review" || status === "blocked";
@@ -97,6 +117,9 @@ export function DeviceImportSheet({ open, onOpenChange }: Props) {
   const upload = useUploadDeviceAttendance();
   const refresh = usePreviewDeviceAttendance();
   const confirm = useConfirmDeviceAttendance();
+  const undo = useUndoDeviceAttendanceImport();
+  const discard = useDiscardDeviceAttendanceImport();
+  const unlink = useUnlinkDevicePerson();
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<DeviceImportPreview | null>(null);
   const [mappings, setMappings] = useState<DeviceImportMappings>({});
@@ -126,6 +149,9 @@ export function DeviceImportSheet({ open, onOpenChange }: Props) {
     upload.isPending ||
     refresh.isPending ||
     confirm.isPending ||
+    undo.isPending ||
+    discard.isPending ||
+    unlink.isPending ||
     daily.isFetching;
 
   const displayPreview = (result: DeviceImportPreview) => {
@@ -220,6 +246,61 @@ export function DeviceImportSheet({ open, onOpenChange }: Props) {
         cause instanceof Error
           ? cause.message
           : "Unable to import device attendance.",
+      );
+    }
+  };
+
+  const handleUndo = async () => {
+    if (!preview || busy || !canManage) return;
+    setError(null);
+    try {
+      await undo.mutateAsync(preview.importId);
+      setMappings({});
+      setLastImportCount(null);
+      setPreviewStale(true);
+      displayPreview(
+        await refresh.mutateAsync({ importId: preview.importId, mappings: {} }),
+      );
+    } catch (cause) {
+      setError(
+        cause instanceof Error ? cause.message : "Unable to undo device import.",
+      );
+    }
+  };
+
+  const handleDiscard = async () => {
+    if (!preview || busy || !canManage) return;
+    setError(null);
+    try {
+      await discard.mutateAsync(preview.importId);
+      setPreview(null);
+      setMappings({});
+      setMappingPersonIds([]);
+      setLastImportCount(null);
+      setPreviewStale(false);
+      setReviewTarget(null);
+    } catch (cause) {
+      setError(
+        cause instanceof Error ? cause.message : "Unable to discard upload.",
+      );
+    }
+  };
+
+  const handleUnlink = async (personId: string) => {
+    if (!preview || busy || !canManage) return;
+    setError(null);
+    try {
+      await unlink.mutateAsync(personId);
+      setPreviewStale(true);
+      setMappingPersonIds((current) => [...new Set([...current, personId])]);
+      displayPreview(
+        await refresh.mutateAsync({ importId: preview.importId, mappings }),
+      );
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : "Unable to unlink device Person ID.",
       );
     }
   };
@@ -365,9 +446,7 @@ export function DeviceImportSheet({ open, onOpenChange }: Props) {
                     </p>
                   </div>
                   <Badge variant="outline">
-                    {preview.status === "completed"
-                      ? "Import completed"
-                      : "Preview"}
+                    {importStatusLabels[preview.status]}
                   </Badge>
                 </div>
                 <dl className="grid grid-cols-3 gap-3 rounded-lg border bg-muted/20 p-4">
@@ -408,6 +487,34 @@ export function DeviceImportSheet({ open, onOpenChange }: Props) {
                     </dd>
                   </div>
                 </dl>
+
+                {preview.duplicateOf && (
+                  <Alert className="border-amber-500/40 bg-amber-500/10">
+                    <AlertTitle className="text-amber-700 dark:text-amber-400">
+                      {preview.duplicateOf.status === "completed"
+                        ? "This file was already imported"
+                        : "This file was uploaded before"}
+                    </AlertTitle>
+                    <AlertDescription>
+                      The same file was uploaded as{" "}
+                      {preview.duplicateOf.filename} on{" "}
+                      {new Date(preview.duplicateOf.createdAt).toLocaleString(
+                        "en-PK",
+                      )}{" "}
+                      ({importStatusLabels[preview.duplicateOf.status]}).
+                      Punches already recorded are never added twice.
+                    </AlertDescription>
+                  </Alert>
+                )}
+                {preview.status === "undone" && (
+                  <Alert>
+                    <AlertTitle>Import undone</AlertTitle>
+                    <AlertDescription>
+                      Punches from this import were removed. Upload the report
+                      again to import it.
+                    </AlertDescription>
+                  </Alert>
+                )}
 
                 {unknownPeople.length > 0 && (
                   <FieldGroup className="rounded-lg border p-4">
@@ -463,6 +570,49 @@ export function DeviceImportSheet({ open, onOpenChange }: Props) {
                       </Field>
                     ))}
                   </FieldGroup>
+                )}
+
+                {preview.savedLinks && preview.savedLinks.length > 0 && (
+                  <div className="flex flex-col gap-3 rounded-lg border p-4">
+                    <div>
+                      <h4 className="font-medium">Saved device links</h4>
+                      <p className="text-sm text-muted-foreground">
+                        Unlink a wrong match to choose the employee again.
+                        Punches already imported stay; undo the import to
+                        remove them.
+                      </p>
+                    </div>
+                    <ul className="flex flex-col divide-y">
+                      {preview.savedLinks.map((link) => {
+                        const employee = preview.employees.find(
+                          (e) => e.id === link.employeeId,
+                        );
+                        return (
+                          <li
+                            key={link.personId}
+                            className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm"
+                          >
+                            <span>
+                              Person ID {link.personId} ·{" "}
+                              {employee
+                                ? `${employee.employeeCode} · ${employee.name}`
+                                : "Employee unavailable"}
+                            </span>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              disabled={busy}
+                              aria-label={`Unlink Person ID ${link.personId}`}
+                              onClick={() => void handleUnlink(link.personId)}
+                            >
+                              Unlink
+                            </Button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
                 )}
 
                 {preview.cycleGaps?.map((gap) => (
@@ -550,7 +700,12 @@ export function DeviceImportSheet({ open, onOpenChange }: Props) {
                   </Button>
                   <Button
                     type="button"
-                    disabled={busy || previewStale || newPunchCount === 0}
+                    disabled={
+                      busy ||
+                      previewStale ||
+                      newPunchCount === 0 ||
+                      preview.status === "undone"
+                    }
                     onClick={() => void handleConfirm()}
                   >
                     {confirm.isPending && <Spinner data-icon="inline-start" />}
@@ -558,6 +713,73 @@ export function DeviceImportSheet({ open, onOpenChange }: Props) {
                       ? "Importing punches..."
                       : `Import ${newPunchCount} new punches`}
                   </Button>
+                  {preview.status === "completed" && (
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="destructive"
+                          disabled={busy}
+                        >
+                          {undo.isPending && (
+                            <Spinner data-icon="inline-start" />
+                          )}
+                          Undo import
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Undo this import?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            Every punch this import added is removed and the
+                            affected days are recalculated. Punches HR corrected
+                            since are kept. Draft payrolls for these dates will
+                            need regenerating. This cannot be reversed; upload
+                            the report again to re-import.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction
+                            variant="destructive"
+                            onClick={() => void handleUndo()}
+                          >
+                            Undo import
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  )}
+                  {preview.status === "preview" && (
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button type="button" variant="ghost" disabled={busy}>
+                          {discard.isPending && (
+                            <Spinner data-icon="inline-start" />
+                          )}
+                          Discard upload
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Discard this upload?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            The uploaded report is deleted. No attendance was
+                            imported from it, so nothing else changes.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction
+                            variant="destructive"
+                            onClick={() => void handleDiscard()}
+                          >
+                            Discard upload
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  )}
                 </div>
                 <div className="grid gap-3 sm:grid-cols-[1fr_auto_auto_auto] sm:items-end">
                   <Field>
@@ -898,6 +1120,7 @@ export function DeviceImportSheet({ open, onOpenChange }: Props) {
                         <p className="text-xs text-muted-foreground">
                           {new Date(item.createdAt).toLocaleString("en-PK")} ·{" "}
                           {item.totalRows} rows · {item.reviewRows} review rows
+                          {item.status === "undone" && " · Undone"}
                         </p>
                       </div>
                       <Button
@@ -910,9 +1133,9 @@ export function DeviceImportSheet({ open, onOpenChange }: Props) {
                           void handleRefresh(item.id, {});
                         }}
                       >
-                        {item.status === "completed"
-                          ? "Review import"
-                          : "Open preview"}
+                        {item.status === "preview"
+                          ? "Open preview"
+                          : "Review import"}
                       </Button>
                     </div>
                   ))}

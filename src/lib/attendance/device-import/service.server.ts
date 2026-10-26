@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { createId } from "@paralleldrive/cuid2";
-import { and, asc, desc, eq, gte, inArray, lte, or } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, lte, ne, or } from "drizzle-orm";
 import { db } from "@/db";
 import {
   attendance,
@@ -18,13 +18,17 @@ import { recomputeAttendanceRow } from "../recompute-server";
 import { invalidateDraftPayrollsForAttendance } from "../offline/payroll-invalidation.server";
 import { parseDevicePunchReport } from "./parser.server";
 import { planDeviceEmployeeRows, type DevicePlannedRow } from "./timeline";
-import { lockAttendancePayrollWrites } from "./payroll.server";
+import {
+  assertAttendanceDatesEditable,
+  lockAttendancePayrollWrites,
+} from "./payroll.server";
 import { nowPKTDate, toPKTDate, toPKTTime } from "../time";
 import { findPayrollCycleGaps, payrollCyclesForDates } from "./coverage";
 import {
   DEVICE_IMPORT_MAX_BYTES,
   type DeviceImportPreview,
   type DeviceImportRowPreview,
+  type DeviceImportUndoResult,
   type DevicePunchReportRow,
 } from "./contracts";
 
@@ -296,6 +300,18 @@ async function buildPlans(
     recordedDates: recorded.map((r) => r.date),
     today: nowPKTDate(),
   });
+  const earlierUploads = await tx.query.deviceAttendanceImports.findMany({
+    columns: { filename: true, createdAt: true, status: true },
+    where: and(
+      eq(deviceAttendanceImports.fileSha256, batch.fileSha256),
+      ne(deviceAttendanceImports.id, batch.id),
+    ),
+    orderBy: [desc(deviceAttendanceImports.createdAt)],
+  });
+  // An earlier completed import matters more than an abandoned preview.
+  const duplicate =
+    earlierUploads.find((upload) => upload.status === "completed") ??
+    earlierUploads[0];
   return {
     employeePlans,
     resolved,
@@ -320,6 +336,14 @@ async function buildPlans(
           name: name(e),
         })),
       cycleGaps,
+      savedLinks: links
+        .filter((link) => rowsByPerson.has(link.personId))
+        .map(({ personId, employeeId }) => ({ personId, employeeId })),
+      duplicateOf: duplicate && {
+        filename: duplicate.filename,
+        createdAt: duplicate.createdAt.toISOString(),
+        status: duplicate.status,
+      },
     } satisfies DeviceImportPreview,
   };
 }
@@ -369,6 +393,10 @@ export async function confirmDeviceAttendance(
       .where(eq(deviceAttendanceImports.id, input.importId))
       .for("update");
     if (!batch) throw new Error("Attendance upload not found.");
+    if (batch.status === "undone")
+      throw new Error(
+        "This import was undone. Upload the report again to import it.",
+      );
     const { employeePlans, resolved, links, preview } = await buildPlans(
       tx,
       batch,
@@ -469,6 +497,106 @@ export async function confirmDeviceAttendance(
       })
       .where(eq(deviceAttendanceImports.id, batch.id));
     return { ...preview, status: "completed", rows };
+  });
+}
+
+export async function undoDeviceAttendanceImport(
+  importId: string,
+  actorId: string,
+): Promise<DeviceImportUndoResult> {
+  return db.transaction(async (tx) => {
+    await lockAttendancePayrollWrites(tx);
+    const [batch] = await tx
+      .select()
+      .from(deviceAttendanceImports)
+      .where(eq(deviceAttendanceImports.id, importId))
+      .for("update");
+    if (!batch) throw new Error("Attendance upload not found.");
+    if (batch.status !== "completed")
+      throw new Error("Only a completed import can be undone.");
+    const claims = await tx.query.deviceAttendancePunchClaims.findMany({
+      where: eq(deviceAttendancePunchClaims.importId, batch.id),
+    });
+    for (const id of [...new Set(claims.map((c) => c.employeeId))].sort())
+      await lockEmployeePunchWrites(tx, id);
+    const punchIds = claims.flatMap((c) => (c.punchId ? [c.punchId] : []));
+    const punches = punchIds.length
+      ? await tx.query.attendancePunches.findMany({
+          where: inArray(attendancePunches.id, punchIds),
+        })
+      : [];
+    // HR corrections are saved as manual punches and stay. So do punches this
+    // import only matched, such as a QR punch at the same minute.
+    const removable = punches.filter((p) => p.source === "device_import");
+    const affected = new Map<string, Set<string>>();
+    for (const { employeeId, attendanceDate } of [...claims, ...removable]) {
+      const dates = affected.get(employeeId) ?? new Set<string>();
+      dates.add(attendanceDate);
+      affected.set(employeeId, dates);
+    }
+    await assertAttendanceDatesEditable(
+      tx,
+      [...affected.values()].flatMap((dates) => [...dates]),
+    );
+    await tx
+      .delete(deviceAttendancePunchClaims)
+      .where(eq(deviceAttendancePunchClaims.importId, batch.id));
+    if (removable.length)
+      await tx.delete(attendancePunches).where(
+        inArray(
+          attendancePunches.id,
+          removable.map((p) => p.id),
+        ),
+      );
+    for (const [employeeId, dates] of affected) {
+      for (const date of [...dates].sort()) {
+        await recomputeAttendanceRow(tx, employeeId, date);
+        await invalidateDraftPayrollsForAttendance(tx, {
+          deviceImportId: batch.id,
+          employeeId,
+          attendanceDate: date,
+        });
+      }
+    }
+    await tx
+      .update(deviceAttendanceImports)
+      .set({ status: "undone", undoneAt: new Date(), undoneByUserId: actorId })
+      .where(eq(deviceAttendanceImports.id, batch.id));
+    return {
+      removedPunchCount: removable.length,
+      keptPunchCount: punches.length - removable.length,
+    };
+  });
+}
+
+export async function discardDeviceAttendanceImport(importId: string) {
+  await db.transaction(async (tx) => {
+    await lockAttendancePayrollWrites(tx);
+    const [batch] = await tx
+      .select()
+      .from(deviceAttendanceImports)
+      .where(eq(deviceAttendanceImports.id, importId))
+      .for("update");
+    if (!batch) throw new Error("Attendance upload not found.");
+    if (batch.status !== "preview")
+      throw new Error(
+        "Only an upload that was never imported can be discarded. Undo the import instead.",
+      );
+    await tx
+      .delete(deviceAttendanceImports)
+      .where(eq(deviceAttendanceImports.id, batch.id));
+  });
+}
+
+// Existing punches keep their employee; this only changes future matching.
+export async function unlinkDevicePerson(personId: string) {
+  await db.transaction(async (tx) => {
+    await lockAttendancePayrollWrites(tx);
+    const [link] = await tx
+      .delete(deviceAttendancePersonMappings)
+      .where(eq(deviceAttendancePersonMappings.personId, personId))
+      .returning();
+    if (!link) throw new Error("This device Person ID is not linked.");
   });
 }
 

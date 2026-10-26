@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -10,6 +16,9 @@ const mocks = vi.hoisted(() => ({
   preview: vi.fn(),
   confirm: vi.fn(),
   list: vi.fn(),
+  undo: vi.fn(),
+  discard: vi.fn(),
+  unlink: vi.fn(),
   daily: vi.fn(),
   editor: vi.fn(),
   permissions: ["hr.manage"],
@@ -19,6 +28,9 @@ vi.mock("@/server-functions/hr/attendance/device-import-fn", () => ({
   previewDeviceAttendanceFn: mocks.preview,
   confirmDeviceAttendanceFn: mocks.confirm,
   listDeviceAttendanceImportsFn: mocks.list,
+  undoDeviceAttendanceImportFn: mocks.undo,
+  discardDeviceAttendanceImportFn: mocks.discard,
+  unlinkDevicePersonFn: mocks.unlink,
 }));
 vi.mock("@/server-functions/hr/attendance/get-daily-attendance-fn", () => ({
   getDailyAttendanceFn: mocks.daily,
@@ -463,6 +475,106 @@ describe("device import sheet behavior", () => {
 
     expect(
       screen.getByRole("button", { name: "Review attendance row 3" }),
+    ).toBeTruthy();
+  });
+
+  it("undoes a completed import after confirmation and blocks re-import", async () => {
+    mocks.preview
+      .mockResolvedValueOnce({ ...structuredClone(report), status: "completed" })
+      .mockResolvedValue({ ...structuredClone(report), status: "undone" });
+    mocks.list.mockResolvedValue([
+      {
+        id: "import-1",
+        filename: "wrong.xlsx",
+        createdAt: "2026-10-02T12:00:00Z",
+        status: "completed",
+        totalRows: 4,
+        reviewRows: 2,
+      },
+    ]);
+    mocks.undo.mockResolvedValue({ removedPunchCount: 3, keptPunchCount: 0 });
+    setup();
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Open upload wrong.xlsx" }),
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Undo import" }));
+    expect(await screen.findByText("Undo this import?")).toBeTruthy();
+    expect(mocks.undo).not.toHaveBeenCalled();
+    fireEvent.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", {
+        name: "Undo import",
+      }),
+    );
+    await waitFor(() =>
+      expect(mocks.undo).toHaveBeenCalledWith({
+        data: { importId: "import-1" },
+      }),
+    );
+    expect(
+      await screen.findByText(/Punches from this import were removed/),
+    ).toBeTruthy();
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Import 3 new punches",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+    expect(screen.queryByRole("button", { name: "Undo import" })).toBeNull();
+  });
+
+  it("discards an unimported upload", async () => {
+    mocks.discard.mockResolvedValue(undefined);
+    setup();
+    await uploadReport();
+    expect(screen.queryByRole("button", { name: "Undo import" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Discard upload" }));
+    fireEvent.click(
+      within(await screen.findByRole("alertdialog")).getByRole("button", {
+        name: "Discard upload",
+      }),
+    );
+    await waitFor(() =>
+      expect(mocks.discard).toHaveBeenCalledWith({
+        data: { importId: "import-1" },
+      }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("region", { name: "Report preview" })).toBeNull(),
+    );
+  });
+
+  it("warns about a duplicate file and unlinks a saved Person ID", async () => {
+    mocks.upload.mockResolvedValue({
+      ...structuredClone(report),
+      savedLinks: [{ personId: "EMP01", employeeId: "employee-1" }],
+      duplicateOf: {
+        filename: "device-old.csv",
+        createdAt: "2026-10-01T12:00:00Z",
+        status: "completed",
+      },
+    });
+    mocks.unlink.mockResolvedValue(undefined);
+    setup();
+    await uploadReport();
+    expect(screen.getByText("This file was already imported")).toBeTruthy();
+    expect(screen.getByText(/device-old\.csv/)).toBeTruthy();
+    expect(screen.getByText(/Person ID EMP01 · EMP01 · Ali Khan/)).toBeTruthy();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Unlink Person ID EMP01" }),
+    );
+    await waitFor(() =>
+      expect(mocks.unlink).toHaveBeenCalledWith({
+        data: { personId: "EMP01" },
+      }),
+    );
+    await waitFor(() =>
+      expect(mocks.preview).toHaveBeenCalledWith({
+        data: { importId: "import-1", mappings: {} },
+      }),
+    );
+    expect(
+      await screen.findByRole("combobox", { name: "Person ID EMP01, Ali" }),
     ).toBeTruthy();
   });
 });
