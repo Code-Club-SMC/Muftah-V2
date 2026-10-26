@@ -246,6 +246,18 @@ describe("production QC reports UI", () => {
     expect(
       within(certificate).getByText("Failed checks recorded"),
     ).toBeTruthy();
+    const printed = { write: vi.fn(), close: vi.fn(), title: "" };
+    const open = vi
+      .spyOn(window, "open")
+      .mockReturnValue({ document: printed } as unknown as Window);
+    fireEvent.click(
+      within(certificate).getByRole("button", { name: "Print report" }),
+    );
+    const html = printed.write.mock.calls[0]?.[0] as string;
+    for (const value of ["A0001", "L100", "6 to 7", "7.1", "1 of 2 checks failed", "Approved by"])
+      expect(html).toContain(value);
+    expect(printed.close).toHaveBeenCalled();
+    open.mockRestore();
     fireEvent.click(within(certificate).getByRole("button", { name: "Close" }));
     fireEvent.click(screen.getByRole("button", { name: "Edit report" }));
     expect(screen.getAllByLabelText("Check name *")).toHaveLength(2);

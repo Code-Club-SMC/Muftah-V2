@@ -1,4 +1,6 @@
+import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -8,15 +10,22 @@ import {
 } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
 import type { MixingLabReport } from "@/server-functions/manufacturing/mixing/lab-reports-fn";
+import { printProductionQCReport } from "./production-qc-print";
 import { qcDate } from "./production-qc-report-form";
 
 export function ProductionQCCertificate({
   report,
+  batchId,
   onClose,
 }: {
   report: MixingLabReport;
+  batchId?: string;
   onClose: () => void;
 }) {
+  function print() {
+    if (!printProductionQCReport(report, batchId))
+      toast.error("Allow pop-ups for this site to print the report");
+  }
   const passedCount = report.analysisItems.filter(
     (check) => check.passed,
   ).length;
@@ -49,6 +58,9 @@ export function ProductionQCCertificate({
               ? "All checks passed"
               : "Failed checks recorded"}
           </Badge>
+          <Button variant="outline" size="sm" onClick={print}>
+            Print report
+          </Button>
         </div>
         <dl className="grid gap-4 sm:grid-cols-2">
           {(

@@ -215,6 +215,7 @@ export function MixingLabReports({
         {viewing && (
           <ProductionQCCertificate
             report={viewing}
+            batchId={batchId}
             onClose={() => setViewing(null)}
           />
         )}
