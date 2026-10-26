@@ -21,6 +21,7 @@ const mock = vi.hoisted(() => ({
     select: vi.fn(),
     insert: vi.fn(),
     update: vi.fn(),
+    delete: vi.fn(),
   },
   recompute: vi.fn(),
 }));
@@ -36,6 +37,9 @@ import {
   uploadDeviceAttendance,
   previewDeviceAttendance,
   confirmDeviceAttendance,
+  undoDeviceAttendanceImport,
+  discardDeviceAttendanceImport,
+  unlinkDevicePerson,
 } from "./service.server";
 
 type Row = Record<string, unknown>;
@@ -102,6 +106,12 @@ beforeEach(() => {
   })) {
     query[key] = {
       findMany: vi.fn(async (config: { where?: unknown } = {}) => {
+        if (table === deviceAttendanceImports && config.where) {
+          const [sha, excludedId] = params(config.where);
+          return rows(table).filter(
+            (row) => row.fileSha256 === sha && row.id !== excludedId,
+          );
+        }
         const statuses = params(config.where).filter((value) =>
           ["draft", "approved", "paid"].includes(String(value)),
         );
@@ -148,6 +158,21 @@ beforeEach(() => {
         rows(table).forEach((row) => Object.assign(row, value));
       },
     }),
+  }));
+  mock.db.delete.mockImplementation((table: unknown) => ({
+    where: (where: unknown) => {
+      const keys = params(where);
+      const removed = rows(table).filter((row) =>
+        [row.id, row.importId, row.personId].some((key) => keys.includes(key)),
+      );
+      tables.set(
+        table,
+        rows(table).filter((row) => !removed.includes(row)),
+      );
+      return Object.assign(Promise.resolve(), {
+        returning: async () => removed,
+      });
+    },
   }));
 });
 afterEach(() => vi.useRealTimers());
@@ -302,5 +327,104 @@ describe("device import service against live ledger state", () => {
     expect(result.rows[0].status).toBe("needs_review");
     expect(rows(attendancePunches)).toHaveLength(1);
     expect(rows(attendancePunches)[0].direction).toBe("in");
+  });
+});
+
+describe("recovering from a wrong device report", () => {
+  it("undoes an import by removing its punches and claims, keeping HR corrections", async () => {
+    rows(payrolls).push({
+      id: "payroll-1",
+      status: "draft",
+      startDate: "2026-10-01",
+      endDate: "2026-10-31",
+    });
+    const preview = await uploadDeviceAttendance(file(), "hr-1");
+    await confirmDeviceAttendance({ importId: preview.importId }, "hr-1");
+    rows(attendancePunches)[0].source = "manual";
+    mock.recompute.mockClear();
+    const result = await undoDeviceAttendanceImport(preview.importId, "hr-2");
+    expect(result).toEqual({ removedPunchCount: 3, keptPunchCount: 1 });
+    expect(rows(attendancePunches)).toHaveLength(1);
+    expect(rows(attendancePunches)[0].source).toBe("manual");
+    expect(rows(deviceAttendancePunchClaims)).toEqual([]);
+    expect(mock.recompute).toHaveBeenCalledWith(
+      mock.db,
+      "emp-1",
+      "2026-10-13",
+    );
+    expect(rows(payrollAttendanceInvalidations)[0]).toMatchObject({
+      payrollId: "payroll-1",
+      deviceImportId: preview.importId,
+    });
+    expect(rows(deviceAttendanceImports)[0]).toMatchObject({
+      status: "undone",
+      undoneByUserId: "hr-2",
+    });
+    await expect(
+      confirmDeviceAttendance({ importId: preview.importId }, "hr-1"),
+    ).rejects.toThrow("This import was undone");
+  });
+  it("refuses to undo an import into approved payroll", async () => {
+    const preview = await uploadDeviceAttendance(file(), "hr-1");
+    await confirmDeviceAttendance({ importId: preview.importId }, "hr-1");
+    rows(payrolls).push({
+      id: "payroll-1",
+      status: "approved",
+      startDate: "2026-10-01",
+      endDate: "2026-10-31",
+    });
+    await expect(
+      undoDeviceAttendanceImport(preview.importId, "hr-1"),
+    ).rejects.toThrow("approved or paid payroll");
+    expect(rows(attendancePunches)).toHaveLength(4);
+    expect(rows(deviceAttendancePunchClaims)).toHaveLength(4);
+  });
+  it("refuses to undo an upload that was never imported", async () => {
+    const preview = await uploadDeviceAttendance(file(), "hr-1");
+    await expect(
+      undoDeviceAttendanceImport(preview.importId, "hr-1"),
+    ).rejects.toThrow("Only a completed import can be undone.");
+  });
+  it("discards a preview but not a completed import", async () => {
+    const preview = await uploadDeviceAttendance(file(), "hr-1");
+    await discardDeviceAttendanceImport(preview.importId);
+    expect(rows(deviceAttendanceImports)).toEqual([]);
+    const imported = await uploadDeviceAttendance(file(), "hr-1");
+    await confirmDeviceAttendance({ importId: imported.importId }, "hr-1");
+    await expect(
+      discardDeviceAttendanceImport(imported.importId),
+    ).rejects.toThrow("Undo the import instead.");
+  });
+  it("unlinks a saved Person ID so it can be matched again", async () => {
+    const first = await uploadDeviceAttendance(
+      file("08:00, 17:00", "device-42"),
+      "hr-1",
+    );
+    await confirmDeviceAttendance(
+      { importId: first.importId, mappings: { "device-42": "emp-1" } },
+      "hr-1",
+    );
+    expect(
+      (await previewDeviceAttendance({ importId: first.importId })).savedLinks,
+    ).toEqual([{ personId: "device-42", employeeId: "emp-1" }]);
+    await unlinkDevicePerson("device-42");
+    expect(rows(deviceAttendancePersonMappings)).toEqual([]);
+    const after = await previewDeviceAttendance({ importId: first.importId });
+    expect(after.rows[0].employeeId).toBeNull();
+    await expect(unlinkDevicePerson("device-42")).rejects.toThrow(
+      "not linked",
+    );
+  });
+  it("flags a file that was already imported", async () => {
+    const first = await uploadDeviceAttendance(file(), "hr-1");
+    expect(first.duplicateOf).toBeUndefined();
+    await confirmDeviceAttendance({ importId: first.importId }, "hr-1");
+    const again = await uploadDeviceAttendance(file(), "hr-1");
+    expect(again.duplicateOf).toMatchObject({
+      filename: "total-punches.csv",
+      status: "completed",
+    });
+    const different = await uploadDeviceAttendance(file("09:00, 18:00"), "hr-1");
+    expect(different.duplicateOf).toBeUndefined();
   });
 });

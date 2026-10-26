@@ -10,6 +10,9 @@ const actions = [
   "previewDeviceAttendanceFn",
   "confirmDeviceAttendanceFn",
   "listDeviceAttendanceImportsFn",
+  "undoDeviceAttendanceImportFn",
+  "discardDeviceAttendanceImportFn",
+  "unlinkDevicePersonFn",
 ];
 function definition(name: string) {
   return source
@@ -23,7 +26,7 @@ describe("device report RPC permission boundaries", () => {
       ".middleware([requireHrManageMiddleware])",
     );
   });
-  it("uses POST for uploads, mappings and confirmation, with the actor from the session", () => {
+  it("uses POST for uploads, mappings, confirmation and recovery, with the actor from the session", () => {
     for (const action of actions.slice(0, 3)) {
       expect(definition(action)).toContain(
         'createServerFn({ method: "POST" })',
@@ -33,6 +36,12 @@ describe("device report RPC permission boundaries", () => {
       "context.session.user.id",
     );
     expect(definition("confirmDeviceAttendanceFn")).toContain(
+      "context.session.user.id",
+    );
+    for (const action of actions.slice(4)) {
+      expect(definition(action)).toMatch(/createServerFn\(\{\s*method: "POST",?\s*\}\)/);
+    }
+    expect(definition("undoDeviceAttendanceImportFn")).toContain(
       "context.session.user.id",
     );
     expect(definition("listDeviceAttendanceImportsFn")).toContain(

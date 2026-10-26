@@ -48,13 +48,28 @@ export type DeviceImportRowPreview = {
   dutyHours: string | null;
 };
 
+export type DeviceImportStatus = "preview" | "completed" | "undone";
+
 export type DeviceImportPreview = {
   importId: string;
   filename: string;
   format: "csv" | "xlsx";
-  status: "preview" | "completed";
+  status: DeviceImportStatus;
   rows: DeviceImportRowPreview[];
   employees: { id: string; employeeCode: string; name: string }[];
   /** Payroll months (16th to 15th) the report only partly covers. */
   cycleGaps?: DeviceImportCycleGap[];
+  /** Saved device Person ID links for people in this report. */
+  savedLinks?: { personId: string; employeeId: string }[];
+  /** The most relevant earlier upload of the same file bytes. */
+  duplicateOf?: {
+    filename: string;
+    createdAt: string;
+    status: DeviceImportStatus;
+  };
+};
+
+export type DeviceImportUndoResult = {
+  removedPunchCount: number;
+  keptPunchCount: number;
 };
