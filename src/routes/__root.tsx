@@ -31,7 +31,7 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
         content: "width=device-width, initial-scale=1",
       },
       {
-        title: "",
+        title: "Muftah",
       },
     ],
     links: [
@@ -39,6 +39,9 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
         rel: "stylesheet",
         href: appCss,
       },
+      { rel: "icon", href: "/company-logo.svg", type: "image/svg+xml" },
+      { rel: "icon", href: "/favicon.ico", sizes: "any" },
+      { rel: "manifest", href: "/manifest.json" },
     ],
   }),
   errorComponent: () => <div>Error</div>,
