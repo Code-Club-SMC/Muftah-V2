@@ -108,9 +108,17 @@ export const decideTimeExceptionsFn = createServerFn({ method: "POST" })
     const deciderId = context.authContext.session.user.id;
     return await db.transaction(async (tx) => {
       await lockAttendancePayrollWrites(tx);
-      const rows = await tx.query.attendanceTimeExceptions.findMany({
-        where: inArray(attendanceTimeExceptions.id, data.ids),
-      });
+      const where = inArray(attendanceTimeExceptions.id, data.ids);
+      const owners = await tx
+        .selectDistinct({ employeeId: attendanceTimeExceptions.employeeId })
+        .from(attendanceTimeExceptions)
+        .where(where);
+      // Offline confirmation recomputes under the employee lock only, so read items after taking it.
+      // Sorted so two concurrent bulk decisions take employee locks in the same order.
+      for (const employeeId of owners.map((o) => o.employeeId).sort()) {
+        await lockEmployeePunchWrites(tx, employeeId);
+      }
+      const rows = await tx.query.attendanceTimeExceptions.findMany({ where });
       if (rows.length !== new Set(data.ids).size) {
         throw new Error("Some late/early items no longer exist. Refresh and try again.");
       }
@@ -125,10 +133,8 @@ export const decideTimeExceptionsFn = createServerFn({ method: "POST" })
         if (!datesByEmployee.has(row.employeeId)) datesByEmployee.set(row.employeeId, new Set());
         datesByEmployee.get(row.employeeId)!.add(row.date);
       }
-      // Sorted so two concurrent bulk decisions take employee locks in the same order.
-      for (const employeeId of [...datesByEmployee.keys()].sort()) {
-        await lockEmployeePunchWrites(tx, employeeId);
-        await invalidateDeviceAttendanceChanges(tx, employeeId, [...datesByEmployee.get(employeeId)!]);
+      for (const [employeeId, dates] of datesByEmployee) {
+        await invalidateDeviceAttendanceChanges(tx, employeeId, [...dates]);
       }
 
       const now = new Date();
