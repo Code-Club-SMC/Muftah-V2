@@ -10,9 +10,7 @@ describe("edit attendance form source", () => {
   it("explains that standard staff punches drive attendance", () => {
     expect(source).toContain("Punches control standard staff attendance");
     expect(source).toContain("Calculated from punches");
-    expect(source).toContain(
-      "Use Save only for notes, overtime, or early-leave",
-    );
+    expect(source).toContain("Use Save only for notes or overtime.");
   });
 
   it("shows the suggested-vs-requested overtime workflow clearly", () => {
@@ -29,26 +27,11 @@ describe("edit attendance form source", () => {
     );
   });
 
-  it("keeps early leave review disabled until punches actually show an early checkout", () => {
-    expect(source).toContain(
-      "No early checkout is detected from the current punches.",
-    );
-    expect(source).toContain(
-      "The last OUT punch is earlier than the scheduled shift end.",
-    );
-    expect(source).toContain("punchSummary?.earlyDepartureStatus");
-  });
-
-  it("explains the early leave payroll fallback clearly", () => {
-    expect(source).toContain(
-      "payroll",
-    );
-    expect(source).toContain(
-      "still treats it as a short day and falls back to the normal",
-    );
-    expect(source).toContain(
-      "short-hours deduction rule.",
-    );
+  it("replaces the early leave select with late/early decisions", () => {
+    expect(source).toContain("Late / Early Review");
+    expect(source).toContain("Pay is cut only for items marked Rejected.");
+    expect(source).toContain("<TimeExceptionDecisions attendanceId={attendance?.id} />");
+    expect(source).not.toContain('aria-label="Early departure status"');
   });
 
   it("supports order-booker manual override and trip-driven reset UX", () => {

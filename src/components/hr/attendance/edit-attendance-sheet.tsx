@@ -16,6 +16,7 @@ interface Props {
     [key: string]: any;
   };
   attendance?: {
+    id?: string;
     checkIn?: string | null;
     checkOut?: string | null;
     dutyHours?: string | null;
