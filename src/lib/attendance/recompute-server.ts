@@ -262,9 +262,7 @@ export async function recomputeAttendanceRow(
     .returning();
 
   if (upserted) {
-    await syncAttendanceTimeExceptions(tx, upserted, computed.shiftViolations, {
-      reset: manualFieldStrategy === "reset",
-    });
+    await syncAttendanceTimeExceptions(tx, upserted, computed.shiftViolations);
   }
 
   return upserted ?? null;

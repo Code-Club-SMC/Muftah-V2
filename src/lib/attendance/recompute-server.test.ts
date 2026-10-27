@@ -97,6 +97,7 @@ describe("recompute keeps late/early items in sync", () => {
     const upsertAt = source.indexOf(".onConflictDoUpdate(");
     const syncAt = source.indexOf("syncAttendanceTimeExceptions(");
     expect(syncAt).toBeGreaterThan(upsertAt);
-    expect(source).toMatch(/reset:\s*manualFieldStrategy === "reset"/);
+    // Recorded decisions must survive a manual-field reset.
+    expect(source).not.toMatch(/reset:\s*manualFieldStrategy/);
   });
 });

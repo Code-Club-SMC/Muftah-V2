@@ -8,17 +8,10 @@ export async function syncAttendanceTimeExceptions(
   tx: AttendanceTx,
   row: { id: string; employeeId: string; date: string },
   violations: ShiftViolation[],
-  options: { reset?: boolean } = {},
 ) {
-  if (options.reset) {
-    await tx.delete(attendanceTimeExceptions).where(eq(attendanceTimeExceptions.attendanceId, row.id));
-  }
-
-  const existing = options.reset
-    ? []
-    : await tx.query.attendanceTimeExceptions.findMany({
-        where: eq(attendanceTimeExceptions.attendanceId, row.id),
-      });
+  const existing = await tx.query.attendanceTimeExceptions.findMany({
+    where: eq(attendanceTimeExceptions.attendanceId, row.id),
+  });
   const plan = reconcileTimeExceptions(existing, buildDesiredTimeExceptions(violations));
   const now = new Date();
 
