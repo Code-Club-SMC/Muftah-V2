@@ -549,8 +549,6 @@ export function calculateAbsentDeductions(
           isWaived: item.status !== "rejected" || isW,
         });
       }
-      if (split.lateHours > 0) applyOccasionDeduction(split.lateHours, "lateArrival", "absent", "undertime", isW);
-      if (split.earlyHours > 0) applyOccasionDeduction(split.earlyHours, "earlyLeaving", "absent", "undertime", isW);
       if (split.undertimeHours > 0) {
         explanationLog.push({
           date: record.date,
@@ -560,7 +558,18 @@ export function calculateAbsentDeductions(
           unit: "hrs",
           isWaived: isW,
         });
-        applyOccasionDeduction(split.undertimeHours, "undertime", "absent", "undertime", isW);
+      }
+
+      // One deduction call per day: perDay allowances charge a full day per call, so splitting would multiply them.
+      const cutHours = Number((split.lateHours + split.earlyHours + split.undertimeHours).toFixed(2));
+      if (cutHours > 0) {
+        const occasion =
+          split.undertimeHours === 0 && split.earlyHours === 0
+            ? "lateArrival"
+            : split.undertimeHours === 0 && split.lateHours === 0
+              ? "earlyLeaving"
+              : "undertime";
+        applyOccasionDeduction(cutHours, occasion, "absent", "undertime", isW);
       }
     } else if (
       record.status === "present" &&

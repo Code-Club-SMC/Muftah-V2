@@ -77,5 +77,42 @@ describe("late/early approvals in payroll", () => {
       { waiveUndertime: true },
     );
     expect(result.deductionBreakdownByOccasion.undertime).toBe(0);
+    expect(result.explanationLog).toContainEqual(expect.objectContaining({
+      description: "Late arrival 1h — Rejected",
+      isWaived: true,
+    }));
+  });
+
+  it("lets a per-date exemption cancel a rejected cut", () => {
+    const result = calculatePayslip(
+      employee,
+      [day("7.00", [{ kind: "late", minutes: 60, status: "rejected" }])],
+      cycle,
+      undefined,
+      undefined,
+      undefined,
+      { exemptedDates: { undertime: ["2026-09-16"] } },
+    );
+    expect(result.deductionBreakdownByOccasion.undertime).toBe(0);
+    expect(result.explanationLog).toContainEqual(expect.objectContaining({ isWaived: true, description: "Late arrival 1h — Rejected" }));
+  });
+
+  it("charges a perDay allowance once on a day with rejected late, rejected early and unexplained time", () => {
+    const withAllowance: EmployeeData = {
+      ...employee,
+      allowanceConfig: [{
+        id: "conveyance", name: "Conveyance", amount: 1000, lateEarlyBasis: "perDay",
+        deductions: { absent: true, annualLeave: false, sickLeave: false, specialLeave: false, lateArrival: true, earlyLeaving: true },
+      }],
+    };
+    const record = (items: PayrollTimeException[]) => day("6.50", items);
+    const one = calculatePayslip(withAllowance, [record([{ kind: "late", minutes: 90, status: "rejected" }])], cycle);
+    const many = calculatePayslip(withAllowance, [record([
+      { kind: "late", minutes: 30, status: "rejected" },
+      { kind: "early", minutes: 30, status: "rejected" },
+    ])], cycle);
+    // One perDay charge is a single day of the allowance: 1000 / 26 working days = 38.46 -> 38.
+    expect(one.componentDeductions.conveyance).toBe(38);
+    expect(many.componentDeductions.conveyance).toBe(one.componentDeductions.conveyance);
   });
 });
