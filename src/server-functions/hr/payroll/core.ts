@@ -33,6 +33,7 @@ import {
 
 import { assertDeviceAttendanceResolved, lockAttendancePayrollWrites } from "@/lib/attendance/device-import/payroll.server";
 import { compCashOutAmount } from "@/lib/attendance/compensatory-bank";
+import { payrollAttendanceWith, toPayrollAttendanceRecord } from "./attendance-records";
 
 function getEffectiveSalaryDate(payrollPeriod: { startDate: string; endDate: string }): string {
   const todayStr = format(new Date(), "yyyy-MM-dd");
@@ -464,22 +465,10 @@ export async function generateEmployeePayslipCore(
         gte(table.date, payrollPeriod.startDate),
         lte(table.date, payrollPeriod.endDate),
       ),
+    with: payrollAttendanceWith,
   });
 
-  const formattedAttendance: AttendanceRecord[] = rawAttendance.map((r) => ({
-    date: r.date,
-    status: r.status,
-    dutyHours: r.dutyHours,
-    overtimeHours: r.overtimeHours,
-    isNightShift: r.isNightShift || false,
-    isApprovedLeave: r.isApprovedLeave ?? false,
-    leaveType: r.leaveType ?? null,
-    overtimeStatus: r.overtimeStatus ?? "pending",
-    overtimeCompensationMethod: r.overtimeCompensationMethod as "payout" | "comp_off" | undefined,
-    compensatoryHoursUsed: r.compensatoryHoursUsed,
-    isLate: r.isLate ?? false,
-    earlyDepartureStatus: r.earlyDepartureStatus ?? "none",
-  }));
+  const formattedAttendance: AttendanceRecord[] = rawAttendance.map(toPayrollAttendanceRecord);
 
   // -- 3. Salary advances (installment-aware) --------------------------------
   let advanceDeduction: number;
@@ -664,20 +653,7 @@ export async function generateEmployeePayslipCore(
         lte(table.date, yearEnd),
       ),
   });
-  const yearAttendanceFormatted: AttendanceRecord[] = yearAttendanceRaw.map((r) => ({
-    date: r.date,
-    status: r.status as any,
-    dutyHours: r.dutyHours,
-    overtimeHours: r.overtimeHours,
-    isNightShift: r.isNightShift || false,
-    isApprovedLeave: r.isApprovedLeave ?? false,
-    leaveType: r.leaveType ?? null,
-    overtimeStatus: r.overtimeStatus ?? "pending",
-    overtimeCompensationMethod: r.overtimeCompensationMethod as "payout" | "comp_off" | undefined,
-    compensatoryHoursUsed: r.compensatoryHoursUsed,
-    isLate: r.isLate ?? false,
-    earlyDepartureStatus: r.earlyDepartureStatus ?? "none",
-  }));
+  const yearAttendanceFormatted: AttendanceRecord[] = yearAttendanceRaw.map(toPayrollAttendanceRecord);
   const yearlyRestDaySet = buildRestDayDateSet(
     yearStart,
     yearEnd,
@@ -1035,22 +1011,10 @@ export async function simulateEmployeePayslipCore(
         gte(table.date, payrollPeriod.startDate),
         lte(table.date, payrollPeriod.endDate),
       ),
+    with: payrollAttendanceWith,
   });
 
-  const formattedAttendance: AttendanceRecord[] = rawAttendance.map((r) => ({
-    date: r.date,
-    status: r.status,
-    dutyHours: r.dutyHours,
-    overtimeHours: r.overtimeHours,
-    isNightShift: r.isNightShift || false,
-    isApprovedLeave: r.isApprovedLeave ?? false,
-    leaveType: r.leaveType ?? null,
-    overtimeStatus: r.overtimeStatus ?? "pending",
-    overtimeCompensationMethod: r.overtimeCompensationMethod as "payout" | "comp_off" | undefined,
-    compensatoryHoursUsed: r.compensatoryHoursUsed,
-    isLate: r.isLate ?? false,
-    earlyDepartureStatus: r.earlyDepartureStatus ?? "none",
-  }));
+  const formattedAttendance: AttendanceRecord[] = rawAttendance.map(toPayrollAttendanceRecord);
 
   // -- 3. Salary advances (installment-aware) --------------------------------
   let advanceDeduction: number;
@@ -1227,20 +1191,7 @@ export async function simulateEmployeePayslipCore(
         lte(table.date, yearEnd),
       ),
   });
-  const yearAttendanceFormatted: AttendanceRecord[] = yearAttendanceRaw.map((r) => ({
-    date: r.date,
-    status: r.status as any,
-    dutyHours: r.dutyHours,
-    overtimeHours: r.overtimeHours,
-    isNightShift: r.isNightShift || false,
-    isApprovedLeave: r.isApprovedLeave ?? false,
-    leaveType: r.leaveType ?? null,
-    overtimeStatus: r.overtimeStatus ?? "pending",
-    overtimeCompensationMethod: r.overtimeCompensationMethod as "payout" | "comp_off" | undefined,
-    compensatoryHoursUsed: r.compensatoryHoursUsed,
-    isLate: r.isLate ?? false,
-    earlyDepartureStatus: r.earlyDepartureStatus ?? "none",
-  }));
+  const yearAttendanceFormatted: AttendanceRecord[] = yearAttendanceRaw.map(toPayrollAttendanceRecord);
   const yearlyRestDaySet = buildRestDayDateSet(
     yearStart,
     yearEnd,
