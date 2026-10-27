@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { recomputeAttendanceRow, type AttendanceTx } from "./recompute-server";
 
@@ -28,6 +30,7 @@ async function recompute(
         findFirst: async () => ({ attendanceGraceMinutes: 15 }),
       },
       attendance: { findFirst: async () => stored },
+      attendanceTimeExceptions: { findMany: async () => [] },
       attendancePunches: {
         findMany: async () => [
           {
@@ -43,6 +46,7 @@ async function recompute(
         ],
       },
     },
+    delete: () => ({ where: async () => undefined }),
     insert: () => ({
       values: () => ({
         onConflictDoUpdate: ({ set }: { set: Record<string, unknown> }) => ({
@@ -83,5 +87,16 @@ describe("punch recomputation preserves HR overtime decisions", () => {
       overtimeStatus: "pending",
       overtimeRemarks: null,
     });
+  });
+});
+
+describe("recompute keeps late/early items in sync", () => {
+  const source = readFileSync(resolve(__dirname, "recompute-server.ts"), "utf8");
+
+  it("syncs time exceptions after the attendance upsert", () => {
+    const upsertAt = source.indexOf(".onConflictDoUpdate(");
+    const syncAt = source.indexOf("syncAttendanceTimeExceptions(");
+    expect(syncAt).toBeGreaterThan(upsertAt);
+    expect(source).toMatch(/reset:\s*manualFieldStrategy === "reset"/);
   });
 });
