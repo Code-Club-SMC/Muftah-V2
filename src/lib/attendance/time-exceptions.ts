@@ -21,6 +21,17 @@ export const TIME_EXCEPTION_DECISIONS = [
 ] as const;
 export type TimeExceptionDecision = (typeof TIME_EXCEPTION_DECISIONS)[number];
 
+/** Statuses that mean a person has made the call. */
+export const DECIDED_TIME_EXCEPTION_STATUSES = [
+  "approved_official",
+  "approved_excused",
+  "rejected",
+] as const satisfies readonly TimeExceptionDecision[];
+
+/** Approvals list views. */
+export const TIME_EXCEPTION_VIEWS = ["pending", "decided", "all"] as const;
+export type TimeExceptionView = (typeof TIME_EXCEPTION_VIEWS)[number];
+
 export const TIME_EXCEPTION_STATUS_LABELS: Record<TimeExceptionStatus, string> = {
   grace: "Grace",
   pending: "Pending",

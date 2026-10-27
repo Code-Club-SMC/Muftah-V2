@@ -11,16 +11,25 @@ import {
   lockAttendancePayrollWrites,
 } from "@/lib/attendance/device-import/payroll.server";
 import {
+  DECIDED_TIME_EXCEPTION_STATUSES,
   TIME_EXCEPTION_DECISIONS,
+  TIME_EXCEPTION_VIEWS,
   validateTimeExceptionDecision,
 } from "@/lib/attendance/time-exceptions";
+import {
+  countOpenPendingTimeExceptions,
+  openPendingTimeExceptionFilter,
+} from "@/lib/attendance/time-exceptions.server";
 import { lockEmployeePunchWrites } from "./punch-write-lock";
+
+/** Decided and all views show the newest rows only; pending items always show in full. */
+export const TIME_EXCEPTION_HISTORY_LIMIT = 200;
 
 export const getTimeExceptionsFn = createServerFn()
   .middleware([requireHrManageMiddleware])
   .inputValidator(
     z.object({
-      view: z.enum(["pending", "decided", "all"]).default("pending"),
+      view: z.enum(TIME_EXCEPTION_VIEWS).default("pending"),
       from: z.string().optional(),
       to: z.string().optional(),
       attendanceId: z.string().optional(),
@@ -28,11 +37,10 @@ export const getTimeExceptionsFn = createServerFn()
   )
   .handler(async ({ data }) => {
     const filters: SQL[] = [eq(attendance.status, "present")];
-    if (data.view === "pending") filters.push(eq(attendanceTimeExceptions.status, "pending"));
+    // Pending excludes items locked inside approved or paid payroll: nobody can decide those any more.
+    if (data.view === "pending") filters.push(openPendingTimeExceptionFilter());
     if (data.view === "decided") {
-      filters.push(
-        inArray(attendanceTimeExceptions.status, ["approved_official", "approved_excused", "rejected"]),
-      );
+      filters.push(inArray(attendanceTimeExceptions.status, [...DECIDED_TIME_EXCEPTION_STATUSES]));
     }
     // Grace rows are display-only; the approvals list hides them unless one row is requested.
     if (data.attendanceId) {
@@ -43,7 +51,8 @@ export const getTimeExceptionsFn = createServerFn()
     if (data.from) filters.push(gte(attendanceTimeExceptions.date, data.from));
     if (data.to) filters.push(lte(attendanceTimeExceptions.date, data.to));
 
-    const rows = await db
+    const limited = data.view !== "pending" && !data.attendanceId;
+    const query = db
       .select({
         id: attendanceTimeExceptions.id,
         attendanceId: attendanceTimeExceptions.attendanceId,
@@ -73,37 +82,38 @@ export const getTimeExceptionsFn = createServerFn()
         attendanceTimeExceptions.shiftIndex,
         attendanceTimeExceptions.kind,
       );
+    // One extra row tells the screen there is more history than it shows.
+    const rows = limited ? await query.limit(TIME_EXCEPTION_HISTORY_LIMIT + 1) : await query;
+    const hasMore = limited && rows.length > TIME_EXCEPTION_HISTORY_LIMIT;
 
-    const items = rows.map(({ firstName, lastName, shiftViolations, ...row }) => {
-      const shift = shiftViolations?.find((v) => v.shiftIndex === row.shiftIndex);
-      return {
-        ...row,
-        employeeName: `${firstName} ${lastName ?? ""}`.trim(),
-        expectedTime: (row.kind === "late" ? shift?.expectedIn : shift?.expectedOut) ?? null,
-        actualTime: (row.kind === "late" ? shift?.actualIn : shift?.actualOut) ?? null,
-      };
-    });
+    const items = rows.slice(0, limited ? TIME_EXCEPTION_HISTORY_LIMIT : undefined).map(
+      ({ firstName, lastName, shiftViolations, ...row }) => {
+        const shift = shiftViolations?.find((v) => v.shiftIndex === row.shiftIndex);
+        return {
+          ...row,
+          employeeName: `${firstName} ${lastName ?? ""}`.trim(),
+          expectedTime: (row.kind === "late" ? shift?.expectedIn : shift?.expectedOut) ?? null,
+          actualTime: (row.kind === "late" ? shift?.actualIn : shift?.actualOut) ?? null,
+        };
+      },
+    );
 
-    const pending = await db
-      .select({ id: attendanceTimeExceptions.id })
-      .from(attendanceTimeExceptions)
-      .innerJoin(attendance, eq(attendanceTimeExceptions.attendanceId, attendance.id))
-      .where(and(eq(attendanceTimeExceptions.status, "pending"), eq(attendance.status, "present")));
-
-    return { items, pendingCount: pending.length };
+    const pending = await countOpenPendingTimeExceptions();
+    return { items, hasMore, pendingCount: pending.items };
   });
 
 export type TimeExceptionListItem = Awaited<ReturnType<typeof getTimeExceptionsFn>>["items"][number];
 
+const decideTimeExceptionsInput = z.object({
+  ids: z.array(z.string()).min(1).max(500),
+  status: z.enum(TIME_EXCEPTION_DECISIONS),
+  note: z.string().trim().max(500).optional(),
+});
+export type DecideTimeExceptionsInput = z.infer<typeof decideTimeExceptionsInput>;
+
 export const decideTimeExceptionsFn = createServerFn({ method: "POST" })
   .middleware([requireHrManageMiddleware])
-  .inputValidator(
-    z.object({
-      ids: z.array(z.string()).min(1).max(500),
-      status: z.enum(TIME_EXCEPTION_DECISIONS),
-      note: z.string().trim().max(500).optional(),
-    }),
-  )
+  .inputValidator(decideTimeExceptionsInput)
   .handler(async ({ data, context }) => {
     const deciderId = context.authContext.session.user.id;
     return await db.transaction(async (tx) => {
@@ -118,11 +128,17 @@ export const decideTimeExceptionsFn = createServerFn({ method: "POST" })
       for (const employeeId of owners.map((o) => o.employeeId).sort()) {
         await lockEmployeePunchWrites(tx, employeeId);
       }
-      const rows = await tx.query.attendanceTimeExceptions.findMany({ where });
+      const rows = await tx.query.attendanceTimeExceptions.findMany({
+        where,
+        with: { attendance: { columns: { status: true } } },
+      });
       if (rows.length !== new Set(data.ids).size) {
         throw new Error("Some late/early items no longer exist. Refresh and try again.");
       }
       for (const row of rows) {
+        if (row.attendance.status !== "present") {
+          throw new Error(`${row.date} is no longer marked present, so its late/early items need no decision. Refresh and try again.`);
+        }
         validateTimeExceptionDecision({ currentStatus: row.status, nextStatus: data.status, note: data.note });
       }
 

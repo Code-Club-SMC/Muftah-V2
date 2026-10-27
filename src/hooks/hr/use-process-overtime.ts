@@ -12,7 +12,7 @@ export const useProcessOvertime = () => {
         onSuccess: (data) => {
             queryClient.invalidateQueries({ queryKey: ["attendance"] });
             queryClient.invalidateQueries({ queryKey: ["daily-attendance"] });
-            queryClient.invalidateQueries({ queryKey: ["pending-approvals"] });
+            queryClient.invalidateQueries({ queryKey: ["pending-approval-counts"] });
             queryClient.invalidateQueries({ queryKey: ["overtime-approvals"] });
             queryClient.invalidateQueries({ queryKey: ["employee-attendance-log"] });
             queryClient.invalidateQueries({ queryKey: ["payrolls"] });

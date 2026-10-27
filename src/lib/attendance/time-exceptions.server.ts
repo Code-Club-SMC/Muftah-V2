@@ -1,5 +1,6 @@
-import { eq, inArray } from "drizzle-orm";
-import { attendanceTimeExceptions } from "@/db/schemas/hr-schema";
+import { and, countDistinct, eq, exists, gte, inArray, lte, not, type SQL } from "drizzle-orm";
+import { db } from "@/db";
+import { attendance, attendanceTimeExceptions, payrolls } from "@/db/schemas/hr-schema";
 import type { AttendanceTx } from "./recompute-server";
 import type { ShiftViolation } from "./recompute";
 import { buildDesiredTimeExceptions, reconcileTimeExceptions } from "./time-exceptions";
@@ -52,4 +53,41 @@ export async function syncAttendanceTimeExceptions(
       })),
     );
   }
+}
+
+/**
+ * Items still waiting for a decision: pending, on a present day, and not inside
+ * approved or paid payroll (those can no longer be decided). Needs a join to `attendance`.
+ */
+export function openPendingTimeExceptionFilter(): SQL {
+  return and(
+    eq(attendanceTimeExceptions.status, "pending"),
+    eq(attendance.status, "present"),
+    not(
+      exists(
+        db
+          .select({ id: payrolls.id })
+          .from(payrolls)
+          .where(
+            and(
+              inArray(payrolls.status, ["approved", "paid"]),
+              lte(payrolls.startDate, attendanceTimeExceptions.date),
+              gte(payrolls.endDate, attendanceTimeExceptions.date),
+            ),
+          ),
+      ),
+    ),
+  )!;
+}
+
+export async function countOpenPendingTimeExceptions() {
+  const [row] = await db
+    .select({
+      items: countDistinct(attendanceTimeExceptions.id),
+      employees: countDistinct(attendanceTimeExceptions.employeeId),
+    })
+    .from(attendanceTimeExceptions)
+    .innerJoin(attendance, eq(attendanceTimeExceptions.attendanceId, attendance.id))
+    .where(openPendingTimeExceptionFilter());
+  return { items: row?.items ?? 0, employees: row?.employees ?? 0 };
 }

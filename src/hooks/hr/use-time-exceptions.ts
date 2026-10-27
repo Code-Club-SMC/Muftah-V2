@@ -3,15 +3,21 @@ import { toast } from "sonner";
 import {
   decideTimeExceptionsFn,
   getTimeExceptionsFn,
+  type DecideTimeExceptionsInput,
 } from "@/server-functions/hr/attendance/time-exceptions-fn";
-import type { TimeExceptionDecision } from "@/lib/attendance/time-exceptions";
+import type { TimeExceptionDecision, TimeExceptionView } from "@/lib/attendance/time-exceptions";
 
-export type TimeExceptionView = "pending" | "decided" | "all";
+export type { TimeExceptionView };
+export type TimeExceptionRange = { from?: string; to?: string };
 
-export const useTimeExceptions = (view: TimeExceptionView, attendanceId?: string) =>
+export const useTimeExceptions = (
+  view: TimeExceptionView,
+  attendanceId?: string,
+  range: TimeExceptionRange = {},
+) =>
   useQuery({
-    queryKey: ["time-exceptions", view, attendanceId ?? null],
-    queryFn: () => getTimeExceptionsFn({ data: { view, attendanceId } }),
+    queryKey: ["time-exceptions", view, attendanceId ?? null, range.from ?? null, range.to ?? null],
+    queryFn: () => getTimeExceptionsFn({ data: { view, attendanceId, ...range } }),
   });
 
 const DECISION_TOAST: Record<TimeExceptionDecision, string> = {
@@ -21,27 +27,29 @@ const DECISION_TOAST: Record<TimeExceptionDecision, string> = {
   pending: "Moved back to pending",
 };
 
+// A decision changes the day's pay, so every screen showing attendance or salary refreshes.
+const DECISION_QUERY_KEYS = [
+  ["time-exceptions"],
+  ["pending-approval-counts"],
+  ["attendance"],
+  ["daily-attendance"],
+  ["employee-attendance-log"],
+  ["payroll"],
+  ["payrolls"],
+  ["payroll-dashboard"],
+  ["payslip-preview"],
+  ["employee-payroll-history"],
+];
+
 export const useDecideTimeExceptions = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (data: { ids: string[]; status: TimeExceptionDecision; note?: string }) =>
-      decideTimeExceptionsFn({ data }),
+    mutationFn: (data: DecideTimeExceptionsInput) => decideTimeExceptionsFn({ data }),
     onSuccess: (result, variables) => {
-      for (const key of [
-        "time-exceptions",
-        "pending-approval-counts",
-        "attendance",
-        "daily-attendance",
-        "employee-attendance-log",
-        "payroll",
-        "payrolls",
-        "payroll-dashboard",
-        "payslip-preview",
-        "employee-payroll-history",
-      ]) {
-        queryClient.invalidateQueries({ queryKey: [key] });
-      }
-      toast.success(`${DECISION_TOAST[variables.status]} (${result.updated})`);
+      for (const queryKey of DECISION_QUERY_KEYS) queryClient.invalidateQueries({ queryKey });
+      toast.success(
+        `${DECISION_TOAST[variables.status]}: ${result.updated} item${result.updated !== 1 ? "s" : ""}`,
+      );
     },
     onError: (err) => toast.error(err.message || "Failed to save decision"),
   });
