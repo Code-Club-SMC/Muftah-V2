@@ -18,6 +18,10 @@ export type ShiftViolation = {
   shiftIndex: number;
   late: boolean;
   earlyDeparture: boolean;
+  /** Whole minutes after shift start; null when the IN punch is missing. */
+  lateMinutes: number | null;
+  /** Whole minutes before shift end; null when the OUT punch is missing. */
+  earlyMinutes: number | null;
   expectedIn?: string;
   actualIn?: string;
   expectedOut?: string;
@@ -175,12 +179,13 @@ function computeShiftViolations(
 
     let late = false;
     let earlyDeparture = false;
+    let lateMinutes: number | null = null;
+    let earlyMinutes: number | null = null;
 
     if (actualIn) {
       const actualInSec = normalizeForOvernight(actualIn.secondsOfDay, shift, false);
       late = actualInSec > expectedInSec + graceMinutes * 60;
-    } else {
-      late = false;
+      lateMinutes = Math.max(0, Math.round((actualInSec - expectedInSec) / 60));
     }
 
     if (actualOut) {
@@ -188,7 +193,8 @@ function computeShiftViolations(
       const expectedOutNorm = isOvernightShift(shift)
         ? expectedOutSec + 24 * 3600
         : expectedOutSec;
-      earlyDeparture = actualOutSec < expectedOutNorm;
+      earlyDeparture = actualOutSec < expectedOutNorm - graceMinutes * 60;
+      earlyMinutes = Math.max(0, Math.round((expectedOutNorm - actualOutSec) / 60));
     } else if (actualIn) {
       earlyDeparture = true;
     } else {
@@ -200,6 +206,8 @@ function computeShiftViolations(
       shiftIndex: i,
       late,
       earlyDeparture,
+      lateMinutes,
+      earlyMinutes,
       expectedIn: shift.start,
       actualIn: actualIn?.time,
       expectedOut: shift.end,

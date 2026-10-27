@@ -116,11 +116,64 @@ describe("computeAttendanceFromPunches", () => {
 
   it("marks early departure when checkout is before the scheduled shift end", () => {
     const result = computeAttendanceFromPunches(
-      [punch("in", "2026-06-01", 8), punch("out", "2026-06-01", 15, 45)],
+      [punch("in", "2026-06-01", 8), punch("out", "2026-06-01", 15, 44)],
       opts,
     );
 
     expect(result.earlyDepartureStatus).toBe("pending");
+  });
+
+  it("records exact late and early minutes per shift", () => {
+    const result = computeAttendanceFromPunches(
+      [punch("in", "2026-06-01", 8, 25), punch("out", "2026-06-01", 15, 50)],
+      opts,
+    );
+
+    expect(result.shiftViolations[0]).toMatchObject({
+      late: true,
+      lateMinutes: 25,
+      earlyDeparture: false,
+      earlyMinutes: 10,
+    });
+  });
+
+  it("applies grace to early departure exactly", () => {
+    const atGrace = computeAttendanceFromPunches(
+      [punch("in", "2026-06-01", 8), punch("out", "2026-06-01", 15, 45)],
+      opts,
+    );
+    const afterGrace = computeAttendanceFromPunches(
+      [punch("in", "2026-06-01", 8), punch("out", "2026-06-01", 15, 44)],
+      opts,
+    );
+
+    expect(atGrace.earlyDepartureStatus).toBe("none");
+    expect(atGrace.shiftViolations[0].earlyMinutes).toBe(15);
+    expect(afterGrace.earlyDepartureStatus).toBe("pending");
+    expect(afterGrace.shiftViolations[0].earlyMinutes).toBe(16);
+  });
+
+  it("reports zero minutes for on-time punches and null for missing ones", () => {
+    const onTime = computeAttendanceFromPunches(
+      [punch("in", "2026-06-01", 7, 50), punch("out", "2026-06-01", 16, 10)],
+      opts,
+    );
+    const openDay = computeAttendanceFromPunches(
+      [punch("in", "2026-06-01", 8)],
+      opts,
+    );
+
+    expect(onTime.shiftViolations[0]).toMatchObject({ lateMinutes: 0, earlyMinutes: 0 });
+    expect(openDay.shiftViolations[0]).toMatchObject({ lateMinutes: 0, earlyMinutes: null });
+  });
+
+  it("measures overnight early minutes against the next-day shift end", () => {
+    const result = computeAttendanceFromPunches(
+      [punch("in", "2026-06-01", 21), punch("out", "2026-06-02", 5, 30)],
+      nightOpts,
+    );
+
+    expect(result.shiftViolations[0].earlyMinutes).toBe(30);
   });
 
   it("marks overnight early departure against the next-day shift end", () => {
@@ -235,6 +288,8 @@ describe("computeAttendanceFromPunches multi-shift", () => {
     expect(result.shiftViolations[0].earlyDeparture).toBe(false);
     expect(result.shiftViolations[1].late).toBe(true);
     expect(result.shiftViolations[1].earlyDeparture).toBe(true);
+    expect(result.shiftViolations[1].lateMinutes).toBeNull();
+    expect(result.shiftViolations[1].earlyMinutes).toBeNull();
   });
 
   it("does not police extra punches beyond configured shifts", () => {

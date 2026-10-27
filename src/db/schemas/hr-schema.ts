@@ -225,6 +225,8 @@ export const attendance = pgTable(
       shiftIndex: number;
       late: boolean;
       earlyDeparture: boolean;
+      lateMinutes?: number | null;
+      earlyMinutes?: number | null;
       expectedIn?: string;
       actualIn?: string;
       expectedOut?: string;
