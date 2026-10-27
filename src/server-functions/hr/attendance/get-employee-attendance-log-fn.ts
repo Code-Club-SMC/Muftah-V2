@@ -35,6 +35,7 @@ export const getEmployeeAttendanceLogFn = createServerFn()
         between(attendance.date, startDate, endDate),
       ),
       orderBy: asc(attendance.date),
+      with: { timeExceptions: { columns: { kind: true, minutes: true, status: true } } },
     });
 
     const punches = await db.query.attendancePunches.findMany({
