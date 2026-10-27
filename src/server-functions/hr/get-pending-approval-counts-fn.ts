@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { db } from "@/db";
-import { attendance, salaryAdvances } from "@/db/schemas/hr-schema";
+import { attendance, attendanceTimeExceptions, salaryAdvances } from "@/db/schemas/hr-schema";
 import { requireHrViewMiddleware } from "@/lib/middlewares";
 import { eq, and, gt } from "drizzle-orm";
 
@@ -39,10 +39,27 @@ export const getPendingApprovalCountsFn = createServerFn()
             .from(salaryAdvances)
             .where(eq(salaryAdvances.status, "pending"));
 
+        // Pending late/early items on present days
+        const pendingLateEarly = await db
+            .select({ id: attendanceTimeExceptions.id })
+            .from(attendanceTimeExceptions)
+            .innerJoin(attendance, eq(attendanceTimeExceptions.attendanceId, attendance.id))
+            .where(
+                and(
+                    eq(attendanceTimeExceptions.status, "pending"),
+                    eq(attendance.status, "present")
+                )
+            );
+
         return {
             overtime: pendingOT.length,
             leave: pendingLeave.length,
             advances: pendingAdvances.length,
-            total: pendingOT.length + pendingLeave.length + pendingAdvances.length,
+            lateEarly: pendingLateEarly.length,
+            total:
+                pendingOT.length +
+                pendingLeave.length +
+                pendingAdvances.length +
+                pendingLateEarly.length,
         };
     });

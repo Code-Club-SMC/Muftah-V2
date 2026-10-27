@@ -773,6 +773,7 @@ function PendingApprovalsWarning() {
   if (counts.leave > 0) parts.push(`${counts.leave} leave request${counts.leave !== 1 ? "s" : ""}`);
   if (counts.overtime > 0) parts.push(`${counts.overtime} overtime request${counts.overtime !== 1 ? "s" : ""}`);
   if (counts.advances > 0) parts.push(`${counts.advances} salary advance${counts.advances !== 1 ? "s" : ""}`);
+  if (counts.lateEarly > 0) parts.push(`${counts.lateEarly} late/early item${counts.lateEarly !== 1 ? "s" : ""} (will not be deducted)`);
 
   return (
     <div className="flex items-center gap-3 px-4 py-3 rounded-none border border-orange-200 bg-orange-50 dark:bg-orange-950/20 dark:border-orange-800/30 animate-in fade-in duration-300">
