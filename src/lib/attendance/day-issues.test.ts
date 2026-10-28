@@ -227,7 +227,7 @@ describe("getDayIssues", () => {
       },
       punches: inOut,
     });
-    expect(result).toContainEqual({ kind: "late", severity: "info", label: "Late (10 min · Grace)" });
+    expect(result).toContainEqual({ kind: "late", severity: "info", label: "Late (10 min · Grace)", grace: true });
     expect(result).toContainEqual({
       kind: "early_departure",
       severity: "deduction",

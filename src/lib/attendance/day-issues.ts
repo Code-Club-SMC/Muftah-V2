@@ -35,6 +35,8 @@ export type DayIssue = {
   kind: DayIssueKind;
   severity: DayIssueSeverity;
   label: string;
+  /** Inside grace: shown on the day, but not counted or filtered as an issue. */
+  grace?: true;
 };
 
 export const dayIssueLabels: Record<DayIssueKind, string> = {
@@ -136,6 +138,7 @@ export function getDayIssues(input: DayIssueInput): DayIssue[] {
     kind: DayIssueKind,
     severity: DayIssueSeverity,
     detail?: string,
+    grace?: true,
   ) =>
     issues.push({
       kind,
@@ -143,6 +146,7 @@ export function getDayIssues(input: DayIssueInput): DayIssue[] {
       label: detail
         ? `${dayIssueLabels[kind]} ${detail}`
         : dayIssueLabels[kind],
+      ...(grace && { grace }),
     });
 
   if (date < employee.joiningDate) {
@@ -210,6 +214,7 @@ export function getDayIssues(input: DayIssueInput): DayIssue[] {
           item.kind === "late" ? "late" : "early_departure",
           severity,
           `(${formatExceptionMinutes(item.minutes)} · ${TIME_EXCEPTION_STATUS_LABELS[item.status]})`,
+          item.status === "grace" ? true : undefined,
         );
       }
     } else {
