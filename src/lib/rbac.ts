@@ -65,6 +65,7 @@ export const PERMISSION_KEYS = [
   "suppliers.manage",
   "sales.view",
   "sales.manage",
+  "sales.returns.override-price",
   "sales.people.view",
   "sales.people.manage",
   "sales.config.view",
@@ -378,6 +379,13 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
     moduleKey: "sales",
     label: "Manage sales",
     description: "Create invoices and maintain customer data.",
+    kind: "action",
+  },
+  {
+    key: "sales.returns.override-price",
+    moduleKey: "sales",
+    label: "Override return refund price",
+    description: "Refund a sales return above the price charged on the invoice, with a reason.",
     kind: "action",
   },
   {

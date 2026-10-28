@@ -724,6 +724,8 @@ export const salesReturns = pgTable("sales_returns", {
   approvedAt: timestamp("approved_at"),
   completedAt: timestamp("completed_at"),
   notes: text("notes"),
+  priceOverride: boolean("price_override").notNull().default(false),
+  priceOverrideReason: text("price_override_reason"),
   ...timestamps,
 }, (table) => ({
   invoiceIdx: index("idx_sales_returns_invoice").on(table.invoiceId),
