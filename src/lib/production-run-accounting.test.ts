@@ -68,18 +68,16 @@ describe("two phase production regression guards", () => {
     expect(read("src/components/packaging/packaging-allocations-table.tsx")).toContain("row.original.allocatedBulkUnit");
   });
 
-  it("prefetches paginated active mixing work and the packaging status rendered by operators", () => {
+  it("prefetches paginated batches for the operator workstation", () => {
     const route = read("src/routes/_protected/operator/index.tsx");
     const mixing = read("src/components/operator/mixing-operator-interface.tsx");
-    const packaging = read("src/components/operator/packaging-operator-interface.tsx");
-    expect(route).toContain('["operator-mixing-runs", "list", { page: 1, search: "" }]');
-    expect(mixing).toContain('["operator-mixing-runs", "list", { page, search }]');
+    expect(route).toContain('["operator-mixing-runs", "list", { page: 1, search: "", stage: "all" }]');
+    expect(mixing).toContain('["operator-mixing-runs", "list", { page, search, stage }]');
     for (const source of [route, mixing]) {
-      expect(source).toContain('statuses: ["in_progress", "scheduled"]');
+      expect(source).toContain('["in_progress", "scheduled", "completed"]');
       expect(source).toContain('limit: 10');
     }
-    expect(route).toContain('["operator-packaging", "list", "in_progress"]');
-    expect(packaging).toContain('["operator-packaging", "list", "in_progress"]');
+    expect(route).not.toContain("operator-packaging");
     const mutations = read("src/hooks/manufacturing/mixing/use-mixing-mutations.ts");
     expect(mutations).toContain("variables.data.mixingRunId");
     expect(mutations).toContain('queryKey: ["operator-mixing-run",');

@@ -2,10 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { Suspense } from "react";
 import { GenericLoader } from "@/components/custom/generic-loader";
 import { getMixingRunsFn } from "@/server-functions/manufacturing/mixing/get-mixing-runs-fn";
-import { getPackagingAllocationsFn } from "@/server-functions/manufacturing/packaging/get-packaging-allocations-fn";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { MixingOperatorInterface } from "@/components/operator/mixing-operator-interface";
-import { PackagingOperatorInterface } from "@/components/operator/packaging-operator-interface";
 
 export const Route = createFileRoute("/_protected/operator/")({
   loader: async ({ context }) => {
@@ -20,11 +17,6 @@ export const Route = createFileRoute("/_protected/operator/")({
             search: "",
           },
         }),
-    });
-    void context.queryClient.prefetchQuery({
-      queryKey: ["operator-packaging", "list", "in_progress"],
-      queryFn: () =>
-        getPackagingAllocationsFn({ data: { status: "in_progress" } }),
     });
   },
   component: RouteComponent,
@@ -43,24 +35,11 @@ function RouteComponent() {
           </p>
         </div>
 
-        <Tabs defaultValue="mixing" className="px-4 sm:px-6">
-          <TabsList className="mb-4">
-            <TabsTrigger value="mixing">Batches</TabsTrigger>
-            <TabsTrigger value="packaging">Existing packing jobs</TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="mixing">
-            <Suspense fallback={<GenericLoader title="Loading..." />}>
-              <MixingOperatorInterface />
-            </Suspense>
-          </TabsContent>
-
-          <TabsContent value="packaging">
-            <Suspense fallback={<GenericLoader title="Loading..." />}>
-              <PackagingOperatorInterface />
-            </Suspense>
-          </TabsContent>
-        </Tabs>
+        <div className="px-4 sm:px-6">
+          <Suspense fallback={<GenericLoader title="Loading..." />}>
+            <MixingOperatorInterface />
+          </Suspense>
+        </div>
       </div>
     </main>
   );
