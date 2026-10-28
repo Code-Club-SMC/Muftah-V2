@@ -19,6 +19,7 @@ export function useCreateSalesReturn() {
       reason: string;
       condition: "good" | "damaged" | "expired";
       notes?: string;
+      priceOverrideReason?: string;
       items: Array<{
         invoiceItemId: string;
         cartonsReturned?: number;

@@ -438,4 +438,20 @@ describe("sales workflow regressions", () => {
     expect(routeSource).not.toContain("Record Payment");
     expect(existsSync(salesPaymentDialog)).toBe(false);
   });
+
+  it("shows the capped refund price in the return dialog and flags overrides for approvers", () => {
+    const dialog = readFileSync(resolve(SALES_COMPONENTS_DIR, "create-return-dialog.tsx"), "utf8");
+    const invoicePage = readFileSync(
+      resolve(process.cwd(), "src/routes/_protected/sales/invoices/$invoiceId/index.tsx"),
+      "utf8",
+    );
+
+    expect(dialog).toContain("getMaxRefundPerUnit(");
+    expect(dialog).toContain("\"sales.returns.override-price\"");
+    expect(dialog).toContain("Change price");
+    expect(dialog).toContain("priceOverrideReason");
+    expect(dialog).not.toContain("item.retailPrice");
+    expect(invoicePage).toContain("invoiceDiscount={invoice.invoiceDiscount}");
+    expect(invoicePage).toContain("ret.priceOverride");
+  });
 });

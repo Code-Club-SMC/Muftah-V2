@@ -22,6 +22,15 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { useCreateSalesReturn } from "@/hooks/sales/use-sales-returns";
+import { useViewerAccess } from "@/hooks/use-viewer-access";
+import { hasPermission } from "@/lib/rbac";
+import {
+  calculateReturnLineRefund,
+  getMaxRefundPerUnit,
+  getReturnUnitsPerCarton,
+  sumMoney,
+} from "@/lib/sales/returns/refund-pricing";
+import Big from "big.js";
 import { RotateCcw } from "lucide-react";
 
 interface ReturnableItem {
@@ -29,9 +38,9 @@ interface ReturnableItem {
   pack: string;
   numberOfCartons: number;
   quantity: number;
-  perCartonPrice: string;
-  retailPrice: string;
+  packsPerCarton: number;
   actualPackSize: number;
+  amount: string;
   recipe: { id: string; name: string } | null;
 }
 
@@ -46,43 +55,61 @@ interface ExistingReturn {
 
 interface CreateReturnDialogProps {
   invoiceId: string;
+  invoiceDiscount: string | null;
   items: ReturnableItem[];
   returns: ExistingReturn[];
   trigger?: React.ReactNode;
 }
 
 function getUnitsPerCarton(item: ReturnableItem) {
-  return Math.max(1, Number(item.actualPackSize) || 1);
+  return getReturnUnitsPerCarton(item);
 }
 
-function getDefaultRefundPerUnit(item: ReturnableItem) {
-  const retailPrice = Number(item.retailPrice) || 0;
-  if (retailPrice > 0) {
-    return retailPrice.toFixed(2);
-  }
-
-  return (Number(item.perCartonPrice || 0) / getUnitsPerCarton(item)).toFixed(2);
-}
-
-export function CreateReturnDialog({ invoiceId, items, returns, trigger }: CreateReturnDialogProps) {
+export function CreateReturnDialog({
+  invoiceId,
+  invoiceDiscount,
+  items,
+  returns,
+  trigger,
+}: CreateReturnDialogProps) {
   const [open, setOpen] = React.useState(false);
   const [reason, setReason] = React.useState("");
   const [condition, setCondition] = React.useState<"good" | "damaged" | "expired">("good");
   const [notes, setNotes] = React.useState("");
-  const [lines, setLines] = React.useState<
-    Array<{
-      invoiceItemId: string;
-      cartonsReturned: string;
-      quantityReturned: string;
-      refundPerUnit: string;
-    }>
-  >(
+  const { data: viewerAccess } = useViewerAccess();
+  const canOverridePrice =
+    !!viewerAccess && hasPermission(viewerAccess.permissions, "sales.returns.override-price");
+  const maxRefundByItem = React.useMemo(() => {
+    const itemsTotal = sumMoney(items.map((item) => item.amount));
+    return new Map(
+      items.map((item) => [item.id, getMaxRefundPerUnit(item, { invoiceDiscount, itemsTotal })]),
+    );
+  }, [items, invoiceDiscount]);
+  const [priceOverrideReason, setPriceOverrideReason] = React.useState("");
+  const emptyLines = () =>
     items.map((item) => ({
       invoiceItemId: item.id,
       cartonsReturned: "",
       quantityReturned: "",
-      refundPerUnit: getDefaultRefundPerUnit(item),
-    })),
+      refundPerUnit: "",
+      editingPrice: false,
+    }));
+  const [lines, setLines] = React.useState(emptyLines);
+
+  const effectiveRefund = (line: (typeof lines)[number]) =>
+    line.editingPrice && line.refundPerUnit !== ""
+      ? line.refundPerUnit
+      : maxRefundByItem.get(line.invoiceItemId) ?? "0.00";
+
+  const isAboveInvoicePrice = (line: (typeof lines)[number]) =>
+    line.editingPrice &&
+    line.refundPerUnit !== "" &&
+    new Big(line.refundPerUnit).gt(maxRefundByItem.get(line.invoiceItemId) ?? "0");
+
+  const needsOverrideReason = lines.some(
+    (line) =>
+      (Number(line.cartonsReturned) > 0 || Number(line.quantityReturned) > 0) &&
+      isAboveInvoicePrice(line),
   );
 
   const createReturn = useCreateSalesReturn();
@@ -114,44 +141,38 @@ export function CreateReturnDialog({ invoiceId, items, returns, trigger }: Creat
   );
 
   const totalRefund = React.useMemo(() => {
-    return lines.reduce((sum, line) => {
-      const sourceItem = items.find((item) => item.id === line.invoiceItemId);
-      const unitsPerCarton = sourceItem ? getUnitsPerCarton(sourceItem) : 1;
-      const cartons = Number(line.cartonsReturned) || 0;
-      const loose = Number(line.quantityReturned) || 0;
-      const refundPerUnit = Number(line.refundPerUnit) || 0;
-      return sum + (((cartons * unitsPerCarton) + loose) * refundPerUnit);
-    }, 0);
-  }, [items, lines]);
+    return sumMoney(
+      lines.map((line) => {
+        const sourceItem = items.find((item) => item.id === line.invoiceItemId);
+        const unitsPerCarton = sourceItem ? getUnitsPerCarton(sourceItem) : 1;
+        const units =
+          (Number(line.cartonsReturned) || 0) * unitsPerCarton + (Number(line.quantityReturned) || 0);
+        return calculateReturnLineRefund(units, effectiveRefund(line) || "0");
+      }),
+    );
+  }, [items, lines, maxRefundByItem]);
 
   function resetForm() {
     setReason("");
     setNotes("");
     setCondition("good");
-    setLines(
-      items.map((item) => ({
-        invoiceItemId: item.id,
-        cartonsReturned: "",
-        quantityReturned: "",
-        refundPerUnit: getDefaultRefundPerUnit(item),
-      })),
-    );
+    setLines(emptyLines());
+    setPriceOverrideReason("");
   }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!reason.trim() || !hasAnyQuantity) return;
+    if (needsOverrideReason && !priceOverrideReason.trim()) return;
 
     const returnItems = lines
-      .map((line, idx) => {
-        const sourceItem = items[idx];
-        return {
-          invoiceItemId: line.invoiceItemId,
-          cartonsReturned: Number(line.cartonsReturned) || 0,
-          quantityReturned: Number(line.quantityReturned) || 0,
-          refundPerUnit: Number(line.refundPerUnit) || Number(getDefaultRefundPerUnit(sourceItem)) || 0,
-        };
-      })
+      .map((line) => ({
+        invoiceItemId: line.invoiceItemId,
+        cartonsReturned: Number(line.cartonsReturned) || 0,
+        quantityReturned: Number(line.quantityReturned) || 0,
+        refundPerUnit:
+          line.editingPrice && line.refundPerUnit !== "" ? Number(line.refundPerUnit) : undefined,
+      }))
       .filter((line) => line.cartonsReturned > 0 || line.quantityReturned > 0);
 
     createReturn.mutate(
@@ -160,6 +181,7 @@ export function CreateReturnDialog({ invoiceId, items, returns, trigger }: Creat
         reason: reason.trim(),
         condition,
         notes: notes.trim() || undefined,
+        priceOverrideReason: needsOverrideReason ? priceOverrideReason.trim() : undefined,
         items: returnItems,
       },
       {
@@ -315,19 +337,45 @@ export function CreateReturnDialog({ invoiceId, items, returns, trigger }: Creat
                           />
                         </div>
                         <div className="sm:col-span-4 space-y-1">
-                          <Label className="text-xs">Refund per Unit (PKR)</Label>
-                          <Input
-                            type="number"
-                            min={0}
-                            step="0.01"
-                            value={lines[idx].refundPerUnit}
-                            onChange={(e) => {
-                              const next = [...lines];
-                              next[idx].refundPerUnit = e.target.value;
-                              setLines(next);
-                            }}
-                            disabled={remainingUnits === 0}
-                          />
+                          <Label className="text-xs">Refund per unit</Label>
+                          {lines[idx].editingPrice ? (
+                            <Input
+                              type="number"
+                              min={0}
+                              step="0.01"
+                              value={lines[idx].refundPerUnit}
+                              placeholder={maxRefundByItem.get(item.id)}
+                              onChange={(e) => {
+                                const next = [...lines];
+                                next[idx] = { ...next[idx], refundPerUnit: e.target.value };
+                                setLines(next);
+                              }}
+                              disabled={remainingUnits === 0}
+                            />
+                          ) : (
+                            <p className="h-9 flex items-center text-sm tabular-nums">
+                              Rs {maxRefundByItem.get(item.id)}
+                            </p>
+                          )}
+                          <p className="text-xs text-muted-foreground">
+                            Invoice price Rs {maxRefundByItem.get(item.id)} per unit
+                          </p>
+                          {canOverridePrice && !lines[idx].editingPrice && remainingUnits > 0 && (
+                            <button
+                              type="button"
+                              className="text-xs text-primary underline-offset-2 hover:underline"
+                              onClick={() => {
+                                const next = [...lines];
+                                next[idx] = { ...next[idx], editingPrice: true };
+                                setLines(next);
+                              }}
+                            >
+                              Change price
+                            </button>
+                          )}
+                          {isAboveInvoicePrice(lines[idx]) && (
+                            <p className="text-xs text-amber-600">Above invoice price</p>
+                          )}
                         </div>
                       </div>
                     );
@@ -336,10 +384,24 @@ export function CreateReturnDialog({ invoiceId, items, returns, trigger }: Creat
               )}
             </div>
 
+            {needsOverrideReason && (
+              <div className="space-y-2">
+                <Label htmlFor="price-override-reason">Why refund above the invoice price?</Label>
+                <Textarea
+                  id="price-override-reason"
+                  value={priceOverrideReason}
+                  onChange={(e) => setPriceOverrideReason(e.target.value)}
+                  placeholder="Required. Shown to the approver."
+                  rows={2}
+                  required
+                />
+              </div>
+            )}
+
             <div className="flex items-center justify-between rounded-lg bg-muted p-3">
               <span className="text-sm text-muted-foreground">Estimated Total Refund</span>
               <span className="text-lg font-bold tabular-nums">
-                PKR {totalRefund.toLocaleString("en-PK", { minimumFractionDigits: 2 })}
+                PKR {Number(totalRefund).toLocaleString("en-PK", { minimumFractionDigits: 2 })}
               </span>
             </div>
           </div>
@@ -350,7 +412,11 @@ export function CreateReturnDialog({ invoiceId, items, returns, trigger }: Creat
                 Cancel
               </Button>
             </DialogClose>
-            <Button type="submit" size="sm" disabled={createReturn.isPending || !hasAnyQuantity}>
+            <Button type="submit" size="sm" disabled={
+                createReturn.isPending ||
+                !hasAnyQuantity ||
+                (needsOverrideReason && !priceOverrideReason.trim())
+              }>
               {createReturn.isPending ? "Saving..." : "Create Return"}
             </Button>
           </DialogFooter>
