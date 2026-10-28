@@ -913,12 +913,14 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { ManualPunchTimeline } from "./manual-punch-timeline";
 import { OvertimeHoursInput } from "./overtime-hours-input";
+import { TimeExceptionDecisions } from "./time-exception-decisions";
 import type { RecomputeResult } from "@/lib/attendance/recompute";
 import type { AttendanceEntrySource } from "@/lib/attendance/order-booker-day-state";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
 interface AttendanceData {
+  id?: string;
   checkIn?: string | null;
   checkOut?: string | null;
   overtimeHours?: string | null;
@@ -1740,8 +1742,8 @@ export const EditAttendanceForm = ({
                         <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">
                           Check-in, check-out, duty hours, late arrival, and
                           night shift all come from the punch timeline below.
-                          Use Save only for notes, overtime, or early-leave
-                          review.
+                          Use Save only for notes or overtime. Late / Early
+                          decisions below save on their own.
                         </p>
                         {shiftSummary && (
                           <p className="mt-2 text-[11.5px] font-medium text-muted-foreground">
@@ -1987,77 +1989,26 @@ export const EditAttendanceForm = ({
                         </div>
                       </div>
 
-                      <form.Field name="earlyDepartureStatus">
-                        {(field) => (
-                          <Field className="space-y-1.5 mt-2">
-                            <div className="rounded-xl border border-border/60 bg-background p-5 shadow-sm">
-                              <div className="flex items-start gap-4">
-                                <div className="p-2 bg-muted rounded-lg shrink-0 border border-border/40">
-                                  <Info aria-hidden="true" className="size-5 text-muted-foreground" />
-                                </div>
-                                <div className="flex-1 space-y-4">
-                                  <div className="space-y-1">
-                                    <FieldLabel className="text-[14px] font-bold text-foreground/90">
-                                      Early Leave Review
-                                    </FieldLabel>
-                                    <p className="text-[12.5px] leading-relaxed text-muted-foreground font-medium">
-                                      {(punchSummary?.earlyDepartureStatus ?? "none") === "none"
-                                        ? "No early checkout is detected from the current punches."
-                                        : "The last OUT punch is earlier than the scheduled shift end. Review how payroll should treat this short day."}
-                                    </p>
-                                  </div>
-
-                                  <Select
-                                    value={field.state.value ?? "none"}
-                                    onValueChange={(value: EarlyDepartureStatus) =>
-                                      field.handleChange(value)
-                                    }
-                                  >
-                                    <SelectTrigger
-                                      aria-label="Early departure status"
-                                      disabled={
-                                        (punchSummary?.earlyDepartureStatus ?? "none") === "none"
-                                      }
-                                      className="h-10 bg-background text-[13px] font-medium transition-colors focus:ring-2 focus:ring-primary/20 rounded-lg"
-                                    >
-                                      <SelectValue placeholder="Select early leave status" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      <SelectOption value="none">
-                                        No Early Leave
-                                      </SelectOption>
-                                      <SelectOption value="pending">
-                                        Pending Review
-                                      </SelectOption>
-                                      <SelectOption value="approved">
-                                        Approved
-                                      </SelectOption>
-                                      <SelectOption value="rejected">
-                                        Rejected
-                                      </SelectOption>
-                                    </SelectContent>
-                                  </Select>
-
-                                  <p className="text-[11.5px] leading-relaxed text-muted-foreground/80">
-                                    Use <strong className="text-foreground">Approved</strong> when
-                                    the early checkout should reduce salary under the early-leave
-                                    policy. Use <strong className="text-foreground">Rejected</strong>{" "}
-                                    when the early-leave policy should not apply. If this stays{" "}
-                                    <strong className="text-foreground">Pending</strong> or{" "}
-                                    <strong className="text-foreground">Rejected</strong>, payroll
-                                    still treats it as a short day and falls back to the normal
-                                    short-hours deduction rule.
-                                  </p>
-                                </div>
-                              </div>
+                      <Field className="space-y-1.5 mt-2">
+                        <div className="rounded-xl border border-border/60 bg-background p-5 shadow-sm">
+                          <div className="flex items-start gap-4">
+                            <div className="p-2 bg-muted rounded-lg shrink-0 border border-border/40">
+                              <Info aria-hidden="true" className="size-5 text-muted-foreground" />
                             </div>
-                            <FieldError
-                              errors={field.state.meta.errors}
-                              className="text-[11px]"
-                            />
-                          </Field>
-                        )}
-                      </form.Field>
+                            <div className="flex-1 space-y-3">
+                              <div className="space-y-1">
+                                <FieldLabel className="text-[14px] font-bold text-foreground/90">
+                                  Late / Early Review
+                                </FieldLabel>
+                                <p className="text-[12.5px] leading-relaxed text-muted-foreground font-medium">
+                                  Pay is cut only for items marked Rejected. Save punch changes first; items update after saving.
+                                </p>
+                              </div>
+                              <TimeExceptionDecisions attendanceId={attendance?.id} />
+                            </div>
+                          </div>
+                        </div>
+                      </Field>
                     </div>
                   )}
                 </SectionBlock>
@@ -2233,7 +2184,7 @@ export const EditAttendanceForm = ({
                   {status === "present" && !isFieldWorker && (
                     <p className="text-center text-[11.5px] font-medium text-muted-foreground/80">
                       Punch changes save immediately. Use this button only for
-                      notes, overtime, or early-leave review.
+                      notes or overtime.
                     </p>
                   )}
                   {isFieldWorker && !isTripDrivenDay && (

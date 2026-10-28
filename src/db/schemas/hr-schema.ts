@@ -22,6 +22,12 @@ import {
   STANDARD_ALLOWANCES,
 } from "@/lib/types/hr-types";
 
+import {
+  TIME_EXCEPTION_KINDS,
+  TIME_EXCEPTION_STATUSES,
+  type TimeExceptionHistoryEntry,
+} from "@/lib/attendance/time-exceptions";
+
 import { user } from "./auth-schema";
 
 const timestamps = {
@@ -225,6 +231,8 @@ export const attendance = pgTable(
       shiftIndex: number;
       late: boolean;
       earlyDeparture: boolean;
+      lateMinutes?: number | null;
+      earlyMinutes?: number | null;
       expectedIn?: string;
       actualIn?: string;
       expectedOut?: string;
@@ -261,6 +269,42 @@ export const attendance = pgTable(
       table.employeeId,
       table.date,
     ),
+  }),
+);
+
+// --- LATE / EARLY APPROVAL ITEMS ---
+// One row per shift per kind. Recompute keeps them in sync with punches; HR decides them.
+export const attendanceTimeExceptions = pgTable(
+  "attendance_time_exceptions",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => createId()),
+    attendanceId: text("attendance_id")
+      .notNull()
+      .references(() => attendance.id, { onDelete: "cascade" }),
+    employeeId: text("employee_id")
+      .notNull()
+      .references(() => employees.id),
+    date: date("date").notNull(),
+    shiftIndex: integer("shift_index").notNull(),
+    kind: text("kind", { enum: TIME_EXCEPTION_KINDS }).notNull(),
+    minutes: integer("minutes").notNull(),
+    status: text("status", { enum: TIME_EXCEPTION_STATUSES }).notNull().default("pending"),
+    note: text("note"),
+    decidedBy: text("decided_by").references(() => user.id),
+    decidedAt: timestamp("decided_at"),
+    history: jsonb("history").$type<TimeExceptionHistoryEntry[]>().default([]).notNull(),
+    ...timestamps,
+  },
+  (table) => ({
+    attendanceItemIdx: uniqueIndex("attendance_time_exceptions_item_idx").on(
+      table.attendanceId,
+      table.shiftIndex,
+      table.kind,
+    ),
+    statusDateIdx: index("attendance_time_exceptions_status_date_idx").on(table.status, table.date),
+    employeeDateIdx: index("attendance_time_exceptions_employee_date_idx").on(table.employeeId, table.date),
   }),
 );
 
@@ -751,10 +795,26 @@ export const salaryRevisionRelations = relations(salaryRevisions, ({ one }) => (
   }),
 }));
 
-export const attendanceRelations = relations(attendance, ({ one }) => ({
+export const attendanceRelations = relations(attendance, ({ one, many }) => ({
   employee: one(employees, {
     fields: [attendance.employeeId],
     references: [employees.id],
+  }),
+  timeExceptions: many(attendanceTimeExceptions),
+}));
+
+export const attendanceTimeExceptionRelations = relations(attendanceTimeExceptions, ({ one }) => ({
+  attendance: one(attendance, {
+    fields: [attendanceTimeExceptions.attendanceId],
+    references: [attendance.id],
+  }),
+  employee: one(employees, {
+    fields: [attendanceTimeExceptions.employeeId],
+    references: [employees.id],
+  }),
+  decidedByUser: one(user, {
+    fields: [attendanceTimeExceptions.decidedBy],
+    references: [user.id],
   }),
 }));
 

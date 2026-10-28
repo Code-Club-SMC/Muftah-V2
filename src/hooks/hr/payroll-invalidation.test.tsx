@@ -10,25 +10,27 @@ vi.mock("@/server-functions/hr/attendance/leave-approvals-fn", () => ({ processL
 vi.mock("@/server-functions/hr/attendance/process-overtime-fn", () => ({ processOvertimeFn: mutation }));
 vi.mock("@/server-functions/hr/attendance/convert-overtime-fn", () => ({ convertOvertimeToCompOffFn: mutation }));
 vi.mock("@/server-functions/hr/attendance/bulk-mark-attendance-range-fn", () => ({ bulkMarkAttendanceRangeFn: mutation, previewBulkAttendanceFn: mutation }));
+vi.mock("@/server-functions/hr/attendance/time-exceptions-fn", () => ({ decideTimeExceptionsFn: mutation, getTimeExceptionsFn: mutation }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 import { useUpsertAttendance } from "./use-upsert-attendance";
 import { useProcessLeaveApproval } from "./use-process-leave-approval";
 import { useProcessOvertime } from "./use-process-overtime";
 import { useConvertOvertimeToCompOff } from "./use-convert-overtime";
 import { useBulkMarkAttendance } from "./use-bulk-mark-attendance";
+import { useDecideTimeExceptions } from "./use-time-exceptions";
 
 const keys = [
   ["payroll-dashboard", "2026-10", 0],
   ["payslip-preview", "employee", "2026-10", [], {}],
   ["employee-payroll-history", "employee", "last12"],
 ];
-it.each(["attendance", "leave", "overtime", "conversion", "bulk"] as const)("invalidates cached salary data after %s changes", async name => {
+it.each(["attendance", "leave", "overtime", "conversion", "bulk", "lateEarly"] as const)("invalidates cached salary data after %s changes", async name => {
   const client = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity }, mutations: { retry: false } } });
   for (const key of keys) client.setQueryData(key, { netSalary: 42900 });
   const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
   const { result, unmount } = renderHook(() => ({
     attendance: useUpsertAttendance(), leave: useProcessLeaveApproval(), overtime: useProcessOvertime(),
-    conversion: useConvertOvertimeToCompOff(), bulk: useBulkMarkAttendance(),
+    conversion: useConvertOvertimeToCompOff(), bulk: useBulkMarkAttendance(), lateEarly: useDecideTimeExceptions(),
   }), { wrapper });
   try {
     await act(async () => {

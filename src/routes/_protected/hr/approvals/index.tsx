@@ -3,14 +3,18 @@ import { Suspense, useState } from "react";
 import { GenericLoader } from "@/components/custom/generic-loader";
 import { OvertimeApprovalsContainer } from "@/components/hr/attendance/overtime-approvals-container";
 import { LeaveApprovalsContainer } from "@/components/hr/attendance/leave-approvals-container";
+import { LateEarlyApprovalsContainer } from "@/components/hr/attendance/late-early-approvals-container";
 import { AdvancesContainer } from "@/components/hr/advances/advances-container";
 import { getOvertimeApprovalsFn } from "@/server-functions/hr/attendance/get-overtime-approvals-fn";
 import { getLeaveApprovalsFn } from "@/server-functions/hr/attendance/leave-approvals-fn";
+import { getTimeExceptionsFn } from "@/server-functions/hr/attendance/time-exceptions-fn";
 import { listSalaryAdvancesFn } from "@/server-functions/hr/advances/advances-fn";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Clock, CalendarX, Banknote, ShieldCheck, UserX } from "lucide-react";
+import { Clock, CalendarX, Banknote, ShieldCheck, Timer, UserX } from "lucide-react";
 import { EmployeeDeletionApprovalsContainer } from "@/components/hr/employees/employee-deletion-approvals-container";
 import { getEmployeeDeletionRequestsFn } from "@/server-functions/hr/employees/delete-employee-fn";
+import { useViewerAccess } from "@/hooks/use-viewer-access";
+import { hasPermission } from "@/lib/rbac";
 
 export const Route = createFileRoute("/_protected/hr/approvals/")({
   loader: async ({ context: { queryClient } }) => {
@@ -21,6 +25,11 @@ export const Route = createFileRoute("/_protected/hr/approvals/")({
     void queryClient.prefetchQuery({
       queryKey: ["leave-approvals", "pending"],
       queryFn: () => getLeaveApprovalsFn({ data: { status: "pending" } }),
+    });
+    // Users without hr.manage get a 403 here; prefetchQuery swallows it.
+    void queryClient.prefetchQuery({
+      queryKey: ["time-exceptions", "pending", null, null, null],
+      queryFn: () => getTimeExceptionsFn({ data: { view: "pending" } }),
     });
     void queryClient.prefetchQuery({
       queryKey: ["salary-advances"],
@@ -34,10 +43,13 @@ export const Route = createFileRoute("/_protected/hr/approvals/")({
   component: ApprovalsPage,
 });
 
-type ApprovalTab = "overtime" | "leave" | "advances" | "removal";
+type ApprovalTab = "overtime" | "leave" | "lateEarly" | "advances" | "removal";
 
 function ApprovalsPage() {
   const [activeTab, setActiveTab] = useState<ApprovalTab>("overtime");
+  const { data: viewerAccess } = useViewerAccess();
+  const canDecideLateEarly =
+    !!viewerAccess && hasPermission(viewerAccess.permissions, "hr.manage");
 
   return (
     <main className="flex-1 overflow-y-auto">
@@ -52,7 +64,7 @@ function ApprovalsPage() {
                 Approval Center
               </h1>
               <p className="text-sm text-muted-foreground">
-                Review and manage overtime, leave, salary advance, and employee removal requests.
+                Review and manage overtime, leave, late/early, salary advance, and employee removal requests.
               </p>
             </div>
           </div>
@@ -80,6 +92,16 @@ function ApprovalsPage() {
                 <CalendarX className="size-3.5 opacity-70" />
                 Leave Requests
               </TabsTrigger>
+
+              {canDecideLateEarly && (
+                <TabsTrigger
+                  value="lateEarly"
+                  className="gap-2 px-4 h-8 text-[13px] font-medium text-muted-foreground data-[state=active]:text-foreground data-[state=active]:bg-background data-[state=active]: rounded-md transition-all"
+                >
+                  <Timer className="size-3.5 opacity-70" />
+                  Late / Early
+                </TabsTrigger>
+              )}
 
               <TabsTrigger
                 value="advances"
@@ -122,6 +144,21 @@ function ApprovalsPage() {
                 <LeaveApprovalsContainer />
               </Suspense>
             </TabsContent>
+
+            {canDecideLateEarly && (
+              <TabsContent value="lateEarly" className="mt-0 outline-none">
+                <Suspense
+                  fallback={
+                    <GenericLoader
+                      title="Loading late/early items"
+                      description="Fetching pending items..."
+                    />
+                  }
+                >
+                  <LateEarlyApprovalsContainer />
+                </Suspense>
+              </TabsContent>
+            )}
 
             <TabsContent value="advances" className="mt-0 outline-none">
               <Suspense

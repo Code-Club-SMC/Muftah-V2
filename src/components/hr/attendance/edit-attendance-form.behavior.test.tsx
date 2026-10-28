@@ -38,6 +38,10 @@ vi.mock("@/hooks/hr/use-upsert-attendance", () => ({
   }),
 }));
 
+vi.mock("./time-exception-decisions", () => ({
+  TimeExceptionDecisions: () => null,
+}));
+
 vi.mock("./manual-punch-timeline", () => ({
   ManualPunchTimeline: ({
     onSummaryChange,

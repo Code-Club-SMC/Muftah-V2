@@ -26,6 +26,7 @@ describe("device attendance recomputation", () => {
           findFirst: async () => ({ attendanceGraceMinutes: 15 }),
         },
         attendance: { findFirst: async () => ({ ...row }) },
+        attendanceTimeExceptions: { findMany: async () => [] },
         attendancePunches: {
           findMany: async () => [
             {

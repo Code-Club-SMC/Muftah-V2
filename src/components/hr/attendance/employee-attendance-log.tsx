@@ -240,6 +240,7 @@ export const EmployeeAttendanceLog = ({
   const issueCounts = new Map<DayIssueKind, { count: number; severity: DayIssueSeverity }>();
   for (const row of tableRows)
     for (const issue of row.issues) {
+      if (issue.grace) continue;
       const current = issueCounts.get(issue.kind);
       issueCounts.set(issue.kind, {
         count: (current?.count ?? 0) + 1,
@@ -254,7 +255,9 @@ export const EmployeeAttendanceLog = ({
       ? true
       : issueFilter === "open"
         ? row.issues.some((issue) => issue.severity === "action")
-        : row.issues.some((issue) => issue.kind === issueFilter),
+        : row.issues.some(
+            (issue) => issue.kind === issueFilter && !issue.grace,
+          ),
   );
   const editRow = tableRows.find((row) => row.dateStr === editDate);
   const busy = overtime.isPending || leave.isPending || cover.isPending;

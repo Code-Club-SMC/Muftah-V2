@@ -2,6 +2,11 @@ import { calculateTotalShiftHours } from "./attendance/time";
 import { parseISO, eachDayOfInterval, format } from "date-fns";
 import Big from "big.js";
 import {
+  describeTimeException,
+  splitShortHoursByTimeExceptions,
+  type PayrollTimeException,
+} from "./attendance/time-exceptions";
+import {
   DEFAULT_BASIC_SALARY_DEDUCTION_POLICY,
   type AllowanceConfig,
   type BasicSalaryDeductionPolicy,
@@ -37,6 +42,11 @@ export type AttendanceRecord = {
   overtimeStatus?: string;
   isLate?: boolean;
   earlyDepartureStatus?: string; // none, pending, approved, rejected
+  /**
+   * Late/early approval items for this day. When present on a short day, only rejected
+   * minutes (and short time that is neither late nor early) are cut. Undefined = old rule.
+   */
+  timeExceptions?: PayrollTimeException[];
 };
 
 export type EmployeeData = {
@@ -517,6 +527,49 @@ export function calculateAbsentDeductions(
         const isW = checkWaived("unapprovedLeave");
         explanationLog.push({ date: record.date, type: "unapprovedLeave", description: "Unapproved/Unpaid Leave", value: 1, unit: "days", isWaived: isW });
         applyOccasionDeduction(1, "annualLeave", "leave", "unapprovedLeave", isW);
+      }
+    } else if (
+      record.status === "present" &&
+      dutyHours < standardDutyHours &&
+      record.timeExceptions &&
+      record.timeExceptions.length > 0
+    ) {
+      const shortHours = Number((standardDutyHours - dutyHours).toFixed(2));
+      const split = splitShortHoursByTimeExceptions(shortHours, record.timeExceptions);
+      totalUndertimeHours += split.lateHours + split.earlyHours + split.undertimeHours;
+      const isW = checkWaived("undertime");
+
+      for (const item of record.timeExceptions) {
+        explanationLog.push({
+          date: record.date,
+          type: item.kind === "late" ? "lateArrival" : "earlyLeaving",
+          description: describeTimeException(item),
+          value: +(item.minutes / 60).toFixed(2),
+          unit: "hrs",
+          isWaived: item.status !== "rejected" || isW,
+        });
+      }
+      if (split.undertimeHours > 0) {
+        explanationLog.push({
+          date: record.date,
+          type: "undertime",
+          description: "Short hours not explained by late arrival or early departure",
+          value: split.undertimeHours,
+          unit: "hrs",
+          isWaived: isW,
+        });
+      }
+
+      // One deduction call per day: perDay allowances charge a full day per call, so splitting would multiply them.
+      const cutHours = Number((split.lateHours + split.earlyHours + split.undertimeHours).toFixed(2));
+      if (cutHours > 0) {
+        const occasion =
+          split.undertimeHours === 0 && split.earlyHours === 0
+            ? "lateArrival"
+            : split.undertimeHours === 0 && split.lateHours === 0
+              ? "earlyLeaving"
+              : "undertime";
+        applyOccasionDeduction(cutHours, occasion, "absent", "undertime", isW);
       }
     } else if (
       record.status === "present" &&

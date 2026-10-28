@@ -196,4 +196,63 @@ describe("getDayIssues", () => {
       kinds({ employee: { ...employee, joiningDate: "2026-01-10" } }),
     ).toEqual(["not_employed"]);
   });
+  it("labels late/early items with their outcome", () => {
+    const result = issues({
+      record: {
+        ...present,
+        isLate: true,
+        timeExceptions: [
+          { kind: "late", minutes: 40, status: "pending" },
+          { kind: "early", minutes: 120, status: "approved_official" },
+        ],
+      },
+      punches: inOut,
+    });
+    expect(result).toContainEqual({ kind: "late", severity: "action", label: "Late (40 min · Pending)" });
+    expect(result).toContainEqual({
+      kind: "early_departure",
+      severity: "info",
+      label: "Early departure (2h · Company work)",
+    });
+  });
+
+  it("shows grace as info and rejected as a deduction", () => {
+    const result = issues({
+      record: {
+        ...present,
+        timeExceptions: [
+          { kind: "late", minutes: 10, status: "grace" },
+          { kind: "early", minutes: 30, status: "rejected" },
+        ],
+      },
+      punches: inOut,
+    });
+    expect(result).toContainEqual({ kind: "late", severity: "info", label: "Late (10 min · Grace)", grace: true });
+    expect(result).toContainEqual({
+      kind: "early_departure",
+      severity: "deduction",
+      label: "Early departure (30 min · Rejected)",
+    });
+  });
+
+  it("counts only short time outside late/early items as undertime", () => {
+    const short = (minutes: number, status: "pending" | "rejected") =>
+      issues({
+        record: {
+          ...present,
+          checkIn: "09:40:00",
+          dutyHours: "7.33",
+          timeExceptions: [{ kind: "late", minutes, status }],
+        },
+        punches: inOut,
+      }).filter((issue) => issue.kind === "undertime");
+
+    // 7h20m worked against 8h: 40 min short, all of it late.
+    expect(short(40, "pending")).toEqual([]);
+    expect(short(40, "rejected")).toEqual([]);
+    // Only 20 of the 40 short minutes are a late item; the rest is plain undertime.
+    expect(short(20, "pending")).toEqual([
+      { kind: "undertime", severity: "deduction", label: "Undertime (20m)" },
+    ]);
+  });
 });

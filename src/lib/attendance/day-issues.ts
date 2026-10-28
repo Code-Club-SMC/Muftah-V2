@@ -1,4 +1,11 @@
 import { calculateTotalShiftHours } from "./time";
+import {
+  formatExceptionMinutes,
+  splitShortHoursByTimeExceptions,
+  TIME_EXCEPTION_STATUS_LABELS,
+  type TimeExceptionKind,
+  type TimeExceptionStatus,
+} from "./time-exceptions";
 
 export type DayIssueKind =
   | "no_punches"
@@ -28,6 +35,8 @@ export type DayIssue = {
   kind: DayIssueKind;
   severity: DayIssueSeverity;
   label: string;
+  /** Inside grace: shown on the day, but not counted or filtered as an issue. */
+  grace?: true;
 };
 
 export const dayIssueLabels: Record<DayIssueKind, string> = {
@@ -66,6 +75,11 @@ export type DayIssueRecord = {
   leaveApprovalStatus?: string | null;
   isApprovedLeave?: boolean | null;
   compensatoryHoursUsed?: string | null;
+  timeExceptions?: Array<{
+    kind: TimeExceptionKind;
+    minutes: number;
+    status: TimeExceptionStatus;
+  }> | null;
 };
 
 export type DayIssuePunch = { direction: "in" | "out" };
@@ -124,6 +138,7 @@ export function getDayIssues(input: DayIssueInput): DayIssue[] {
     kind: DayIssueKind,
     severity: DayIssueSeverity,
     detail?: string,
+    grace?: true,
   ) =>
     issues.push({
       kind,
@@ -131,6 +146,7 @@ export function getDayIssues(input: DayIssueInput): DayIssue[] {
       label: detail
         ? `${dayIssueLabels[kind]} ${detail}`
         : dayIssueLabels[kind],
+      ...(grace && { grace }),
     });
 
   if (date < employee.joiningDate) {
@@ -184,25 +200,44 @@ export function getDayIssues(input: DayIssueInput): DayIssue[] {
     if (restDay && (punches.length || Number(record.dutyHours || "0") > 0))
       add("rest_day_work", "action");
 
-    const shift = employee.shifts?.[0];
-    if (record.isLate) {
-      const late = minutesBetween(shift?.start, record.checkIn);
-      add("late", "deduction", late ? `(${late}m)` : undefined);
-    }
-    if (record.earlyDepartureStatus && record.earlyDepartureStatus !== "none") {
-      const lastShift = employee.shifts?.at(-1);
-      const early = minutesBetween(record.checkOut, lastShift?.end);
-      const detail = [
-        early ? `${formatHours(early / 60)}` : null,
-        record.earlyDepartureStatus,
-      ]
-        .filter(Boolean)
-        .join(", ");
-      add(
-        "early_departure",
-        record.earlyDepartureStatus === "pending" ? "action" : "info",
-        `(${detail})`,
-      );
+    const timeExceptions = record.timeExceptions ?? [];
+    if (timeExceptions.length) {
+      // Only rejected items cost pay; pending ones wait for HR.
+      for (const item of timeExceptions) {
+        const severity: DayIssueSeverity =
+          item.status === "pending"
+            ? "action"
+            : item.status === "rejected"
+              ? "deduction"
+              : "info";
+        add(
+          item.kind === "late" ? "late" : "early_departure",
+          severity,
+          `(${formatExceptionMinutes(item.minutes)} · ${TIME_EXCEPTION_STATUS_LABELS[item.status]})`,
+          item.status === "grace" ? true : undefined,
+        );
+      }
+    } else {
+      const shift = employee.shifts?.[0];
+      if (record.isLate) {
+        const late = minutesBetween(shift?.start, record.checkIn);
+        add("late", "deduction", late ? `(${late}m)` : undefined);
+      }
+      if (record.earlyDepartureStatus && record.earlyDepartureStatus !== "none") {
+        const lastShift = employee.shifts?.at(-1);
+        const early = minutesBetween(record.checkOut, lastShift?.end);
+        const detail = [
+          early ? `${formatHours(early / 60)}` : null,
+          record.earlyDepartureStatus,
+        ]
+          .filter(Boolean)
+          .join(", ");
+        add(
+          "early_departure",
+          record.earlyDepartureStatus === "pending" ? "action" : "info",
+          `(${detail})`,
+        );
+      }
     }
 
     const cover = Number(record.compensatoryHoursUsed || "0");
@@ -212,11 +247,16 @@ export function getDayIssues(input: DayIssueInput): DayIssue[] {
     const incomplete =
       punches.at(-1)?.direction === "in" ||
       issues.some((issue) => issue.kind === "missing_checkin");
-    if (!restDay && !incomplete && duty < standard - 0.009)
-      add("undertime", "deduction", `(${formatHours(standard - duty)})`);
+    // With items, late/early minutes have their own badges, so undertime is only the rest (same split as payroll).
+    const undertime =
+      timeExceptions.length && duty < standard
+        ? splitShortHoursByTimeExceptions(standard - duty, timeExceptions).undertimeHours
+        : standard - duty;
+    if (!restDay && !incomplete && undertime > 0.009)
+      add("undertime", "deduction", `(${formatHours(undertime)})`);
     // Late only costs pay when the day ends up short; otherwise it is a record.
     const late = issues.find((issue) => issue.kind === "late");
-    if (late && !issues.some((issue) => issue.kind === "undertime"))
+    if (!timeExceptions.length && late && !issues.some((issue) => issue.kind === "undertime"))
       late.severity = "info";
   }
 

@@ -20,6 +20,7 @@ import { revalidateOvertimeRequest } from "./overtime-request";
 import { calculateTotalShiftHours } from "./time";
 import { toPKTDate } from "./time";
 import { computeAttendanceFromPunches } from "./recompute";
+import { syncAttendanceTimeExceptions } from "./time-exceptions.server";
 
 export type AttendanceTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 export type RecomputedAttendanceRow = typeof attendance.$inferSelect | null;
@@ -259,6 +260,10 @@ export async function recomputeAttendanceRow(
       set: updateData,
     })
     .returning();
+
+  if (upserted) {
+    await syncAttendanceTimeExceptions(tx, upserted, computed.shiftViolations);
+  }
 
   return upserted ?? null;
 }
