@@ -23,6 +23,22 @@ const ORDER_PAD_DIALOG = resolve(
 );
 
 describe("sales workflow regressions", () => {
+  it("caps return refunds at the invoice price with exact math and a reasoned override", () => {
+    const source = readFileSync(
+      resolve(SALES_FN_DIR, "sales-returns-fn.ts"),
+      "utf8",
+    );
+
+    expect(source).toContain("from \"@/lib/sales/returns/refund-pricing\"");
+    expect(source).toContain("getMaxRefundPerUnit(");
+    expect(source).toContain("resolveRefundPerUnit(");
+    expect(source).toContain("\"sales.returns.override-price\"");
+    expect(source).toContain("priceOverrideReason");
+    expect(source).toContain("!salesReturn.priceOverride");
+    expect(source).not.toContain("let totalAmount = 0");
+    expect(source).not.toContain("totalUnitsReturned * refundPerUnit");
+  });
+
   it("joins invoices before filtering overdue slips by due date", () => {
     const source = readFileSync(
       resolve(SALES_FN_DIR, "overdue-detection-fn.ts"),
@@ -76,8 +92,7 @@ describe("sales workflow regressions", () => {
     expect(invoiceSource).toContain("existing.stockWarehouseId ?? existing.warehouseId");
     expect(invoiceSource).toContain("invoice.stockWarehouseId ?? invoice.warehouseId");
     expect(returnsSource).toContain("const requestUnitsByItem = new Map<string, number>()");
-    expect(returnsSource).toContain("Number(invoiceItem.retailPrice || 0)");
-    expect(returnsSource).toContain("Number(invoiceItem.perCartonPrice) / cpp");
+    expect(returnsSource).toContain("max: maxRefundPerUnit");
     expect(returnsSource).toMatch(
       /salesReturn\.invoice\.stockWarehouseId\s*\?\?\s*salesReturn\.invoice\.warehouseId/,
     );
@@ -422,5 +437,21 @@ describe("sales workflow regressions", () => {
     expect(routeSource).not.toContain("setPaymentDialogOpen");
     expect(routeSource).not.toContain("Record Payment");
     expect(existsSync(salesPaymentDialog)).toBe(false);
+  });
+
+  it("shows the capped refund price in the return dialog and flags overrides for approvers", () => {
+    const dialog = readFileSync(resolve(SALES_COMPONENTS_DIR, "create-return-dialog.tsx"), "utf8");
+    const invoicePage = readFileSync(
+      resolve(process.cwd(), "src/routes/_protected/sales/invoices/$invoiceId/index.tsx"),
+      "utf8",
+    );
+
+    expect(dialog).toContain("getMaxRefundPerUnit(");
+    expect(dialog).toContain("\"sales.returns.override-price\"");
+    expect(dialog).toContain("Change price");
+    expect(dialog).toContain("priceOverrideReason");
+    expect(dialog).not.toContain("item.retailPrice");
+    expect(invoicePage).toContain("invoiceDiscount={invoice.invoiceDiscount}");
+    expect(invoicePage).toContain("ret.priceOverride");
   });
 });

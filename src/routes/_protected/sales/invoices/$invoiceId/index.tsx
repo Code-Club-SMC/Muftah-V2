@@ -271,7 +271,12 @@ function InvoiceDetailContent({ invoiceId }: { invoiceId: string }) {
                 <RotateCcw className="size-4" />
                 Returns / Credit Notes
               </CardTitle>
-              <CreateReturnDialog invoiceId={invoice.id} items={invoice.items} returns={returns} />
+              <CreateReturnDialog
+                invoiceId={invoice.id}
+                invoiceDiscount={invoice.invoiceDiscount}
+                items={invoice.items}
+                returns={returns}
+              />
             </CardHeader>
             <CardContent>
               {!returns.length ? (
@@ -293,6 +298,11 @@ function InvoiceDetailContent({ invoiceId }: { invoiceId: string }) {
                           : `Approved ${ret.condition} returns go to segregated ${ret.condition} inventory.`}
                       </p>
                       <p className="text-sm font-semibold tabular-nums">{PKR(Number(ret.totalAmount))}</p>
+                      {ret.priceOverride && (
+                        <p className="text-xs rounded-md bg-amber-500/10 text-amber-700 dark:text-amber-400 px-2 py-1">
+                          Refund price set above the invoice price. Reason: {ret.priceOverrideReason}
+                        </p>
+                      )}
                       {!!ret.stockTraces.length && (
                         <div className="rounded-md bg-muted/40 px-3 py-2 space-y-1">
                           <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">

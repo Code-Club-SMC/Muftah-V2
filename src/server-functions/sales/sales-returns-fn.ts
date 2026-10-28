@@ -25,12 +25,20 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 import { recalculateInvoiceSettlement } from "./settlement-service";
 import { lockFinishedGoods } from "@/lib/production/finished-goods-lock.server";
 import { lockCartonReturnOrder, recordSalesReturnCartons } from "@/lib/cartons/sales-return.server";
+import { hasPermission } from "@/lib/rbac";
+import {
+  calculateReturnLineRefund,
+  getMaxRefundPerUnit,
+  getReturnUnitsPerCarton,
+  resolveRefundPerUnit,
+  sumMoney,
+} from "@/lib/sales/returns/refund-pricing";
 
 function getUnitsPerCarton(item: {
   packsPerCarton?: number | null;
   actualPackSize?: number | null;
 }) {
-  return item.packsPerCarton || item.actualPackSize || 1;
+  return getReturnUnitsPerCarton(item);
 }
 
 function getTotalUnits(
@@ -218,13 +226,14 @@ export const createSalesReturnFn = createServerFn()
         reason: z.string().min(1, "Reason is required"),
         condition: z.enum(["good", "damaged", "expired"]).default("good"),
         notes: z.string().optional(),
+        priceOverrideReason: z.string().trim().max(500).optional(),
         items: z
           .array(
             z.object({
               invoiceItemId: z.string().min(1),
               cartonsReturned: z.number().int().min(0).default(0),
               quantityReturned: z.number().int().min(0).default(0),
-              refundPerUnit: z.number().min(0),
+              refundPerUnit: z.number().min(0).optional(),
             }),
           )
           .min(1, "At least one return item is required"),
@@ -252,7 +261,20 @@ export const createSalesReturnFn = createServerFn()
         data.items.map((item) => item.invoiceItemId),
         ["pending", "approved"],
       );
-      let totalAmount = 0;
+      const canOverridePrice = hasPermission(
+        context.authContext.permissions,
+        "sales.returns.override-price",
+      );
+      const itemsTotal = sumMoney(invoice.items.map((item) => item.amount));
+      const resolvedLines: Array<{
+        invoiceItemId: string;
+        recipeId: string | null;
+        cartonsReturned: number;
+        quantityReturned: number;
+        refundPerUnit: string;
+        totalRefund: string;
+      }> = [];
+      let anyPriceOverride = false;
 
       for (const item of data.items) {
         const invoiceItem = invoiceItemMap.get(item.invoiceItemId);
@@ -293,13 +315,33 @@ export const createSalesReturnFn = createServerFn()
           );
         }
 
-        const refundPerUnit =
-          item.refundPerUnit ??
-          (Number(invoiceItem.retailPrice || 0) ||
-            Number(invoiceItem.perCartonPrice) / cpp);
-        const lineRefund = totalUnitsReturned * refundPerUnit;
-        totalAmount += lineRefund;
+        const maxRefundPerUnit = getMaxRefundPerUnit(invoiceItem, {
+          invoiceDiscount: invoice.invoiceDiscount,
+          itemsTotal,
+        });
+        const { refundPerUnit, overridden } = resolveRefundPerUnit({
+          requested: item.refundPerUnit,
+          max: maxRefundPerUnit,
+          canOverride: canOverridePrice,
+          overrideReason: data.priceOverrideReason,
+          label: invoiceItem.pack,
+        });
+        anyPriceOverride ||= overridden;
+
+        resolvedLines.push({
+          invoiceItemId: item.invoiceItemId,
+          recipeId: invoiceItem.recipeId,
+          cartonsReturned: cartons,
+          quantityReturned: units,
+          refundPerUnit,
+          totalRefund: calculateReturnLineRefund(totalUnitsReturned, refundPerUnit),
+        });
       }
+
+      const totalAmount = sumMoney(resolvedLines.map((line) => line.totalRefund));
+      const priceOverrideReason = anyPriceOverride
+        ? data.priceOverrideReason!.trim()
+        : null;
 
       const [salesReturn] = await tx
         .insert(salesReturns)
@@ -310,36 +352,20 @@ export const createSalesReturnFn = createServerFn()
           returnDate: data.returnDate ? new Date(data.returnDate) : new Date(),
           reason: data.reason,
           condition: data.condition,
-          totalAmount: totalAmount.toFixed(2),
+          totalAmount,
           status: "pending",
           notes: data.notes ?? null,
+          priceOverride: anyPriceOverride,
+          priceOverrideReason,
         })
         .returning();
 
       await tx.insert(salesReturnItems).values(
-        data.items.map((item) => {
-          const invoiceItem = invoiceItemMap.get(item.invoiceItemId)!;
-          const cpp = getUnitsPerCarton(invoiceItem);
-          const cartons = item.cartonsReturned ?? 0;
-          const units = item.quantityReturned ?? 0;
-          const totalUnitsReturned = getTotalUnits(cartons, units, cpp);
-          const refundPerUnit =
-            item.refundPerUnit ??
-            (Number(invoiceItem.retailPrice || 0) ||
-              Number(invoiceItem.perCartonPrice) / cpp);
-          const lineRefund = totalUnitsReturned * refundPerUnit;
-
-          return {
-            id: createId(),
-            salesReturnId: salesReturn.id,
-            invoiceItemId: item.invoiceItemId,
-            recipeId: invoiceItem.recipeId,
-            cartonsReturned: cartons,
-            quantityReturned: units,
-            refundPerUnit: refundPerUnit.toFixed(2),
-            totalRefund: lineRefund.toFixed(2),
-          };
-        }),
+        resolvedLines.map((line) => ({
+          id: createId(),
+          salesReturnId: salesReturn.id,
+          ...line,
+        })),
       );
 
       await recordInvoiceTimelineEvent(
@@ -347,13 +373,15 @@ export const createSalesReturnFn = createServerFn()
           invoiceId: data.invoiceId,
           eventType: "return",
           title: `Return request #${salesReturn.returnNumber} created`,
-          description: `Return of PKR ${totalAmount.toFixed(2)} recorded. Status: pending. Reason: ${data.reason}.`,
+          description: `Return of PKR ${totalAmount} recorded. Status: pending. Reason: ${data.reason}.${anyPriceOverride ? ` Refund price overridden: ${priceOverrideReason}.` : ""}`,
           metadata: {
             salesReturnId: salesReturn.id,
             returnNumber: salesReturn.returnNumber,
             totalAmount,
             reason: data.reason,
             condition: data.condition,
+            priceOverride: anyPriceOverride,
+            priceOverrideReason,
           },
           actorId: userId,
         },
@@ -425,6 +453,26 @@ export const processSalesReturnFn = createServerFn()
         const invoiceItemMap = new Map(
           invoiceItemRows.map((item) => [item.id, item]),
         );
+        if (!salesReturn.priceOverride) {
+          const allInvoiceItems = await tx.query.invoiceItems.findMany({
+            where: eq(invoiceItems.invoiceId, salesReturn.invoiceId),
+            columns: { amount: true },
+          });
+          const itemsTotal = sumMoney(allInvoiceItems.map((item) => item.amount));
+          for (const returnItem of salesReturn.items) {
+            const invoiceItem = invoiceItemMap.get(returnItem.invoiceItemId);
+            if (!invoiceItem) continue;
+            const maxRefundPerUnit = getMaxRefundPerUnit(invoiceItem, {
+              invoiceDiscount: salesReturn.invoice.invoiceDiscount,
+              itemsTotal,
+            });
+            if (new Big(returnItem.refundPerUnit).gt(maxRefundPerUnit)) {
+              throw new Error(
+                `Return #${salesReturn.returnNumber} refunds ${invoiceItem.pack} at Rs ${returnItem.refundPerUnit} per unit, above the invoice price of Rs ${maxRefundPerUnit}. Reject it and record the return again.`,
+              );
+            }
+          }
+        }
         const warehouseId = salesReturn.invoice.stockWarehouseId ?? salesReturn.invoice.warehouseId;
         if (!warehouseId) throw new Error("Invoice warehouse is required to restock approved returns");
         await lockFinishedGoods(tx, warehouseId, invoiceItemRows.flatMap(item => item.recipeId ? [item.recipeId] : []));
