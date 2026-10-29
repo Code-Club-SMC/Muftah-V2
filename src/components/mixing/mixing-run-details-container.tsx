@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { getMixingRunFn } from "@/server-functions/manufacturing/mixing/get-mixing-run-fn";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,6 +16,7 @@ import {
 import { useViewerAccess } from "@/hooks/use-viewer-access";
 import { hasPermission } from "@/lib/rbac";
 import { Link } from "@tanstack/react-router";
+import { StartMixingDialog } from "./start-mixing-dialog";
 
 export function MixingRunDetailsContainer({ runId }: { runId: string }) {
   const { data: run } = useSuspenseQuery({
@@ -23,6 +25,7 @@ export function MixingRunDetailsContainer({ runId }: { runId: string }) {
   });
   const startRun = useStartMixingRun();
   const cancelRun = useCancelMixingRun();
+  const [startOpen, setStartOpen] = useState(false);
   const { data: viewerAccess } = useViewerAccess();
   const canManage =
     !!viewerAccess &&
@@ -41,9 +44,7 @@ export function MixingRunDetailsContainer({ runId }: { runId: string }) {
           <div className="flex flex-wrap items-center gap-2 sm:justify-end">
             {canManage && run.status === "scheduled" && (
               <Button
-                onClick={() =>
-                  startRun.mutate({ data: { mixingRunId: runId } })
-                }
+                onClick={() => setStartOpen(true)}
                 disabled={startRun.isPending || cancelRun.isPending}
               >
                 {startRun.isPending ? "Starting..." : "Start Mixing Batch"}
@@ -59,6 +60,18 @@ export function MixingRunDetailsContainer({ runId }: { runId: string }) {
               </Button>
             )}
           </div>
+          <StartMixingDialog
+            runId={runId}
+            open={startOpen}
+            onOpenChange={setStartOpen}
+            pending={startRun.isPending}
+            onStart={(lotPicks) =>
+              startRun.mutate(
+                { data: { mixingRunId: runId, lotPicks } },
+                { onSuccess: () => setStartOpen(false) },
+              )
+            }
+          />
         </CardHeader>
         <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div>

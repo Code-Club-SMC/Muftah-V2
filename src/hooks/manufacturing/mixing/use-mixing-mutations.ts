@@ -44,6 +44,7 @@ export const useStartMixingRun = () => {
         queryKey: ["operator-mixing-run", variables.data.mixingRunId],
       });
       queryClient.invalidateQueries({ queryKey: ["operator-mixing-runs"] });
+      queryClient.invalidateQueries({ queryKey: ["material-lots"] });
     },
     onError: (error) => {
       toast.error(error.message || "Failed to start mixing batch");

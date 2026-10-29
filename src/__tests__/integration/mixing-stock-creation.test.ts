@@ -20,6 +20,7 @@ import {
   mixingMaterialsUsed,
 } from "@/db/schemas/production-schema";
 import { createMixingRunFn } from "@/server-functions/manufacturing/mixing/create-mixing-run-fn";
+import { listLotBalances, lockMaterialStock } from "@/lib/inventory/material-lots.server";
 import { startMixingRunFn } from "@/server-functions/manufacturing/mixing/start-mixing-run-fn";
 import { getMixingStockAvailabilityFn } from "@/server-functions/manufacturing/mixing/get-mixing-stock-availability-fn";
 
@@ -236,7 +237,7 @@ describe("mixing creation stock checks against PostgreSQL", () => {
           await expect(
             invoke(
               startMixingRunFn,
-              { mixingRunId: created.mixingRun.id },
+              { mixingRunId: created.mixingRun.id, lotPicks: [] },
               actor.id,
             ),
           ).rejects.toThrow(
@@ -246,9 +247,26 @@ describe("mixing creation stock checks against PostgreSQL", () => {
             .update(materialStock)
             .set({ quantity: "3.300" })
             .where(eq(materialStock.chemicalId, acid.id));
+          const refs = [acid, water].map((chemical) => ({
+            materialType: "chemical" as const,
+            materialId: chemical.id,
+          }));
+          await lockMaterialStock(tx, [floor.id], refs);
+          const lotPicks = await Promise.all(
+            [
+              { ref: refs[0], quantity: "3.300" },
+              { ref: refs[1], quantity: "5.000" },
+            ].map(async ({ ref, quantity }) => {
+              const [lot] = await listLotBalances(tx, floor.id, ref);
+              return {
+                materialId: ref.materialId,
+                picks: [{ lotId: lot.lotId, quantity }],
+              };
+            }),
+          );
           await invoke(
             startMixingRunFn,
-            { mixingRunId: created.mixingRun.id },
+            { mixingRunId: created.mixingRun.id, lotPicks },
             actor.id,
           );
           expect(

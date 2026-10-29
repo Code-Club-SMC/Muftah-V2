@@ -7,21 +7,26 @@ import {
   mixingMaterialsUsed,
 } from "@/db/schemas/production-schema";
 import {
-  materialStock,
   inventoryAuditLog,
   warehouses,
 } from "@/db/schemas/inventory-schema";
 import { requireManufacturingRunManageMiddleware } from "@/lib/middlewares";
-import { eq, and, gte, sql } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { z } from "zod";
 import Big from "big.js";
 import {
   loadMixingStockRequirements,
   mixingStockShortageMessage,
 } from "@/lib/production/mixing-stock.server";
+import { materialLotPicksSchema } from "@/lib/inventory/material-lots";
+import {
+  lockMaterialStock,
+  takeLotPicks,
+} from "@/lib/inventory/material-lots.server";
 
 const startMixingRunSchema = z.object({
   mixingRunId: z.string().min(1, "Mixing batch ID is required"),
+  lotPicks: z.array(materialLotPicksSchema).max(100),
 });
 
 export const startMixingRunFn = createServerFn({ method: "POST" })
@@ -75,52 +80,57 @@ export const startMixingRunFn = createServerFn({ method: "POST" })
       if (shortages.length)
         throw new Error(mixingStockShortageMessage(shortages));
 
+      const refs = materials.map((item) => ({
+        materialType: "chemical" as const,
+        materialId: item.chemicalId,
+      }));
+      await lockMaterialStock(tx, [factoryFloor.id], refs);
       let totalChemicalCost = new Big(0);
-
-      for (const { chemicalId, quantity, name } of materials) {
-        const [deducted] = await tx
-          .update(materialStock)
-          .set({ quantity: sql`${materialStock.quantity} - ${quantity}` })
-          .where(
-            and(
-              eq(materialStock.warehouseId, factoryFloor.id),
-              eq(materialStock.chemicalId, chemicalId),
-              gte(materialStock.quantity, quantity),
-            ),
-          )
-          .returning({ id: materialStock.id });
-        if (!deducted) {
-          throw new Error(
-            `Insufficient factory floor stock for ${name}. Refresh stock availability and try again.`,
-          );
+      for (const item of materials) {
+        const chosen = data.lotPicks.find(
+          (row) => row.materialId === item.chemicalId,
+        );
+        if (!chosen) throw new Error(`Pick lots for ${item.name}`);
+        const picked = await takeLotPicks(tx, {
+          warehouseId: factoryFloor.id,
+          ref: { materialType: "chemical", materialId: item.chemicalId },
+          name: item.name,
+          unit: item.unit,
+          required: item.quantity,
+          picks: chosen.picks,
+          sourceType: "mixing",
+          sourceId: mixingRun.id,
+        });
+        for (const row of picked) {
+          totalChemicalCost = totalChemicalCost.plus(row.totalCost);
+          await tx.insert(mixingMaterialsUsed).values({
+            mixingRunId: mixingRun.id,
+            chemicalId: item.chemicalId,
+            lotId: row.lotId,
+            quantityUsed: row.quantity,
+            costPerUnit: row.unitPrice,
+            totalCost: row.totalCost,
+          });
+          await tx.insert(inventoryAuditLog).values({
+            warehouseId: factoryFloor.id,
+            materialType: "chemical",
+            materialId: item.chemicalId,
+            lotId: row.lotId,
+            type: "debit",
+            amount: row.quantity,
+            reason: `Mixing batch ${mixingRun.batchId} started`,
+            performedById: context.session.user.id,
+            referenceId: mixingRun.id,
+          });
         }
       }
-
-      for (const item of materials) {
-        const totalCost = new Big(item.quantity)
-          .times(item.costPerUnit)
-          .toFixed(2);
-        totalChemicalCost = totalChemicalCost.plus(totalCost);
-
-        await tx.insert(mixingMaterialsUsed).values({
-          mixingRunId: mixingRun.id,
-          chemicalId: item.chemicalId,
-          quantityUsed: item.quantity.toString(),
-          costPerUnit: item.costPerUnit.toString(),
-          totalCost,
-        });
-
-        await tx.insert(inventoryAuditLog).values({
-          warehouseId: factoryFloor.id,
-          materialType: "chemical",
-          materialId: item.chemicalId,
-          type: "debit",
-          amount: item.quantity.toString(),
-          reason: `Mixing batch ${mixingRun.batchId} started`,
-          performedById: context.session.user.id,
-          referenceId: mixingRun.id,
-        });
-      }
+      const extra = data.lotPicks.find(
+        (row) => !materials.some((item) => item.chemicalId === row.materialId),
+      );
+      if (extra)
+        throw new Error(
+          "Lots were picked for a chemical that is not in this formula",
+        );
 
       await tx
         .update(mixingRuns)

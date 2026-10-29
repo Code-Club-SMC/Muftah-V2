@@ -25,7 +25,6 @@ export async function loadMixingStockRequirements(
       name: chemicals.name,
       unit: chemicals.unit,
       quantity: formulaIngredients.quantityPerBatch,
-      costPerUnit: chemicals.costPerUnit,
     })
     .from(formulaIngredients)
     .leftJoin(chemicals, eq(formulaIngredients.chemicalId, chemicals.id))
@@ -40,7 +39,6 @@ export async function loadMixingStockRequirements(
       name: string;
       unit: string;
       quantity: Big;
-      costPerUnit: string;
     }
   >();
   for (const ingredient of ingredients) {
@@ -58,7 +56,6 @@ export async function loadMixingStockRequirements(
       name: ingredient.name,
       unit: ingredient.unit,
       quantity: (prior?.quantity ?? new Big(0)).plus(ingredient.quantity),
-      costPerUnit: ingredient.costPerUnit ?? "0",
     });
   }
   const materials = [...requirements.values()]

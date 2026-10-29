@@ -6,7 +6,8 @@ import { inventoryAuditLog } from "@/db";
 import { appRoles, appPermissions, appRolePermissions, userRoleAssignments } from "@/db/schemas/rbac-schema";
 import { getProductionOperators } from "@/lib/production/operator-assignment.server";
 import { db, user, warehouses, products, chemicals, packagingMaterials, recipes, finishedGoodsStock, cartons, wacHistory, adjustmentLog, materialStock, returnedFinishedGoodsStock, stockCountLines, customers, invoices, failedProductionChemicalRecoveries, salesReturns, slipRecords, returnRecords, returnLines, priceChangeLog } from "@/db";
-import { recipePackaging } from "@/db/schemas/inventory-schema";
+import { recipePackaging, materialLots, materialLotStock, materialLotMovements } from "@/db/schemas/inventory-schema";
+import { listLotBalances, lockMaterialStock } from "@/lib/inventory/material-lots.server";
 import { formulas, formulaIngredients, mixingRuns, mixingMaterialsUsed, packagingAllocations, packagingProgressLogs, packagingMaterialsUsed } from "@/db/schemas/production-schema";
 import { loadFailedProductionRecoveryContext } from "@/server-functions/inventory/stock/failed-production-recovery-core";
 import { completePackagingAllocationCore } from "@/server-functions/manufacturing/packaging/complete-packaging-allocation-core.server";
@@ -133,12 +134,24 @@ async function cleanupCommittedFixture(f: Awaited<ReturnType<typeof seed>>) {
     await tx.delete(recipes).where(eq(recipes.id, f.recipe.id));
     await tx.delete(formulas).where(eq(formulas.id, f.formula.id));
     await tx.delete(packagingMaterials).where(inArray(packagingMaterials.id, [f.primary.id, f.master.id]));
+    await tx.delete(materialLotMovements).where(eq(materialLotMovements.warehouseId, f.warehouse.id));
+    await tx.delete(materialLotStock).where(eq(materialLotStock.warehouseId, f.warehouse.id));
+    await tx.delete(materialLots).where(eq(materialLots.chemicalId, f.chemical.id));
     await tx.delete(chemicals).where(eq(chemicals.id, f.chemical.id));
     await tx.delete(products).where(eq(products.id, f.formula.productId));
     await tx.delete(warehouses).where(eq(warehouses.id, f.warehouse.id));
     await tx.delete(user).where(eq(user.id, f.actor.id));
     await tx.delete(appRoles).where(eq(appRoles.id, f.role.id));
   });
+}
+
+// Starts need lot picks. Each chemical's whole need comes from its opening lot.
+async function openingLotPicks(tx: Tx, warehouseId: string, needs: { chemicalId: string; quantity: string }[]) {
+  await lockMaterialStock(tx, [warehouseId], needs.map(need => ({ materialType: "chemical" as const, materialId: need.chemicalId })));
+  return Promise.all(needs.map(async need => {
+    const [lot] = await listLotBalances(tx, warehouseId, { materialType: "chemical", materialId: need.chemicalId });
+    return { materialId: need.chemicalId, picks: [{ lotId: lot.lotId, quantity: need.quantity }] };
+  }));
 }
 
 function deferred<T>() {
@@ -263,7 +276,8 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("two phase production database r
         ((callback: Parameters<typeof db.transaction>[0]) => tx.transaction(callback)) as typeof db.transaction,
       );
       try {
-        await invoke(startMixingRunFn, { mixingRunId: f.run.id }, f.actor.id);
+        const lotPicks = await openingLotPicks(tx, f.warehouse.id, chemicalIds.map(chemicalId => ({ chemicalId, quantity: "0.001" })));
+        await invoke(startMixingRunFn, { mixingRunId: f.run.id, lotPicks }, f.actor.id);
         const usage = await tx.select().from(mixingMaterialsUsed).where(eq(mixingMaterialsUsed.mixingRunId, f.run.id));
         expect(usage.map(row => row.totalCost)).toEqual(["0.01", "0.01"]);
         const [recorded] = await tx.select({ total: sql<string>`sum(${mixingMaterialsUsed.totalCost})` })
@@ -453,7 +467,8 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("two phase production database r
       expect(new Set(creates.map(result => result.mixingRun.batchId)).size).toBe(2);
       const numbers = creates.map(result => Number(result.mixingRun.batchId.slice(1))).sort((a, b) => a - b);
       expect(numbers[1] - numbers[0]).toBe(1);
-      const starts = await Promise.allSettled(creates.map(result => invoke(startMixingRunFn, { mixingRunId: result.mixingRun.id }, f.actor.id)));
+      const lotPicks = await db.transaction(tx => openingLotPicks(tx, f.warehouse.id, [{ chemicalId: f.chemical.id, quantity: "10" }]));
+      const starts = await Promise.allSettled(creates.map(result => invoke(startMixingRunFn, { mixingRunId: result.mixingRun.id, lotPicks }, f.actor.id)));
       expect(starts.filter(result => result.status === "fulfilled")).toHaveLength(1);
       expect(starts.filter(result => result.status === "rejected")).toHaveLength(1);
       const [stock] = await db.select().from(materialStock).where(eq(materialStock.warehouseId, f.warehouse.id));
@@ -474,6 +489,9 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("two phase production database r
         await tx.delete(recipes).where(eq(recipes.id, f.recipe.id));
         await tx.delete(formulas).where(eq(formulas.id, f.formula.id));
         await tx.delete(packagingMaterials).where(inArray(packagingMaterials.id, [f.primary.id, f.master.id]));
+        await tx.delete(materialLotMovements).where(eq(materialLotMovements.warehouseId, f.warehouse.id));
+        await tx.delete(materialLotStock).where(eq(materialLotStock.warehouseId, f.warehouse.id));
+        await tx.delete(materialLots).where(eq(materialLots.chemicalId, f.chemical.id));
         await tx.delete(chemicals).where(eq(chemicals.id, f.chemical.id));
         await tx.delete(products).where(eq(products.id, f.formula.productId));
         await tx.delete(warehouses).where(eq(warehouses.id, f.warehouse.id));
@@ -1043,8 +1061,9 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("two phase production database r
           { warehouseId: f.warehouse.id, packagingMaterialId: f.primary.id, quantity: "10" },
           { warehouseId: f.warehouse.id, packagingMaterialId: f.master.id, quantity: "0" },
         ]);
-        await invoke(startMixingRunFn, { mixingRunId: f.run.id }, f.actor.id);
-        await expect(invoke(startMixingRunFn, { mixingRunId: f.run.id }, f.actor.id)).rejects.toThrow("scheduled");
+        const lotPicks = await openingLotPicks(tx, f.warehouse.id, [{ chemicalId: f.chemical.id, quantity: "10" }]);
+        await invoke(startMixingRunFn, { mixingRunId: f.run.id, lotPicks }, f.actor.id);
+        await expect(invoke(startMixingRunFn, { mixingRunId: f.run.id, lotPicks }, f.actor.id)).rejects.toThrow("scheduled");
         await expect(invoke(completeMixingRunFn, { mixingRunId: f.run.id, shortfallReason: "No yield" }, f.actor.id)).rejects.toThrow("zero output");
         await expect(invoke(logMixingProgressFn, { mixingRunId: f.run.id, quantityProduced: 11 }, f.actor.id)).rejects.toThrow("target");
         await expect(invoke(logMixingProgressFn, { mixingRunId: f.run.id, quantityProduced: 1 }, "another-user", ["operator.run.log"])).rejects.toThrow("another operator");
