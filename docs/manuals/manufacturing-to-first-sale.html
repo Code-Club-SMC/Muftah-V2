@@ -1,0 +1,396 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Manufacturing through the first sale</title><style>
+:root { color-scheme: light; }
+* { box-sizing: border-box; }
+body { margin: 0; color: #162332; background: #eef1f3; font: 16px/1.55 Arial, sans-serif; }
+main { max-width: 880px; margin: 32px auto; padding: 48px 56px; background: white; }
+.brand { font-size: 12px; text-transform: uppercase; letter-spacing: 2px; color: #526476; border-bottom: 3px solid #1a6170; padding-bottom: 12px; }
+h1 { font-size: 32px; line-height: 1.16; margin: 24px 0 20px; color: #174957; }
+h2 { font-size: 22px; line-height: 1.25; margin: 30px 0 12px; border-top: 1px solid #cbd5db; padding-top: 16px; }
+h3 { font-size: 17px; line-height: 1.35; margin: 22px 0 9px; color: #174957; }
+p { margin: 10px 0; }
+li { margin: 6px 0; padding-left: 2px; }
+ul, ol { padding-left: 24px; margin: 10px 0 16px; }
+strong { color: #111f2d; }
+a { color: #13576b; text-decoration-thickness: 1px; text-underline-offset: 2px; }
+code { font-family: 'DejaVu Sans Mono', monospace; font-size: .88em; }
+pre { padding: 13px; background: #f2f5f6; border: 1px solid #cbd5db; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
+table { width: 100%; border-collapse: collapse; margin: 14px 0 20px; font-size: 14px; }
+th, td { border: 1px solid #bdcbd3; text-align: left; padding: 9px 10px; vertical-align: top; overflow-wrap: anywhere; }
+th { background: #e7eff2; font-weight: bold; }
+nav { border: 1px solid #bdcbd3; padding: 14px 18px; margin: 20px 0; }
+nav p { margin: 0 0 7px; font-weight: bold; }
+nav ul { columns: 2; list-style: none; margin: 0; padding: 0; font-size: 13px; }
+nav li { margin: 4px 0; }
+@page { size: A4; margin: 17mm 17mm 19mm; }
+@media print {
+ body { background: white; font-size: 11.2pt; line-height: 1.43; }
+ main { margin: 0; padding: 0; max-width: none; }
+ h1 { font-size: 25pt; }
+ h2 { font-size: 17pt; margin-top: 20pt; padding-top: 11pt; }
+ h3 { font-size: 13pt; }
+ h1, h2, h3 { break-after: avoid; }
+ p, li { orphans: 3; widows: 3; }
+ li { margin: 4pt 0; }
+ table { font-size: 9.8pt; }
+ th, td { padding: 6pt 7pt; }
+ tr, pre, nav { break-inside: avoid; }
+ thead { display: table-header-group; }
+ a { color: inherit; }
+ nav { break-after: page; }
+ nav ul { font-size: 10.3pt; }
+ .quick h2 { break-before: page; }
+ .quick h2:first-of-type { break-before: auto; }
+ .quick table { font-size: 10pt; }
+}
+</style></head><body><main><div class="brand">Titan ERP · Staff operating manual · 20 October 2026</div><h1 id="manufacturing-through-the-first-sale">Manufacturing through the first sale</h1>
+<p>An easy manual for purchasing, stores, production operators and sales staff.</p>
+<p>Checked against the application source on 20 October 2026. Use this with the same version of Titan ERP. Examples explain counting only. Use your factory&#x27;s approved formulas, pack sizes and prices.</p>
+<nav aria-label="Contents"><p>Find the task you need</p><ul><li><a href="#the-whole-job">The whole job</a></li><li><a href="#who-does-what">Who does what?</a></li><li><a href="#words-used-in-titan">Words used in Titan</a></li><li><a href="#1-set-up-the-factory-floor">1. Set up the factory floor</a></li><li><a href="#2-add-the-supplier">2. Add the supplier</a></li><li><a href="#3-receive-chemicals-and-record-the-purchase">3. Receive chemicals and record the purchase</a></li><li><a href="#4-receive-packaging">4. Receive packaging</a></li><li><a href="#5-add-the-product">5. Add the product</a></li><li><a href="#6-set-up-the-approved-mixing-formula">6. Set up the approved mixing formula</a></li><li><a href="#7-set-up-the-packaging-format">7. Set up the packaging format</a></li><li><a href="#8-create-and-start-the-mixing-batch">8. Create and start the mixing batch</a></li><li><a href="#9-operator-record-actual-mixing-output">9. Operator: record actual mixing output</a></li><li><a href="#10-record-quality-checks">10. Record quality checks</a></li><li><a href="#11-operator-record-finished-packing">11. Operator: record finished packing</a></li><li><a href="#12-check-finished-stock-before-sale">12. Check finished stock before sale</a></li><li><a href="#13-prepare-the-customer-and-price">13. Prepare the customer and price</a></li><li><a href="#14-make-the-first-invoice">14. Make the first invoice</a></li><li><a href="#15-check-the-first-sale-and-print-the-invoice">15. Check the first sale and print the invoice</a></li><li><a href="#if-something-goes-wrong">If something goes wrong</a></li><li><a href="#operator-s-short-checklist">Operator&#x27;s short checklist</a></li><li><a href="#first-sale-checklist">First-sale checklist</a></li></ul></nav><h2 id="the-whole-job">The whole job</h2>
+<p><strong>Factory floor → Supplier → Materials received → Product → Mixing formula → Packaging format → Mixing batch → Actual output → Packing → Stock check → Customer → Invoice.</strong></p>
+<p>Different staff may do different steps. Complete your part and give the next person the correct record number and quantities.</p>
+<h2 id="who-does-what">Who does what?</h2>
+<table><thead><tr><th>Person</th><th>Job</th></tr></thead><tbody>
+<tr><td>Purchasing or stores</td><td>Add suppliers, receive materials, check quantities and record purchases.</td></tr>
+<tr><td>Production manager</td><td>Check formulas and pack formats, assign an operator, create and start the batch.</td></tr>
+<tr><td>Mixing operator</td><td>Record actual new output and complete the assigned batch.</td></tr>
+<tr><td>Packing operator or authorized production staff</td><td>Count the finished packing and confirm it on the completed batch.</td></tr>
+<tr><td>Quality staff</td><td>Record actual checks and decide whether goods may be released under factory procedures.</td></tr>
+<tr><td>Sales and finance</td><td>Check customer terms, prices, stock and payment, then create the invoice and verify the result.</td></tr>
+</tbody></table>
+<p>Use your own login. The employee list in HR does not by itself create a production operator login. Ask the administrator to set up an active user with the necessary production access.</p>
+<h2 id="words-used-in-titan">Words used in Titan</h2>
+<table><thead><tr><th>Word</th><th>Easy meaning</th></tr></thead><tbody>
+<tr><td>Factory Floor</td><td>The inventory location used for chemicals, packaging and this production workflow.</td></tr>
+<tr><td>Product</td><td>The product family or name.</td></tr>
+<tr><td>Mixing Formula</td><td>The approved ingredients and quantities for one bulk batch.</td></tr>
+<tr><td>Packaging Format</td><td>The pack size, pack material and carton arrangement for a product. Some screens still call it a recipe.</td></tr>
+<tr><td>Bulk</td><td>Mixed powder or liquid before packing.</td></tr>
+<tr><td>Mixing Batch</td><td>One production batch made from a formula. Keep its batch number.</td></tr>
+<tr><td>Full carton</td><td>A physical carton containing the full configured number of packs.</td></tr>
+<tr><td>Partial carton</td><td>One physical carton containing fewer packs than a full carton.</td></tr>
+<tr><td>Loose packs</td><td>Finished packs outside cartons.</td></tr>
+<tr><td>Wallet or account</td><td>A finance account used to record money received or paid.</td></tr>
+</tbody></table>
+<h2 id="1-set-up-the-factory-floor">1. Set up the factory floor</h2>
+<p>An authorized manager should do this once. Reuse the existing correct facility.</p>
+<ol>
+<li>Open <strong>Inventory Management → Factory-Floor</strong>.</li>
+<li>If <strong>No Factory Floor Configured</strong> appears, click <strong>Add Factory Floor</strong>.</li>
+<li>Enter the facility name and address details.</li>
+<li>Confirm the facility type is <strong>Factory Floor</strong>.</li>
+<li>Click <strong>Add Facility</strong>.</li>
+<li>Check that the factory floor is active.</li>
+</ol>
+<p><strong>Inventory Management → Warehouses → Add Warehouse</strong> creates a storage warehouse. Use <strong>Factory-Floor → Add Factory Floor</strong> for the first production facility. A storage warehouse is a different facility type.</p>
+<p>For this first-sale workflow, use the same active factory floor throughout. If your business has multiple factory floors, ask the administrator to confirm which one the online sales system uses before production and sale.</p>
+<p>Finance should also confirm that the real payment accounts needed for purchases and sales exist under <strong>Finance → Accounts</strong>.</p>
+<h2 id="2-add-the-supplier">2. Add the supplier</h2>
+<ol>
+<li>Open <strong>Suppliers</strong>.</li>
+<li>Search for the supplier first. Avoid creating a second record for the same business.</li>
+<li>If it is missing, click <strong>Add Supplier</strong>.</li>
+<li>Enter <strong>Contact Name</strong>, <strong>Business / Shop Name</strong>, <strong>Phone Number</strong> and <strong>Street Address</strong>.</li>
+<li>Enter the other known details. Email and National ID / CNIC are optional.</li>
+<li>Click <strong>Add Supplier</strong>.</li>
+<li>Open the supplier&#x27;s profile and check that the business and contact details are correct.</li>
+</ol>
+<p>Adding a supplier does not receive materials or record a purchase.</p>
+<h2 id="3-receive-chemicals-and-record-the-purchase">3. Receive chemicals and record the purchase</h2>
+<p>Count or weigh the actual delivery and compare it with the supplier invoice before entering it.</p>
+<ol>
+<li>Open the supplier&#x27;s profile.</li>
+<li>Click <strong>Add Chemical</strong> for a chemical you need to register and receive.</li>
+<li>Enter the exact <strong>Chemical Name</strong> and the supplier&#x27;s packaging details.</li>
+<li>Enter <strong>Quantity</strong> in the chemical&#x27;s selected <strong>Unit</strong>.</li>
+<li>Enter <strong>Cost Per Unit (PKR)</strong> for that same unit.</li>
+<li>Check the purchase total.</li>
+<li>Enter <strong>Invoice / Reference Number</strong> and any useful notes.</li>
+<li>Check the payment choice as described below.</li>
+<li>Click <strong>Add Chemical</strong>.</li>
+<li>Check the supplier&#x27;s purchase history and <strong>Inventory Management → Factory-Floor → Chemicals</strong>.</li>
+</ol>
+<p>Example only: a delivery of five bags, each holding 20 kg, contains <strong>100 kg</strong>. If the selected unit is kg, the quantity is 100. It is not 5.</p>
+<p>If 100 kg costs PKR 20,000, the cost per kg is PKR 200. Do not enter the whole invoice amount into <strong>Cost Per Unit</strong>.</p>
+<p>The supplier purchase form sends materials to the factory floor selected by the application. Check the receiving factory floor after saving. If the location is wrong or unclear, ask stores or the administrator to resolve it before production.</p>
+<h3 id="choose-the-purchase-payment-correctly">Choose the purchase payment correctly</h3>
+<table><thead><tr><th>What actually happened</th><th>What to choose</th></tr></thead><tbody>
+<tr><td>Nothing has been paid</td><td><strong>Pay Later</strong>. Check that the purchase stays unpaid.</td></tr>
+<tr><td>The whole purchase has been paid</td><td>Select the actual paying account and <strong>Paid Full</strong>.</td></tr>
+<tr><td>Only part has been paid</td><td>Select the actual paying account, choose <strong>Credit / Partial</strong> and enter the real <strong>Amount Paid</strong>.</td></tr>
+</tbody></table>
+<p>Selecting a paying account can set the payment status to paid. Check it before saving. A payment entry can affect the account balance. Record only money actually paid under your finance procedure.</p>
+<p>Do not record the same payment again through <strong>Record Payment</strong> if it was already included in the purchase.</p>
+<h2 id="4-receive-packaging">4. Receive packaging</h2>
+<ol>
+<li>Open the packaging supplier&#x27;s profile.</li>
+<li>Click <strong>Add Packaging</strong>.</li>
+<li>Choose the correct kind:</li>
+</ol>
+<table><thead><tr><th>Kind on screen</th><th>Use</th></tr></thead><tbody>
+<tr><td>Packing</td><td>The individual pack or container that holds the product</td></tr>
+<tr><td>Carton</td><td>The outer carton material</td></tr>
+<tr><td>Sticker</td><td>A label or sticker</td></tr>
+</tbody></table>
+<ol start="4">
+<li>Enter the material name and the required size or capacity details.</li>
+<li>Enter <strong>Initial Stock</strong> as the number of packaging items received.</li>
+<li>Check <strong>Cost Per Unit (PKR)</strong>. It is the cost of one packaging item.</li>
+<li>For Packing materials, enter accurate <strong>Weight / Pack (g)</strong> and <strong>Material Price / Kg (PKR)</strong> where used by your purchasing calculation. These describe the empty packaging material, not the product&#x27;s fill weight.</li>
+<li>Enter the supplier invoice reference and correct payment details.</li>
+<li>Click <strong>Save Material</strong>.</li>
+<li>Check the purchase and <strong>Factory-Floor → Packaging</strong> or <strong>Stickers</strong>.</li>
+</ol>
+<p>Repeat for every required packaging material, including cartons and labels.</p>
+<h3 id="later-deliveries-of-an-existing-material">Later deliveries of an existing material</h3>
+<p>Click <strong>Buy Again</strong> on the existing purchase row in the supplier purchase history. This opens <strong>Restock Material</strong>.</p>
+<ol>
+<li>Confirm the selected material is the correct existing item.</li>
+<li>Enter the quantity in the <strong>new delivery</strong>, not the resulting total stock.</li>
+<li>Replace any old quantity or price carried into the form.</li>
+<li>Check the supplier, receiving factory floor, cost and payment details.</li>
+<li>Click <strong>Restock</strong> and verify the new purchase and stock.</li>
+</ol>
+<p>Restocking adds stock. A stock adjustment is for a documented stock correction. Do not use an adjustment to record a supplier delivery.</p>
+<h3 id="paying-a-supplier-later">Paying a supplier later</h3>
+<p>Finance can open the specific purchase row&#x27;s three-dot menu and choose <strong>Record Payment</strong>. Check the remaining balance, amount and actual paying account before saving. Verify that the purchase balance and account entry changed once.</p>
+<h2 id="5-add-the-product">5. Add the product</h2>
+<p>An authorized manager should do this. Reuse an existing matching product.</p>
+<ol>
+<li>Open <strong>Production → Packaging Formats</strong>.</li>
+<li>Click <strong>Manage products</strong>.</li>
+<li>Click <strong>Add Product</strong>.</li>
+<li>Enter <strong>Product Name</strong> and an optional description.</li>
+<li>Click <strong>Add Product</strong> to save.</li>
+<li>Return using <strong>Back to packaging formats</strong>.</li>
+</ol>
+<p>The product record alone does not create mixed or finished stock.</p>
+<h2 id="6-set-up-the-approved-mixing-formula">6. Set up the approved mixing formula</h2>
+<ol>
+<li>Open <strong>Production → Mixing Formulas</strong>.</li>
+<li>Check whether the approved formula already exists.</li>
+<li>To add one, click <strong>Create Mixing Formula</strong>.</li>
+<li>Enter <strong>Mixing Formula Name</strong> and choose <strong>Linked Product</strong>.</li>
+<li>Enter <strong>Target Batch Size</strong> and the correct <strong>Bulk unit</strong>, kg or liters.</li>
+<li>Add every approved ingredient and its <strong>quantity per batch</strong>. Check each ingredient&#x27;s unit.</li>
+<li>Enter the approved <strong>Production instructions</strong> and any notes.</li>
+<li>Compare the complete form with the approved production sheet.</li>
+<li>Click <strong>Create Mixing Formula</strong>.</li>
+</ol>
+<p>Use the factory&#x27;s approved formula. This manual does not supply chemical recipes. Do not substitute materials or change quantities to get past a stock shortage.</p>
+<p>The target for a new mixing batch comes from this formula&#x27;s batch size. Check the formula before creating the batch.</p>
+<h2 id="7-set-up-the-packaging-format">7. Set up the packaging format</h2>
+<ol>
+<li>Open <strong>Production → Packaging Formats</strong>.</li>
+<li>Click <strong>New packaging format</strong>.</li>
+<li>Select the <strong>Product</strong> and its approved <strong>Mixing formula</strong>.</li>
+<li>Enter the <strong>Pack name</strong> workers recognize.</li>
+<li>Enter <strong>Content in one pack</strong> and its <strong>Unit</strong>.</li>
+<li>Choose <strong>Pack material</strong>, the individual pack or container.</li>
+<li>Choose <strong>Use cartons</strong> or <strong>Loose packs only</strong>.</li>
+<li>If using cartons, choose <strong>Carton material</strong> and enter <strong>Packs in one full carton</strong>.</li>
+<li>Open <strong>Optional: labels, caps and stock alert</strong> if needed. Add the extra material quantity and choose whether it is used for <strong>Each pack</strong> or <strong>Each carton</strong>.</li>
+<li>Click <strong>Review packaging format</strong>.</li>
+<li>Check the product, formula, fill size, pack material, carton capacity and extras.</li>
+<li>Click <strong>Save packaging format</strong>.</li>
+</ol>
+<p>Example only: a 500 g pack and 20 packs per carton means one full carton contains 10 kg of product. The pack name alone does not set the fill size or selling price.</p>
+<p>Use matching units. Grams and kg measure weight. ml and liters measure volume. Do not assume one liter weighs one kg.</p>
+<p>Do not add the pack material or carton a second time under extra materials. Extras are for additional materials such as a label or cap.</p>
+<p>Formats already used for packing or stock cannot be changed in the same way as an unused format. Ask the manager to create a new format when the pack specification changes.</p>
+<h2 id="8-create-and-start-the-mixing-batch">8. Create and start the mixing batch</h2>
+<p>The production manager does this step.</p>
+<ol>
+<li>Open <strong>Production → Mixing Batches</strong>.</li>
+<li>Click <strong>Create Mixing Batch</strong>.</li>
+<li>Choose the approved formula, the active factory floor and the operator.</li>
+<li>Read the stock check.</li>
+<li>If materials are missing, have stores resolve the shortage at that factory floor. Click <strong>Refresh stock</strong> afterward.</li>
+<li>Click <strong>Create</strong> once the correct stock is available.</li>
+<li>Note the new batch number. Give it to the assigned operator.</li>
+<li>Check the formula, <strong>Target Bulk</strong>, operator and factory floor on the batch details.</li>
+<li>When production is authorized to begin, click <strong>Start Mixing Batch</strong>.</li>
+<li>Check that the batch is <strong>in progress</strong>.</li>
+</ol>
+<p><strong>Starting the batch deducts the formula&#x27;s chemical quantities from that factory floor.</strong> Creating the scheduled batch does not deduct them. Stock is checked again when starting.</p>
+<p>Do not create and start a second batch because the first response was slow. Reopen the batch and check its status first.</p>
+<h2 id="9-operator-record-actual-mixing-output">9. Operator: record actual mixing output</h2>
+<ol>
+<li>Open <strong>Production Workstation → Batches</strong>.</li>
+<li>Find the assigned batch number and click <strong>Open batch</strong>.</li>
+<li>Check the batch number, formula, <strong>Target Bulk</strong> and unit.</li>
+<li>Confirm the batch is in progress. If it is still scheduled, ask the production manager to start it.</li>
+<li>Under <strong>Record Mixing Progress</strong>, enter only the <strong>new output not already recorded</strong>.</li>
+<li>Click <strong>Record Bulk Output</strong> once.</li>
+<li>Wait for the result. Check that <strong>Actual Yield</strong> increased by the correct amount.</li>
+<li>Repeat only for additional unrecorded output.</li>
+</ol>
+<p>Example only: first record 60 kg, then record a further 40 kg. The total becomes 100 kg. Do not enter 100 for the second entry, because that would try to add another 100 kg.</p>
+<p>When mixing is finished:</p>
+<ol>
+<li>Compare <strong>Actual Yield</strong> with the measured output.</li>
+<li>If output is below target, enter the true reason in <strong>Reason for completing below target</strong>.</li>
+<li>Click <strong>Mark Batch as Completed</strong>.</li>
+<li>Check that the completed batch opens <strong>Record packing</strong>.</li>
+</ol>
+<p>Completion requires positive recorded output. The system limits output against the target. Ask the manager to investigate an incorrect record or an unexpected over-yield.</p>
+<p><strong>Mark zero-output batch failed</strong> is for an actual failed batch with no recorded output or progress logs, with a reason. Ask the manager before using it. It is not a correction button for output already entered.</p>
+<p>Completing mixing makes bulk available for packing. It does not by itself make saleable finished packs.</p>
+<h2 id="10-record-quality-checks">10. Record quality checks</h2>
+<p>Quality staff should follow the factory&#x27;s approved inspection and release procedure.</p>
+<ol>
+<li>Open <strong>Production → Production QC</strong>.</li>
+<li>Find and select the batch. The batch details also have a <strong>Quality Control</strong> tab.</li>
+<li>Click <strong>Create quality report</strong>.</li>
+<li>Check the batch and product.</li>
+<li>Enter the certificate details, including <strong>Certified by</strong> and <strong>Report date</strong>.</li>
+<li>Use the approved product requirements. Enter the actual result of every applicable check and mark whether it passed.</li>
+<li>Click <strong>Save quality report</strong>.</li>
+<li>Open the saved report and check the results.</li>
+</ol>
+<p>Saving a quality report records the test results. It does not automatically place cartons on hold or release held stock. Follow the factory&#x27;s release decision separately. If goods must be held, authorized stock staff must also use the carton hold controls and the factory&#x27;s physical hold procedure.</p>
+<h2 id="11-operator-record-finished-packing">11. Operator: record finished packing</h2>
+<p>Use this after the goods have actually been packed and the relevant quality checks have been completed under factory procedures.</p>
+<ol>
+<li>Find the <strong>completed batch</strong> in <strong>Production Workstation → Batches</strong> and click <strong>Open packing</strong>. Managers can also use the batch&#x27;s <strong>Packing</strong> tab in Mixing Batches.</li>
+<li>Check the batch number and <strong>Available to pack</strong>.</li>
+<li>Under <strong>Select a format to add</strong>, choose the exact pack format.</li>
+<li>Enter the actual <strong>Full cartons</strong>.</li>
+<li>Enter the actual <strong>Loose packs</strong> outside cartons.</li>
+<li>If there is a part-filled carton, open <strong>More options → Add a partial carton</strong> and enter <strong>Packs in partial carton</strong>.</li>
+<li>Add any other formats packed from this same batch.</li>
+<li>Check the actual <strong>Packing time</strong> if the default time is wrong.</li>
+<li>Record only actual spill or packing loss under <strong>Record a spill or packing loss</strong>, with a reason.</li>
+<li>Check <strong>Weight check</strong>, total packs, physical cartons and <strong>Left to pack</strong>.</li>
+<li>Click <strong>Review packing</strong>.</li>
+<li>Compare the review with the goods on the floor. Use <strong>Edit counts</strong> if it is wrong.</li>
+<li>Click <strong>Confirm &amp; add to finished goods</strong> once.</li>
+<li>Wait for <strong>Packing saved</strong> and check <strong>Recorded packing</strong>.</li>
+</ol>
+<h3 id="count-full-partial-and-loose-separately">Count full, partial and loose separately</h3>
+<p>Suppose the saved format holds 20 packs per full carton. You physically have:</p>
+<table><thead><tr><th>Physical output</th><th>Entry</th></tr></thead><tbody>
+<tr><td>10 full cartons</td><td>Full cartons = 10</td></tr>
+<tr><td>1 carton holding 8 packs</td><td>Packs in partial carton = 8</td></tr>
+<tr><td>5 packs outside cartons</td><td>Loose packs = 5</td></tr>
+</tbody></table>
+<p>This is <strong>213 packs in total</strong>, with <strong>11 physical cartons</strong> and <strong>5 loose packs</strong>. Do not count the eight packs in the partial carton again as loose packs.</p>
+<p>At 500 g per pack, those 213 packs contain 106.5 kg of product. The batch must have enough available bulk for that amount plus any actual loss.</p>
+<p><strong>Unused bulk stays available for later packing. It is not a packing loss.</strong> A measured-weight difference is an advanced option. Enter it only from an actual measurement, with the required reason.</p>
+<h3 id="what-confirmation-does">What confirmation does</h3>
+<p>Confirming packing deducts the pack materials, physical cartons and configured extra materials from the batch&#x27;s factory floor. It also deducts the used bulk, records any loss and adds finished goods there.</p>
+<p>If packaging stock is insufficient, have stores record the real receipt or correct location first. Do not change the format or enter a false stock adjustment to force confirmation.</p>
+<p><strong>Draft saved on this device</strong> means the form is stored in that browser. It has not yet added stock. Stock changes after confirmation succeeds.</p>
+<p>If the connection fails after confirmation, keep the same draft. Use <strong>Retry confirmation</strong> or <strong>Check result before editing</strong>. These controls check the original submission. Do not re-enter the same output as a new packing record.</p>
+<p>The <strong>Existing packing jobs</strong> workstation tab is for jobs already created under the older allocation workflow. Do not record the same physical output there and in the completed batch form. If <strong>Some bulk is reserved</strong> appears, ask the manager to reconcile the existing job before using that bulk.</p>
+<h2 id="12-check-finished-stock-before-sale">12. Check finished stock before sale</h2>
+<ol>
+<li>Open <strong>Inventory Management → Factory-Floor → Finished Goods</strong>.</li>
+<li>Find the correct packaging format.</li>
+<li>Compare the total packs, complete cartons, partial cartons and outside loose packs with the physical goods and the packing receipt.</li>
+<li>Open the carton details if counts or hold status need checking.</li>
+<li>Ask authorized staff to resolve any discrepancy before sale.</li>
+</ol>
+<p>Full-carton sales need enough complete saleable cartons. A partial carton is not a full carton. Cartons on hold are not saleable.</p>
+<p>Online invoices currently deduct stock from the active factory floor, even though the invoice form offers other warehouses. <strong>For the first sale below, choose that factory floor and keep the sale stock there.</strong> If the stock is in storage or there are multiple factory floors, ask the administrator to check the stock source before invoicing.</p>
+<p>Moving stock is a separate stores action under <strong>Inventory Management → Warehouses → Transfer Stock</strong>. It does not create a sale or invoice. Do not transfer the goods just because an older procedure says every sale must come from a storage warehouse.</p>
+<h2 id="13-prepare-the-customer-and-price">13. Prepare the customer and price</h2>
+<p>Sales staff should have the real customer details, approved price and payment terms before opening an invoice.</p>
+<h3 id="for-a-general-customer">For a general customer</h3>
+<p>You can select an existing customer on a <strong>New General Invoice</strong>. If the customer is new, click <strong>New Customer</strong> and enter the real details, including the customer name and type.</p>
+<h3 id="for-a-distributor">For a distributor</h3>
+<ol>
+<li>Open <strong>Sales → Sales People</strong>.</li>
+<li>Open the <strong>Distributors</strong> tab and search for the distributor.</li>
+<li>If missing, click <strong>Add Distributor</strong>.</li>
+<li>Enter the real details. Set the margin, credit limit and hold status only as authorized by sales management.</li>
+<li>Click <strong>Create Distributor</strong> and reopen the distributor to check it.</li>
+</ol>
+<p>Distributor invoices require an existing distributor.</p>
+<h3 id="check-the-approved-selling-rate">Check the approved selling rate</h3>
+<p>An authorized sales manager can open <strong>Sales → Configurations → Recipe Rates</strong>, choose <strong>General / Walk-in</strong> or the relevant <strong>Distributor</strong>, find the format and use <strong>Set Rate</strong> or the pencil. The rate entered there is <strong>per carton</strong>. Save with the check-mark button.</p>
+<p>Check the final invoice rate against the approved price list. Margins, distributor agreements, free-carton rules and overrides can affect the final amount. A product&#x27;s estimated production cost is not its selling price.</p>
+<h2 id="14-make-the-first-invoice">14. Make the first invoice</h2>
+<ol>
+<li>Open <strong>Sales → New Invoice</strong>.</li>
+<li>Choose <strong>New General Invoice</strong> or <strong>New Distributor Invoice</strong>.</li>
+<li>Select the correct existing customer or enter the new general customer&#x27;s details.</li>
+<li>In <strong>Dispatch Settings → Source Warehouse</strong>, choose the active factory floor holding the sale stock.</li>
+<li>Add the correct packaging format to the invoice items.</li>
+<li>Choose the selling unit carefully. Enter cartons for a carton sale, or packs/units for a pack sale.</li>
+<li>Enter the actual quantity being sold. Check the available stock shown.</li>
+<li>Check the pack size, packs per carton, selling rate and line amount.</li>
+<li>Check all discounts and any distributor free cartons. Free goods also use stock.</li>
+<li>Enter only the approved invoice expenses and notes.</li>
+<li>Set payment details using the instructions below.</li>
+<li>Review the customer, source warehouse, items, quantities, total and payment one more time.</li>
+<li>Click <strong>Generate Invoice</strong> once.</li>
+<li>Wait for success. Find the saved invoice number in the invoice list.</li>
+</ol>
+<p>Generating the invoice records the sale and deducts the goods. Do not also manually dispatch or adjust the same stock to account for that sale.</p>
+<h3 id="record-the-payment-correctly">Record the payment correctly</h3>
+<table><thead><tr><th>Payment situation</th><th>What to do</th></tr></thead><tbody>
+<tr><td>Cash received in full</td><td>Use <strong>Paid in Full (Cash)</strong> or a cash payment row. Check the amount and actual receiving cash account.</td></tr>
+<tr><td>Some cash received</td><td>Enter only the received amount in the cash row. The unpaid balance remains outstanding.</td></tr>
+<tr><td>Nothing received yet</td><td>Use <strong>Pay Later</strong>, with no payment rows. Obtain approval for credit terms.</td></tr>
+<tr><td>Bank transfer, digital account or cheque</td><td>Enter the actual method, receiving account, amount and required reference details. Follow finance verification.</td></tr>
+</tbody></table>
+<p>The full-cash shortcut can select the first available cash account. Check that it is the actual account receiving the money.</p>
+<p>Non-cash payments can stay pending until finance verifies them. A payment entered as pending is not yet confirmed paid. Do not use instant verification without the required finance authority and payment evidence.</p>
+<p>Check <strong>Paid Amount</strong>, pending payments, <strong>Outstanding Amount</strong> and the amount still left for Pay Later. Never record promised cash as received cash.</p>
+<h2 id="15-check-the-first-sale-and-print-the-invoice">15. Check the first sale and print the invoice</h2>
+<ol>
+<li>Find the invoice under <strong>Sales → New Invoice</strong>. Adjust the date filter if needed.</li>
+<li>Open <strong>View</strong> and check the invoice number, customer, product format, quantity, price and payment status.</li>
+<li>Use <strong>Print</strong> and check the printed invoice before handing it over.</li>
+<li>Recheck <strong>Factory-Floor → Finished Goods</strong>. The sold quantity should have been deducted once.</li>
+<li>Check the customer&#x27;s outstanding balance.</li>
+<li>Finance checks the receiving account and ledger. For pending non-cash payments, use <strong>Finance → Payment Verification</strong> through the authorized finance process.</li>
+<li>Keep the invoice number and payment reference with the delivery record.</li>
+</ol>
+<p>Example only: start with 10 complete saleable cartons. Sell 2 at PKR 1,000 each, with no discounts or expenses. The invoice is PKR 2,000 and 8 cartons remain. If PKR 1,500 cash was actually received, Paid Amount is PKR 1,500 and Outstanding Amount is PKR 500.</p>
+<p>Use the invoice to coordinate the physical delivery. Do not create a second invoice for the same goods because you need another printed copy.</p>
+<h2 id="if-something-goes-wrong">If something goes wrong</h2>
+<table><thead><tr><th>Problem</th><th>What to do</th></tr></thead><tbody>
+<tr><td>Supplier or material already exists</td><td>Open the existing record. Use Restock for a later delivery.</td></tr>
+<tr><td>No factory floor or operator available</td><td>Ask the administrator to check the facility, active user and permissions.</td></tr>
+<tr><td>Not enough chemicals</td><td>Check the required and missing quantities. Have stores resolve the real stock shortage at the correct factory floor.</td></tr>
+<tr><td>Batch is still scheduled</td><td>Ask the production manager to use Start Mixing Batch.</td></tr>
+<tr><td>Wrong mixing output entered</td><td>Stop and give the manager the batch number, wrong entry and actual measured output.</td></tr>
+<tr><td>No packaging formats available</td><td>Ask the manager to check the active format&#x27;s product and formula link.</td></tr>
+<tr><td>Packing exceeds available bulk</td><td>Check full, partial and loose counts, fill size, units and any reserved jobs.</td></tr>
+<tr><td>Packing stock is insufficient</td><td>Check the physical packaging receipt and factory-floor stock.</td></tr>
+<tr><td>Packing confirmation result is unclear</td><td>Keep the original draft and use its retry/check controls.</td></tr>
+<tr><td>Goods exist but sale stock is unavailable</td><td>Check factory-floor location, the exact format, carton completeness and hold status.</td></tr>
+<tr><td>Customer credit or payment hold blocks sale</td><td>Ask finance or sales management to resolve it. Do not change the customer or hold to bypass the block.</td></tr>
+<tr><td>Invoice save result is unclear</td><td>Search the invoice list and check stock and payment before submitting again.</td></tr>
+<tr><td>Invoice is wrong</td><td>Give the invoice number and correction details to authorized sales or finance staff.</td></tr>
+</tbody></table>
+<p>Deleting an invoice can reverse stock, customer ledger and wallet entries. Do not delete it just to get another printout or hide a payment problem.</p>
+<h2 id="operator-s-short-checklist">Operator&#x27;s short checklist</h2>
+<ul>
+<li>☐ Correct assigned batch number and formula checked.</li>
+<li>☐ Batch started by the manager.</li>
+<li>☐ Only new measured mixing output recorded.</li>
+<li>☐ Actual yield checked before completing the batch.</li>
+<li>☐ Actual packed full cartons, partial carton and loose packs counted separately.</li>
+<li>☐ Available bulk, packing time and real loss checked.</li>
+<li>☐ Review checked before confirming.</li>
+<li>☐ Packing saved receipt checked and batch number handed to stores.</li>
+</ul>
+<h2 id="first-sale-checklist">First-sale checklist</h2>
+<ul>
+<li>☐ Supplier deliveries and purchase payments recorded once.</li>
+<li>☐ Product, approved formula and packaging format checked.</li>
+<li>☐ Mixing and packing completed with actual quantities.</li>
+<li>☐ Quality decision completed under factory procedures.</li>
+<li>☐ Finished stock and saleable cartons match the floor.</li>
+<li>☐ Correct factory floor selected for online sale.</li>
+<li>☐ Correct customer, rate, discounts and quantity checked.</li>
+<li>☐ Actual received payment entered in the correct account.</li>
+<li>☐ Invoice saved, checked and printed.</li>
+<li>☐ Stock, outstanding balance and finance entries checked.</li>
+</ul>
+<p>Batch number: ____________________  Invoice number: ____________________</p>
+<p>Prepared by: ____________________  Checked by: ____________________</p>
+<p>Date: ____________________</p></main></body></html>

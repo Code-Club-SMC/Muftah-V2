@@ -28,7 +28,6 @@ scripts/*
 .claude
 .antigravity
 scratch
-docs
 audits
 .tmp
 .agents
@@ -46,20 +45,15 @@ graphify-out/graph.json
 *.png
 *.dump
 
-# Keep the approved batch-packing spec and its progress/review records.
-!docs/
-docs/*
-!docs/superpowers/
-docs/superpowers/*
-!docs/superpowers/specs/
-!docs/superpowers/plans/
-!docs/superpowers/reviews/
-docs/superpowers/specs/*
-docs/superpowers/plans/*
-docs/superpowers/reviews/*
-!docs/superpowers/specs/2026-10-09-batch-packing-design.md
-!docs/superpowers/plans/2026-10-09-batch-packing.md
-!docs/superpowers/plans/2026-10-09-batch-packing-backend-progress.md
-!docs/superpowers/reviews/2026-10-10-batch-packing-review.md
-!docs/superpowers/plans/2026-10-10-packaging-formats.md
-!docs/superpowers/reviews/2026-10-10-packaging-formats-review.md
+# Commit docs and agent instructions. CLAUDE.md imports AGENTS.md.
+!CLAUDE.md
+!AGENTS.md
+!docs/**/*.md
+# Browser test traces, logs and raw data exports stay local.
+docs/**/*.zip
+docs/**/*.log
+docs/**/*.csv
+docs/Total Punches.md
+# Payslip PDFs and browser-test result logs from reviews stay local.
+docs/superpowers/reviews/**/*.pdf
+docs/superpowers/reviews/**/*.json
