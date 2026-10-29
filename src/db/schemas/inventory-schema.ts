@@ -127,6 +127,89 @@ export const materialStock = pgTable(
   }),
 );
 
+// --- MATERIAL PRICE LOTS ---
+// One lot per item and price. Stock per store lives in material_lot_stock;
+// material_stock keeps the per-item total and is only changed by
+// src/lib/inventory/material-lots.server.ts.
+export const materialLots = pgTable(
+  "material_lots",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => createId()),
+    chemicalId: text("chemical_id").references(() => chemicals.id),
+    packagingMaterialId: text("packaging_material_id").references(
+      () => packagingMaterials.id,
+    ),
+    unitPrice: decimal("unit_price", { precision: 12, scale: 2 }).notNull(),
+    firstPurchasedAt: timestamp("first_purchased_at").defaultNow().notNull(),
+    ...timestamps,
+  },
+  (t) => ({
+    oneMaterial: check(
+      "material_lots_one_material_ck",
+      sql`(${t.chemicalId} IS NOT NULL) <> (${t.packagingMaterialId} IS NOT NULL)`,
+    ),
+    priceNotNegative: check("material_lots_price_ck", sql`${t.unitPrice} >= 0`),
+    chemicalPriceUnique: uniqueIndex("material_lots_chemical_price_unique_idx")
+      .on(t.chemicalId, t.unitPrice)
+      .where(sql`${t.chemicalId} IS NOT NULL`),
+    packagingPriceUnique: uniqueIndex("material_lots_packaging_price_unique_idx")
+      .on(t.packagingMaterialId, t.unitPrice)
+      .where(sql`${t.packagingMaterialId} IS NOT NULL`),
+  }),
+);
+
+export const materialLotStock = pgTable(
+  "material_lot_stock",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => createId()),
+    lotId: text("lot_id")
+      .notNull()
+      .references(() => materialLots.id),
+    warehouseId: text("warehouse_id")
+      .notNull()
+      .references(() => warehouses.id),
+    quantity: decimal("quantity", { precision: 12, scale: 3 })
+      .notNull()
+      .default("0"),
+    ...timestamps,
+  },
+  (t) => ({
+    lotWarehouseUnique: uniqueIndex("material_lot_stock_lot_warehouse_unique_idx").on(t.lotId, t.warehouseId),
+    warehouseIdx: index("material_lot_stock_warehouse_idx").on(t.warehouseId),
+    quantityNotNegative: check("material_lot_stock_quantity_ck", sql`${t.quantity} >= 0`),
+  }),
+);
+
+// Append-only. Every lot quantity change writes one row here.
+export const materialLotMovements = pgTable(
+  "material_lot_movements",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => createId()),
+    lotId: text("lot_id")
+      .notNull()
+      .references(() => materialLots.id),
+    warehouseId: text("warehouse_id")
+      .notNull()
+      .references(() => warehouses.id),
+    delta: decimal("delta", { precision: 12, scale: 3 }).notNull(),
+    // "opening" | "purchase" | "purchase_edit" | "purchase_delete" | "transfer_out" | "transfer_in"
+    // | "mixing" | "packing" | "recovery" | "adjustment" | "warehouse_close"
+    sourceType: text("source_type").notNull(),
+    sourceId: text("source_id"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => ({
+    lotWarehouseIdx: index("material_lot_movements_lot_warehouse_idx").on(t.lotId, t.warehouseId, t.createdAt),
+    sourceIdx: index("material_lot_movements_source_idx").on(t.sourceType, t.sourceId),
+  }),
+);
+
 // --- PRODUCTS ---
 export const products = pgTable("products", {
   id: text("id")
@@ -550,6 +633,7 @@ export const stockTransfers = pgTable("stock_transfers", {
   materialType: text("material_type").notNull(), // "chemical", "packaging", "finished"
   materialId: text("material_id").notNull(),
   quantity: decimal("quantity", { precision: 12, scale: 3 }).notNull(),
+  lotId: text("lot_id").references(() => materialLots.id),
   performedById: text("performed_by_id")
     .notNull()
     .references(() => user.id),
@@ -577,6 +661,7 @@ export const inventoryAuditLog = pgTable(
       .notNull()
       .references(() => user.id),
     referenceId: text("reference_id"),
+    lotId: text("lot_id").references(() => materialLots.id),
     ...timestamps,
   },
   (t) => ({
@@ -887,6 +972,17 @@ export const materialStockRelations = relations(materialStock, ({ one }) => ({
     fields: [materialStock.packagingMaterialId],
     references: [packagingMaterials.id],
   }),
+}));
+
+export const materialLotsRelations = relations(materialLots, ({ one, many }) => ({
+  chemical: one(chemicals, { fields: [materialLots.chemicalId], references: [chemicals.id] }),
+  packagingMaterial: one(packagingMaterials, { fields: [materialLots.packagingMaterialId], references: [packagingMaterials.id] }),
+  stock: many(materialLotStock),
+}));
+
+export const materialLotStockRelations = relations(materialLotStock, ({ one }) => ({
+  lot: one(materialLots, { fields: [materialLotStock.lotId], references: [materialLots.id] }),
+  warehouse: one(warehouses, { fields: [materialLotStock.warehouseId], references: [warehouses.id] }),
 }));
 
 export const finishedGoodsStockRelations = relations(

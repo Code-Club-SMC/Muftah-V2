@@ -1,7 +1,7 @@
 import { createId } from "@paralleldrive/cuid2";
 import { relations } from "drizzle-orm";
 import { decimal, index, pgTable, text, timestamp } from "drizzle-orm/pg-core";
-import { warehouses, chemicals, packagingMaterials } from "./inventory-schema";
+import { warehouses, chemicals, materialLots, packagingMaterials } from "./inventory-schema";
 import { suppliers } from "./core-suppliers";
 
 const timestamps = {
@@ -59,6 +59,7 @@ export const purchaseRecords = pgTable(
     packagingMaterialId: text("packaging_material_id").references(
       () => packagingMaterials.id,
     ),
+    lotId: text("lot_id").references(() => materialLots.id),
 
     quantity: decimal("quantity", { precision: 12, scale: 3 }).notNull(),
     cost: decimal("cost", { precision: 12, scale: 2 }).notNull(), // Total cost of this purchase

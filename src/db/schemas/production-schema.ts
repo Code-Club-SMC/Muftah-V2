@@ -14,6 +14,7 @@ import {
 import { user } from "./auth-schema";
 import {
   chemicals,
+  materialLots,
   packagingMaterials,
   products,
   recipes,
@@ -207,6 +208,7 @@ export const mixingMaterialsUsed = pgTable(
     chemicalId: text("chemical_id")
       .notNull()
       .references(() => chemicals.id),
+    lotId: text("lot_id").references(() => materialLots.id),
     quantityUsed: decimal("quantity_used", {
       precision: 12,
       scale: 3,
@@ -370,6 +372,7 @@ export const packagingMaterialsUsed = pgTable(
     materialId: text("material_id")
       .notNull()
       .references(() => packagingMaterials.id),
+    lotId: text("lot_id").references(() => materialLots.id),
     quantityUsed: decimal("quantity_used", {
       precision: 12,
       scale: 3,
