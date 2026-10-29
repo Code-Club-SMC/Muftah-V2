@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import { and, eq, gte, sql } from "drizzle-orm";
-import { db, user, warehouses, chemicals, packagingMaterials, materialStock, inventoryAuditLog, suppliers, wallets, purchaseRecords, supplierPayments, expenses, transactions } from "@/db";
+import { db, user, warehouses, chemicals, packagingMaterials, materialStock, inventoryAuditLog, suppliers, wallets, purchaseRecords, supplierPayments, expenses, transactions, materialLots, materialLotStock, materialLotMovements } from "@/db";
 import { adjustStockFn } from "@/server-functions/inventory/stock/adjust-stock-fn";
 import { updateStockFn } from "@/server-functions/inventory/stock/update-stock-fn";
 import { addStockFn } from "@/server-functions/inventory/stock/add-stock-fn";
@@ -65,6 +65,10 @@ async function withFixture(check: (f: Fixture) => Promise<void>) {
       await tx.delete(purchaseRecords).where(eq(purchaseRecords.warehouseId, f.warehouse.id));
       await tx.delete(inventoryAuditLog).where(eq(inventoryAuditLog.warehouseId, f.warehouse.id));
       await tx.delete(materialStock).where(eq(materialStock.warehouseId, f.warehouse.id));
+      await tx.delete(materialLotMovements).where(eq(materialLotMovements.warehouseId, f.warehouse.id));
+      await tx.delete(materialLotStock).where(eq(materialLotStock.warehouseId, f.warehouse.id));
+      await tx.delete(materialLots).where(eq(materialLots.chemicalId, f.chemical.id));
+      await tx.delete(materialLots).where(eq(materialLots.packagingMaterialId, f.packaging.id));
       await tx.delete(chemicals).where(eq(chemicals.id, f.chemical.id));
       await tx.delete(packagingMaterials).where(eq(packagingMaterials.id, f.packaging.id));
       await tx.delete(suppliers).where(eq(suppliers.id, f.supplier.id));
@@ -81,12 +85,14 @@ function material(f: Fixture, type: MaterialType) {
   return { materialId, stock };
 }
 
-async function waitForBlock(holderPid: number, waiterPid: number) {
-  expect(waiterPid).not.toBe(holderPid);
+// A waiter may queue behind the holder directly, or behind a sibling that already queued on it.
+async function waitForBlock(holderPid: number | number[], waiterPid: number) {
+  const holders = [holderPid].flat();
+  expect(holders).not.toContain(waiterPid);
   const deadline = Date.now() + 10_000;
   while (Date.now() < deadline) {
     const { rows: [activity] } = await db.execute<{ blocked: boolean; wait_event_type: string }>(sql`
-      SELECT ${holderPid} = ANY(pg_blocking_pids(${waiterPid})) AS blocked, wait_event_type
+      SELECT pg_blocking_pids(${waiterPid}) && ${`{${holders.join(",")}}`}::int[] AS blocked, wait_event_type
       FROM pg_stat_activity WHERE pid = ${waiterPid}`);
     if (activity?.blocked && activity.wait_event_type === "Lock") return;
   }
@@ -308,7 +314,8 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("two phase raw stock serializati
         });
         const pids = await Promise.all(started.map(signal => signal.promise));
         expect(new Set([holderPid, ...pids]).size).toBe(3);
-        for (const pid of pids) await waitForBlock(holderPid, pid);
+        // The second purchase queues on the first one's new price lot, which itself waits on the table lock.
+        for (const pid of pids) await waitForBlock([holderPid, ...pids.filter(other => other !== pid)], pid);
         release.resolve();
         const results = await Promise.allSettled(operations);
         expect(results.map(result => result.status)).toEqual(["fulfilled", "fulfilled"]);

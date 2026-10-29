@@ -113,6 +113,7 @@ export const addChemicalSchema = z.object({
   amountPaid: z.string(),
   transactionId: z.string(),
   bankName: z.string(),
+  confirmSimilarName: z.boolean().optional(),
 });
 
 export const addPackagingMaterialSchema = z.object({
@@ -138,6 +139,7 @@ export const addPackagingMaterialSchema = z.object({
   amountPaid: z.string(),
   transactionId: z.string(),
   bankName: z.string(),
+  confirmSimilarName: z.boolean().optional(),
 });
 
 export const addProductSchema = z.object({

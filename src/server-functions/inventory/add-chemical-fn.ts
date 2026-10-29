@@ -2,7 +2,6 @@ import { createServerFn } from "@tanstack/react-start";
 import { logActivityQuiet } from "@/lib/activity-logger.server";
 import {
   db,
-  materialStock,
   chemicals,
   warehouses,
   purchaseRecords,
@@ -13,6 +12,8 @@ import {
   suppliers,
 } from "@/db";
 import { eq, sql } from "drizzle-orm";
+import { isSimilarMaterialName, lotPrice, normalizeMaterialName } from "@/lib/inventory/material-lots";
+import { findOrCreateLot, lockMaterialStock, moveLotStock } from "@/lib/inventory/material-lots.server";
 import { requireInventoryManageMiddleware } from "@/lib/middlewares";
 import { addChemicalSchema } from "@/lib/validators/validators";
 import { createId } from "@paralleldrive/cuid2";
@@ -87,101 +88,33 @@ export const addRawMaterialFn = createServerFn()
 
       const targetWarehouseId = warehouse.id;
 
-      // Check for case-insensitive duplicates
-      const existing = await tx.query.chemicals.findFirst({
-        where: (m, { sql }) => sql`LOWER(${m.name}) = LOWER(${data.name})`,
-      });
+      // Exact names must buy through Add stock; near-misses need confirmation (typo guard).
+      const candidates = await tx.select({ id: chemicals.id, name: chemicals.name }).from(chemicals);
+      const exact = candidates.find((row) => normalizeMaterialName(row.name) === normalizeMaterialName(data.name));
+      if (exact) throw new Error(`Similar item already exists: "${exact.name}". Use Add stock to buy more of it.`);
+      const similar = candidates.find((row) => isSimilarMaterialName(row.name, data.name));
+      if (similar && !data.confirmSimilarName) throw new Error(`Similar item already exists: "${similar.name}"`);
 
-      let finalMaterial;
-
-      if (existing) {
-        // Check if price matches (allow small tolerance for float comparison)
-        const existingPrice = parseFloat(existing.costPerUnit || "0");
-        const newPrice = parseFloat(data.costPerUnit);
-
-        // If price matches (same material, same cost) -> Merge
-        if (Math.abs(existingPrice - newPrice) < 0.01) {
-          const [updated] = await tx
-            .update(chemicals)
-            .set({
-              minimumStockLevel: data.minimumStockLevel,
-              lastSupplierId: data.supplierId,
-              updatedAt: new Date(),
-            })
-            .where(eq(chemicals.id, existing.id))
-            .returning();
-          finalMaterial = updated;
-        } else {
-          // Price differs -> Create new material with suffix name
-          const similar = await tx.query.chemicals.findMany({
-            where: (m, { sql }) =>
-              sql`LOWER(${m.name}) LIKE LOWER(${data.name || ""} || '%')`,
-          });
-
-          const suffix = similar.length;
-          const newName = `${data.name}-${suffix}`;
-
-          const [newMaterial] = await tx
-            .insert(chemicals)
-            .values({
-              name: newName,
-              unit: data.unit,
-              costPerUnit: data.costPerUnit,
-              minimumStockLevel: data.minimumStockLevel,
-              packagingType: data.packagingType,
-              packagingSize: data.packagingSize,
-              lastSupplierId: data.supplierId,
-            })
-            .returning();
-          finalMaterial = newMaterial;
-        }
-      } else {
-        // 1. Create the raw material
-        const [newMaterial] = await tx
-          .insert(chemicals)
-          .values({
-            name: data.name,
-            unit: data.unit,
-            costPerUnit: data.costPerUnit,
-            minimumStockLevel: data.minimumStockLevel,
-            packagingType: data.packagingType,
-            packagingSize: data.packagingSize,
-            lastSupplierId: data.supplierId,
-          })
-          .returning();
-        finalMaterial = newMaterial;
-      }
+      const [finalMaterial] = await tx
+        .insert(chemicals)
+        .values({
+          name: data.name.trim(),
+          unit: data.unit,
+          costPerUnit: lotPrice(data.costPerUnit),
+          minimumStockLevel: data.minimumStockLevel,
+          packagingType: data.packagingType,
+          packagingSize: data.packagingSize,
+          lastSupplierId: data.supplierId,
+        })
+        .returning();
 
       const materialId = finalMaterial.id;
 
       // 2. Initialize or Update stock
       if (parseFloat(data.quantity || "0") > 0) {
-        // Check if stock record exists
-        const existingStock = await tx.query.materialStock.findFirst({
-          where: (ms, { and, eq }) =>
-            and(
-              eq(ms.warehouseId, targetWarehouseId),
-              eq(ms.chemicalId, materialId),
-            ),
-        });
-
-        if (existingStock) {
-          // Update existing stock (Increment)
-          await tx
-            .update(materialStock)
-            .set({
-              quantity: sql`${materialStock.quantity} + ${data.quantity}`,
-              updatedAt: new Date(),
-            })
-            .where(eq(materialStock.id, existingStock.id));
-        } else {
-          // Create new stock record
-          await tx.insert(materialStock).values({
-            warehouseId: targetWarehouseId,
-            chemicalId: materialId,
-            quantity: data.quantity,
-          });
-        }
+        const ref = { materialType: "chemical", materialId } as const;
+        await lockMaterialStock(tx, [targetWarehouseId], [ref]);
+        const lot = await findOrCreateLot(tx, ref, data.costPerUnit);
 
         // 3. Create Purchase Record
         const totalCost = (
@@ -206,13 +139,16 @@ export const addRawMaterialFn = createServerFn()
             quantity: data.quantity,
             cost: totalCost,
             paidAmount: amountToRecord.toString(),
-            unitCost: data.costPerUnit,
+            unitCost: lot.unitPrice,
+            lotId: lot.id,
             notes: data.notes || "Initial Stock",
             paymentMethod: data.paymentMethod,
             bankName: data.bankName,
             transactionId: data.transactionId || null,
           })
           .returning();
+
+        await moveLotStock(tx, { ref, lotId: lot.id, warehouseId: targetWarehouseId, delta: data.quantity, sourceType: "purchase", sourceId: purchase.id });
 
         if (amountToRecord > 0) {
           await tx.insert(supplierPayments).values({

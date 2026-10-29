@@ -1,7 +1,7 @@
 import { createId } from "@paralleldrive/cuid2";
 import { createServerFn } from "@tanstack/react-start";
 import { logActivityQuiet } from "@/lib/activity-logger.server";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import {
 	chemicals,
 	db,
@@ -17,6 +17,7 @@ import {
 	warehouses,
 } from "@/db";
 import { expenseCategories } from "@/db/schemas/finance-schema";
+import { findOrCreateLot, lockMaterialStock, moveLotStock } from "@/lib/inventory/material-lots.server";
 import { requireInventoryManageMiddleware } from "@/lib/middlewares";
 import { addStockSchema } from "@/lib/validators/validators";
 import { z } from "zod";
@@ -97,18 +98,10 @@ export const addStockFn = createServerFn()
 
 			const targetWarehouseId = warehouse.id;
 
-			const materialColumn = data.materialType === "chemical"
-				? materialStock.chemicalId : materialStock.packagingMaterialId;
-			// A relative upsert also serializes concurrent first receipts on the partial unique index.
-			const [result] = await tx.insert(materialStock).values({
-				warehouseId: targetWarehouseId,
-				[data.materialType === "chemical" ? "chemicalId" : "packagingMaterialId"]: data.materialId,
-				quantity: data.quantity,
-			}).onConflictDoUpdate({
-				target: [materialStock.warehouseId, materialColumn],
-				targetWhere: sql`${materialColumn} IS NOT NULL`,
-				set: { quantity: sql`${materialStock.quantity} + ${data.quantity}`, updatedAt: new Date() },
-			}).returning();
+			const ref = { materialType: data.materialType, materialId: data.materialId } as const;
+			await lockMaterialStock(tx, [targetWarehouseId], [ref]);
+			const unitCost = new Big(data.cost).div(data.quantity);
+			const lot = await findOrCreateLot(tx, ref, unitCost.toString());
 
 			// Auto-calculate payment amount based on payment status
 			let amountToRecord = 0;
@@ -131,15 +124,16 @@ export const addStockFn = createServerFn()
 					quantity: data.quantity,
 					cost: data.cost,
 					paidAmount: amountToRecord.toString(),
-					unitCost: (parseFloat(data.cost) / parseFloat(data.quantity)).toFixed(
-						4,
-					),
+					unitCost: lot.unitPrice,
+					lotId: lot.id,
 					notes: data.notes,
 					paymentMethod: data.paymentMethod,
 					bankName: data.bankName,
 					transactionId: data.transactionId,
 				})
 				.returning();
+
+			await moveLotStock(tx, { ref, lotId: lot.id, warehouseId: targetWarehouseId, delta: data.quantity, sourceType: "purchase", sourceId: purchase.id });
 
 			// Conditionally create expense and debit wallet (same pattern as add-chemical/packaging)
 			const walletId = data.walletId || data.paymentMethod;
@@ -255,6 +249,7 @@ export const addStockFn = createServerFn()
 				type: "credit",
 				amount: data.quantity,
 				reason: `Purchase from Supplier (ID: ${data.supplierId})`,
+				lotId: lot.id,
 				performedById: context.session.user.id,
 			});
 
@@ -283,6 +278,7 @@ export const addStockFn = createServerFn()
 				description: `Added stock for ${loggedMaterialName}`,
 			});
 
+			const [result] = await tx.select().from(materialStock).where(and(eq(materialStock.warehouseId, targetWarehouseId), eq(data.materialType === "chemical" ? materialStock.chemicalId : materialStock.packagingMaterialId, data.materialId)));
 			return result;
 		});
 	});
