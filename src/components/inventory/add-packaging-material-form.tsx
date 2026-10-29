@@ -20,13 +20,15 @@ import { PaymentMethodSelect } from "@/components/suppliers/payment-method-selec
 import { getInventoryFn } from "@/server-functions/inventory/get-inventory-fn";
 import { useAddPackagingMaterial } from "@/hooks/inventory/use-add-packaging-material";
 import { addPackagingMaterialSchema } from "@/lib/validators/validators";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import { cn } from "@/lib/utils";
 import { useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { getSuppliersFn } from "@/server-functions/suppliers/get-suppliers-fn";
 import { Textarea } from "../ui/textarea";
 import { updatePurchaseRecordFn } from "@/server-functions/suppliers/update-purchase-record-fn";
 import { toast } from "sonner";
+import { findSimilarMaterialsFn } from "@/server-functions/inventory/find-similar-materials-fn";
+import { SimilarMaterial, SimilarMaterialWarning, SwitchToAddStock } from "./similar-material-warning";
 
 export type PackagingPurchaseInitialValues = {
   purchaseId: string;
@@ -54,6 +56,7 @@ type Props = {
   preselectedWarehouse: string | undefined;
   preselectedSupplierId?: string;
   initialValues?: PackagingPurchaseInitialValues;
+  onSwitchToAddStock?: (item: SwitchToAddStock) => void;
 };
 
 export const AddPackagingMaterialForm = ({
@@ -62,8 +65,11 @@ export const AddPackagingMaterialForm = ({
   preselectedWarehouse,
   preselectedSupplierId,
   initialValues,
+  onSwitchToAddStock,
 }: Props) => {
   const isEditMode = !!initialValues?.purchaseId;
+  const [similar, setSimilar] = useState<SimilarMaterial[]>([]);
+  const confirmedNew = useRef(false);
   const addMutate = useAddPackagingMaterial();
   const queryClient = useQueryClient();
 
@@ -139,7 +145,14 @@ export const AddPackagingMaterialForm = ({
           },
         });
       } else {
-        await addMutate.mutateAsync({ data: value as any });
+        if (!confirmedNew.current) {
+          const matches = await findSimilarMaterialsFn({ data: { materialType: "packaging", name: value.name } });
+          if (matches.length) {
+            setSimilar(matches);
+            return;
+          }
+        }
+        await addMutate.mutateAsync({ data: { ...value, confirmSimilarName: confirmedNew.current } as any });
         onSuccess();
       }
     },
@@ -234,7 +247,11 @@ export const AddPackagingMaterialForm = ({
                 <Input
                   value={field.state.value}
                   onBlur={field.handleBlur}
-                  onChange={(e) => field.handleChange(e.target.value)}
+                  onChange={(e) => {
+                    field.handleChange(e.target.value);
+                    setSimilar([]);
+                    confirmedNew.current = false;
+                  }}
                   placeholder={
                     activeType === "primary" ? "e.g. 100g Pack"
                     : activeType === "master" ? "e.g. 10kg Bucket"
@@ -594,6 +611,19 @@ export const AddPackagingMaterialForm = ({
             }}
           />
         </>}
+          <SimilarMaterialWarning
+            matches={similar}
+            onAddStock={(id) => {
+              const { quantity, costPerUnit, warehouseId, supplierId } = form.state.values;
+              const match = similar.find((row) => row.id === id);
+              onSwitchToAddStock?.({ materialType: "packaging", materialId: id, name: match?.name ?? "", quantity, costPerUnit, warehouseId, supplierId });
+            }}
+            onConfirmNew={() => {
+              confirmedNew.current = true;
+              setSimilar([]);
+              form.handleSubmit();
+            }}
+          />
         </FieldGroup>
 
         <div className="flex justify-end pt-2">

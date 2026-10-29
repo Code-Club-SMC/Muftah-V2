@@ -22,10 +22,12 @@ import { getInventoryFn } from "@/server-functions/inventory/get-inventory-fn";
 import { useAddChemical } from "@/hooks/inventory/use-add-raw-material";
 import { useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { getSuppliersFn } from "@/server-functions/suppliers/get-suppliers-fn";
-import { useMemo } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Textarea } from "../ui/textarea";
 import { updatePurchaseRecordFn } from "@/server-functions/suppliers/update-purchase-record-fn";
 import { toast } from "sonner";
+import { findSimilarMaterialsFn } from "@/server-functions/inventory/find-similar-materials-fn";
+import { SimilarMaterial, SimilarMaterialWarning, SwitchToAddStock } from "./similar-material-warning";
 
 export type ChemicalPurchaseInitialValues = {
   purchaseId: string;
@@ -53,6 +55,7 @@ type Props = {
   preselectedWarehouse: string | undefined;
   preselectedSupplierId?: string;
   initialValues?: ChemicalPurchaseInitialValues;
+  onSwitchToAddStock?: (item: SwitchToAddStock) => void;
 };
 
 export const AddRawMaterialForm = ({
@@ -61,8 +64,11 @@ export const AddRawMaterialForm = ({
   preselectedWarehouse,
   preselectedSupplierId,
   initialValues,
+  onSwitchToAddStock,
 }: Props) => {
   const isEditMode = !!initialValues?.purchaseId;
+  const [similar, setSimilar] = useState<SimilarMaterial[]>([]);
+  const confirmedNew = useRef(false);
   const addMutate = useAddChemical();
   const queryClient = useQueryClient();
 
@@ -129,7 +135,14 @@ export const AddRawMaterialForm = ({
           },
         });
       } else {
-        await addMutate.mutateAsync({ data: value as any });
+        if (!confirmedNew.current) {
+          const matches = await findSimilarMaterialsFn({ data: { materialType: "chemical", name: value.name } });
+          if (matches.length) {
+            setSimilar(matches);
+            return;
+          }
+        }
+        await addMutate.mutateAsync({ data: { ...value, confirmSimilarName: confirmedNew.current } as any });
         onSuccess();
       }
     },
@@ -179,7 +192,11 @@ export const AddRawMaterialForm = ({
               <Input
                 value={field.state.value}
                 onBlur={field.handleBlur}
-                onChange={(e) => field.handleChange(e.target.value)}
+                onChange={(e) => {
+                  field.handleChange(e.target.value);
+                  setSimilar([]);
+                  confirmedNew.current = false;
+                }}
                 placeholder="e.g. Caustic Soda"
               />
               <FieldError errors={field.state.meta.errors} />
@@ -523,6 +540,20 @@ export const AddRawMaterialForm = ({
             }}
           />
         </div>}
+
+        <SimilarMaterialWarning
+          matches={similar}
+          onAddStock={(id) => {
+            const { quantity, costPerUnit, warehouseId, supplierId } = form.state.values;
+            const match = similar.find((row) => row.id === id);
+            onSwitchToAddStock?.({ materialType: "chemical", materialId: id, name: match?.name ?? "", quantity, costPerUnit, warehouseId, supplierId });
+          }}
+          onConfirmNew={() => {
+            confirmedNew.current = true;
+            setSimilar([]);
+            form.handleSubmit();
+          }}
+        />
 
         <Button disabled={isPending} type="submit" className="w-full">
           {isPending ? (
