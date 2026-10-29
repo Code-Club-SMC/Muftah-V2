@@ -1,8 +1,16 @@
 import { createServerFn } from "@tanstack/react-start";
 import { createId } from "@paralleldrive/cuid2";
-import { inArray } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import Big from "big.js";
-import { db, inventoryAuditLog, stockTransfers, warehouses } from "@/db";
+import {
+  db,
+  chemicals,
+  inventoryAuditLog,
+  packagingMaterials,
+  stockTransfers,
+  warehouses,
+} from "@/db";
+import type { PickedLot } from "@/lib/inventory/material-lots";
 import { logActivityQuiet } from "@/lib/activity-logger.server";
 import { requireInventoryManageMiddleware } from "@/lib/middlewares";
 import { transferStockSchema } from "@/lib/validators/validators";
@@ -86,6 +94,7 @@ export const transferStockFn = createServerFn()
         );
       const id = createId();
       const loose = Number(data.looseUnits || "0");
+      let picked: PickedLot[] = [];
       if (data.materialType === "finished") {
         await transferFinishedStock(tx, {
           fromWarehouseId: data.fromWarehouseId,
@@ -97,47 +106,76 @@ export const transferStockFn = createServerFn()
           referenceId: id,
         });
       } else {
-        await transferMaterialStock(tx, {
+        if (!data.lotPicks?.length) throw new Error("Pick the lots to move");
+        const [item] =
+          data.materialType === "chemical"
+            ? await tx
+                .select({ name: chemicals.name, unit: chemicals.unit })
+                .from(chemicals)
+                .where(eq(chemicals.id, data.materialId))
+            : await tx
+                .select({ name: packagingMaterials.name, unit: sql<string>`'pcs'` })
+                .from(packagingMaterials)
+                .where(eq(packagingMaterials.id, data.materialId));
+        if (!item) throw new Error("Material not found");
+        picked = await transferMaterialStock(tx, {
           ...data,
           materialType: data.materialType,
+          picks: data.lotPicks,
+          name: item.name,
+          unit: item.unit,
+          referenceId: id,
         });
-        await tx.insert(inventoryAuditLog).values([
-          {
-            warehouseId: data.fromWarehouseId,
-            materialType: data.materialType,
-            materialId: data.materialId,
-            type: "debit",
-            amount: data.quantity,
-            reason: "Transfer Out",
-            performedById: context.session.user.id,
-            referenceId: id,
-          },
-          {
-            warehouseId: data.toWarehouseId,
-            materialType: data.materialType,
-            materialId: data.materialId,
-            type: "credit",
-            amount: data.quantity,
-            reason: "Transfer In",
-            performedById: context.session.user.id,
-            referenceId: id,
-          },
-        ]);
+        await tx.insert(inventoryAuditLog).values(
+          picked.flatMap((row) => [
+            {
+              warehouseId: data.fromWarehouseId,
+              materialType: data.materialType,
+              materialId: data.materialId,
+              type: "debit",
+              amount: row.quantity,
+              lotId: row.lotId,
+              reason: "Transfer Out",
+              performedById: context.session.user.id,
+              referenceId: id,
+            },
+            {
+              warehouseId: data.toWarehouseId,
+              materialType: data.materialType,
+              materialId: data.materialId,
+              type: "credit",
+              amount: row.quantity,
+              lotId: row.lotId,
+              reason: "Transfer In",
+              performedById: context.session.user.id,
+              referenceId: id,
+            },
+          ]),
+        );
       }
+      const transferRow = {
+        fromWarehouseId: data.fromWarehouseId,
+        toWarehouseId: data.toWarehouseId,
+        materialType: data.materialType,
+        materialId: data.materialId,
+        performedById: context.session.user.id,
+        notes:
+          `${data.notes || ""}${loose ? ` (+ ${loose} loose units)` : ""}`.trim(),
+        status: "completed",
+      };
+      // Raw materials get one transfer row per picked lot; the first keeps the transfer id.
       const [transfer] = await tx
         .insert(stockTransfers)
-        .values({
-          id,
-          fromWarehouseId: data.fromWarehouseId,
-          toWarehouseId: data.toWarehouseId,
-          materialType: data.materialType,
-          materialId: data.materialId,
-          quantity: data.quantity,
-          performedById: context.session.user.id,
-          notes:
-            `${data.notes || ""}${loose ? ` (+ ${loose} loose units)` : ""}`.trim(),
-          status: "completed",
-        })
+        .values(
+          picked.length
+            ? picked.map((row, index) => ({
+                ...transferRow,
+                id: index === 0 ? id : createId(),
+                quantity: row.quantity,
+                lotId: row.lotId,
+              }))
+            : [{ ...transferRow, id, quantity: data.quantity }],
+        )
         .returning();
       logActivityQuiet({
         module: "inventory",

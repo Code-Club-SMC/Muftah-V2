@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, or, sql } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -11,6 +11,9 @@ import {
   packagingMaterials,
   recipes,
   materialStock,
+  materialLots,
+  materialLotStock,
+  materialLotMovements,
   finishedGoodsStock,
   cartons,
   adjustmentLog,
@@ -43,6 +46,11 @@ import {
   topUpCarton,
 } from "@/lib/cartons/carton.service";
 import { executeBulkOperation } from "@/lib/cartons/bulk.service";
+import {
+  findOrCreateLot,
+  lockMaterialStock,
+  moveLotStock,
+} from "@/lib/inventory/material-lots.server";
 
 // Only the session transport is replaced. Validation, handlers, locks and SQL are real.
 vi.mock("@tanstack/react-start", () => ({
@@ -364,6 +372,20 @@ async function cleanup(f: Awaited<ReturnType<typeof seed>>) {
       .where(inArray(mixingRuns.warehouseId, locations));
     await tx.delete(recipes).where(eq(recipes.productId, f.product.id));
     await tx.delete(formulas).where(eq(formulas.id, f.formula.id));
+    await tx
+      .delete(materialLotMovements)
+      .where(inArray(materialLotMovements.warehouseId, locations));
+    await tx
+      .delete(materialLotStock)
+      .where(inArray(materialLotStock.warehouseId, locations));
+    await tx
+      .delete(materialLots)
+      .where(
+        or(
+          eq(materialLots.chemicalId, f.chemical.id),
+          eq(materialLots.packagingMaterialId, f.master.id),
+        ),
+      );
     await tx
       .delete(packagingMaterials)
       .where(eq(packagingMaterials.id, f.master.id));
@@ -884,14 +906,20 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
 
     it("transfers fractional raw stock by guarded debit and rejects negative transfers", async () =>
       withFixture(async (tx, f) => {
-        await tx.insert(materialStock).values({
+        const ref = { materialType: "chemical" as const, materialId: f.chemical.id };
+        await lockMaterialStock(tx, [f.source.id], [ref]);
+        const lot = await findOrCreateLot(tx, ref, "13");
+        await moveLotStock(tx, {
+          ref,
+          lotId: lot.id,
           warehouseId: f.source.id,
-          chemicalId: f.chemical.id,
-          quantity: "0.300",
+          delta: "0.300",
+          sourceType: "purchase",
         });
         await transfer(f, "0.100", "0", {
           materialType: "chemical",
           materialId: f.chemical.id,
+          lotPicks: [{ lotId: lot.id, quantity: "0.100" }],
         });
         expect(
           await tx.query.materialStock.findFirst({

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import Big from "big.js";
 import { PACKAGING_USAGE_BASIS } from "@/lib/recipe-packaging";
+import { lotPickSchema } from "@/lib/inventory/material-lots";
 import { calculatePackingLine } from "@/lib/production/batch-packing";
 
 export const createRecipeSchema = z.object({
@@ -196,6 +197,7 @@ export const transferStockSchema = z
     quantity: z.string(), // Cartons (for FG) or Amount (for others)
     looseUnits: z.string(), // Loose units (only for FG)
     notes: z.string(),
+    lotPicks: z.array(lotPickSchema).max(50).optional(), // Raw materials only
   })
   .refine(
     (data) => {

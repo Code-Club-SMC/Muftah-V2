@@ -15,9 +15,10 @@ import { requireInventoryManageMiddleware } from "@/lib/middlewares";
 import { lockCartonStock } from "@/lib/cartons/stock-adjustment.server";
 import { z } from "zod";
 import {
-  transferFinishedStock,
-  transferMaterialStock,
-} from "./stock/transfer-stock-core.server";
+  lockMaterialStock,
+  relocateAllLots,
+} from "@/lib/inventory/material-lots.server";
+import { transferFinishedStock } from "./stock/transfer-stock-core.server";
 
 const toggleWarehouseStatusSchema = z.object({
   warehouseId: z.string().min(1),
@@ -95,25 +96,39 @@ export const toggleWarehouseStatusFn = createServerFn()
             );
           for (const item of sourceMaterials) {
             if (Number(item.quantity) <= 0) continue;
-            await transferMaterialStock(tx, {
+            const ref = {
+              materialType: item.chemicalId ? "chemical" : "packaging",
+              materialId: item.chemicalId ?? item.packagingMaterialId!,
+            } as const;
+            await lockMaterialStock(
+              tx,
+              [warehouseId, transferToWarehouseId],
+              [ref],
+            );
+            const moved = await relocateAllLots(tx, {
               fromWarehouseId: warehouseId,
               toWarehouseId: transferToWarehouseId,
-              materialType: item.chemicalId ? "chemical" : "packaging",
-              materialId: item.chemicalId ?? item.packagingMaterialId!,
-              quantity: item.quantity,
+              ref,
+              sourceId: warehouseId,
             });
             const audit = {
-              materialType: item.chemicalId ? "chemical" : "packaging",
-              materialId: item.chemicalId ?? item.packagingMaterialId!,
-              amount: item.quantity,
+              ...ref,
               referenceId: warehouseId,
               performedById: context.session.user.id,
               reason: "Warehouse deactivation stock transfer",
             };
-            await tx.insert(inventoryAuditLog).values([
-              { ...audit, warehouseId, type: "debit" },
-              { ...audit, warehouseId: transferToWarehouseId, type: "credit" },
-            ]);
+            await tx.insert(inventoryAuditLog).values(
+              moved.flatMap((row) => [
+                { ...audit, amount: row.quantity, lotId: row.lotId, warehouseId, type: "debit" },
+                {
+                  ...audit,
+                  amount: row.quantity,
+                  lotId: row.lotId,
+                  warehouseId: transferToWarehouseId,
+                  type: "credit",
+                },
+              ]),
+            );
           }
           const sourceFinished = await tx
             .select()

@@ -10,6 +10,7 @@ export const useTransferStock = () => {
       toast.success("Stock transferred successfully");
       queryClient.invalidateQueries({ queryKey: ["inventory"] });
       queryClient.invalidateQueries({ queryKey: ["factory-floor"] });
+      queryClient.invalidateQueries({ queryKey: ["material-lots"] });
     },
     onError: (error) => {
       toast.error(error.message || "Failed to transfer stock");

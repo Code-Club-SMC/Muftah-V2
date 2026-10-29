@@ -1,4 +1,4 @@
-import { useForm } from "@tanstack/react-form";
+import { useForm, useStore } from "@tanstack/react-form";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { Loader2, ArrowRightLeft } from "lucide-react";
 import { useState } from "react";
@@ -17,6 +17,9 @@ import {
 } from "../ui/select";
 import { Textarea } from "../ui/textarea";
 import { useTransferStock } from "@/hooks/stock/use-transfer-stock";
+import { useMaterialLots } from "@/hooks/stock/use-material-lots";
+import { LotPicker, lotPicksValid } from "./lot-picker";
+import type { LotPick } from "@/lib/inventory/material-lots";
 
 import { type Warehouse } from "@/lib/types";
 import { Badge } from "../ui/badge";
@@ -65,6 +68,7 @@ export const TransferStockDialog = ({
   });
 
   const mutate = useTransferStock();
+  const [pickState, setPickState] = useState<{ key: string; picks: LotPick[] }>({ key: "", picks: [] });
 
   const form = useForm({
     defaultValues: {
@@ -81,7 +85,12 @@ export const TransferStockDialog = ({
     },
     onSubmit: async ({ value }) => {
       await mutate.mutateAsync(
-        { data: value },
+        {
+          data: {
+            ...value,
+            lotPicks: value.materialType === "finished" ? undefined : lotPicks,
+          },
+        },
         {
           onSuccess: () => {
             onOpenChange(false);
@@ -98,6 +107,33 @@ export const TransferStockDialog = ({
       : materialType === "packaging"
         ? materials.packagings
         : products.flatMap((p) => p.recipes);
+
+  const fromWarehouseId = useStore(form.store, (s) => s.values.fromWarehouseId);
+  const materialId = useStore(form.store, (s) => s.values.materialId);
+  const quantity = useStore(form.store, (s) => s.values.quantity);
+  const isRaw = materialType !== "finished";
+  const lots = useMaterialLots(
+    fromWarehouseId || undefined,
+    isRaw ? materialType : "chemical",
+    isRaw ? [materialId] : [],
+  );
+  // Picks belong to one store, item and quantity; they start over when any of them changes.
+  const pickKey = [fromWarehouseId, materialType, materialId, quantity].join("|");
+  const lotPicks = pickState.key === pickKey ? pickState.picks : [];
+  const setLotPicks = (picks: LotPick[]) => setPickState({ key: pickKey, picks });
+  const selectedMaterial = isRaw
+    ? (availableMaterials as { id: string; name: string; unit?: string }[]).find(
+        (m) => m.id === materialId,
+      )
+    : undefined;
+  const lotUnit = selectedMaterial?.unit ?? "pcs";
+  const materialLots = lots.data?.[materialId] ?? [];
+  const showLotPicker =
+    !!selectedMaterial && !!lots.data && Number(quantity) > 0;
+  const lotsReady =
+    !isRaw ||
+    (showLotPicker &&
+      lotPicksValid(quantity, lotPicks, materialLots, selectedMaterial.name, lotUnit));
 
   return (
     <ResponsiveDialog
@@ -307,6 +343,17 @@ export const TransferStockDialog = ({
             )}
           </div>
 
+          {isRaw && showLotPicker && (
+            <LotPicker
+              name={selectedMaterial.name}
+              unit={lotUnit}
+              required={quantity}
+              lots={materialLots}
+              value={lotPicks}
+              onChange={setLotPicks}
+            />
+          )}
+
           {/* Notes */}
           <form.Field name="notes">
             {(field) => (
@@ -333,7 +380,7 @@ export const TransferStockDialog = ({
             </Button>
             <Button
               type="submit"
-              disabled={form.state.isSubmitting}
+              disabled={form.state.isSubmitting || !lotsReady}
               className="flex-1"
             >
               {form.state.isSubmitting ? (

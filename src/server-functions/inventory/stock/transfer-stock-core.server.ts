@@ -1,11 +1,10 @@
 import Big from "big.js";
-import { and, eq, gte, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import {
   db,
   adjustmentLog,
   cartons,
   finishedGoodsStock,
-  materialStock,
   recipes,
 } from "@/db";
 import { deriveCartonStatus } from "@/lib/cartons/carton.guards";
@@ -15,6 +14,12 @@ import {
 } from "@/lib/cartons/stock-adjustment.server";
 
 import { moveOutsidePacks } from "@/lib/cartons/outside-packs.server";
+import {
+  lockMaterialStock,
+  moveLotStock,
+  takeLotPicks,
+} from "@/lib/inventory/material-lots.server";
+import type { LotPick, MaterialType } from "@/lib/inventory/material-lots";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 type Movement = {
@@ -287,60 +292,35 @@ export async function transferMaterialStock(
   input: {
     fromWarehouseId: string;
     toWarehouseId: string;
-    materialType: "chemical" | "packaging";
+    materialType: MaterialType;
     materialId: string;
     quantity: string;
+    picks: LotPick[];
+    name: string;
+    unit: string;
+    referenceId: string;
   },
 ) {
-  const column =
-    input.materialType === "chemical"
-      ? materialStock.chemicalId
-      : materialStock.packagingMaterialId;
-  await tx
-    .select({ id: materialStock.id })
-    .from(materialStock)
-    .where(
-      and(
-        inArray(materialStock.warehouseId, [
-          input.fromWarehouseId,
-          input.toWarehouseId,
-        ]),
-        eq(column, input.materialId),
-      ),
-    )
-    .orderBy(materialStock.warehouseId)
-    .for("update");
-  const quantity = new Big(input.quantity).toFixed(3);
-  const [debited] = await tx
-    .update(materialStock)
-    .set({
-      quantity: sql`${materialStock.quantity} - ${quantity}`,
-      updatedAt: new Date(),
-    })
-    .where(
-      and(
-        eq(materialStock.warehouseId, input.fromWarehouseId),
-        eq(column, input.materialId),
-        gte(materialStock.quantity, quantity),
-      ),
-    )
-    .returning();
-  if (!debited) throw new Error("Insufficient stock for transfer");
-  await tx
-    .insert(materialStock)
-    .values({
+  const ref = { materialType: input.materialType, materialId: input.materialId };
+  await lockMaterialStock(tx, [input.fromWarehouseId, input.toWarehouseId], [ref]);
+  const picked = await takeLotPicks(tx, {
+    warehouseId: input.fromWarehouseId,
+    ref,
+    name: input.name,
+    unit: input.unit,
+    required: new Big(input.quantity).toFixed(3),
+    picks: input.picks,
+    sourceType: "transfer_out",
+    sourceId: input.referenceId,
+  });
+  for (const row of picked)
+    await moveLotStock(tx, {
+      ref,
+      lotId: row.lotId,
       warehouseId: input.toWarehouseId,
-      chemicalId: input.materialType === "chemical" ? input.materialId : null,
-      packagingMaterialId:
-        input.materialType === "packaging" ? input.materialId : null,
-      quantity,
-    })
-    .onConflictDoUpdate({
-      target: [materialStock.warehouseId, column],
-      targetWhere: sql`${column} IS NOT NULL`,
-      set: {
-        quantity: sql`${materialStock.quantity} + ${quantity}`,
-        updatedAt: new Date(),
-      },
+      delta: row.quantity,
+      sourceType: "transfer_in",
+      sourceId: input.referenceId,
     });
+  return picked;
 }
