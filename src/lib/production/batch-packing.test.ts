@@ -1,6 +1,6 @@
 import Big from "big.js";
 import { describe, expect, it } from "vitest";
-import { calculatePackingLine, packingBulk } from "./batch-packing";
+import { calculatePackingLine, packingBulk, packingMaterialNeeds } from "./batch-packing";
 import { getPackagingTarget } from "./packaging-quantity";
 
 const format = { fillAmount: "250", fillUnit: "g", containersPerCarton: 40, usesCartons: true };
@@ -36,5 +36,28 @@ describe("batch packing quantities", () => {
     expect(() => packingBulk("0.0001")).toThrow("three decimal");
     expect(() => calculatePackingLine({ ...counts, actualBulk: "201" }, format, "kg")).toThrow("reason");
     expect(calculatePackingLine({ ...counts, actualBulk: "201", varianceReason: "Measured heavier fill" }, format, "kg").actualBulk).toBe("201.000");
+  });
+});
+
+describe("packingMaterialNeeds", () => {
+  it("adds retail packs, cartons and extras, and keeps each format's share", () => {
+    const needs = packingMaterialNeeds(
+      [
+        { formatId: "f100", containerPackagingId: "bag", cartonPackagingId: "box", totalPacks: 1080, physicalCartons: 45 },
+        { formatId: "f50", containerPackagingId: "bag", cartonPackagingId: "box", totalPacks: 240, physicalCartons: 5 },
+      ],
+      [
+        { recipeId: "f100", packagingMaterialId: "cap", quantityPerContainer: "1", usageBasis: "per_unit" },
+        { recipeId: "f100", packagingMaterialId: "sticker", quantityPerContainer: "1", usageBasis: "per_carton" },
+      ],
+    );
+    expect(needs.get("bag")!.total.toString()).toBe("1320");
+    expect(needs.get("bag")!.byFormat.get("f50")!.toString()).toBe("240");
+    expect(needs.get("box")!.total.toString()).toBe("50");
+    expect(needs.get("cap")!.total.toString()).toBe("1080");
+    expect(needs.get("sticker")!.total.toString()).toBe("45");
+  });
+  it("requires a retail pack", () => {
+    expect(() => packingMaterialNeeds([{ formatId: "f", containerPackagingId: null, cartonPackagingId: null, totalPacks: 1, physicalCartons: 0 }], [])).toThrow("A retail pack material is required");
   });
 });

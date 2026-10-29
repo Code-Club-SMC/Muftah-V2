@@ -1,13 +1,14 @@
 import Big from "big.js";
-import { and, eq, gte, inArray, isNull, ne, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import type { db } from "@/db";
 import { batchPackingReceipts, formulas, mixingRuns, packagingAllocations, packagingMaterialsUsed, outsidePackMovements } from "@/db/schemas/production-schema";
-import { finishedGoodsStock, inventoryAuditLog, materialStock, packagingMaterials, recipePackaging, recipes, warehouses, wacHistory } from "@/db/schemas/inventory-schema";
+import { finishedGoodsStock, inventoryAuditLog, packagingMaterials, recipePackaging, recipes, warehouses, wacHistory } from "@/db/schemas/inventory-schema";
 import { cartons, adjustmentLog } from "@/db/schemas/manufacturing-schema";
-import { calculatePackingLine, packingBulk } from "@/lib/production/batch-packing";
+import { calculatePackingLine, packingBulk, packingMaterialNeeds } from "@/lib/production/batch-packing";
+import { materialLotPicksSchema } from "@/lib/inventory/material-lots";
+import { lockMaterialStock, takeLotPicks } from "@/lib/inventory/material-lots.server";
 import { lockFinishedGoods } from "@/lib/production/finished-goods-lock.server";
 import { hasPermission } from "@/lib/rbac";
-import { normalizePackagingUsageBasis } from "@/lib/recipe-packaging";
 import { z } from "zod";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -15,6 +16,7 @@ export const batchPackingSchema = z.object({
   mixingRunId: z.string().min(1), requestId: z.string().min(1).max(100), packedAt: z.coerce.date(),
   lines: z.array(z.object({ recipeId: z.string().min(1), fullCartons: z.number().int().nonnegative(), partialPacks: z.number().int().nonnegative(), loosePacks: z.number().int().nonnegative(), actualBulk: z.string().optional(), varianceReason: z.string().max(2000).optional() })).min(1).max(100),
   lossBulk: z.string(), lossReason: z.string().max(2000).optional(),
+  lotPicks: z.array(materialLotPicksSchema).max(100),
 });
 export type BatchPackingInput = z.infer<typeof batchPackingSchema>;
 export type PackingActor = { id: string; permissions: readonly string[] | Set<string> };
@@ -35,7 +37,7 @@ export async function recordBatchPackingCore(tx: Tx, input: BatchPackingInput, a
   const [run] = await tx.select().from(mixingRuns).where(eq(mixingRuns.id, data.mixingRunId)).for("update");
   if (!run) throw new Error("Mixing batch not found");
   authorizePacking(actor, run.operatorId);
-  const payload = JSON.stringify({ ...data, packedAt: data.packedAt.toISOString(), lines: [...data.lines].sort((a, b) => a.recipeId.localeCompare(b.recipeId)) });
+  const payload = JSON.stringify({ ...data, packedAt: data.packedAt.toISOString(), lines: [...data.lines].sort((a, b) => a.recipeId.localeCompare(b.recipeId)), lotPicks: [...data.lotPicks].sort((a, b) => a.materialId.localeCompare(b.materialId)) });
   const [existing] = await tx.select().from(batchPackingReceipts).where(and(eq(batchPackingReceipts.mixingRunId, run.id), eq(batchPackingReceipts.requestId, data.requestId)));
   if (existing) {
     if (existing.requestPayload !== payload || existing.actorId !== actor.id) throw new Error("This request ID was already used with different packing details");
@@ -62,27 +64,37 @@ export async function recordBatchPackingCore(tx: Tx, input: BatchPackingInput, a
   if (totalPacks > 2147483647) throw new Error("Total pack count exceeds the supported limit");
   const materials = await tx.select().from(packagingMaterials).orderBy(packagingMaterials.id).for("share");
   const extras = await tx.select().from(recipePackaging).where(inArray(recipePackaging.recipeId, ids)).orderBy(recipePackaging.id).for("share");
-  const requirements = new Map<string, Big>();
-  const lineRequirements = prepared.map(({ format, quantity }) => {
-    const needs = new Map<string, Big>();
-    const add = (id: string | null, count: Big) => {
-      if (!id || count.eq(0)) return;
-      if (!materials.some(material => material.id === id)) throw new Error("Packaging material not found");
-      needs.set(id, (needs.get(id) ?? new Big(0)).plus(count));
-      requirements.set(id, (requirements.get(id) ?? new Big(0)).plus(count));
-    };
-    if (!format.containerPackagingId) throw new Error("A retail pack material is required");
-    add(format.containerPackagingId, new Big(quantity.totalPacks));
-    add(format.cartonPackagingId, new Big(quantity.physicalCartons));
-    for (const extra of extras.filter(row => row.recipeId === format.id)) add(extra.packagingMaterialId, new Big(extra.quantityPerContainer).times(normalizePackagingUsageBasis(extra.usageBasis) === "per_carton" ? quantity.physicalCartons : quantity.totalPacks));
-    return needs;
-  });
-  // Stable material order, followed by finished stock, then individual cartons.
-  for (const [id, required] of [...requirements].sort(([a], [b]) => a.localeCompare(b))) {
-    const amount = packingBulk(required.toString(), "Packaging material quantity");
-    const [debited] = await tx.update(materialStock).set({ quantity: sql`${materialStock.quantity} - ${amount}`, updatedAt: new Date() }).where(and(eq(materialStock.warehouseId, run.warehouseId), eq(materialStock.packagingMaterialId, id), gte(materialStock.quantity, amount))).returning({ id: materialStock.id });
-    if (!debited) throw new Error(`Insufficient factory floor stock for ${materials.find(material => material.id === id)!.name}`);
+  const needs = packingMaterialNeeds(prepared.map(({ format, quantity }) => ({ formatId: format.id, containerPackagingId: format.containerPackagingId, cartonPackagingId: format.cartonPackagingId, totalPacks: quantity.totalPacks, physicalCartons: quantity.physicalCartons })), extras);
+  const refs = [...needs.keys()].map(materialId => ({ materialType: "packaging" as const, materialId }));
+  await lockMaterialStock(tx, [run.warehouseId], refs);
+  // A material shared by two formats is split by how many each used; lots split the same way.
+  // Shares are assigned cumulatively so quantities and cents add up to what each lot gave.
+  const usageByFormat = new Map<string, { materialId: string; lotId: string; unitPrice: string; quantity: string; totalCost: string }[]>();
+  for (const [materialId, need] of [...needs].sort(([a], [b]) => a.localeCompare(b))) {
+    const material = materials.find(row => row.id === materialId);
+    if (!material) throw new Error("Packaging material not found");
+    const chosen = data.lotPicks.find(row => row.materialId === materialId);
+    if (!chosen) throw new Error(`Pick lots for ${material.name}`);
+    const picked = await takeLotPicks(tx, { warehouseId: run.warehouseId, ref: { materialType: "packaging", materialId }, name: material.name, unit: "pcs", required: packingBulk(need.total.toString(), "Packaging material quantity"), picks: chosen.picks, sourceType: "packing", sourceId: data.requestId });
+    for (const lot of picked) {
+      let share = new Big(0);
+      let assignedQuantity = new Big(0);
+      let assignedCost = new Big(0);
+      for (const { format } of prepared) {
+        const used = need.byFormat.get(format.id);
+        if (!used) continue;
+        share = share.plus(used);
+        const quantity = new Big(lot.quantity).times(share).div(need.total).round(3).minus(assignedQuantity);
+        const totalCost = new Big(lot.totalCost).times(share).div(need.total).round(2).minus(assignedCost);
+        assignedQuantity = assignedQuantity.plus(quantity);
+        assignedCost = assignedCost.plus(totalCost);
+        const rows = usageByFormat.get(format.id) ?? [];
+        rows.push({ materialId, lotId: lot.lotId, unitPrice: lot.unitPrice, quantity: quantity.toFixed(3), totalCost: totalCost.toFixed(2) });
+        usageByFormat.set(format.id, rows);
+      }
+    }
   }
+  if (data.lotPicks.some(row => !needs.has(row.materialId))) throw new Error("Lots were picked for a material this packing does not use");
   await lockFinishedGoods(tx, run.warehouseId, ids);
   // Legacy jobs retain their reserved bulk and cost. Allocate the remaining
   // pool cumulatively so splitting a receipt cannot create or lose cents.
@@ -95,21 +107,20 @@ export async function recordBatchPackingCore(tx: Tx, input: BatchPackingInput, a
   const [receipt] = await tx.insert(batchPackingReceipts).values({ mixingRunId: run.id, requestId: data.requestId, requestPayload: payload, actorId: actor.id, packedAt: data.packedAt, bulkConsumed: consumed.toFixed(3), lossBulk, lossReason: data.lossReason?.trim(), totalPacks, costAudit: { chemicalCost: chemicalTotal.toFixed(2), lossCostPolicy: "Loss chemical cost is absorbed by this receipt's outputs, apportioned by actual bulk consumed" } }).returning();
   let assignedChemical = new Big(0);
   let assignedBulk = new Big(0);
-  for (const [index, item] of prepared.entries()) {
+  for (const item of prepared) {
     const { line, format, quantity } = item;
     assignedBulk = assignedBulk.plus(quantity.actualBulk);
     const chemicalCost = chemicalTotal.times(assignedBulk).div(consumed).round(2).minus(assignedChemical);
     assignedChemical = assignedChemical.plus(chemicalCost);
-    const materialRows = [...lineRequirements[index]].map(([id, amount]) => ({ id, amount, material: materials.find(material => material.id === id)! }));
-    const packagingCost = materialRows.reduce((total, row) => total.plus(row.amount.times(row.material.costPerUnit ?? 0).round(2)), new Big(0));
+    const usage = usageByFormat.get(format.id) ?? [];
+    const packagingCost = usage.reduce((total, row) => total.plus(row.totalCost), new Big(0));
     const cost = chemicalCost.plus(packagingCost);
     const perPack = cost.div(quantity.totalPacks);
     const capacity = format.containersPerCarton ?? 0;
     const [allocation] = await tx.insert(packagingAllocations).values({ mixingRunId: run.id, recipeId: format.id, warehouseId: run.warehouseId, operatorId: run.operatorId, initiatorId: actor.id, packingReceiptId: receipt.id, formatSnapshot: { id: format.id, name: format.name, fillAmount: format.fillAmount, fillUnit: format.fillUnit, containersPerCarton: capacity, usesCartons: !!format.cartonPackagingId }, fullCartonsRecorded: line.fullCartons, partialPacksRecorded: line.partialPacks, outsidePacksRecorded: line.loosePacks, nominalBulkRecorded: quantity.nominalBulk, varianceReason: line.varianceReason?.trim(), allocatedBulkQuantity: quantity.actualBulk, allocatedBulkUnit: run.bulkUnit, allocatedChemicalCost: chemicalCost.toFixed(2), targetContainers: quantity.totalPacks, targetCartons: line.fullCartons, targetLooseUnits: line.partialPacks + line.loosePacks, completedContainers: quantity.totalPacks, actualBulkConsumed: quantity.actualBulk, actualCartonsProduced: line.fullCartons, actualPacksProduced: quantity.totalPacks, actualLooseUnitsProduced: line.partialPacks + line.loosePacks, totalPackagingCost: packagingCost.toFixed(2), totalProductionCost: cost.toFixed(2), actualCostPerPack: perPack.toFixed(4), actualCostPerCarton: perPack.times(capacity).toFixed(4), status: "completed", startedAt: data.packedAt, completedAt: data.packedAt, closedBy: actor.id }).returning();
-    for (const row of materialRows) {
-      const amount = packingBulk(row.amount.toString());
-      await tx.insert(packagingMaterialsUsed).values({ packagingAllocationId: allocation.id, materialId: row.id, quantityUsed: amount, costPerUnit: row.material.costPerUnit ?? "0", totalCost: row.amount.times(row.material.costPerUnit ?? 0).toFixed(2) });
-      await tx.insert(inventoryAuditLog).values({ warehouseId: run.warehouseId, materialType: "packaging", materialId: row.id, type: "debit", amount, reason: `Batch packing receipt ${receipt.id}`, performedById: actor.id, referenceId: receipt.id });
+    for (const row of usage) {
+      await tx.insert(packagingMaterialsUsed).values({ packagingAllocationId: allocation.id, materialId: row.materialId, lotId: row.lotId, quantityUsed: row.quantity, costPerUnit: row.unitPrice, totalCost: row.totalCost });
+      await tx.insert(inventoryAuditLog).values({ warehouseId: run.warehouseId, materialType: "packaging", materialId: row.materialId, lotId: row.lotId, type: "debit", amount: row.quantity, reason: `Batch packing receipt ${receipt.id}`, performedById: actor.id, referenceId: receipt.id });
     }
     const cartonRows = Array.from({ length: line.fullCartons }, () => ({ recipeId: format.id, packagingAllocationId: allocation.id, warehouseId: run.warehouseId, sku: format.name, capacity, currentPacks: capacity, status: "COMPLETE" }));
     if (line.partialPacks) cartonRows.push({ recipeId: format.id, packagingAllocationId: allocation.id, warehouseId: run.warehouseId, sku: format.name, capacity, currentPacks: line.partialPacks, status: "PARTIAL" });

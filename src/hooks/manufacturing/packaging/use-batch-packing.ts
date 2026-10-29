@@ -32,6 +32,7 @@ export function useRefreshBatchPacking() {
           ["item-detail"],
           ["consumption-history"],
           ["low-stock-alerts"],
+          ["material-lots"],
         ].map((queryKey) => client.invalidateQueries({ queryKey })),
       );
     },

@@ -3,7 +3,9 @@ import { and, eq, inArray } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { db, user, warehouses, products, packagingMaterials, materialStock, recipes, finishedGoodsStock, cartons, invoiceItems, inventoryAuditLog, wacHistory } from "@/db";
 import { batchPackingReceipts, formulas, mixingRuns, packagingAllocations, outsidePackMovements, packagingMaterialsUsed } from "@/db/schemas/production-schema";
-import { packingAvailability, recordBatchPackingCore } from "@/server-functions/manufacturing/packaging/batch-packing-core.server";
+import { packingAvailability, recordBatchPackingCore, type BatchPackingInput, type PackingActor } from "@/server-functions/manufacturing/packaging/batch-packing-core.server";
+import { findOrCreateLot, listLotBalances, lockMaterialStock, moveLotStock } from "@/lib/inventory/material-lots.server";
+import { calculatePackingLine, packingMaterialNeeds } from "@/lib/production/batch-packing";
 import { postInvoice } from "@/server-functions/sales/invoice-posting-service";
 import { reverseInvoiceStock } from "@/lib/cartons/invoice-stock.server";
 import { recordSalesReturnCartons } from "@/lib/cartons/sales-return.server";
@@ -33,9 +35,35 @@ async function seed(tx: Tx) {
     { name: `${id}-1kg`, fillAmount: "1", fillUnit: "kg", containersPerCarton: 0, cartonPackagingId: null },
   ].map(row => ({ ...row, productId: product.id, formulaId: formula.id, batchSize: "500", batchUnit: "kg", containerType: "pack", containerPackagingId: primary.id }))).returning();
   const [run] = await tx.insert(mixingRuns).values({ batchId: id, formulaId: formula.id, warehouseId: warehouse.id, operatorId: actor.id, targetBulkQuantity: "500", actualBulkProduced: "500", totalChemicalCost: "5000", bulkUnit: "kg", status: "completed" }).returning();
-  await tx.insert(materialStock).values([{ warehouseId: warehouse.id, packagingMaterialId: primary.id, quantity: "10000" }, { warehouseId: warehouse.id, packagingMaterialId: master.id, quantity: "1000" }]);
+  const packRef = { materialType: "packaging" as const, materialId: primary.id };
+  const cartonRef = { materialType: "packaging" as const, materialId: master.id };
+  await lockMaterialStock(tx, [warehouse.id], [packRef, cartonRef]);
+  const packLot = await findOrCreateLot(tx, packRef, "2");
+  const cartonLot = await findOrCreateLot(tx, cartonRef, "5");
+  await moveLotStock(tx, { ref: packRef, lotId: packLot.id, warehouseId: warehouse.id, delta: "10000", sourceType: "purchase" });
+  await moveLotStock(tx, { ref: cartonRef, lotId: cartonLot.id, warehouseId: warehouse.id, delta: "1000", sourceType: "purchase" });
   const input = { mixingRunId: run.id, requestId: randomUUID(), packedAt: new Date("2026-10-09T09:00:00Z"), lossBulk: "0", lines: [{ recipeId: formats[0].id, fullCartons: 20, partialPacks: 0, loosePacks: 0 }, { recipeId: formats[1].id, fullCartons: 10, partialPacks: 0, loosePacks: 0 }, { recipeId: formats[2].id, fullCartons: 10, partialPacks: 0, loosePacks: 0 }, { recipeId: formats[3].id, fullCartons: 0, partialPacks: 0, loosePacks: 100 }] };
-  return { actor: { id: actor.id, permissions: ["manufacturing.run.manage"] }, warehouse, target, product, primary, master, formula, formats, run, input };
+  return { actor: { id: actor.id, permissions: ["manufacturing.run.manage"] }, warehouse, target, product, primary, master, packLot, cartonLot, formula, formats, run, input };
+}
+// Each packaging material's whole need comes from its first lot in the batch's store, unless the test picks.
+async function withLots(tx: Tx, input: Omit<BatchPackingInput, "lotPicks"> & { lotPicks?: BatchPackingInput["lotPicks"] }): Promise<BatchPackingInput> {
+  if (input.lotPicks) return input as BatchPackingInput;
+  const [run] = await tx.select().from(mixingRuns).where(eq(mixingRuns.id, input.mixingRunId));
+  const formats = await tx.select().from(recipes).where(inArray(recipes.id, input.lines.map(line => line.recipeId)));
+  const needs = packingMaterialNeeds(input.lines.map(line => {
+    const format = formats.find(row => row.id === line.recipeId)!;
+    const usesCartons = !!format.cartonPackagingId && (format.containersPerCarton ?? 0) > 0;
+    const quantity = calculatePackingLine(line, { ...format, containersPerCarton: format.containersPerCarton ?? 0, usesCartons }, run.bulkUnit);
+    return { formatId: format.id, containerPackagingId: format.containerPackagingId, cartonPackagingId: format.cartonPackagingId, totalPacks: quantity.totalPacks, physicalCartons: quantity.physicalCartons };
+  }), []);
+  const lotPicks = await Promise.all([...needs].sort(([a], [b]) => a.localeCompare(b)).map(async ([materialId, need]) => {
+    const [lot] = await listLotBalances(tx, run.warehouseId, { materialType: "packaging", materialId });
+    return { materialId, picks: [{ lotId: lot.lotId, quantity: need.total.toString() }] };
+  }));
+  return { ...input, lotPicks };
+}
+async function record(tx: Tx, input: Parameters<typeof withLots>[1], actor: PackingActor) {
+  return recordBatchPackingCore(tx, await withLots(tx, input), actor);
 }
 async function fixture(check: (tx: Tx, f: Awaited<ReturnType<typeof seed>>) => Promise<void>) {
   if (!process.env.TEST_DATABASE_URL || process.env.DATABASE_URL !== process.env.TEST_DATABASE_URL) throw new Error("Use isolated TEST_DATABASE_URL");
@@ -46,9 +74,9 @@ const stockWhere = (f: Awaited<ReturnType<typeof seed>>, recipeId = f.formats[0]
 
 describe("batch packing isolated PostgreSQL", () => {
   it("posts the whole 500kg receipt atomically and replays without duplicate stock", async () => fixture(async (tx, f) => {
-    const result = await recordBatchPackingCore(tx, f.input, f.actor);
-    expect(await recordBatchPackingCore(tx, f.input, f.actor)).toEqual(result);
-    await expect(tx.transaction(inner => recordBatchPackingCore(inner, { ...f.input, lossBulk: "1", lossReason: "changed" }, f.actor))).rejects.toThrow("different packing details");
+    const result = await record(tx, f.input, f.actor);
+    expect(await record(tx, f.input, f.actor)).toEqual(result);
+    await expect(tx.transaction(inner => record(inner, { ...f.input, lossBulk: "1", lossReason: "changed" }, f.actor))).rejects.toThrow("different packing details");
     const rows = await tx.select().from(cartons).where(eq(cartons.warehouseId, f.warehouse.id));
     expect(rows).toHaveLength(40);
     expect(rows.reduce((sum, row) => sum + row.currentPacks, 0)).toBe(1250);
@@ -66,7 +94,7 @@ describe("batch packing isolated PostgreSQL", () => {
   }));
   it("keeps partial cartons and oversized outside counts distinct, consumes measured bulk and absorbs loss cost", async () => fixture(async (tx, f) => {
     const input = { ...f.input, lossBulk: "1", lossReason: "Spillage", lines: [{ recipeId: f.formats[0].id, fullCartons: 1, partialPacks: 3, loosePacks: 101, actualBulk: "37", varianceReason: "Measured fill" }] };
-    const result = await recordBatchPackingCore(tx, input, f.actor);
+    const result = await record(tx, input, f.actor);
     const [receipt] = await tx.select().from(batchPackingReceipts).where(eq(batchPackingReceipts.id, result.receiptId));
     expect(receipt.bulkConsumed).toBe("37.000");
     expect(receipt.lossBulk).toBe("1.000");
@@ -78,22 +106,59 @@ describe("batch packing isolated PostgreSQL", () => {
     expect(stock.quantityCartons * 40 + stock.quantityContainers).toBe(144);
     expect(Number(stock.totalInventoryValue)).toBe(678);
   }));
+  it("costs packaging at the picked lot prices", async () => fixture(async (tx, f) => {
+    const cartonRef = { materialType: "packaging" as const, materialId: f.master.id };
+    const dearer = await findOrCreateLot(tx, cartonRef, "6");
+    await moveLotStock(tx, { ref: cartonRef, lotId: dearer.id, warehouseId: f.warehouse.id, delta: "5", sourceType: "purchase" });
+    const lotPicks = [
+      { materialId: f.primary.id, picks: [{ lotId: f.packLot.id, quantity: "80" }] },
+      { materialId: f.master.id, picks: [{ lotId: f.cartonLot.id, quantity: "1" }, { lotId: dearer.id, quantity: "1" }] },
+    ];
+    const result = await record(tx, { ...f.input, lines: [{ recipeId: f.formats[0].id, fullCartons: 2, partialPacks: 0, loosePacks: 0 }], lotPicks }, f.actor);
+    const [allocation] = await tx.select().from(packagingAllocations).where(eq(packagingAllocations.packingReceiptId, result.receiptId));
+    const used = await tx.select().from(packagingMaterialsUsed).where(and(eq(packagingMaterialsUsed.packagingAllocationId, allocation.id), eq(packagingMaterialsUsed.materialId, f.master.id)));
+    expect(used.map(row => [row.lotId, row.quantityUsed, row.costPerUnit, row.totalCost]).sort()).toEqual([
+      [f.cartonLot.id, "1.000", "5.00", "5.00"], [dearer.id, "1.000", "6.00", "6.00"],
+    ].sort());
+    expect(allocation.totalPackagingCost).toBe("171.00");
+  }));
+  it("splits a lot shared by two formats by how many each used", async () => fixture(async (tx, f) => {
+    const cartonRef = { materialType: "packaging" as const, materialId: f.master.id };
+    const dearer = await findOrCreateLot(tx, cartonRef, "6");
+    await moveLotStock(tx, { ref: cartonRef, lotId: dearer.id, warehouseId: f.warehouse.id, delta: "5", sourceType: "purchase" });
+    const lines = [{ recipeId: f.formats[0].id, fullCartons: 1, partialPacks: 0, loosePacks: 0 }, { recipeId: f.formats[1].id, fullCartons: 1, partialPacks: 0, loosePacks: 0 }];
+    const lotPicks = [
+      { materialId: f.primary.id, picks: [{ lotId: f.packLot.id, quantity: "60" }] },
+      { materialId: f.master.id, picks: [{ lotId: f.cartonLot.id, quantity: "1" }, { lotId: dearer.id, quantity: "1" }] },
+    ];
+    const result = await record(tx, { ...f.input, lines, lotPicks }, f.actor);
+    const allocations = await tx.select().from(packagingAllocations).where(eq(packagingAllocations.packingReceiptId, result.receiptId));
+    const used = await tx.select().from(packagingMaterialsUsed).where(and(inArray(packagingMaterialsUsed.packagingAllocationId, allocations.map(row => row.id)), eq(packagingMaterialsUsed.materialId, f.master.id)));
+    expect(used).toHaveLength(4);
+    expect(used.every(row => row.quantityUsed === "0.500")).toBe(true);
+    expect(used.reduce((sum, row) => sum + Number(row.totalCost), 0)).toBe(11);
+    expect(allocations.reduce((sum, row) => sum + Number(row.totalPackagingCost), 0)).toBe(131);
+  }));
+  it("refuses packing when picks do not cover a material", async () => fixture(async (tx, f) => {
+    const lotPicks = [{ materialId: f.primary.id, picks: [{ lotId: f.packLot.id, quantity: "80" }] }];
+    await expect(record(tx, { ...f.input, lines: [{ recipeId: f.formats[0].id, fullCartons: 2, partialPacks: 0, loosePacks: 0 }], lotPicks }, f.actor)).rejects.toThrow("Pick lots for");
+  }));
   it("rolls back all lines on shortages and rejects wrong formulas, assignment and read-only permission", async () => fixture(async (tx, f) => {
-    await tx.update(materialStock).set({ quantity: "1" }).where(eq(materialStock.packagingMaterialId, f.master.id));
-    const failed = () => tx.transaction(inner => recordBatchPackingCore(inner, f.input, f.actor));
-    await expect(failed()).rejects.toThrow("Insufficient");
+    await moveLotStock(tx, { ref: { materialType: "packaging", materialId: f.master.id }, lotId: f.cartonLot.id, warehouseId: f.warehouse.id, delta: "-999", sourceType: "adjustment" });
+    const failed = () => tx.transaction(inner => record(inner, f.input, f.actor));
+    await expect(failed()).rejects.toThrow("has only 1 pcs here");
     expect(await tx.select().from(batchPackingReceipts).where(eq(batchPackingReceipts.mixingRunId, f.run.id))).toHaveLength(0);
     expect(await tx.select().from(finishedGoodsStock).where(eq(finishedGoodsStock.warehouseId, f.warehouse.id))).toHaveLength(0);
     expect(await tx.select().from(packagingMaterialsUsed).where(eq(packagingMaterialsUsed.materialId, f.primary.id))).toHaveLength(0);
     const [packs] = await tx.select().from(materialStock).where(eq(materialStock.packagingMaterialId, f.primary.id));
     expect(Number(packs.quantity)).toBe(10000);
-    await expect(tx.transaction(inner => recordBatchPackingCore(inner, f.input, { id: "someone-else", permissions: ["operator.run.complete"] }))).rejects.toThrow("another operator");
-    await expect(tx.transaction(inner => recordBatchPackingCore(inner, f.input, { id: f.actor.id, permissions: ["operator.run.read"] }))).rejects.toThrow("permission");
+    await expect(tx.transaction(inner => record(inner, f.input, { id: "someone-else", permissions: ["operator.run.complete"] }))).rejects.toThrow("another operator");
+    await expect(tx.transaction(inner => record(inner, f.input, { id: f.actor.id, permissions: ["operator.run.read"] }))).rejects.toThrow("permission");
     await tx.update(recipes).set({ formulaId: null }).where(eq(recipes.id, f.formats[0].id));
     await expect(failed()).rejects.toThrow("linked");
   }));
   it("dispatches outside packs without changing cartons, restores them on reversal and good return, then transfers them", async () => fixture(async (tx, f) => {
-    await recordBatchPackingCore(tx, { ...f.input, lines: [{ recipeId: f.formats[0].id, fullCartons: 1, partialPacks: 3, loosePacks: 101 }] }, f.actor);
+    await record(tx, { ...f.input, lines: [{ recipeId: f.formats[0].id, fullCartons: 1, partialPacks: 3, loosePacks: 101 }] }, f.actor);
     const request = { ...createInvoiceSchema.parse({ customerName: "Test", warehouseId: f.warehouse.id, paymentDueDate: new Date("2099-01-01"), items: [{ recipeId: f.formats[0].id, pack: f.formats[0].name, unitType: "units", numberOfUnits: 50, numberOfCartons: 0, packsPerCarton: 40, perCartonPrice: 800, retailPrice: 20, isPriceOverride: true }] }), performedById: f.actor.id, source: "offline_import" as const, publicInvoiceNumber: randomUUID(), businessDate: new Date(), stockPolicy: "strict" as const, creditPolicy: "block" as const, pricingPolicy: "live" as const };
     const invoice = await postInvoice(tx, request);
     const items = await tx.select().from(invoiceItems).where(eq(invoiceItems.invoiceId, invoice.id));
@@ -119,11 +184,11 @@ describe("batch packing isolated PostgreSQL", () => {
   it("keeps completed legacy reservation untouched", async () => fixture(async (tx, f) => {
     await tx.insert(packagingAllocations).values({ mixingRunId: f.run.id, recipeId: f.formats[0].id, warehouseId: f.warehouse.id, operatorId: f.actor.id, allocatedBulkQuantity: "480", allocatedBulkUnit: "kg", allocatedChemicalCost: "4800", targetContainers: 100, actualBulkConsumed: "25", status: "completed" });
     expect((await packingAvailability(tx, f.run)).toFixed(3)).toBe("20.000");
-    await expect(tx.transaction(inner => recordBatchPackingCore(inner, { ...f.input, lines: [{ recipeId: f.formats[0].id, fullCartons: 0, partialPacks: 0, loosePacks: 100 }] }, f.actor))).rejects.toThrow("available");
+    await expect(tx.transaction(inner => record(inner, { ...f.input, lines: [{ recipeId: f.formats[0].id, fullCartons: 0, partialPacks: 0, loosePacks: 100 }] }, f.actor))).rejects.toThrow("available");
   }));
   it("allocates tiny chemical costs cumulatively across repeated receipts and loss", async () => fixture(async (tx, f) => {
     await tx.update(mixingRuns).set({ actualBulkProduced: "3", totalChemicalCost: "0.02" }).where(eq(mixingRuns.id, f.run.id));
-    for (let index = 0; index < 3; index++) await recordBatchPackingCore(tx, { ...f.input, requestId: randomUUID(), lines: [{ recipeId: f.formats[0].id, fullCartons: 0, partialPacks: 0, loosePacks: 3 }], lossBulk: "0.25", lossReason: "Powder loss" }, f.actor);
+    for (let index = 0; index < 3; index++) await record(tx, { ...f.input, requestId: randomUUID(), lines: [{ recipeId: f.formats[0].id, fullCartons: 0, partialPacks: 0, loosePacks: 3 }], lossBulk: "0.25", lossReason: "Powder loss" }, f.actor);
     const receipts = await tx.select().from(batchPackingReceipts).where(eq(batchPackingReceipts.mixingRunId, f.run.id));
     expect(receipts.map(row => row.costAudit.chemicalCost).sort()).toEqual(["0.00", "0.01", "0.01"]);
     const allocations = await tx.select().from(packagingAllocations).where(eq(packagingAllocations.mixingRunId, f.run.id));
@@ -134,14 +199,14 @@ describe("batch packing isolated PostgreSQL", () => {
   it("retains legacy reserved cost and bulk while splitting the remaining tiny cost", async () => fixture(async (tx, f) => {
     await tx.update(mixingRuns).set({ actualBulkProduced: "4", totalChemicalCost: "0.02" }).where(eq(mixingRuns.id, f.run.id));
     await tx.insert(packagingAllocations).values({ mixingRunId: f.run.id, recipeId: f.formats[0].id, warehouseId: f.warehouse.id, operatorId: f.actor.id, allocatedBulkQuantity: "1", allocatedBulkUnit: "kg", allocatedChemicalCost: "0.01", targetContainers: 4, status: "allocated" });
-    for (let index = 0; index < 3; index++) await recordBatchPackingCore(tx, { ...f.input, requestId: randomUUID(), lines: [{ recipeId: f.formats[3].id, fullCartons: 0, partialPacks: 0, loosePacks: 1 }] }, f.actor);
+    for (let index = 0; index < 3; index++) await record(tx, { ...f.input, requestId: randomUUID(), lines: [{ recipeId: f.formats[3].id, fullCartons: 0, partialPacks: 0, loosePacks: 1 }] }, f.actor);
     const allocations = await tx.select().from(packagingAllocations).where(eq(packagingAllocations.mixingRunId, f.run.id));
     expect(allocations.reduce((sum, row) => sum + Number(row.allocatedChemicalCost), 0)).toBe(0.02);
     expect(allocations.find(row => !row.packingReceiptId)?.allocatedChemicalCost).toBe("0.01");
     expect((await packingAvailability(tx, { ...f.run, actualBulkProduced: "4" })).toFixed(3)).toBe("0.000");
   }));
   it("corrects outside packs with quantity and value audits while preserving physical cartons", async () => fixture(async (tx, f) => {
-    await recordBatchPackingCore(tx, { ...f.input, lines: [{ recipeId: f.formats[0].id, fullCartons: 1, partialPacks: 3, loosePacks: 101 }] }, f.actor);
+    await record(tx, { ...f.input, lines: [{ recipeId: f.formats[0].id, fullCartons: 1, partialPacks: 3, loosePacks: 101 }] }, f.actor);
     let [stock] = await tx.select().from(finishedGoodsStock).where(stockWhere(f));
     const correction = { stockId: stock.id, adjustmentType: "set" as const, quantity: 0, expectedCurrent: 101, reason: "Counted factory packs" };
     expect(await updateOutsidePackStockCore(tx, correction, f.actor.id)).toEqual({ success: true, stockId: stock.id, quantityOutsidePacks: 0 });
@@ -169,7 +234,7 @@ describe("batch packing isolated PostgreSQL", () => {
   }));
   it("normalizes legacy no-carton stock on a new receipt, correction and transfer", async () => fixture(async (tx, f) => {
     const [old] = await tx.insert(finishedGoodsStock).values({ warehouseId: f.warehouse.id, recipeId: f.formats[3].id, quantityContainers: 100, weightedAverageCostPerPack: "12", totalInventoryValue: "1200" }).returning();
-    await recordBatchPackingCore(tx, { ...f.input, lines: [{ recipeId: f.formats[3].id, fullCartons: 0, partialPacks: 0, loosePacks: 10 }] }, f.actor);
+    await record(tx, { ...f.input, lines: [{ recipeId: f.formats[3].id, fullCartons: 0, partialPacks: 0, loosePacks: 10 }] }, f.actor);
     let [stock] = await tx.select().from(finishedGoodsStock).where(eq(finishedGoodsStock.id, old.id));
     expect(stock.quantityOutsidePacks).toBe(110);
     await updateOutsidePackStockCore(tx, { stockId: old.id, adjustmentType: "set", quantity: 100, expectedCurrent: 110, reason: "Counted all packs" }, f.actor.id);
@@ -183,7 +248,7 @@ describe("batch packing isolated PostgreSQL", () => {
   it("uses recorded physical carton targets when outside packs exceed capacity", async () => {
     const f = await db.transaction(seed);
     try {
-    const result = await db.transaction(tx => recordBatchPackingCore(tx, { ...f.input, lines: [{ recipeId: f.formats[0].id, fullCartons: 1, partialPacks: 3, loosePacks: 101 }] }, f.actor));
+    const result = await db.transaction(tx => record(tx, { ...f.input, lines: [{ recipeId: f.formats[0].id, fullCartons: 1, partialPacks: 3, loosePacks: 101 }] }, f.actor));
     const [allocation] = await db.select().from(packagingAllocations).where(eq(packagingAllocations.packingReceiptId, result.receiptId));
     const kpis = await getBatchKpis(allocation.id);
     expect(kpis.totalCartons).toBe(2);
@@ -201,16 +266,16 @@ describe("batch packing isolated PostgreSQL", () => {
     try {
     const input = { ...f.input, lines: [{ recipeId: f.formats[0].id, fullCartons: 30, partialPacks: 0, loosePacks: 0 }] };
     const outcomes = await Promise.allSettled([
-      db.transaction(tx => recordBatchPackingCore(tx, input, f.actor)),
-      db.transaction(tx => recordBatchPackingCore(tx, { ...input, requestId: randomUUID() }, f.actor)),
+      db.transaction(tx => record(tx, input, f.actor)),
+      db.transaction(tx => record(tx, { ...input, requestId: randomUUID() }, f.actor)),
     ]);
     expect(outcomes.filter(outcome => outcome.status === "fulfilled")).toHaveLength(1);
     expect(outcomes.filter(outcome => outcome.status === "rejected")).toHaveLength(1);
     const [receipt] = await db.select().from(batchPackingReceipts).where(eq(batchPackingReceipts.mixingRunId, f.run.id));
     const successfulInput = { ...input, requestId: receipt.requestId };
     const retries = await Promise.all([
-      db.transaction(tx => recordBatchPackingCore(tx, successfulInput, f.actor)),
-      db.transaction(tx => recordBatchPackingCore(tx, successfulInput, f.actor)),
+      db.transaction(tx => record(tx, successfulInput, f.actor)),
+      db.transaction(tx => record(tx, successfulInput, f.actor)),
     ]);
     expect(retries[0].receiptId).toBe(receipt.id);
     expect(retries[1]).toEqual(retries[0]);

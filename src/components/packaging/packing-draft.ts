@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { lotPickSchema, materialLotPicksSchema } from "@/lib/inventory/material-lots";
 
 const lineSchema = z.object({
   recipeId: z.string(),
@@ -25,6 +26,7 @@ export const packingSubmissionSchema = z.object({
   ),
   lossBulk: z.string(),
   lossReason: z.string().optional(),
+  lotPicks: z.array(materialLotPicksSchema).default([]),
 });
 
 export const packingDraftSchema = z.object({
@@ -34,6 +36,8 @@ export const packingDraftSchema = z.object({
   lines: z.array(lineSchema),
   lossBulk: z.string(),
   lossReason: z.string(),
+  // Drafts saved before lots existed have no picks.
+  lotPicks: z.record(z.string(), z.array(lotPickSchema)).default({}),
   submitted: packingSubmissionSchema.optional(),
 });
 
@@ -49,6 +53,7 @@ export function newPackingDraft(): PackingDraft {
     lines: [],
     lossBulk: "",
     lossReason: "",
+    lotPicks: {},
   };
 }
 

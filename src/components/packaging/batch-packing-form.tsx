@@ -33,7 +33,10 @@ import {
   useRefreshBatchPacking,
 } from "@/hooks/manufacturing/packaging/use-batch-packing";
 import { getBatchPackingRequestFn } from "@/server-functions/manufacturing/packaging/get-batch-packing-context-fn";
-import { calculatePackingLine } from "@/lib/production/batch-packing";
+import { calculatePackingLine, packingMaterialNeeds } from "@/lib/production/batch-packing";
+import { LotPicker, lotPicksValid } from "@/components/inventory/lot-picker";
+import { useMaterialLots } from "@/hooks/stock/use-material-lots";
+import type { LotPick } from "@/lib/inventory/material-lots";
 import { PackingFormatRow } from "./packing-format-row";
 import {
   emptyPackingLine,
@@ -44,6 +47,26 @@ import {
 } from "./packing-draft";
 
 type PackingContext = NonNullable<ReturnType<typeof useBatchPacking>["data"]>;
+
+// Packaging the counted lines take. Lines with count errors are left out; they show their own error.
+function materialNeedsFor(data: PackingContext, lines: PackingDraft["lines"]) {
+  const items = lines.flatMap((line) => {
+    const format = data.formats.find((item) => item.id === line.recipeId);
+    const materials = data.formatMaterials.find((item) => item.formatId === line.recipeId);
+    if (!format || !materials) return [];
+    try {
+      const result = calculatePackingLine(packingLineInput(line), format, data.batch.bulkUnit);
+      return [{ ...materials, totalPacks: result.totalPacks, physicalCartons: result.physicalCartons }];
+    } catch {
+      return [];
+    }
+  });
+  try {
+    return { needs: packingMaterialNeeds(items, data.extras), error: "" };
+  } catch (caught) {
+    return { needs: new Map<string, { total: Big }>(), error: caught instanceof Error ? caught.message : "Check the packing formats." };
+  }
+}
 
 export function BatchPackingForm({ mixingRunId }: { mixingRunId: string }) {
   const query = useBatchPacking(mixingRunId);
@@ -105,6 +128,8 @@ export function BatchPackingEditor({
   const errorRef = useRef<HTMLDivElement>(null);
   const mutation = useRecordBatchPacking();
   const refreshStock = useRefreshBatchPacking();
+  const { needs, error: materialsError } = materialNeedsFor(data, draft?.lines ?? []);
+  const lots = useMaterialLots(data.warehouseId, "packaging", [...needs.keys()]);
 
   useEffect(() => {
     try {
@@ -236,10 +261,24 @@ export function BatchPackingEditor({
         .toISOString()
         .slice(0, 16)
     : "";
+  const needed = [...needs].map(([materialId, need]) => ({
+    materialId,
+    name: data.materials.find((item) => item.id === materialId)?.name ?? "Packaging material",
+    required: need.total.toString(),
+    picks: draft.lotPicks[materialId] ?? [],
+    lots: lots.data?.[materialId] ?? [],
+  }));
+  const setLotPicks = (materialId: string, picks: LotPick[]) =>
+    setDraft((current) => current && { ...current, lotPicks: { ...current.lotPicks, [materialId]: picks } });
+  const lotsValid =
+    !materialsError &&
+    (needed.length === 0 || !!lots.data) &&
+    needed.every((item) => lotPicksValid(item.required, item.picks, item.lots, item.name, "pcs"));
   const valid =
     dateValid &&
     draft.lines.length > 0 &&
     calculated.every((row) => !!row.result) &&
+    lotsValid &&
     !lossError &&
     !overdrawn &&
     packs > 0;
@@ -257,6 +296,10 @@ export function BatchPackingEditor({
       ...(draft.lossReason.trim()
         ? { lossReason: draft.lossReason.trim() }
         : {}),
+      lotPicks: needed.map((item) => ({
+        materialId: item.materialId,
+        picks: item.picks.filter((pick) => pick.quantity !== ""),
+      })),
     };
     const next = { ...draft, submitted: submission };
     // Persist before sending so a refresh after a lost response retries the same receipt.
@@ -556,6 +599,37 @@ export function BatchPackingEditor({
                   </CardContent>
                 </Card>
               )}
+            {!review && !draft.submitted && (materialsError || needed.length > 0) && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Materials used</CardTitle>
+                  <CardDescription>
+                    Choose which price lot each packaging material comes from.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="flex flex-col gap-4">
+                  {materialsError ? (
+                    <p className="text-sm text-destructive">{materialsError}</p>
+                  ) : lots.error ? (
+                    <p className="text-sm text-destructive">{lots.error.message}</p>
+                  ) : !lots.data ? (
+                    <Skeleton className="h-24 w-full" />
+                  ) : (
+                    needed.map((item) => (
+                      <LotPicker
+                        key={item.materialId}
+                        name={item.name}
+                        unit="pcs"
+                        required={item.required}
+                        lots={item.lots}
+                        value={item.picks}
+                        onChange={(picks) => setLotPicks(item.materialId, picks)}
+                      />
+                    ))
+                  )}
+                </CardContent>
+              </Card>
+            )}
             <details className="rounded-xl border p-5">
               <summary className="cursor-pointer py-1 text-sm font-medium focus-visible:outline-2">
                 Packing time

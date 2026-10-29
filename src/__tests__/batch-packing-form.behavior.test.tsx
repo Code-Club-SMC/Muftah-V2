@@ -13,6 +13,13 @@ const mocks = vi.hoisted(() => ({
   context: vi.fn(),
   record: vi.fn(),
   request: vi.fn(),
+  lots: vi.fn(),
+}));
+vi.mock("@/hooks/stock/use-material-lots", () => ({
+  useMaterialLots: (_warehouseId: string, _type: string, ids: string[]) => ({
+    data: ids.length ? mocks.lots() : undefined,
+    error: null,
+  }),
 }));
 vi.mock(
   "@/server-functions/manufacturing/packaging/get-batch-packing-context-fn",
@@ -66,8 +73,29 @@ function context() {
     ],
     receipts: [],
     legacyOpenJobs: 0,
+    warehouseId: "floor-1",
+    formatMaterials: ["100", "200", "150", "300"].map((formatId) => ({
+      formatId,
+      containerPackagingId: "pouch",
+      cartonPackagingId: formatId === "300" ? null : "carton",
+    })),
+    extras: [],
+    materials: [
+      { id: "pouch", name: "Pouch" },
+      { id: "carton", name: "Carton" },
+    ],
   };
 }
+const lot = (lotId: string, unitPrice: string, quantity: string, day: string) => ({
+  lotId,
+  unitPrice,
+  quantity,
+  firstPurchasedAt: `2026-10-${day}T05:00:00Z`,
+});
+const oneLotEach = () => ({
+  pouch: [lot("pouch-a", "2.00", "100000.000", "01")],
+  carton: [lot("carton-a", "5.00", "1000.000", "01")],
+});
 function mount() {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -100,6 +128,7 @@ describe("batch packing operator form", () => {
       mixingRunId: "batch-1",
     });
     mocks.request.mockResolvedValue({ status: "not_found" });
+    mocks.lots.mockReturnValue(oneLotEach());
   });
   afterEach(cleanup);
 
@@ -130,6 +159,31 @@ describe("batch packing operator form", () => {
       { recipeId: "300", fullCartons: 0, partialPacks: 0, loosePacks: 100 },
     ]);
     await waitFor(() => expect(localStorage.getItem(storageKey)).toBeNull());
+  });
+
+  it("asks for carton lots and blocks review until they add up", async () => {
+    mocks.lots.mockReturnValue({
+      ...oneLotEach(),
+      carton: [lot("carton-a", "5.00", "1.000", "01"), lot("carton-b", "6.00", "5.000", "20")],
+    });
+    mount();
+    await add("100");
+    count("Rs.100: Full cartons", "2");
+    expect(screen.getByText("Carton: 2 pcs needed")).toBeTruthy();
+    const review = screen.getByRole("button", { name: "Review packing" }) as HTMLButtonElement;
+    expect(review.disabled).toBe(true);
+    count("Rs 5/pcs (first 1 Oct), 1 pcs here", "1");
+    count("Rs 6/pcs (first 20 Oct), 5 pcs here", "1");
+    expect(review.disabled).toBe(false);
+    fireEvent.click(review);
+    fireEvent.click(screen.getByRole("button", { name: "Confirm & add to finished goods" }));
+    await screen.findByText("Packing saved");
+    expect(mocks.record.mock.calls[0][0].data.lotPicks).toEqual(
+      expect.arrayContaining([
+        { materialId: "pouch", picks: [{ lotId: "pouch-a", quantity: "80.000" }] },
+        { materialId: "carton", picks: expect.arrayContaining([{ lotId: "carton-a", quantity: "1" }, { lotId: "carton-b", quantity: "1" }]) },
+      ]),
+    );
   });
 
   it("calculates whole packs from kg and shows the powder remainder", async () => {

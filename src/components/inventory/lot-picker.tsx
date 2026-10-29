@@ -1,5 +1,5 @@
 import Big from "big.js";
-import { useEffect, useId } from "react";
+import { useEffect, useId, useRef } from "react";
 import { Input } from "@/components/ui/input";
 import { checkLotPicks, defaultLotPicks, lotLabel, type LotBalance, type LotPick } from "@/lib/inventory/material-lots";
 
@@ -9,11 +9,19 @@ export function lotPicksValid(required: string, picks: LotPick[], lots: LotBalan
 
 export function LotPicker({ name, unit, required, lots, value, onChange }: { name: string; unit: string; required: string; lots: LotBalance[]; value: LotPick[]; onChange: (picks: LotPick[]) => void }) {
   const id = useId();
+  const previousRequired = useRef(required);
   useEffect(() => {
+    const before = previousRequired.current;
+    previousRequired.current = required;
+    const preset = defaultLotPicks(required, lots);
     if (value.length === 0) {
-      const preset = defaultLotPicks(required, lots);
       if (preset.length) onChange(preset);
+      return;
     }
+    // A pre-fill the operator left alone follows the new requirement.
+    const stale = defaultLotPicks(before, lots);
+    const untouched = stale.length === 1 && value.length === 1 && value[0].lotId === stale[0].lotId && value[0].quantity === stale[0].quantity;
+    if (before !== required && untouched) onChange(preset);
     // Pre-fill once per requirement or lot list change, never over the operator's input.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [required, lots]);

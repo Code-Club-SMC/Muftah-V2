@@ -1,4 +1,5 @@
 import Big from "big.js";
+import { normalizePackagingUsageBasis } from "@/lib/recipe-packaging";
 import { getFillPerContainer } from "./packaging-quantity";
 
 export type PackingLine = {
@@ -37,4 +38,27 @@ export function calculatePackingLine(line: PackingLine, format: PackingFormat, b
   if (new Big(actualBulk).lte(0)) throw new Error("Actual bulk used must be positive");
   if (!new Big(actualBulk).eq(nominalBulk) && !line.varianceReason?.trim()) throw new Error("Give a reason for the measured fill difference");
   return { totalPacks, physicalCartons: line.fullCartons + Number(line.partialPacks > 0), nominalBulk, actualBulk };
+}
+
+// Packaging each format needs, totalled per material, keeping each format's share for costing.
+export function packingMaterialNeeds(
+  items: { formatId: string; containerPackagingId: string | null; cartonPackagingId: string | null; totalPacks: number; physicalCartons: number }[],
+  extras: { recipeId: string; packagingMaterialId: string; quantityPerContainer: string; usageBasis: string | null }[],
+) {
+  const needs = new Map<string, { total: Big; byFormat: Map<string, Big> }>();
+  const add = (materialId: string | null, formatId: string, count: Big) => {
+    if (!materialId || count.eq(0)) return;
+    const entry = needs.get(materialId) ?? { total: new Big(0), byFormat: new Map<string, Big>() };
+    entry.total = entry.total.plus(count);
+    entry.byFormat.set(formatId, (entry.byFormat.get(formatId) ?? new Big(0)).plus(count));
+    needs.set(materialId, entry);
+  };
+  for (const item of items) {
+    if (!item.containerPackagingId) throw new Error("A retail pack material is required");
+    add(item.containerPackagingId, item.formatId, new Big(item.totalPacks));
+    add(item.cartonPackagingId, item.formatId, new Big(item.physicalCartons));
+    for (const extra of extras.filter((row) => row.recipeId === item.formatId))
+      add(extra.packagingMaterialId, item.formatId, new Big(extra.quantityPerContainer).times(normalizePackagingUsageBasis(extra.usageBasis) === "per_carton" ? item.physicalCartons : item.totalPacks));
+  }
+  return needs;
 }
