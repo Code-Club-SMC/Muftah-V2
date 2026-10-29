@@ -10,6 +10,7 @@ export const useRecoverFailedProductionChemical = () => {
       queryClient.invalidateQueries({ queryKey: ["factory-floor"] });
       queryClient.invalidateQueries({ queryKey: ["low-stock-alerts"] });
       queryClient.invalidateQueries({ queryKey: ["inventory"] });
+      queryClient.invalidateQueries({ queryKey: ["material-lots"] });
       queryClient.invalidateQueries({ queryKey: ["mixing-runs"] });
       queryClient.invalidateQueries({ queryKey: ["mixing-run"] });
       queryClient.invalidateQueries({ queryKey: ["operator-mixing-runs"] });

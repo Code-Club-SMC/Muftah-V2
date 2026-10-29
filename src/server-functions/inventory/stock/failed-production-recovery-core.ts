@@ -1,9 +1,10 @@
 import Big from "big.js";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import {
   chemicals,
   db,
   failedProductionChemicalRecoveries,
+  materialLots,
   materialStock,
   mixingRuns,
 } from "@/db";
@@ -85,6 +86,20 @@ export async function loadFailedProductionRecoveryContext(
   const totalCost = usages.reduce((sum, row) => sum.plus(row.totalCost), new Big(0)).toNumber();
   if (expectedQuantity <= 0) throw new Error("Chemical deduction must be positive");
 
+  // Usage rows from one start share createdAt, so ties follow the lot picker's order.
+  const lotIds = [...new Set(usages.flatMap(row => (row.lotId ? [row.lotId] : [])))];
+  const lots = lotIds.length
+    ? await tx.select({ id: materialLots.id, firstPurchasedAt: materialLots.firstPurchasedAt }).from(materialLots).where(inArray(materialLots.id, lotIds))
+    : [];
+  const firstPurchased = new Map(lots.map(lot => [lot.id, lot.firstPurchasedAt]));
+  const lotUsages = usages
+    .map(row => ({ ...row, firstPurchasedAt: row.lotId ? firstPurchased.get(row.lotId) ?? null : null }))
+    .sort((a, b) =>
+      a.createdAt.getTime() - b.createdAt.getTime() ||
+      (a.firstPurchasedAt?.getTime() ?? 0) - (b.firstPurchasedAt?.getTime() ?? 0) ||
+      new Big(a.costPerUnit).cmp(b.costPerUnit) ||
+      (a.lotId ?? "").localeCompare(b.lotId ?? ""));
+
   const settlement = await tx.query.failedProductionChemicalRecoveries.findFirst({
     where: and(
       eq(failedProductionChemicalRecoveries.mixingRunId, run.id),
@@ -104,6 +119,7 @@ export async function loadFailedProductionRecoveryContext(
     run,
     chemical,
     chemicalUsage,
+    lotUsages,
     settlement,
     currentStock,
     expectedQuantity,

@@ -7,7 +7,7 @@ import { appRoles, appPermissions, appRolePermissions, userRoleAssignments } fro
 import { getProductionOperators } from "@/lib/production/operator-assignment.server";
 import { db, user, warehouses, products, chemicals, packagingMaterials, recipes, finishedGoodsStock, cartons, wacHistory, adjustmentLog, materialStock, returnedFinishedGoodsStock, stockCountLines, customers, invoices, failedProductionChemicalRecoveries, salesReturns, slipRecords, returnRecords, returnLines, priceChangeLog } from "@/db";
 import { recipePackaging, materialLots, materialLotStock, materialLotMovements } from "@/db/schemas/inventory-schema";
-import { listLotBalances, lockMaterialStock } from "@/lib/inventory/material-lots.server";
+import { findOrCreateLot, listLotBalances, lockMaterialStock } from "@/lib/inventory/material-lots.server";
 import { formulas, formulaIngredients, mixingRuns, mixingMaterialsUsed, packagingAllocations, packagingProgressLogs, packagingMaterialsUsed } from "@/db/schemas/production-schema";
 import { loadFailedProductionRecoveryContext } from "@/server-functions/inventory/stock/failed-production-recovery-core";
 import { completePackagingAllocationCore } from "@/server-functions/manufacturing/packaging/complete-packaging-allocation-core.server";
@@ -152,6 +152,11 @@ async function openingLotPicks(tx: Tx, warehouseId: string, needs: { chemicalId:
     const [lot] = await listLotBalances(tx, warehouseId, { materialType: "chemical", materialId: need.chemicalId });
     return { materialId: need.chemicalId, picks: [{ lotId: lot.lotId, quantity: need.quantity }] };
   }));
+}
+
+// Recovery returns stock to the lots a batch took from, so seeded usage rows need a lot.
+async function chemicalLot(tx: Tx, chemicalId: string, unitPrice: string) {
+  return (await findOrCreateLot(tx, { materialType: "chemical", materialId: chemicalId }, unitPrice)).id;
 }
 
 function deferred<T>() {
@@ -392,9 +397,10 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("two phase production database r
 
   it("settles decimal chemical quantities without a false over-recovery error", async () => {
     await withFixture(async (tx, f) => {
+      const lotId = await chemicalLot(tx, f.chemical.id, "10");
       await tx.insert(mixingMaterialsUsed).values([
-        { mixingRunId: f.run.id, chemicalId: f.chemical.id, quantityUsed: "0.3", costPerUnit: "10", totalCost: "3" },
-        { mixingRunId: f.run.id, chemicalId: f.chemical.id, quantityUsed: "0.6", costPerUnit: "10", totalCost: "6" },
+        { mixingRunId: f.run.id, chemicalId: f.chemical.id, lotId, quantityUsed: "0.3", costPerUnit: "10", totalCost: "3" },
+        { mixingRunId: f.run.id, chemicalId: f.chemical.id, lotId, quantityUsed: "0.6", costPerUnit: "10", totalCost: "6" },
       ]);
       const transactionSpy = vi.spyOn(db, "transaction").mockImplementation(
         ((callback: Parameters<typeof db.transaction>[0]) => tx.transaction(callback)) as typeof db.transaction,
@@ -628,7 +634,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("two phase production database r
       }).returning();
       await tx.insert(mixingMaterialsUsed).values([
         { mixingRunId: mixed.id, chemicalId: f.chemical.id, quantityUsed: "10", costPerUnit: "10", totalCost: "100" },
-        { mixingRunId: f.run.id, chemicalId: f.chemical.id, quantityUsed: "5", costPerUnit: "16", totalCost: "80" },
+        { mixingRunId: f.run.id, chemicalId: f.chemical.id, lotId: await chemicalLot(tx, f.chemical.id, "16"), quantityUsed: "5", costPerUnit: "16", totalCost: "80" },
       ]);
       const [included, excluded] = await tx.insert(packagingAllocations).values([
         { mixingRunId: mixed.id, recipeId: f.recipe.id, warehouseId: f.warehouse.id, operatorId: f.actor.id,
@@ -951,8 +957,8 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("two phase production database r
   it("settles the entire chemical deduction when a formula repeats a chemical", async () => {
     await withFixture(async (tx, fixture) => {
       await tx.insert(mixingMaterialsUsed).values([
-        { mixingRunId: fixture.run.id, chemicalId: fixture.chemical.id, quantityUsed: "2", costPerUnit: "10", totalCost: "20" },
-        { mixingRunId: fixture.run.id, chemicalId: fixture.chemical.id, quantityUsed: "3", costPerUnit: "20", totalCost: "60" },
+        { mixingRunId: fixture.run.id, chemicalId: fixture.chemical.id, lotId: await chemicalLot(tx, fixture.chemical.id, "10"), quantityUsed: "2", costPerUnit: "10", totalCost: "20" },
+        { mixingRunId: fixture.run.id, chemicalId: fixture.chemical.id, lotId: await chemicalLot(tx, fixture.chemical.id, "20"), quantityUsed: "3", costPerUnit: "20", totalCost: "60" },
       ]);
       const recovery = await loadFailedProductionRecoveryContext(tx, { batchId: fixture.run.batchId, chemicalId: fixture.chemical.id });
       expect(recovery.expectedQuantity).toBe(5);

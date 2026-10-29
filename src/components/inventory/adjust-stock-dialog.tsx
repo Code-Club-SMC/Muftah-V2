@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
+import Big from "big.js";
 import { AlertTriangle, Loader2, Minus, Plus, Search } from "lucide-react";
 import { toast } from "sonner";
 import { getFailedProductionChemicalRecoveryContextFn } from "@/server-functions/inventory/stock/get-failed-production-chemical-recovery-context-fn";
 import { useAdjustStock } from "@/hooks/stock/use-adjust-stock";
 import { useRecoverFailedProductionChemical } from "@/hooks/stock/use-recover-failed-production-chemical";
 import { useViewerAccess } from "@/hooks/use-viewer-access";
+import { lotLabel, splitRecoveryAcrossLots, type LotPick } from "@/lib/inventory/material-lots";
 import { hasPermission } from "@/lib/rbac";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
@@ -50,6 +52,8 @@ export const AdjustStockDialog = ({
   const [batchId, setBatchId] = useState("");
   const [recoveryContext, setRecoveryContext] =
     useState<FailedBatchRecoveryContext | null>(null);
+  // Lot quantities the operator typed over the default split; null keeps the default.
+  const [lotEdits, setLotEdits] = useState<Record<string, string> | null>(null);
 
   const { data: viewerAccess } = useViewerAccess();
   const canManageInventory = viewerAccess
@@ -88,6 +92,7 @@ export const AdjustStockDialog = ({
     setReason("");
     setBatchId("");
     setRecoveryContext(null);
+    setLotEdits(null);
   };
 
   useEffect(() => {
@@ -125,6 +130,45 @@ export const AdjustStockDialog = ({
       : Number.isFinite(numericAmount)
         ? -numericAmount
         : 0);
+  const recoveryLots = recoveryContext?.lotUsages ?? [];
+  const showLotSplit =
+    isChemicalRecoveryFlow && !isSettledRecovery && recoveryAmountValid && numericAmount > 0;
+  const defaultLotReturns: LotPick[] = (() => {
+    if (!showLotSplit || recoveryContext?.startedBeforeLots) return [];
+    try {
+      return splitRecoveryAcrossLots(
+        new Big(numericAmount).toFixed(3),
+        recoveryLots.map((lot) => ({ lotId: lot.lotId, quantity: lot.quantity, unitPrice: lot.unitPrice })),
+      );
+    } catch {
+      return [];
+    }
+  })();
+  const lotReturnValue = (lotId: string) =>
+    lotEdits?.[lotId] ??
+    defaultLotReturns.find((row) => row.lotId === lotId)?.quantity ??
+    "0";
+  const lotSplitError = (() => {
+    if (!showLotSplit) return null;
+    if (recoveryContext?.startedBeforeLots)
+      return "This batch was started before price lots. Contact support to recover it.";
+    let total = new Big(0);
+    for (const lot of recoveryLots) {
+      const value = lotReturnValue(lot.lotId).trim() || "0";
+      if (!/^\d+(?:\.\d{1,3})?$/.test(value)) return "Enter each lot quantity as a number with up to 3 decimals.";
+      if (new Big(value).gt(lot.quantity)) return "A lot can't get back more than this batch took from it.";
+      total = total.plus(value);
+    }
+    if (!total.eq(new Big(numericAmount).round(3)))
+      return `Lots add up to ${total.toString()} ${unit}, but ${numericAmount} ${unit} was recovered.`;
+    return null;
+  })();
+  const editedLotReturns: LotPick[] | undefined = lotEdits
+    ? recoveryLots
+        .map((lot) => ({ lotId: lot.lotId, quantity: lotReturnValue(lot.lotId).trim() || "0" }))
+        .filter((row) => new Big(row.quantity).gt(0))
+    : undefined;
+
   const recoveryLossQty = recoveryContext
     ? Math.max(
         0,
@@ -166,6 +210,11 @@ export const AdjustStockDialog = ({
         return;
       }
 
+      if (lotSplitError) {
+        toast.error(lotSplitError);
+        return;
+      }
+
       if (!recoveryAmountValid) {
         toast.error(
           `Recovered quantity must be between 0 and ${recoveryContext.expectedQuantity.toFixed(3)} ${recoveryContext.chemicalUnit}.`,
@@ -180,6 +229,7 @@ export const AdjustStockDialog = ({
             chemicalId: materialId,
             recoveredQuantity: numericAmount,
             reason: reason.trim(),
+            ...(editedLotReturns ? { lotReturns: editedLotReturns } : {}),
           },
         },
         {
@@ -238,7 +288,7 @@ export const AdjustStockDialog = ({
     recoverFailedChemical.isPending ||
     recoveryLookup.isPending;
   const submitDisabled = isChemicalRecoveryFlow
-    ? !reason.trim() || !recoveryAmountValid || isSettledRecovery || submitPending
+    ? !reason.trim() || !recoveryAmountValid || !!lotSplitError || isSettledRecovery || submitPending
     : !canManageInventory || !reason.trim() || !genericAmountValid || submitPending;
 
   return (
@@ -419,7 +469,10 @@ export const AdjustStockDialog = ({
                   : `Enter ${unit} to ${mode}`
               }
               value={amount}
-              onChange={(e) => setAmount(e.target.value)}
+              onChange={(e) => {
+                setAmount(e.target.value);
+                setLotEdits(null);
+              }}
               step="any"
               min={isChemicalRecoveryFlow ? "0" : "0.001"}
               className="h-11 font-mono text-lg"
@@ -453,6 +506,39 @@ export const AdjustStockDialog = ({
               </p>
             ) : null}
           </div>
+
+          {showLotSplit ? (
+            <div className="space-y-2 rounded-md border p-3">
+              <p className="text-sm font-medium">Return to lots</p>
+              {recoveryLots.map((lot) => (
+                <div key={lot.lotId} className="flex items-center gap-3">
+                  <div className="min-w-0 flex-1 text-xs">
+                    <p className="font-medium">{lotLabel(lot, unit)}</p>
+                    <p className="text-muted-foreground">
+                      batch took {Number(lot.quantity)} {unit}
+                    </p>
+                  </div>
+                  <Input
+                    aria-label={`Return to ${lotLabel(lot, unit)}`}
+                    type="number"
+                    step="any"
+                    min="0"
+                    value={lotReturnValue(lot.lotId)}
+                    onChange={(e) =>
+                      setLotEdits({
+                        ...Object.fromEntries(recoveryLots.map((row) => [row.lotId, lotReturnValue(row.lotId)])),
+                        [lot.lotId]: e.target.value,
+                      })
+                    }
+                    className="h-9 w-32 font-mono"
+                  />
+                </div>
+              ))}
+              {lotSplitError ? (
+                <p className="text-xs text-destructive">{lotSplitError}</p>
+              ) : null}
+            </div>
+          ) : null}
 
           <div className="space-y-2">
             <Label>

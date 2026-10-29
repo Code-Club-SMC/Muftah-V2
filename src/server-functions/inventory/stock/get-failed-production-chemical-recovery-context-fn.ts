@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import Big from "big.js";
 import { z } from "zod";
 import { db } from "@/db";
 import { requireFactoryFloorViewMiddleware } from "@/lib/middlewares";
@@ -24,6 +25,17 @@ export const getFailedProductionChemicalRecoveryContextFn = createServerFn()
         throw new Error("This failed mixing run is assigned to another operator");
       }
 
+      // One entry per lot, in the order the batch took them.
+      const byLot = new Map<string, { lotId: string; quantity: Big; unitPrice: string; firstPurchasedAt: string }>();
+      for (const row of context.lotUsages) {
+        if (!row.lotId) continue;
+        const entry = byLot.get(row.lotId);
+        if (entry) entry.quantity = entry.quantity.plus(row.quantityUsed);
+        else byLot.set(row.lotId, { lotId: row.lotId, quantity: new Big(row.quantityUsed), unitPrice: row.costPerUnit, firstPurchasedAt: (row.firstPurchasedAt ?? row.createdAt).toISOString() });
+      }
+      const lotUsages = [...byLot.values()].map(row => ({ ...row, quantity: row.quantity.toFixed(3) }));
+      const startedBeforeLots = context.lotUsages.some(row => !row.lotId);
+
       if (context.settlement) {
         const recoveredQuantity = Number(context.settlement.recoveredQuantity);
         const lossQuantity = Number(context.settlement.lossQuantity);
@@ -39,6 +51,8 @@ export const getFailedProductionChemicalRecoveryContextFn = createServerFn()
           expectedQuantity: context.expectedQuantity,
           costPerUnit: context.costPerUnit,
           currentStockQty: context.currentStockQty,
+          lotUsages,
+          startedBeforeLots,
           alreadySettled: true,
           recoveredQuantity,
           lossQuantity,

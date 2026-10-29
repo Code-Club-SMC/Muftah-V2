@@ -117,3 +117,18 @@ export function lotLabel(lot: { unitPrice: string; firstPurchasedAt: Date | stri
   const shown = price.round(0).eq(price) ? price.toFixed(0) : price.toFixed(2);
   return `Rs ${shown}/${unit} (first ${format(new Date(lot.firstPurchasedAt), "d MMM")})`;
 }
+
+// Refills the lots in the order the batch took them, never more than each lot gave.
+export function splitRecoveryAcrossLots(recovered: string, usages: { lotId: string; quantity: string; unitPrice: string }[]): LotPick[] {
+  let left = new Big(recovered);
+  const taken = usages.reduce((sum, row) => sum.plus(row.quantity), new Big(0));
+  if (left.gt(taken)) throw new Error("Recovered quantity is more than this batch took");
+  const picks: LotPick[] = [];
+  for (const usage of usages) {
+    if (left.lte(0)) break;
+    const amount = new Big(usage.quantity).lt(left) ? new Big(usage.quantity) : left;
+    picks.push({ lotId: usage.lotId, quantity: amount.toFixed(3) });
+    left = left.minus(amount);
+  }
+  return picks;
+}
