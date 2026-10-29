@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Titan ERP desk checklists</title><style>
+:root { color-scheme: light; }
+* { box-sizing: border-box; }
+body { margin: 0; color: #162332; background: #eef1f3; font: 16px/1.55 Arial, sans-serif; }
+main { max-width: 880px; margin: 32px auto; padding: 48px 56px; background: white; }
+.brand { font-size: 12px; text-transform: uppercase; letter-spacing: 2px; color: #526476; border-bottom: 3px solid #1a6170; padding-bottom: 12px; }
+h1 { font-size: 32px; line-height: 1.16; margin: 24px 0 20px; color: #174957; }
+h2 { font-size: 22px; line-height: 1.25; margin: 30px 0 12px; border-top: 1px solid #cbd5db; padding-top: 16px; }
+h3 { font-size: 17px; line-height: 1.35; margin: 22px 0 9px; color: #174957; }
+p { margin: 10px 0; }
+li { margin: 6px 0; padding-left: 2px; }
+ul, ol { padding-left: 24px; margin: 10px 0 16px; }
+strong { color: #111f2d; }
+a { color: #13576b; text-decoration-thickness: 1px; text-underline-offset: 2px; }
+code { font-family: 'DejaVu Sans Mono', monospace; font-size: .88em; }
+pre { padding: 13px; background: #f2f5f6; border: 1px solid #cbd5db; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
+table { width: 100%; border-collapse: collapse; margin: 14px 0 20px; font-size: 14px; }
+th, td { border: 1px solid #bdcbd3; text-align: left; padding: 9px 10px; vertical-align: top; overflow-wrap: anywhere; }
+th { background: #e7eff2; font-weight: bold; }
+nav { border: 1px solid #bdcbd3; padding: 14px 18px; margin: 20px 0; }
+nav p { margin: 0 0 7px; font-weight: bold; }
+nav ul { columns: 2; list-style: none; margin: 0; padding: 0; font-size: 13px; }
+nav li { margin: 4px 0; }
+@page { size: A4; margin: 17mm 17mm 19mm; }
+@media print {
+ body { background: white; font-size: 11.2pt; line-height: 1.43; }
+ main { margin: 0; padding: 0; max-width: none; }
+ h1 { font-size: 25pt; }
+ h2 { font-size: 17pt; margin-top: 20pt; padding-top: 11pt; }
+ h3 { font-size: 13pt; }
+ h1, h2, h3 { break-after: avoid; }
+ p, li { orphans: 3; widows: 3; }
+ li { margin: 4pt 0; }
+ table { font-size: 9.8pt; }
+ th, td { padding: 6pt 7pt; }
+ tr, pre, nav { break-inside: avoid; }
+ thead { display: table-header-group; }
+ a { color: inherit; }
+ nav { break-after: page; }
+ nav ul { font-size: 10.3pt; }
+ .quick h2 { break-before: page; }
+ .quick h2:first-of-type { break-before: auto; }
+ .quick table { font-size: 10pt; }
+}
+</style></head><body><main class="quick"><div class="brand">Titan ERP · Staff operating manual · 20 October 2026</div><h1 id="titan-erp-desk-checklists">Titan ERP desk checklists</h1>
+<p>Checked against source on 20 October 2026. Use the full manuals for first-time setup and corrections. Examples are not live entries.</p>
+<h2 id="attendance-staff-and-hr">Attendance staff and HR</h2>
+<table><thead><tr><th>Step</th><th>What to do</th><th>Check before moving on</th></tr></thead><tbody>
+<tr><td>1. Get the file</td><td>Export the device&#x27;s Total Punches report. Keep the original.</td><td>Correct dates. CSV or XLSX, up to 10 MB.</td></tr>
+<tr><td>2. Preview</td><td>HR &amp; Payroll → Attendance → Daily Attendance → Import device report → Upload and preview.</td><td>Correct employee for every Person ID. Refresh preview after matching.</td></tr>
+<tr><td>3. Import</td><td>Read all pages, then click Import N new punches.</td><td>Import saved. Blocked rows stay unchanged.</td></tr>
+<tr><td>4. Review days</td><td>Use Review day. Confirm actual times and resolve missing punches or daily status.</td><td>Correct employee and date, duty hours and completed punch pairs. Review the whole cycle.</td></tr>
+<tr><td>5. Decisions</td><td>Approval Center → Leave Requests and Overtime.</td><td>Authorized decisions saved. Overtime suggestions are not approvals.</td></tr>
+<tr><td>6. Prepare pay</td><td>Payroll → correct payout month → Process or Revise → review → Save Draft Slip.</td><td>Attendance, salary, deductions and Net Pay checked for every eligible employee.</td></tr>
+<tr><td>7. Check and hand over</td><td>View Payroll History → open saved slip → Print / Save PDF. Give reviewed payroll to administrator and finance.</td><td>Latest saved and printed Net Pay match. Drafts are not payments.</td></tr>
+</tbody></table>
+<p><strong>Payroll dates:</strong> October payroll covers 16 September to 15 October. November payroll covers 16 October to 15 November. The selected month is the payout month.</p>
+<p><strong>Stop and check:</strong> Never guess a missing time. Punch edits save immediately. Resolve Missing Attendance Data before paying. Final approval and payment controls are not exposed in the screens checked for this version.</p>
+<p>Full instructions: <a href="attendance-and-payroll.html">Attendance and payroll</a>.</p>
+<h2 id="production-operator">Production operator</h2>
+<ol>
+<li>Open <strong>Production Workstation → Batches</strong>. Find the assigned batch and click <strong>Open batch</strong>.</li>
+<li>Check the batch number, formula, unit and target. The manager must start the batch first.</li>
+<li>Enter only new, measured output. Click <strong>Record Bulk Output</strong>. Check <strong>Actual Yield</strong> before entering more.</li>
+<li>When mixing is finished, check the yield, give a reason for any shortfall and use <strong>Mark Batch as Completed</strong>.</li>
+<li>On the completed batch, use <strong>Open packing</strong>. Add the exact format.</li>
+<li>Enter full cartons, packs in a partial carton and loose packs separately. Record actual loss with a reason. Unused bulk stays available.</li>
+<li>Use <strong>Review packing</strong>. Compare the screen with the physical goods.</li>
+<li>Click <strong>Confirm &amp; add to finished goods</strong> once. Wait for <strong>Packing saved</strong> and check the receipt.</li>
+</ol>
+<p><strong>Stop and check:</strong> A slow response is not proof that an entry failed. Check the saved result before adding output again. If packing confirmation is interrupted, keep the original draft and use <strong>Retry confirmation</strong> or <strong>Check result before editing</strong>.</p>
+<h2 id="stores-and-first-sale">Stores and first sale</h2>
+<ol>
+<li>Set up the <strong>Factory Floor</strong>. Add the supplier under <strong>Suppliers</strong>.</li>
+<li>In the supplier profile, use <strong>Add Chemical</strong> and <strong>Add Packaging</strong> for initial material registration and receipt. For later deliveries, use <strong>Buy Again → Restock</strong>.</li>
+<li>Check received quantities, units, costs and actual payments against the supplier invoice.</li>
+<li>The manager sets up the product, approved mixing formula and packaging format, then creates and starts the batch.</li>
+<li>Check mixing, packing, the quality decision and physical finished stock.</li>
+<li>Open <strong>Sales → New Invoice</strong>. Choose the general or distributor invoice and the real customer.</li>
+<li>For this version&#x27;s first-sale workflow, select the <strong>active factory floor</strong> as Source Warehouse. Check the format, selling unit, quantity, price and discounts.</li>
+<li>Enter only actual received payments in the correct account, or use <strong>Pay Later</strong> for approved credit. Click <strong>Generate Invoice</strong> once.</li>
+<li>Check the saved invoice, print it, and verify stock, outstanding balance and finance entries.</li>
+</ol>
+<p><strong>Remember:</strong> Starting mixing deducts chemicals. Confirming packing deducts packaging and adds finished goods. Generating an invoice deducts sold goods. Do not manually deduct those same goods again.</p>
+<p>Full instructions: <a href="manufacturing-to-first-sale.html">Manufacturing through the first sale</a>.</p></main></body></html>

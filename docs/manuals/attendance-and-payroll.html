@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Attendance and payroll</title><style>
+:root { color-scheme: light; }
+* { box-sizing: border-box; }
+body { margin: 0; color: #162332; background: #eef1f3; font: 16px/1.55 Arial, sans-serif; }
+main { max-width: 880px; margin: 32px auto; padding: 48px 56px; background: white; }
+.brand { font-size: 12px; text-transform: uppercase; letter-spacing: 2px; color: #526476; border-bottom: 3px solid #1a6170; padding-bottom: 12px; }
+h1 { font-size: 32px; line-height: 1.16; margin: 24px 0 20px; color: #174957; }
+h2 { font-size: 22px; line-height: 1.25; margin: 30px 0 12px; border-top: 1px solid #cbd5db; padding-top: 16px; }
+h3 { font-size: 17px; line-height: 1.35; margin: 22px 0 9px; color: #174957; }
+p { margin: 10px 0; }
+li { margin: 6px 0; padding-left: 2px; }
+ul, ol { padding-left: 24px; margin: 10px 0 16px; }
+strong { color: #111f2d; }
+a { color: #13576b; text-decoration-thickness: 1px; text-underline-offset: 2px; }
+code { font-family: 'DejaVu Sans Mono', monospace; font-size: .88em; }
+pre { padding: 13px; background: #f2f5f6; border: 1px solid #cbd5db; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
+table { width: 100%; border-collapse: collapse; margin: 14px 0 20px; font-size: 14px; }
+th, td { border: 1px solid #bdcbd3; text-align: left; padding: 9px 10px; vertical-align: top; overflow-wrap: anywhere; }
+th { background: #e7eff2; font-weight: bold; }
+nav { border: 1px solid #bdcbd3; padding: 14px 18px; margin: 20px 0; }
+nav p { margin: 0 0 7px; font-weight: bold; }
+nav ul { columns: 2; list-style: none; margin: 0; padding: 0; font-size: 13px; }
+nav li { margin: 4px 0; }
+@page { size: A4; margin: 17mm 17mm 19mm; }
+@media print {
+ body { background: white; font-size: 11.2pt; line-height: 1.43; }
+ main { margin: 0; padding: 0; max-width: none; }
+ h1 { font-size: 25pt; }
+ h2 { font-size: 17pt; margin-top: 20pt; padding-top: 11pt; }
+ h3 { font-size: 13pt; }
+ h1, h2, h3 { break-after: avoid; }
+ p, li { orphans: 3; widows: 3; }
+ li { margin: 4pt 0; }
+ table { font-size: 9.8pt; }
+ th, td { padding: 6pt 7pt; }
+ tr, pre, nav { break-inside: avoid; }
+ thead { display: table-header-group; }
+ a { color: inherit; }
+ nav { break-after: page; }
+ nav ul { font-size: 10.3pt; }
+ .quick h2 { break-before: page; }
+ .quick h2:first-of-type { break-before: auto; }
+ .quick table { font-size: 10pt; }
+}
+</style></head><body><main><div class="brand">Titan ERP · Staff operating manual · 20 October 2026</div><h1 id="attendance-and-payroll">Attendance and payroll</h1>
+<p>An easy manual for attendance staff and HR.</p>
+<p>Checked against the application source on 20 October 2026. Use this with the same version of Titan ERP. All example names and numbers are fictional.</p>
+<nav aria-label="Contents"><p>Find the task you need</p><ul><li><a href="#the-whole-job">The whole job</a></li><li><a href="#who-does-what">Who does what?</a></li><li><a href="#1-check-employee-details-before-the-first-upload">1. Check employee details before the first upload</a></li><li><a href="#2-get-the-attendance-file">2. Get the attendance file</a></li><li><a href="#3-upload-and-check-the-preview">3. Upload and check the preview</a></li><li><a href="#4-import-the-punches">4. Import the punches</a></li><li><a href="#5-fix-flagged-days">5. Fix flagged days</a></li><li><a href="#6-decide-leave-and-overtime">6. Decide leave and overtime</a></li><li><a href="#7-choose-the-correct-payroll-month">7. Choose the correct payroll month</a></li><li><a href="#8-review-and-save-each-draft-payslip">8. Review and save each draft payslip</a></li><li><a href="#9-reopen-print-and-check">9. Reopen, print and check</a></li><li><a href="#10-hand-over-for-payroll-approval-and-payment">10. Hand over for payroll approval and payment</a></li><li><a href="#if-internet-fails">If internet fails</a></li><li><a href="#if-something-goes-wrong">If something goes wrong</a></li><li><a href="#daily-checklist">Daily checklist</a></li><li><a href="#payroll-checklist">Payroll checklist</a></li></ul></nav><h2 id="the-whole-job">The whole job</h2>
+<p><strong>Device report → Upload and preview → Import punches → Fix attendance → Decide leave and overtime → Save draft payslips → Payroll administrator and finance.</strong></p>
+<p>A punch is one recorded arrival or departure. Uploading a report does not pay anyone. Saving a draft payslip does not pay anyone either.</p>
+<h2 id="who-does-what">Who does what?</h2>
+<table><thead><tr><th>Person</th><th>Job</th></tr></thead><tbody>
+<tr><td>Attendance staff</td><td>Keep the device records and give the original report to HR. Report missing or wrong punches.</td></tr>
+<tr><td>HR</td><td>Check employee details, import the report, correct attendance and prepare draft payslips.</td></tr>
+<tr><td>Authorized approver</td><td>Decide leave and overtime requests.</td></tr>
+<tr><td>Payroll administrator and finance</td><td>Check the full payroll, arrange approval and record the actual payment through the available authorized process.</td></tr>
+</tbody></table>
+<p>The administrator gives each person the access they need. HR management access is required for the device import.</p>
+<h2 id="1-check-employee-details-before-the-first-upload">1. Check employee details before the first upload</h2>
+<p>Open <strong>HR &amp; Payroll → Employees</strong>. Add a missing employee or open the existing employee&#x27;s edit form.</p>
+<p>Check these details against the HR record:</p>
+<table><thead><tr><th>Detail</th><th>What to check</th></tr></thead><tbody>
+<tr><td>Employee Code</td><td>It belongs to this employee. Keep any leading zeros.</td></tr>
+<tr><td>Joining Date</td><td>It is the real joining date. Report dates before this date can be blocked.</td></tr>
+<tr><td>Shift Schedule</td><td>The start and end times are correct, including any split or night shifts.</td></tr>
+<tr><td>Standard duty hours</td><td>The expected working hours are correct.</td></tr>
+<tr><td>Weekly Rest Days</td><td>The correct days are selected for this employee.</td></tr>
+<tr><td>Basic Salary and allowances</td><td>They match the approved salary agreement.</td></tr>
+<tr><td>Employee status</td><td>It reflects whether the employee is active.</td></tr>
+</tbody></table>
+<p>Ask the payroll manager to check salary and deduction settings. Do not change a shift, rest day, joining date or salary just to make a warning disappear.</p>
+<p>The device&#x27;s <strong>Person ID</strong> and Titan&#x27;s <strong>Employee Code</strong> are different fields. Titan can match an identical code automatically. If they differ, HR can link the Person ID during the import.</p>
+<h2 id="2-get-the-attendance-file">2. Get the attendance file</h2>
+<p>Attendance staff should export the device&#x27;s <strong>Total Punches</strong> report for the required dates and give it to HR.</p>
+<p>Keep an unchanged copy of the original export. Use the device to record attendance as instructed by your factory. If a punch is missing or wrong, tell HR the employee code, work date and actual time.</p>
+<p>The old Titan scanner page has been retired. Attendance now comes through the device report. Do not expect the old scanner page to record a punch.</p>
+<h3 id="file-rules">File rules</h3>
+<p>The device importer accepts <code>.csv</code> and <code>.xlsx</code>, up to 10 MB. It does not accept an old <code>.xls</code> file by changing its filename. A report can contain up to 20,000 data rows.</p>
+<p>Use the original Total Punches export where possible. The seven column headings must be exactly these, in this order:</p>
+<table><thead><tr><th>Column</th><th>Example only</th><th>Meaning</th></tr></thead><tbody>
+<tr><td>Person ID</td><td>DEMO001</td><td>ID used by the device</td></tr>
+<tr><td>Person Name</td><td>Example Worker</td><td>Name on the device</td></tr>
+<tr><td>Department</td><td>Packing</td><td>Department on the device</td></tr>
+<tr><td>Date</td><td>2026-10-05</td><td>Year-month-day</td></tr>
+<tr><td>Weekday</td><td>Monday</td><td>Day shown in the report</td></tr>
+<tr><td>No. of Punch(s)</td><td>4</td><td>Number of punches in this row</td></tr>
+<tr><td>Punch Records</td><td>08:00,12:00,13:00,17:00</td><td>Punch times, earliest first</td></tr>
+</tbody></table>
+<p>Device report times are read as Pakistan local time. Times use the 24-hour clock. <code>17:00</code> means 5 pm. CSV text must use UTF-8 encoding. Do not add formulas to the report.</p>
+<p>Here is how one correctly quoted CSV row looks. This is an explanation, not a file to upload into live attendance:</p>
+<pre><code>Person ID,Person Name,Department,Date,Weekday,No. of Punch(s),Punch Records
+DEMO001,Example Worker,Packing,2026-10-05,Monday,4,&quot;08:00,12:00,13:00,17:00&quot;</code></pre>
+<p>Keep all the punch times inside the last cell. In a CSV, the quotation marks keep the commas inside that cell.</p>
+<p>For Excel, use a clear <strong>Total Punches</strong> worksheet. Keep Person IDs as text so Excel does not remove leading zeros.</p>
+<h2 id="3-upload-and-check-the-preview">3. Upload and check the preview</h2>
+<ol>
+<li>Open <strong>HR &amp; Payroll → Attendance → Daily Attendance</strong>.</li>
+<li>Click <strong>Import device report</strong>.</li>
+<li>Under <strong>Device report</strong>, choose the original <code>.csv</code> or <code>.xlsx</code> file.</li>
+<li>Click <strong>Upload and preview</strong>.</li>
+<li>Check the filename and the displayed date range.</li>
+<li>Check the employee attached to every Person ID. Do not rely on the name alone.</li>
+<li>Under <strong>Match device Person IDs</strong>, choose the correct employee for each unknown ID.</li>
+<li>Click <strong>Refresh preview</strong> after changing a match.</li>
+<li>Read the result and message for each row. Use <strong>Next rows</strong> to check the remaining pages.</li>
+</ol>
+<p><strong>At this point, the punches have not yet been imported.</strong></p>
+<p>A Person ID link can be reused on later imports. A wrong match can put another person&#x27;s hours into payroll. If an ID is already linked to the wrong employee, stop and ask the administrator to investigate.</p>
+<h3 id="what-do-the-results-mean">What do the results mean?</h3>
+<table><thead><tr><th>Result</th><th>What HR should do</th></tr></thead><tbody>
+<tr><td>Ready</td><td>Check the employee, date and times before importing.</td></tr>
+<tr><td>Already recorded</td><td>These punches already exist. They do not need importing again.</td></tr>
+<tr><td>Needs review</td><td>Read the message. Valid new punches may still import, but HR must resolve the day before payroll.</td></tr>
+<tr><td>Blocked</td><td>This row stays unchanged. Fix the cause shown in the message or ask the administrator for help.</td></tr>
+<tr><td>Imported</td><td>The punches were saved. Check the resulting attendance day.</td></tr>
+</tbody></table>
+<p><strong>Report rows</strong> counts report entries. <strong>New punches</strong> counts individual new times. These are different counts.</p>
+<h2 id="4-import-the-punches">4. Import the punches</h2>
+<ol>
+<li>Finish checking the employee matches and preview messages.</li>
+<li>Click <strong>Import N new punches</strong>. The number changes with the report.</li>
+<li>Wait for <strong>Import saved</strong>.</li>
+<li>Read how many punches were imported.</li>
+<li>Check the refreshed preview for remaining work.</li>
+<li>Keep a record of the filename, dates, import result and any unresolved rows.</li>
+</ol>
+<p><strong>Import completed does not mean attendance is ready for payroll.</strong> Rows with missing checkouts may have imported. Blocked rows have not been fixed.</p>
+<p>If the button is disabled, check whether <strong>New punches</strong> is zero or the preview needs refreshing. A repeated unchanged upload normally has no new punches. Do not invent extra punches to enable the button.</p>
+<p>You can reopen an upload under <strong>Recent uploads → Review import</strong> or <strong>Open preview</strong>.</p>
+<h2 id="5-fix-flagged-days">5. Fix flagged days</h2>
+<p>In the import, click <strong>Review day</strong> beside a row. If it shows more than one review date, check each date. You can also select the date in Daily Attendance and use the employee&#x27;s pencil button, <strong>Edit Attendance</strong>.</p>
+<p>Check the employee code and work date before changing anything.</p>
+<h3 id="when-a-worker-was-present-but-a-punch-is-missing">When a worker was present but a punch is missing</h3>
+<ol>
+<li>Confirm the actual time with the supervisor or an attendance record.</li>
+<li>In the punch section, enter <strong>Manual punch time</strong>.</li>
+<li>For a night-shift checkout, choose the actual next-day date and time.</li>
+<li>Add a note explaining the correction.</li>
+<li>Click <strong>Add punch</strong>.</li>
+<li>Check <strong>First In</strong>, <strong>Last Out</strong>, <strong>Duty</strong> and <strong>Open Punches</strong>.</li>
+</ol>
+<p>Titan determines IN and OUT from the punch sequence. Do not force a different direction to hide a wrong time.</p>
+<h3 id="when-an-imported-punch-has-the-wrong-time">When an imported punch has the wrong time</h3>
+<ol>
+<li>Use the pencil beside that punch.</li>
+<li>Enter the confirmed date and time.</li>
+<li>Enter the <strong>Device import correction reason</strong>. Imported punch corrections require at least five characters. Write a useful reason, such as <code>Supervisor confirmed checkout at 17:00</code>.</li>
+<li>Click <strong>Save</strong> beside the punch.</li>
+<li>Check the recalculated duty hours and remaining punches.</li>
+</ol>
+<p>Delete a punch only when you have confirmed it should not exist. An imported punch deletion requires a reason. If deletion is blocked, ask HR to review the sequence before removing related punches.</p>
+<p><strong>Punch additions, edits and deletions save immediately. Closing the attendance form does not undo them.</strong> The separate <strong>Save Attendance Record</strong> button saves notes, overtime and other attendance decisions.</p>
+<h3 id="when-the-worker-was-absent-or-on-leave">When the worker was absent or on leave</h3>
+<ol>
+<li>Confirm the correct decision with HR or the supervisor.</li>
+<li>Select <strong>Absent</strong>, <strong>On Leave</strong> or <strong>Holiday</strong>, as appropriate.</li>
+<li>For leave, choose the correct leave type and enter the required details.</li>
+<li>Add an explanation in the notes.</li>
+<li>Click <strong>Save Attendance Record</strong>.</li>
+<li>Send any pending leave decision to the authorized approver.</li>
+</ol>
+<p>Do not add made-up arrival and departure times to represent absence or leave.</p>
+<h3 id="check-the-whole-pay-period">Check the whole pay period</h3>
+<p>The report covers only the employees and dates included in the export. A blank row, zero punches or a missing date does not prove someone was absent.</p>
+<p>HR must check all expected working dates, including dates outside a partial export. Resolve missing working days from the actual records. Check each employee&#x27;s own weekly rest days before marking attendance.</p>
+<p>If you use <strong>Bulk Mark</strong>, check the employee selection and date range carefully. It can select all active employees by default. Review the preview and conflict choice before applying it. Use it only when the same verified decision applies to the selected people and dates.</p>
+<h2 id="6-decide-leave-and-overtime">6. Decide leave and overtime</h2>
+<p>Open <strong>HR &amp; Payroll → Approval Center</strong>.</p>
+<h3 id="leave">Leave</h3>
+<ol>
+<li>Open <strong>Leave Requests</strong>.</li>
+<li>Check the employee, date, leave type, reason and available entitlement.</li>
+<li>The authorized approver chooses the correct decision.</li>
+<li>Check the saved result before preparing the salary.</li>
+</ol>
+<h3 id="overtime">Overtime</h3>
+<ol>
+<li>Open <strong>Overtime</strong> and review the pending items.</li>
+<li>Check the employee, date, duty hours, standard hours and requested overtime.</li>
+<li>Compare the request with the supervisor&#x27;s approval.</li>
+<li>Approve valid overtime or reject it with the correct decision. Confirm the action when asked.</li>
+<li>Recheck any <strong>Needs Recheck</strong> item after correcting punches or the overtime request.</li>
+</ol>
+<p>Only approved overtime contributes overtime pay. A suggestion is not payment approval. Work on a configured rest day can also create a pending overtime item.</p>
+<p>Use conversion to compensatory time off only when the payroll manager has authorized that treatment.</p>
+<h3 id="take-care-with-early-leave">Take care with early leave</h3>
+<p>In the attendance form, <strong>Early Leave Review → Approved</strong> means the early-departure deduction policy applies. It does not mean the short time is paid without deduction.</p>
+<p><strong>Rejected</strong> or <strong>Pending Review</strong> can still leave a normal short-hours deduction. Ask the payroll manager to review the calculation if this affects pay. Do not choose a status based only on the word &quot;Approved&quot;.</p>
+<h2 id="7-choose-the-correct-payroll-month">7. Choose the correct payroll month</h2>
+<p>Open <strong>HR &amp; Payroll → Payroll</strong>.</p>
+<p>The month selector is the <strong>payout month</strong>. The attendance cycle runs from the 16th of the previous month to the 15th of the selected month. The scheduled payout date is the 25th.</p>
+<table><thead><tr><th>Payroll month selected</th><th>Attendance dates</th><th>Scheduled payout</th></tr></thead><tbody>
+<tr><td>October 2026</td><td>16 September to 15 October 2026</td><td>25 October 2026</td></tr>
+<tr><td>November 2026</td><td>16 October to 15 November 2026</td><td>25 November 2026</td></tr>
+</tbody></table>
+<p>Example: an export for 1 to 14 October does not cover the full October payroll cycle. HR must also check 16 to 30 September and 15 October, subject to the employee&#x27;s joining date and working schedule.</p>
+<p>For normal monthly payroll, prepare the slip after the full cycle is recorded. <strong>Process Early</strong> prepares a calculation through an earlier cutoff. Use it only for an authorized early payment and check the shorter period carefully.</p>
+<h2 id="8-review-and-save-each-draft-payslip">8. Review and save each draft payslip</h2>
+<ol>
+<li>Select the correct payout month.</li>
+<li>Find the employee and click <strong>Process</strong>. Use <strong>Revise</strong> if a draft already exists.</li>
+<li>Wait for the <strong>Salary Calculation</strong> to load.</li>
+<li>Check the period, employee and joining-date treatment.</li>
+<li>Review the items below against the approved records.</li>
+<li>Enter a useful <strong>Payslip Remarks</strong> note if needed.</li>
+<li>Click <strong>Save Draft Slip</strong>.</li>
+<li>Repeat for every eligible employee.</li>
+</ol>
+<table><thead><tr><th>Check</th><th>What to compare</th></tr></thead><tbody>
+<tr><td>Basic Salary and allowances</td><td>Approved salary details and applicable policy</td></tr>
+<tr><td>Present, absent and leave days</td><td>Reviewed attendance for the complete cycle</td></tr>
+<tr><td>Unmarked Days</td><td>Investigate missing working days before saving</td></tr>
+<tr><td>Undertime and attendance deductions</td><td>Correct punches and the approved deduction rules</td></tr>
+<tr><td>Overtime Pay</td><td>Approved hours and the approved rate or multiplier</td></tr>
+<tr><td>Salary Advance Recovery</td><td>The real advance balance and approved recovery</td></tr>
+<tr><td>Tax, bonus, incentives, commission and other adjustments</td><td>Approved supporting records, where applicable</td></tr>
+<tr><td>Arrears</td><td>Amounts genuinely unpaid for earlier cycles, without double counting</td></tr>
+<tr><td>Net Pay</td><td>Gross pay less the displayed total deductions</td></tr>
+</tbody></table>
+<p>Do not assume a single salary deduction formula applies to everyone. Company settings, employee overrides, allowances, leave entitlement and the reason for the short day can affect the result.</p>
+<p>Do not enter <code>0</code> in an automatic advance recovery field merely to clear it. An explicit zero can override automatic recovery. Change calculated amounts or waivers only with payroll approval and an explanation.</p>
+<p>If <strong>Missing Attendance Data</strong> appears, choose <strong>Cancel</strong> and resolve the missing dates. <strong>Proceed Anyway</strong> bypasses a missing-data check. It does not repair attendance. An unresolved imported punch day can also prevent saving even when a preview is visible.</p>
+<p><strong>Save Draft Slip creates or updates a draft. No payment wallet is debited by this action.</strong> Labels such as &quot;Generated&quot;, &quot;finalized&quot; or &quot;Net Paid &amp; Generated&quot; on summary screens are not proof of salary payment.</p>
+<h2 id="9-reopen-print-and-check">9. Reopen, print and check</h2>
+<ol>
+<li>In Payroll, use the employee&#x27;s <strong>View Payroll History</strong> button, shown with an eye icon.</li>
+<li>Find the saved month.</li>
+<li>Click the arrow button on that payslip row to open the slip.</li>
+<li>Check the saved employee, period, deductions and <strong>Net Pay</strong>.</li>
+<li>Click <strong>Print / Save PDF</strong> on the payslip. You can choose your browser&#x27;s Save as PDF option.</li>
+<li>Check that the printed Net Pay matches the saved slip.</li>
+</ol>
+<p>If attendance or an approval changes after a draft was saved, reopen the calculation and revise the affected drafts. The change can make a saved payroll out of date. For a full payroll regeneration requirement, hand it to the payroll administrator. Do not pay from an older printout.</p>
+<h2 id="10-hand-over-for-payroll-approval-and-payment">10. Hand over for payroll approval and payment</h2>
+<p>The screens checked for this manual do not expose final payroll approval or <strong>Mark as paid</strong> controls. HR should finish the draft work and hand the following to the payroll administrator and finance:</p>
+<ul>
+<li>The payout month and exact attendance dates.</li>
+<li>The eligible employee list and all reviewed draft slips.</li>
+<li>Confirmation that attendance, leave and overtime issues are resolved.</li>
+<li>The sum of the latest saved Net Pay amounts.</li>
+<li>Any authorized adjustment notes and the proposed payment account.</li>
+</ul>
+<p>The application has separate approval and payment functions. Approval requires a complete eligible payroll and current attendance. Recording payment requires an approved payroll and a valid wallet with enough balance. It records a wallet debit and ledger transaction. It does not itself send money to employees&#x27; bank accounts.</p>
+<p>Finance must follow the organization&#x27;s authorized disbursement process and match the real payments to the recorded payroll. Keep payment evidence. Do not describe a saved or printed draft as &quot;paid&quot;.</p>
+<p>Approved or paid payroll periods are locked against attendance changes. If a correction is needed, give the employee, date, evidence and required correction to the payroll administrator. The app&#x27;s error message mentions a correction workflow, but no complete correction screen was verified here.</p>
+<h2 id="if-internet-fails">If internet fails</h2>
+<p>The <strong>Offline Excel</strong> page is a separate fallback. It uses an issued workbook. It is not the device Total Punches importer.</p>
+<p>Use this only if your administrator has enabled the fallback and issued the workbook for the responsible attendance operator.</p>
+<ol>
+<li>Before an outage, authorized staff open <strong>HR &amp; Payroll → Attendance → Offline Excel</strong>, choose the attendance operator, use <strong>Issue workbook</strong>, then <strong>Download</strong>.</li>
+<li>During the outage, record the employee code, time and IN or OUT in that assigned workbook, following its columns and instructions. Keep its structure and identity information intact.</li>
+<li>When service returns, choose that same <code>.xlsx</code> file on Offline Excel. Enter <strong>Outage start</strong>, <strong>Outage end</strong> and <strong>Outage reason</strong>.</li>
+<li>Click <strong>Upload workbook</strong>.</li>
+<li>A different authorized supervisor selects the upload in <strong>Supervisor queue</strong>, checks <strong>Confirmed start</strong>, <strong>Confirmed end</strong> and <strong>Decision reason</strong>, then uses <strong>Confirm outage</strong> if the outage is valid.</li>
+<li>A final authorized reviewer, different from both the assigned operator and the supervisor, selects the upload in <strong>Review queue</strong> and checks each preview group.</li>
+<li>The final reviewer uses <strong>Import ready rows</strong> for rows that pass review.</li>
+<li>Resolve remaining review, invalid or blocked rows. Exclude a row only with a confirmed reason, and ensure genuine attendance is still recorded correctly.</li>
+<li>Check Daily Attendance and revise any affected draft payroll.</li>
+</ol>
+<h2 id="if-something-goes-wrong">If something goes wrong</h2>
+<table><thead><tr><th>What you see</th><th>What to do</th></tr></thead><tbody>
+<tr><td>Import button missing</td><td>Ask the administrator to check HR management access.</td></tr>
+<tr><td>File rejected</td><td>Check the extension, size, exact headings, date format and original export. Do not just rename the extension.</td></tr>
+<tr><td>Unknown Person ID</td><td>Verify the ID with attendance staff, select the correct employee and refresh the preview.</td></tr>
+<tr><td>ID already linked to someone else</td><td>Stop. Ask the administrator to investigate the link.</td></tr>
+<tr><td>Punch count mismatch or duplicate person/date row</td><td>Check the source export and obtain a corrected report. Keep the original copy.</td></tr>
+<tr><td>Missing checkout or Open Punches above zero</td><td>Confirm the real departure time and correct the day&#x27;s sequence.</td></tr>
+<tr><td>Wrong duty hours</td><td>Check all IN/OUT pairs, breaks, work date and overnight checkout. Do not type a made-up total.</td></tr>
+<tr><td>Same report shows zero new punches</td><td>It may already be recorded. Check Recent uploads and Daily Attendance.</td></tr>
+<tr><td>Attendance belongs to approved or paid payroll</td><td>Hand the correction to the payroll administrator.</td></tr>
+<tr><td>Salary preview looks right but save fails</td><td>Read the error. Check unresolved imported days, missing dates and locked payroll.</td></tr>
+<tr><td>Import or save response is unclear</td><td>Reopen the record and check what was saved before repeating an action.</td></tr>
+</tbody></table>
+<h2 id="daily-checklist">Daily checklist</h2>
+<ul>
+<li>☐ Original device export kept.</li>
+<li>☐ Correct report dates and employee matches checked.</li>
+<li>☐ Punch import confirmed and saved result checked.</li>
+<li>☐ All pages and flagged days reviewed.</li>
+<li>☐ Missing working dates investigated.</li>
+<li>☐ Leave and overtime decisions sent to the approver.</li>
+</ul>
+<h2 id="payroll-checklist">Payroll checklist</h2>
+<ul>
+<li>☐ Correct payout month and full 16th-to-15th cycle checked.</li>
+<li>☐ Employee salary, shifts and rest days checked.</li>
+<li>☐ Missing and unresolved attendance fixed.</li>
+<li>☐ Leave and overtime decisions completed.</li>
+<li>☐ Every eligible employee&#x27;s latest draft reviewed and saved.</li>
+<li>☐ Saved and printed Net Pay checked.</li>
+<li>☐ Changes after saving recalculated and handed over where needed.</li>
+<li>☐ Payroll handed to the administrator and finance for approval and actual payment.</li>
+</ul>
+<p>Prepared by: ____________________  Period: ____________________</p>
+<p>Checked by: ____________________  Date: ____________________</p></main></body></html>
