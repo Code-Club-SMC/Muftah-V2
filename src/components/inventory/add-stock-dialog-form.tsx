@@ -26,6 +26,40 @@ import { addStockSchema } from "@/lib/validators/validators";
 import { Textarea } from "../ui/textarea";
 import { PurchaseRecord } from "@/components/suppliers/purchase-history-table";
 import { PaymentMethodSelect } from "@/components/suppliers/payment-method-select";
+import Big from "big.js";
+import { useMaterialLots } from "@/hooks/stock/use-material-lots";
+import { lotLabel, lotPrice } from "@/lib/inventory/material-lots";
+
+// Tells the person whether this purchase joins an existing price lot or starts a new one.
+const LotPreview = ({
+  warehouseId,
+  materialType,
+  materialId,
+  quantity,
+  cost,
+  unit,
+}: {
+  warehouseId: string;
+  materialType: "chemical" | "packaging";
+  materialId: string;
+  quantity: string;
+  cost: string;
+  unit: string;
+}) => {
+  const { data } = useMaterialLots(warehouseId || undefined, materialType, [materialId]);
+  const qty = parseFloat(quantity || "0");
+  const total = parseFloat(cost || "0");
+  const price = qty > 0 && total > 0 ? lotPrice(new Big(cost).div(quantity)) : null;
+  if (!price || !data) return null;
+  const lot = data[materialId]?.find((row) => row.unitPrice === price);
+  return (
+    <p className="text-xs text-muted-foreground">
+      {lot
+        ? `Joins lot ${lotLabel(lot, unit)} (${Number(lot.quantity)} ${unit} in this store)`
+        : `Creates new lot Rs ${price}/${unit}`}
+    </p>
+  );
+};
 
 const CostCalculatorEffect = ({
   form,
@@ -528,6 +562,29 @@ export const AddStockForm = ({
                 />
               </div>
               <FieldError errors={field.state.meta.errors} />
+              <form.Subscribe
+                selector={(state) => [
+                  state.values.warehouseId,
+                  state.values.materialId,
+                  state.values.quantity,
+                ]}
+                children={([warehouseId, materialId, quantity]) =>
+                  materialId ? (
+                    <LotPreview
+                      warehouseId={warehouseId}
+                      materialType={materialType}
+                      materialId={materialId}
+                      quantity={quantity}
+                      cost={field.state.value}
+                      unit={
+                        materialType === "chemical"
+                          ? (activeMaterial as any)?.unit || ""
+                          : "pcs"
+                      }
+                    />
+                  ) : null
+                }
+              />
             </Field>
           )}
         </form.Field>
