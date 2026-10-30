@@ -56,4 +56,14 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("purchases into lots", () => {
     const dashOne = await tx.select().from(chemicals).where(eq(chemicals.name, `${id} Soda Ash-1`));
     expect(dashOne).toHaveLength(0);
   }));
+
+  it("asks before a name that differs only in capitals, spaces or dashes, and refuses the same name", () => withRollback(async (tx) => {
+    const { id, floor, supplier, context } = await fixture(tx);
+    const base = { name: `${id} soda-ash`, unit: "kg", costPerUnit: "125", quantity: "0", minimumStockLevel: "0", supplierId: supplier.id, warehouseId: floor.id, notes: "", invoiceNumber: "", paymentMethod: "pay_later", walletId: "", paymentStatus: "unpaid", amountPaid: "", transactionId: "", bankName: "", packagingType: "", packagingSize: "" };
+    await expect(addRawMaterialFn({ data: base, context } as never)).rejects.toThrow(`Similar item already exists: "${id} Soda Ash"`);
+    await addRawMaterialFn({ data: { ...base, confirmSimilarName: true }, context } as never);
+    expect(await tx.select().from(chemicals).where(eq(chemicals.name, `${id} soda-ash`))).toHaveLength(1);
+    await expect(addRawMaterialFn({ data: { ...base, name: `${id} Soda Ash`, confirmSimilarName: true }, context } as never))
+      .rejects.toThrow("Use Add stock to buy more of it");
+  }));
 });

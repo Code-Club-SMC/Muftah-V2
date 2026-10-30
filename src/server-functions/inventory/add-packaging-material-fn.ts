@@ -11,7 +11,7 @@ import {
   suppliers,
 } from "@/db";
 import { eq, sql } from "drizzle-orm";
-import { isSimilarMaterialName, lotPrice, normalizeMaterialName } from "@/lib/inventory/material-lots";
+import { isSimilarMaterialName, lotPrice } from "@/lib/inventory/material-lots";
 import { findOrCreateLot, lockMaterialStock, moveLotStock } from "@/lib/inventory/material-lots.server";
 import { requireInventoryManageMiddleware } from "@/lib/middlewares";
 import { addPackagingMaterialSchema } from "@/lib/validators/validators";
@@ -87,9 +87,9 @@ export const addPackagingMaterialFn = createServerFn()
 
       const targetWarehouseId = warehouse.id;
 
-      // Exact names must buy through Add stock; near-misses need confirmation (typo guard).
+      // The same name must buy through Add stock; other near-misses need confirmation (typo guard).
       const candidates = await tx.select({ id: packagingMaterials.id, name: packagingMaterials.name }).from(packagingMaterials);
-      const exact = candidates.find((row) => normalizeMaterialName(row.name) === normalizeMaterialName(data.name));
+      const exact = candidates.find((row) => row.name.trim() === data.name.trim());
       if (exact) throw new Error(`Similar item already exists: "${exact.name}". Use Add stock to buy more of it.`);
       const similar = candidates.find((row) => isSimilarMaterialName(row.name, data.name));
       if (similar && !data.confirmSimilarName) throw new Error(`Similar item already exists: "${similar.name}"`);

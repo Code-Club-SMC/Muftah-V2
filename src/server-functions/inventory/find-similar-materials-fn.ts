@@ -3,7 +3,7 @@ import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { chemicals, materialStock, packagingMaterials } from "@/db/schemas/inventory-schema";
-import { isSimilarMaterialName, normalizeMaterialName } from "@/lib/inventory/material-lots";
+import { isSimilarMaterialName } from "@/lib/inventory/material-lots";
 import { requireInventoryManageMiddleware } from "@/lib/middlewares";
 
 // Typo guard: existing items whose name is the same or close to the typed one, with total stock.
@@ -24,9 +24,9 @@ export const findSimilarMaterialsFn = createServerFn()
             .from(packagingMaterials)
             .leftJoin(materialStock, eq(materialStock.packagingMaterialId, packagingMaterials.id))
             .groupBy(packagingMaterials.id, packagingMaterials.name);
-    const typed = normalizeMaterialName(data.name);
+    const typed = data.name.trim();
     return rows
       .filter((row) => isSimilarMaterialName(row.name, data.name))
       .slice(0, 5)
-      .map((row) => ({ id: row.id, name: row.name, exact: normalizeMaterialName(row.name) === typed, stock: String(row.stock), unit: row.unit }));
+      .map((row) => ({ id: row.id, name: row.name, exact: row.name.trim() === typed, stock: String(row.stock), unit: row.unit }));
   });
