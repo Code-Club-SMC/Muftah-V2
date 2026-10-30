@@ -10,7 +10,6 @@ import { requireProductionWorkLogMiddleware } from "@/lib/middlewares";
 import { hasPermission } from "@/lib/rbac";
 import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
-import { completeMixingRunCore } from "./complete-mixing-run-core.server";
 
 const logMixingProgressSchema = z.object({
   mixingRunId: z.string().min(1, "Mixing batch ID is required"),
@@ -57,27 +56,12 @@ export const logMixingProgressFn = createServerFn()
       });
 
       // Update actualBulkProduced
-      const [updatedRun] = await tx
+      await tx
         .update(mixingRuns)
         .set({
           actualBulkProduced: sql`actual_bulk_produced + ${data.quantityProduced}`,
         })
-        .where(eq(mixingRuns.id, mixingRun.id))
-        .returning();
-
-      // Check for auto-complete
-      const currentOutput = parseFloat(updatedRun.actualBulkProduced?.toString() || "0");
-      const targetOutput = parseFloat(updatedRun.targetBulkQuantity.toString());
-
-      if (currentOutput >= targetOutput) {
-        await completeMixingRunCore(
-          tx,
-          updatedRun.id,
-          context.session.user.id,
-          context.session.user.name,
-          "Auto-completed: target output reached"
-        );
-      }
+        .where(eq(mixingRuns.id, mixingRun.id));
 
       logActivityQuiet({
         module: "manufacturing",

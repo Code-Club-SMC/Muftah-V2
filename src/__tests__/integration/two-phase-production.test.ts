@@ -1019,13 +1019,14 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("two phase production database r
         const lotPicks = await openingLotPicks(tx, f.warehouse.id, [{ chemicalId: f.chemical.id, quantity: "10" }]);
         await invoke(startMixingRunFn, { mixingRunId: f.run.id, lotPicks }, f.actor.id);
         await expect(invoke(startMixingRunFn, { mixingRunId: f.run.id, lotPicks }, f.actor.id)).rejects.toThrow("scheduled");
-        await expect(invoke(completeMixingRunFn, { mixingRunId: f.run.id, shortfallReason: "No yield" }, f.actor.id)).rejects.toThrow("zero output");
+        await expect(invoke(completeMixingRunFn, { mixingRunId: f.run.id, shortfallReason: "spill" }, f.actor.id)).rejects.toThrow("zero output");
         await expect(invoke(logMixingProgressFn, { mixingRunId: f.run.id, quantityProduced: 11 }, f.actor.id)).rejects.toThrow("target");
         await expect(invoke(logMixingProgressFn, { mixingRunId: f.run.id, quantityProduced: 1 }, "another-user", ["operator.run.log"])).rejects.toThrow("another operator");
         await invoke(logMixingProgressFn, { mixingRunId: f.run.id, quantityProduced: 4 }, f.actor.id, ["operator.run.log"]);
         await expect(invoke(failMixingRunFn, { id: f.run.id, reason: "Machine stopped" }, f.actor.id)).rejects.toThrow("shortfall");
         await expect(invoke(completeMixingRunFn, { mixingRunId: f.run.id }, f.actor.id)).rejects.toThrow("shortfall reason");
         await invoke(logMixingProgressFn, { mixingRunId: f.run.id, quantityProduced: 6 }, f.actor.id, ["operator.run.log"]);
+        await invoke(completeMixingRunFn, { mixingRunId: f.run.id }, f.actor.id);
         const mixed = await tx.query.mixingRuns.findFirst({ where: eq(mixingRuns.id, f.run.id) });
         expect(mixed?.status).toBe("completed");
         expect(Number(mixed?.chemicalCostPerUnit)).toBe(10);

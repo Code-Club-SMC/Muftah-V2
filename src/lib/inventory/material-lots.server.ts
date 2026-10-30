@@ -6,7 +6,7 @@ import { chemicals, materialLotMovements, materialLots, materialLotStock, materi
 import { checkLotPicks, checkOldestFirst, costLotPicks, lotPrice, lotQuantity, purchaseUntouched, type LotBalance, type LotPick, type MaterialRef, type PickedLot } from "./material-lots";
 
 export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
-export type LotSourceType = "opening" | "purchase" | "purchase_edit" | "purchase_delete" | "transfer_out" | "transfer_in" | "mixing" | "packing" | "recovery" | "adjustment" | "warehouse_close";
+export type LotSourceType = "opening" | "purchase" | "purchase_edit" | "purchase_delete" | "transfer_out" | "transfer_in" | "mixing" | "mixing_return" | "packing" | "recovery" | "adjustment" | "warehouse_close";
 
 const stockColumn = (ref: MaterialRef) => (ref.materialType === "chemical" ? materialStock.chemicalId : materialStock.packagingMaterialId);
 const lotColumn = (ref: MaterialRef) => (ref.materialType === "chemical" ? materialLots.chemicalId : materialLots.packagingMaterialId);

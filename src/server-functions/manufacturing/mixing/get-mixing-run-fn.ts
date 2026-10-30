@@ -38,6 +38,7 @@ export const getMixingRunFn = createServerFn()
         materialsUsed: {
           with: {
             chemical: true,
+            lot: true,
           },
         },
         packagingAllocations: {

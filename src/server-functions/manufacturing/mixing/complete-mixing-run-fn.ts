@@ -5,11 +5,14 @@ import { hasPermission } from "@/lib/rbac";
 import { mixingRuns } from "@/db/schemas/production-schema";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
-import { completeMixingRunCore } from "./complete-mixing-run-core.server";
+import { MIXING_REASONS, reasonCodes } from "@/lib/production/material-use";
+import { completeMixingRunCore, mixingUseSchema } from "./complete-mixing-run-core.server";
 
 const completeMixingRunSchema = z.object({
   mixingRunId: z.string().min(1, "Mixing batch ID is required"),
-  shortfallReason: z.string().optional(),
+  shortfallReason: z.enum(reasonCodes(MIXING_REASONS)).optional(),
+  shortfallNote: z.string().trim().max(500).optional(),
+  uses: z.array(mixingUseSchema).max(100).default([]),
 });
 
 export const completeMixingRunFn = createServerFn()
@@ -29,7 +32,7 @@ export const completeMixingRunFn = createServerFn()
         data.mixingRunId,
         context.session.user.id,
         context.session.user.name,
-        data.shortfallReason,
+        { shortfallReason: data.shortfallReason, shortfallNote: data.shortfallNote, uses: data.uses },
       );
       return { success: true };
     });

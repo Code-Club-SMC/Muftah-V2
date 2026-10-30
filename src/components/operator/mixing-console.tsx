@@ -51,7 +51,8 @@ export const MixingConsole = ({ runId }: { runId: string }) => {
       {
         data: {
           mixingRunId: runId,
-          shortfallReason: shortfallReason || undefined,
+          shortfallReason: shortfallReason.trim() ? "other" : undefined,
+          shortfallNote: shortfallReason.trim() || undefined,
         },
       },
     );
