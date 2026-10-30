@@ -1,6 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useSuspenseQuery } from "@tanstack/react-query";
+import { useSuspenseQuery, useQuery, keepPreviousData } from "@tanstack/react-query";
 import { getSupplierDetailsFn } from "@/server-functions/suppliers/get-supplier-details-fn";
+import { getSupplierPaginatedPurchasesFn } from "@/server-functions/suppliers/get-supplier-paginated-purchases-fn";
+import { getSupplierPaginatedPaymentsFn } from "@/server-functions/suppliers/get-supplier-paginated-payments-fn";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { format } from "date-fns";
@@ -42,6 +44,47 @@ import { cn } from "@/lib/utils";
 import { AddStockDialog } from "@/components/inventory/add-stock-dialog";
 import { GenericLoader } from "@/components/custom/generic-loader";
 
+// The overview shows 5 rows per page; the details page holds the long history.
+const OVERVIEW_PAGE_SIZE = 5;
+
+// Keyed under ["supplier", id] so purchase/payment changes refresh these pages too.
+const overviewPurchasesQuery = (supplierId: string, page: number) => ({
+  queryKey: ["supplier", supplierId, "overview-purchases", page],
+  queryFn: () =>
+    getSupplierPaginatedPurchasesFn({
+      data: { supplierId, page, limit: OVERVIEW_PAGE_SIZE },
+    }),
+});
+
+const overviewPaymentsQuery = (supplierId: string, page: number) => ({
+  queryKey: ["supplier", supplierId, "overview-payments", page],
+  queryFn: () =>
+    getSupplierPaginatedPaymentsFn({
+      data: { supplierId, page, limit: OVERVIEW_PAGE_SIZE },
+    }),
+});
+
+// Server pages (1-based) mapped onto the DataTable's pagination props.
+function overviewPagination(
+  result: { metadata: { totalRecords: number; totalPages: number } } | undefined,
+  page: number,
+  isFetching: boolean,
+  setPage: (page: number) => void,
+) {
+  const state = { pageIndex: page - 1, pageSize: OVERVIEW_PAGE_SIZE };
+  return {
+    manualPagination: true,
+    pageCount: result?.metadata.totalPages ?? 1,
+    totalRecords: result?.metadata.totalRecords ?? 0,
+    isLoading: isFetching,
+    pagination: state,
+    onPaginationChange: (updater: any) => {
+      const next = typeof updater === "function" ? updater(state) : updater;
+      setPage(next.pageIndex + 1);
+    },
+  };
+}
+
 export const Route = createFileRoute("/_protected/suppliers/$supplierId")({
   loader: async ({ context, params }) => {
     await Promise.all([
@@ -54,6 +97,8 @@ export const Route = createFileRoute("/_protected/suppliers/$supplierId")({
         queryKey: ["inventory"],
         queryFn: getInventoryFn,
       }),
+      context.queryClient.ensureQueryData(overviewPurchasesQuery(params.supplierId, 1)),
+      context.queryClient.ensureQueryData(overviewPaymentsQuery(params.supplierId, 1)),
     ]);
   },
   pendingComponent: () => (
@@ -196,6 +241,17 @@ function SupplierDetailsPage() {
   const { data: warehouses } = useSuspenseQuery({
     queryKey: ["inventory"],
     queryFn: getInventoryFn,
+  });
+
+  const [purchasesPage, setPurchasesPage] = useState(1);
+  const [paymentsPage, setPaymentsPage] = useState(1);
+  const purchasesQuery = useQuery({
+    ...overviewPurchasesQuery(supplierId, purchasesPage),
+    placeholderData: keepPreviousData,
+  });
+  const paymentsQuery = useQuery({
+    ...overviewPaymentsQuery(supplierId, paymentsPage),
+    placeholderData: keepPreviousData,
   });
 
   const factoryFloor = warehouses.find((w) => w.type === "factory_floor");
@@ -457,18 +513,30 @@ function SupplierDetailsPage() {
 
                 <TabsContent value="purchases" className="mt-0">
                   <PurchaseHistoryTable
-                    data={supplier.purchases as any}
+                    data={(purchasesQuery.data?.data ?? []) as any}
                     setSelectedItem={setSelectedItem}
                     setDetailsOpen={setDetailsOpen}
                     setEditDialogOpen={setEditDialogOpen}
                     setDeleteDialogOpen={setDeleteDialogOpen}
                     onRecordPayment={handleRecordPayment}
                     onRestock={handleRestock}
+                    {...overviewPagination(
+                      purchasesQuery.data,
+                      purchasesPage,
+                      purchasesQuery.isFetching,
+                      setPurchasesPage,
+                    )}
                   />
                 </TabsContent>
                 <TabsContent value="payments" className="mt-0">
                   <PaymentRecordsTable
-                    data={supplier.payments as any}
+                    data={(paymentsQuery.data?.data ?? []) as any}
+                    {...overviewPagination(
+                      paymentsQuery.data,
+                      paymentsPage,
+                      paymentsQuery.isFetching,
+                      setPaymentsPage,
+                    )}
                   />
                 </TabsContent>
               </Tabs>

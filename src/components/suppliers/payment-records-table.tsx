@@ -28,6 +28,7 @@ function resolveMethodLabel(walletId: string | null | undefined, method: string 
 type SupplierPayment = {
   id: string;
   createdAt: string | Date;
+  paymentDate?: string | Date;
   amount: string;
   method: string | null;
   walletId: string | null;
@@ -45,7 +46,6 @@ type SupplierPayment = {
 
 type Props = {
   data: SupplierPayment[];
-  dateRange?: { from?: Date; to?: Date };
   isLoading?: boolean;
   manualPagination?: boolean;
   pageCount?: number;
@@ -54,41 +54,23 @@ type Props = {
   totalRecords?: number;
 };
 
-export const PaymentRecordsTable = ({ data, dateRange, ...rest }: Props) => {
+export const PaymentRecordsTable = ({ data, ...rest }: Props) => {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [selectedPayment, setSelectedPayment] = useState<SupplierPayment | null>(null);
   const { data: wallets = [] } = useQuery({ queryKey: ["wallets"], queryFn: getWalletsListFn });
 
-  // Filter data based on date range
-  const filteredData = data.filter((record) => {
-    if (!dateRange?.from) return true;
-    const recordDate = new Date(record.createdAt);
-    const from = new Date(dateRange.from);
-    const to = dateRange.to ? new Date(dateRange.to) : from;
-
-    // Normalize times
-    recordDate.setHours(0, 0, 0, 0);
-    from.setHours(0, 0, 0, 0);
-    to.setHours(23, 59, 59, 999);
-
-    return recordDate >= from && recordDate <= to;
-  });
-
-  // Show only the most recent payments — full history lives on the
-  // dedicated details page. Newest first by createdAt desc.
-  const recentPayments = [...filteredData]
-    .sort(
-      (a, b) =>
-        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-    )
-    .slice(0, 5);
-
   const columns: ColumnDef<SupplierPayment>[] = [
     {
-      accessorKey: "createdAt",
+      id: "date",
       header: "Date",
-      cell: ({ row }) =>
-        format(new Date(row.getValue("createdAt") as string), "MMM d, yyyy"),
+      cell: ({ row }) => (
+        <span className="whitespace-nowrap">
+          {format(
+            new Date(row.original.paymentDate ?? row.original.createdAt),
+            "MMM d, yyyy",
+          )}
+        </span>
+      ),
     },
     {
       id: "material",
@@ -100,7 +82,11 @@ export const PaymentRecordsTable = ({ data, dateRange, ...rest }: Props) => {
           purchase.materialType === "chemical"
             ? purchase.chemical?.name
             : purchase.packagingMaterial?.name;
-        return <span className="font-medium">{name || "-"}</span>;
+        return (
+          <span className="font-medium whitespace-normal break-words min-w-[180px] block">
+            {name || "-"}
+          </span>
+        );
       },
     },
     {
@@ -165,10 +151,10 @@ export const PaymentRecordsTable = ({ data, dateRange, ...rest }: Props) => {
     <>
       <DataTable
         columns={columns}
-        data={recentPayments}
+        data={data}
         searchKey="notes"
         searchPlaceholder="Search notes..."
-        showPagination={false}
+        showPagination={!!rest.manualPagination}
         {...rest}
       />
       <PaymentDetailsDialog

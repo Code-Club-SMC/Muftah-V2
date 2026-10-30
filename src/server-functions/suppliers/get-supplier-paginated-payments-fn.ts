@@ -4,14 +4,15 @@ import { requireSuppliersViewMiddleware } from "@/lib/middlewares";
 import { z } from "zod";
 import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
 import { supplierPayments } from "@/db/schemas/supplier-schema";
+import { purchaseDateBounds } from "@/lib/suppliers/purchase-rows.server";
 
 export const getSupplierPaginatedPaymentsFn = createServerFn()
   .middleware([requireSuppliersViewMiddleware])
   .inputValidator(
     z.object({
       supplierId: z.string(),
-      page: z.number().default(1),
-      limit: z.number().default(25),
+      page: z.number().int().min(1).default(1),
+      limit: z.number().int().min(1).max(100).default(100),
       dateFrom: z.string().optional(),
       dateTo: z.string().optional(),
     }),
@@ -19,17 +20,11 @@ export const getSupplierPaginatedPaymentsFn = createServerFn()
   .handler(async ({ data }) => {
     const { supplierId, page, limit, dateFrom, dateTo } = data;
     const offset = (page - 1) * limit;
+    const { fromDate, toDate } = purchaseDateBounds(dateFrom, dateTo);
 
     const conditions = [eq(supplierPayments.supplierId, supplierId)];
-
-    if (dateFrom) {
-      conditions.push(gte(supplierPayments.paymentDate, new Date(dateFrom)));
-    }
-    if (dateTo) {
-      const toDate = new Date(dateTo);
-      toDate.setHours(23, 59, 59, 999);
-      conditions.push(lte(supplierPayments.paymentDate, toDate));
-    }
+    if (fromDate) conditions.push(gte(supplierPayments.paymentDate, fromDate));
+    if (toDate) conditions.push(lte(supplierPayments.paymentDate, toDate));
 
     const whereClause = and(...conditions);
 
@@ -48,7 +43,11 @@ export const getSupplierPaginatedPaymentsFn = createServerFn()
           },
         },
       },
-      orderBy: [desc(supplierPayments.createdAt)],
+      orderBy: [
+        desc(supplierPayments.paymentDate),
+        desc(supplierPayments.createdAt),
+        desc(supplierPayments.id),
+      ],
       limit,
       offset,
     });
@@ -57,7 +56,7 @@ export const getSupplierPaginatedPaymentsFn = createServerFn()
       data: records,
       metadata: {
         totalRecords: Number(count),
-        totalPages: Math.ceil(Number(count) / limit),
+        totalPages: Math.max(1, Math.ceil(Number(count) / limit)),
         currentPage: page,
       },
     };

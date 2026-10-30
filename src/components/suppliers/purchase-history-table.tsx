@@ -9,7 +9,6 @@ import {
   Trash2Icon,
   BanknoteIcon,
   MoreHorizontal,
-  AlertTriangle,
   ShoppingCart,
 } from "lucide-react";
 import {
@@ -20,25 +19,17 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-
 export type PurchaseRecord = {
   id: string;
   createdAt: string | Date;
+  purchaseDate?: string | Date;
   cost: string;
   paidAmount: string;
   quantity: string;
   unitCost: string;
   materialType: string;
   paymentMethod?: string | null;
-  currentStock?: number;
-  isLowStock?: boolean;
-  minStockLevel?: number;
+  stockLeft?: number | null;
   chemical?: {
     id: string;
     name: string;
@@ -69,7 +60,6 @@ type Props = {
   setDeleteDialogOpen: (open: boolean) => void;
   onRecordPayment: (item: PurchaseRecord) => void;
   onRestock?: (item: PurchaseRecord) => void;
-  dateRange?: { from?: Date; to?: Date };
   isLoading?: boolean;
   manualPagination?: boolean;
   pageCount?: number;
@@ -86,46 +76,20 @@ export const PurchaseHistoryTable = ({
   setDeleteDialogOpen,
   onRecordPayment,
   onRestock,
-  dateRange,
   ...rest
 }: Props) => {
-  // Filter data based on date range
-  const filteredData = data.filter((record) => {
-    if (!dateRange?.from) return true;
-    const recordDate = new Date(record.createdAt);
-    const from = new Date(dateRange.from);
-    const to = dateRange.to ? new Date(dateRange.to) : from;
-
-    // Normalize times
-    recordDate.setHours(0, 0, 0, 0);
-    from.setHours(0, 0, 0, 0);
-    to.setHours(23, 59, 59, 999);
-
-    return recordDate >= from && recordDate <= to;
-  });
-
-  // Show only the most recent records — full history lives on the
-  // dedicated details page. Newest first by createdAt desc.
-  const recentPurchases = [...filteredData]
-    .sort(
-      (a, b) =>
-        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-    )
-    .slice(0, 5);
-
   const columns: ColumnDef<PurchaseRecord>[] = [
     {
-      accessorKey: "createdAt",
+      id: "date",
       header: "Date",
-      cell: ({ row }) => {
-        const date = row.getValue("createdAt");
-        if (!date) return "-";
-        return (
-          <div className="font-medium whitespace-nowrap">
-            {format(new Date(date as string), "MMM d, yyyy")}
-          </div>
-        );
-      },
+      cell: ({ row }) => (
+        <div className="font-medium whitespace-nowrap">
+          {format(
+            new Date(row.original.purchaseDate ?? row.original.createdAt),
+            "MMM d, yyyy",
+          )}
+        </div>
+      ),
     },
     {
       id: "material",
@@ -136,7 +100,7 @@ export const PurchaseHistoryTable = ({
         const record = row.original;
         return (
           <div className="flex flex-col">
-            <span className="font-medium text-sm truncate max-w-[150px]">
+            <span className="font-medium text-sm whitespace-normal break-words min-w-[180px]">
               {record.chemical?.name ||
                 record.packagingMaterial?.name ||
                 "Unknown"}
@@ -169,33 +133,17 @@ export const PurchaseHistoryTable = ({
     },
     {
       id: "stock",
-      header: "Current Stock",
+      header: "Left in Stock",
       cell: ({ row }) => {
-        const record = row.original;
-        if (record.currentStock === undefined)
+        const left = row.original.stockLeft;
+        if (left === undefined || left === null)
           return <span className="text-muted-foreground">-</span>;
-
-        const isLow = record.isLowStock;
         return (
-          <div className="flex items-center gap-1.5">
-            <span
-              className={`font-mono font-medium text-xs ${isLow ? "text-red-500" : ""}`}
-            >
-              {record.currentStock}
-            </span>
-            {isLow && (
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger>
-                    <AlertTriangle className="size-3.5 text-red-500" />
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>Low Stock! Min: {record.minStockLevel}</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            )}
-          </div>
+          <span
+            className={`font-mono font-medium text-xs whitespace-nowrap ${left <= 0 ? "text-muted-foreground" : ""}`}
+          >
+            {left.toLocaleString(undefined, { maximumFractionDigits: 3 })}
+          </span>
         );
       },
     },
@@ -342,10 +290,10 @@ export const PurchaseHistoryTable = ({
   return (
     <DataTable
       columns={columns}
-      data={recentPurchases}
+      data={data}
       searchKey="material"
       searchPlaceholder="Filter purchases..."
-      showPagination={false}
+      showPagination={!!rest.manualPagination}
       {...rest}
     />
   );

@@ -21,11 +21,14 @@ import { AddStockDialog } from "@/components/inventory/add-stock-dialog";
 import { getInventoryFn } from "@/server-functions/inventory/get-inventory-fn";
 import { AddRawMaterialDialog } from "@/components/inventory/add-raw-material-sheet";
 import { AddPackagingMaterialSheet } from "@/components/inventory/add-packaging-material-sheet";
+import { datePickerKey } from "@/lib/report-dates";
 
+// Newest 100 records per page; Next/Previous fetch the next 100 from the server.
+const PAGE_SIZE = 100;
 
 const searchSchema = z.object({
   view: z.enum(["purchases", "payments", "outstanding"]).catch("purchases"),
-  page: z.number().catch(1),
+  page: z.number().int().min(1).catch(1),
   dateFrom: z.string().optional(),
   dateTo: z.string().optional(),
 });
@@ -50,13 +53,13 @@ export const Route = createFileRoute(
     // We only fetch the requested view
     if (deps.view === "purchases") {
       await context.queryClient.ensureQueryData({
-        queryKey: ["paginated-purchases", params.supplierId, deps.page, deps.dateFrom, deps.dateTo],
+        queryKey: ["supplier", params.supplierId, "paginated-purchases", deps.page, deps.dateFrom, deps.dateTo],
         queryFn: () =>
           getSupplierPaginatedPurchasesFn({
             data: {
               supplierId: params.supplierId,
               page: deps.page,
-              limit: 25,
+              limit: PAGE_SIZE,
               dateFrom: deps.dateFrom,
               dateTo: deps.dateTo,
             },
@@ -64,13 +67,13 @@ export const Route = createFileRoute(
       });
     } else if (deps.view === "payments") {
       await context.queryClient.ensureQueryData({
-        queryKey: ["paginated-payments", params.supplierId, deps.page, deps.dateFrom, deps.dateTo],
+        queryKey: ["supplier", params.supplierId, "paginated-payments", deps.page, deps.dateFrom, deps.dateTo],
         queryFn: () =>
           getSupplierPaginatedPaymentsFn({
             data: {
               supplierId: params.supplierId,
               page: deps.page,
-              limit: 25,
+              limit: PAGE_SIZE,
               dateFrom: deps.dateFrom,
               dateTo: deps.dateTo,
             },
@@ -78,13 +81,13 @@ export const Route = createFileRoute(
       });
     } else if (deps.view === "outstanding") {
       await context.queryClient.ensureQueryData({
-        queryKey: ["paginated-outstanding", params.supplierId, deps.page, deps.dateFrom, deps.dateTo],
+        queryKey: ["supplier", params.supplierId, "paginated-outstanding", deps.page, deps.dateFrom, deps.dateTo],
         queryFn: () =>
           getSupplierPaginatedOutstandingFn({
             data: {
               supplierId: params.supplierId,
               page: deps.page,
-              limit: 25,
+              limit: PAGE_SIZE,
               dateFrom: deps.dateFrom,
               dateTo: deps.dateTo,
             },
@@ -117,13 +120,13 @@ function DetailsPage() {
   let isFetchingData = false;
 
   const purchasesQuery = useQuery({
-    queryKey: ["paginated-purchases", supplierId, searchParams.page, searchParams.dateFrom, searchParams.dateTo],
+    queryKey: ["supplier", supplierId, "paginated-purchases", searchParams.page, searchParams.dateFrom, searchParams.dateTo],
     queryFn: () =>
       getSupplierPaginatedPurchasesFn({
         data: {
           supplierId,
           page: searchParams.page,
-          limit: 25,
+          limit: PAGE_SIZE,
           dateFrom: searchParams.dateFrom,
           dateTo: searchParams.dateTo,
         },
@@ -133,13 +136,13 @@ function DetailsPage() {
   });
 
   const paymentsQuery = useQuery({
-    queryKey: ["paginated-payments", supplierId, searchParams.page, searchParams.dateFrom, searchParams.dateTo],
+    queryKey: ["supplier", supplierId, "paginated-payments", searchParams.page, searchParams.dateFrom, searchParams.dateTo],
     queryFn: () =>
       getSupplierPaginatedPaymentsFn({
         data: {
           supplierId,
           page: searchParams.page,
-          limit: 25,
+          limit: PAGE_SIZE,
           dateFrom: searchParams.dateFrom,
           dateTo: searchParams.dateTo,
         },
@@ -149,13 +152,13 @@ function DetailsPage() {
   });
 
   const outstandingQuery = useQuery({
-    queryKey: ["paginated-outstanding", supplierId, searchParams.page, searchParams.dateFrom, searchParams.dateTo],
+    queryKey: ["supplier", supplierId, "paginated-outstanding", searchParams.page, searchParams.dateFrom, searchParams.dateTo],
     queryFn: () =>
       getSupplierPaginatedOutstandingFn({
         data: {
           supplierId,
           page: searchParams.page,
-          limit: 25,
+          limit: PAGE_SIZE,
           dateFrom: searchParams.dateFrom,
           dateTo: searchParams.dateTo,
         },
@@ -184,8 +187,8 @@ function DetailsPage() {
       search: (prev) => ({
         ...prev,
         page: 1, // Reset page on filter change
-        dateFrom: range?.from?.toISOString(),
-        dateTo: range?.to?.toISOString(),
+        dateFrom: range?.from ? datePickerKey(range.from) : undefined,
+        dateTo: range?.from ? datePickerKey(range.to ?? range.from) : undefined,
       }),
     });
   };
@@ -205,9 +208,9 @@ function DetailsPage() {
     pageCount: metadata.totalPages,
     totalRecords: metadata.totalRecords,
     isLoading: isFetchingData,
-    pagination: { pageIndex: metadata.currentPage - 1, pageSize: 25 },
+    pagination: { pageIndex: metadata.currentPage - 1, pageSize: PAGE_SIZE },
     onPaginationChange: (updater: any) => {
-       const newIndex = typeof updater === "function" ? updater({ pageIndex: metadata.currentPage - 1, pageSize: 25 }).pageIndex : updater.pageIndex;
+       const newIndex = typeof updater === "function" ? updater({ pageIndex: metadata.currentPage - 1, pageSize: PAGE_SIZE }).pageIndex : updater.pageIndex;
        setPage(newIndex + 1);
     }
   };
@@ -234,10 +237,12 @@ function DetailsPage() {
     setRecordPaymentOpen(true);
   };
 
-  // Convert Date strings to Date objects for the picker
+  // Day keys (yyyy-MM-dd) become local-midnight dates for the picker
+  const toPickerDate = (key?: string) =>
+    key ? new Date(`${key.slice(0, 10)}T00:00:00`) : undefined;
   const currentRange = {
-    from: searchParams.dateFrom ? new Date(searchParams.dateFrom) : undefined,
-    to: searchParams.dateTo ? new Date(searchParams.dateTo) : undefined,
+    from: toPickerDate(searchParams.dateFrom),
+    to: toPickerDate(searchParams.dateTo),
   };
 
   return (
