@@ -12,11 +12,11 @@ type Requirement = { chemicalId: string; name: string; unit: string; quantity: s
 
 export function StartMixingDialogBody({ materials, lots, pending, onStart }: { materials: Requirement[]; lots: Record<string, LotBalance[]>; pending: boolean; onStart: (picks: MaterialLotPicks[]) => void }) {
   const [picks, setPicks] = useState<Record<string, LotPick[]>>({});
-  const ready = materials.every((item) => lotPicksValid(item.quantity, picks[item.chemicalId] ?? [], lots[item.chemicalId] ?? [], item.name, item.unit));
+  const ready = materials.every((item) => lotPicksValid(item.quantity, picks[item.chemicalId] ?? [], lots[item.chemicalId] ?? [], item.name, item.unit, true));
   return (
     <div className="flex flex-col gap-4">
       {materials.map((item) => (
-        <LotPicker key={item.chemicalId} name={item.name} unit={item.unit} required={item.quantity} lots={lots[item.chemicalId] ?? []}
+        <LotPicker oldestFirst key={item.chemicalId} name={item.name} unit={item.unit} required={item.quantity} lots={lots[item.chemicalId] ?? []}
           value={picks[item.chemicalId] ?? []} onChange={(next) => setPicks((current) => ({ ...current, [item.chemicalId]: next }))} />
       ))}
       <Button disabled={!ready || pending} onClick={() => onStart(materials.map((item) => ({ materialId: item.chemicalId, picks: (picks[item.chemicalId] ?? []).filter((pick) => pick.quantity !== "") })))}>
@@ -35,7 +35,7 @@ export function StartMixingDialog({ runId, open, onOpenChange, pending, onStart 
       <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Pick lots to start</DialogTitle>
-          <DialogDescription>Choose which price lot each chemical comes from. Lots must add up to the formula amount.</DialogDescription>
+          <DialogDescription>Stock is taken from the oldest lot first. Lots must add up to the formula amount.</DialogDescription>
         </DialogHeader>
         {error
           ? <p className="text-sm text-destructive">{error.message}</p>

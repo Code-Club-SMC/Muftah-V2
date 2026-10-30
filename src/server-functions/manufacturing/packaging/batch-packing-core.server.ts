@@ -75,7 +75,7 @@ export async function recordBatchPackingCore(tx: Tx, input: BatchPackingInput, a
     if (!material) throw new Error("Packaging material not found");
     const chosen = data.lotPicks.find(row => row.materialId === materialId);
     if (!chosen) throw new Error(`Pick lots for ${material.name}`);
-    const picked = await takeLotPicks(tx, { warehouseId: run.warehouseId, ref: { materialType: "packaging", materialId }, name: material.name, unit: "pcs", required: packingBulk(need.total.toString(), "Packaging material quantity"), picks: chosen.picks, sourceType: "packing", sourceId: data.requestId });
+    const picked = await takeLotPicks(tx, { warehouseId: run.warehouseId, ref: { materialType: "packaging", materialId }, name: material.name, unit: "pcs", required: packingBulk(need.total.toString(), "Packaging material quantity"), picks: chosen.picks, sourceType: "packing", sourceId: data.requestId, oldestFirst: true });
     for (const lot of picked) {
       let share = new Big(0);
       let assignedQuantity = new Big(0);

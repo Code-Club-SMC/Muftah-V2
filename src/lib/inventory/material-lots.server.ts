@@ -3,7 +3,7 @@ import Big from "big.js";
 import { and, asc, desc, eq, gt, gte, inArray, ne, sql } from "drizzle-orm";
 import type { db } from "@/db";
 import { chemicals, materialLotMovements, materialLots, materialLotStock, materialStock, packagingMaterials } from "@/db/schemas/inventory-schema";
-import { checkLotPicks, costLotPicks, lotPrice, lotQuantity, purchaseUntouched, type LotBalance, type LotPick, type MaterialRef, type PickedLot } from "./material-lots";
+import { checkLotPicks, checkOldestFirst, costLotPicks, lotPrice, lotQuantity, purchaseUntouched, type LotBalance, type LotPick, type MaterialRef, type PickedLot } from "./material-lots";
 
 export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 export type LotSourceType = "opening" | "purchase" | "purchase_edit" | "purchase_delete" | "transfer_out" | "transfer_in" | "mixing" | "packing" | "recovery" | "adjustment" | "warehouse_close";
@@ -94,10 +94,14 @@ export async function listLotBalances(tx: Tx, warehouseId: string, ref: Material
   return rows;
 }
 
-export async function takeLotPicks(tx: Tx, input: { warehouseId: string; ref: MaterialRef; name: string; unit: string; required: string; picks: LotPick[]; sourceType: LotSourceType; sourceId?: string | null }): Promise<PickedLot[]> {
+export async function takeLotPicks(tx: Tx, input: { warehouseId: string; ref: MaterialRef; name: string; unit: string; required: string; picks: LotPick[]; sourceType: LotSourceType; sourceId?: string | null; oldestFirst?: boolean }): Promise<PickedLot[]> {
   const balances = await listLotBalances(tx, input.warehouseId, input.ref);
   const errors = checkLotPicks({ name: input.name, unit: input.unit, required: input.required, picks: input.picks, balances });
   if (errors.length) throw new Error(errors.join("; "));
+  if (input.oldestFirst) {
+    const order = checkOldestFirst({ name: input.name, unit: input.unit, required: input.required, picks: input.picks, balances });
+    if (order.length) throw new Error(order.join("; "));
+  }
   const picked = costLotPicks(input.picks, balances);
   for (const row of picked) await moveLotStock(tx, { ref: input.ref, lotId: row.lotId, warehouseId: input.warehouseId, delta: new Big(row.quantity).times(-1).toString(), sourceType: input.sourceType, sourceId: input.sourceId });
   return picked;

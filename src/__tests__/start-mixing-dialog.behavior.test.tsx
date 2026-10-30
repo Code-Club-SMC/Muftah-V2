@@ -11,13 +11,20 @@ const lots = { soda: [
 ] };
 
 describe("StartMixingDialogBody", () => {
-  it("enables Start only when every chemical's lots add up", () => {
+  it("pre-fills oldest first and enables Start only when every chemical's lots add up", () => {
     const onStart = vi.fn();
     render(<StartMixingDialogBody materials={[{ chemicalId: "soda", name: "Soda Ash", unit: "kg", quantity: "200.000" }]} lots={lots} pending={false} onStart={onStart} />);
     const start = screen.getByRole<HTMLButtonElement>("button", { name: "Start Mixing Batch" });
+    const older = () => screen.getByLabelText("Lot 1 Oct, 120 kg here") as HTMLInputElement;
+    const newer = () => screen.getByLabelText("Lot 20 Oct, 80 kg here") as HTMLInputElement;
+    // Pre-filled oldest first, with no prices shown.
+    expect([older().value, newer().value]).toEqual(["120.000", "80.000"]);
+    expect(screen.queryByText(/Rs \d+\/kg/)).toBeNull();
+    expect(start.disabled).toBe(false);
+    fireEvent.change(older(), { target: { value: "100" } });
     expect(start.disabled).toBe(true);
-    fireEvent.change(screen.getByLabelText("Rs 115/kg (first 1 Oct), 120 kg here"), { target: { value: "120" } });
-    fireEvent.change(screen.getByLabelText("Rs 125/kg (first 20 Oct), 80 kg here"), { target: { value: "80" } });
+    fireEvent.change(older(), { target: { value: "120" } });
+    fireEvent.change(newer(), { target: { value: "80" } });
     expect(start.disabled).toBe(false);
     fireEvent.click(start);
     expect(onStart).toHaveBeenCalledWith([{ materialId: "soda", picks: expect.arrayContaining([{ lotId: "a", quantity: "120" }, { lotId: "b", quantity: "80" }]) }]);

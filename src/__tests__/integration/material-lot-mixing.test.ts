@@ -66,6 +66,15 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("mixing start with lots", () => 
     ].sort());
   }));
 
+  it("refuses a newer lot while an older one still has stock", () => withRollback(async (tx) => {
+    const { context, run, chemical, lotA, lotB } = await seed(tx);
+    await expect(startMixingRunFn({ data: { mixingRunId: run.id, lotPicks: [{ materialId: chemical.id, picks: [{ lotId: lotA.id, quantity: "100" }, { lotId: lotB.id, quantity: "80" }] }] }, context } as never))
+      .rejects.toThrow("lots add up to 180");
+    await tx.update(formulaIngredients).set({ quantityPerBatch: "100" }).where(eq(formulaIngredients.chemicalId, chemical.id));
+    await expect(startMixingRunFn({ data: { mixingRunId: run.id, lotPicks: [{ materialId: chemical.id, picks: [{ lotId: lotA.id, quantity: "20" }, { lotId: lotB.id, quantity: "80" }] }] }, context } as never))
+      .rejects.toThrow("use the oldest stock first. Take 100 kg from Lot");
+  }));
+
   it("refuses a start without picks for every formula chemical", () => withRollback(async (tx) => {
     const { context, run } = await seed(tx);
     await expect(startMixingRunFn({ data: { mixingRunId: run.id, lotPicks: [] }, context } as never)).rejects.toThrow("Pick lots for");

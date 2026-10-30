@@ -171,9 +171,19 @@ describe("batch packing operator form", () => {
     count("Rs.100: Full cartons", "2");
     expect(screen.getByText("Carton: 2 pcs needed")).toBeTruthy();
     const review = screen.getByRole("button", { name: "Review packing" }) as HTMLButtonElement;
+    const older = () => screen.getByLabelText("Lot 1 Oct, 1 pcs here") as HTMLInputElement;
+    const newer = () => screen.getByLabelText("Lot 20 Oct, 5 pcs here") as HTMLInputElement;
+    // Pre-filled oldest first, with no prices shown.
+    expect([older().value, newer().value]).toEqual(["1.000", "1.000"]);
+    expect(screen.queryByText(/Rs \d+\/pcs/)).toBeNull();
+    count("Lot 20 Oct, 5 pcs here", "");
     expect(review.disabled).toBe(true);
-    count("Rs 5/pcs (first 1 Oct), 1 pcs here", "1");
-    count("Rs 6/pcs (first 20 Oct), 5 pcs here", "1");
+    count("Lot 1 Oct, 1 pcs here", "");
+    count("Lot 20 Oct, 5 pcs here", "2");
+    expect(screen.getByText("Carton: use the oldest stock first. Take 1 pcs from Lot 1 Oct before a newer lot.")).toBeTruthy();
+    expect(review.disabled).toBe(true);
+    count("Lot 1 Oct, 1 pcs here", "1");
+    count("Lot 20 Oct, 5 pcs here", "1");
     expect(review.disabled).toBe(false);
     fireEvent.click(review);
     fireEvent.click(screen.getByRole("button", { name: "Confirm & add to finished goods" }));

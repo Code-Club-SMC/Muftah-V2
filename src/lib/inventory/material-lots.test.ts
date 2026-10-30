@@ -3,8 +3,8 @@ import { describe, expect, it } from "vitest";
 import fc from "fast-check";
 import Big from "big.js";
 import {
-  checkLotPicks, costLotPicks, defaultLotPicks, isSimilarMaterialName, lotLabel,
-  lotPrice, lotQuantity, normalizeMaterialName, purchaseUntouched,
+  checkLotPicks, checkOldestFirst, costLotPicks, defaultLotPicks, isSimilarMaterialName, lotDateLabel, lotLabel,
+  lotPrice, lotQuantity, normalizeMaterialName, oldestFirstPicks, purchaseUntouched,
 } from "./material-lots";
 
 const balances = [
@@ -41,7 +41,7 @@ describe("checkLotPicks", () => {
   });
   it("reports a pick above lot stock", () => {
     expect(checkLotPicks({ ...base, required: "130", picks: [{ lotId: "a", quantity: "130" }] })).toContain(
-      "Soda Ash: lot Rs 115.00 has only 120 kg here",
+      "Soda Ash: Lot 1 Oct has only 120 kg here",
     );
   });
   it("reports unknown and repeated lots", () => {
@@ -112,5 +112,37 @@ describe("lotLabel", () => {
   it("shows price, unit and first purchase date", () => {
     expect(lotLabel(balances[0], "kg")).toBe("Rs 115/kg (first 1 Oct)");
     expect(lotLabel({ unitPrice: "2.50", firstPurchasedAt: "2026-10-20T05:00:00Z" }, "pcs")).toBe("Rs 2.50/pcs (first 20 Oct)");
+  });
+});
+
+describe("oldest stock first", () => {
+  const oct1 = new Date("2026-10-01");
+  const oct20 = new Date("2026-10-20");
+  const lots = [
+    { lotId: "a", unitPrice: "115.00", quantity: "20.000", firstPurchasedAt: oct1 },
+    { lotId: "b", unitPrice: "118.00", quantity: "10.000", firstPurchasedAt: oct1 },
+    { lotId: "c", unitPrice: "125.00", quantity: "100.000", firstPurchasedAt: oct20 },
+  ];
+
+  it("names lots by date, never price", () => {
+    expect(lots.map((lot) => lotDateLabel(lot, lots))).toEqual(["Lot 1 Oct", "Lot 1 Oct (2)", "Lot 20 Oct"]);
+  });
+
+  it("takes from the oldest lot first", () => {
+    expect(oldestFirstPicks("25", lots)).toEqual([{ lotId: "a", quantity: "20.000" }, { lotId: "b", quantity: "5.000" }]);
+    expect(oldestFirstPicks("15", lots)).toEqual([{ lotId: "a", quantity: "15.000" }]);
+    expect(oldestFirstPicks("500", lots)).toEqual([]);
+  });
+
+  it("blocks a newer lot while an older one still has stock", () => {
+    expect(checkOldestFirst({ name: "Soda Ash", unit: "kg", required: "25", picks: [{ lotId: "c", quantity: "25" }], balances: lots }))
+      .toEqual(["Soda Ash: use the oldest stock first. Take 20 kg from Lot 1 Oct before a newer lot."]);
+    expect(checkOldestFirst({ name: "Soda Ash", unit: "kg", required: "25", picks: [{ lotId: "a", quantity: "15" }, { lotId: "b", quantity: "10" }], balances: lots }))
+      .toEqual(["Soda Ash: use the oldest stock first. Take 20 kg from Lot 1 Oct before a newer lot."]);
+    expect(checkOldestFirst({ name: "Soda Ash", unit: "kg", required: "25", picks: [{ lotId: "a", quantity: "20" }, { lotId: "b", quantity: "5" }], balances: lots })).toEqual([]);
+  });
+
+  it("leaves short stock to checkLotPicks", () => {
+    expect(checkOldestFirst({ name: "Soda Ash", unit: "kg", required: "500", picks: [{ lotId: "c", quantity: "100" }], balances: lots })).toEqual([]);
   });
 });

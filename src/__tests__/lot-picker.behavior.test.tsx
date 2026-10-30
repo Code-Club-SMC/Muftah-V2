@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { LotPicker } from "@/components/inventory/lot-picker";
+import { LotPicker, lotPicksValid } from "@/components/inventory/lot-picker";
 import type { LotPick } from "@/lib/inventory/material-lots";
 
 const lots = [
@@ -27,7 +27,7 @@ describe("LotPicker", () => {
   it("explains a total that is short or a lot that is overdrawn", () => {
     render(<Harness required="200" />);
     fireEvent.change(screen.getByLabelText("Rs 115/kg (first 1 Oct), 120 kg here"), { target: { value: "130" } });
-    expect(screen.getByText("Soda Ash: lot Rs 115.00 has only 120 kg here")).toBeTruthy();
+    expect(screen.getByText("Soda Ash: Lot 1 Oct has only 120 kg here")).toBeTruthy();
   });
 
   it("pre-fills only when one lot holds stock and covers the need", () => {
@@ -48,5 +48,33 @@ describe("LotPicker", () => {
   it("does not pre-fill when there is a choice", () => {
     render(<Harness required="50" />);
     expect((screen.getByLabelText("Rs 115/kg (first 1 Oct), 120 kg here") as HTMLInputElement).value).toBe("");
+  });
+
+  it("fills oldest first, shows no price and blocks a newer lot", () => {
+    const oct1 = new Date("2026-10-01");
+    const lots = [
+      { lotId: "a", unitPrice: "", quantity: "20.000", firstPurchasedAt: oct1 },
+      { lotId: "c", unitPrice: "", quantity: "100.000", firstPurchasedAt: new Date("2026-10-20") },
+    ];
+    let picks: LotPick[] = [];
+    const { rerender } = render(<LotPicker oldestFirst name="Soda Ash" unit="kg" required="25" lots={lots} value={picks} onChange={(next) => (picks = next)} />);
+    expect(picks).toEqual([{ lotId: "a", quantity: "20.000" }, { lotId: "c", quantity: "5.000" }]);
+    rerender(<LotPicker oldestFirst name="Soda Ash" unit="kg" required="25" lots={lots} value={[{ lotId: "c", quantity: "25" }]} onChange={(next) => (picks = next)} />);
+    expect(screen.queryByText(/Rs/)).toBeNull();
+    expect(screen.getByLabelText("Lot 1 Oct, 20 kg here")).toBeTruthy();
+    expect(screen.getByText("Soda Ash: use the oldest stock first. Take 20 kg from Lot 1 Oct before a newer lot.")).toBeTruthy();
+    expect(lotPicksValid("25", [{ lotId: "c", quantity: "25" }], lots, "Soda Ash", "kg", true)).toBe(false);
+  });
+
+  it("moves an untouched oldest-first pre-fill across lots when the need changes", () => {
+    const only = [lots[0], { ...lots[1], quantity: "80.000" }];
+    function OldestHarness({ required }: { required: string }) {
+      const [value, setValue] = useState<LotPick[]>([]);
+      return <LotPicker oldestFirst name="Soda Ash" unit="kg" required={required} lots={only} value={value} onChange={setValue} />;
+    }
+    const view = render(<OldestHarness required="100" />);
+    view.rerender(<OldestHarness required="150" />);
+    expect((screen.getByLabelText("Lot 1 Oct, 120 kg here") as HTMLInputElement).value).toBe("120.000");
+    expect((screen.getByLabelText("Lot 20 Oct, 80 kg here") as HTMLInputElement).value).toBe("30.000");
   });
 });

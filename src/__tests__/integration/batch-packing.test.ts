@@ -110,6 +110,8 @@ describe("batch packing isolated PostgreSQL", () => {
     const cartonRef = { materialType: "packaging" as const, materialId: f.master.id };
     const dearer = await findOrCreateLot(tx, cartonRef, "6");
     await moveLotStock(tx, { ref: cartonRef, lotId: dearer.id, warehouseId: f.warehouse.id, delta: "5", sourceType: "purchase" });
+    // Leave one carton in the older lot, so taking one from each is oldest first.
+    await moveLotStock(tx, { ref: cartonRef, lotId: f.cartonLot.id, warehouseId: f.warehouse.id, delta: "-999", sourceType: "adjustment" });
     const lotPicks = [
       { materialId: f.primary.id, picks: [{ lotId: f.packLot.id, quantity: "80" }] },
       { materialId: f.master.id, picks: [{ lotId: f.cartonLot.id, quantity: "1" }, { lotId: dearer.id, quantity: "1" }] },
@@ -126,6 +128,8 @@ describe("batch packing isolated PostgreSQL", () => {
     const cartonRef = { materialType: "packaging" as const, materialId: f.master.id };
     const dearer = await findOrCreateLot(tx, cartonRef, "6");
     await moveLotStock(tx, { ref: cartonRef, lotId: dearer.id, warehouseId: f.warehouse.id, delta: "5", sourceType: "purchase" });
+    // Leave one carton in the older lot, so taking one from each is oldest first.
+    await moveLotStock(tx, { ref: cartonRef, lotId: f.cartonLot.id, warehouseId: f.warehouse.id, delta: "-999", sourceType: "adjustment" });
     const lines = [{ recipeId: f.formats[0].id, fullCartons: 1, partialPacks: 0, loosePacks: 0 }, { recipeId: f.formats[1].id, fullCartons: 1, partialPacks: 0, loosePacks: 0 }];
     const lotPicks = [
       { materialId: f.primary.id, picks: [{ lotId: f.packLot.id, quantity: "60" }] },

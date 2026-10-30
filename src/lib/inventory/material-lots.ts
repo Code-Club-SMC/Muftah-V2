@@ -50,7 +50,7 @@ export function checkLotPicks(input: { name: string; unit: string; required: str
     seen.add(pick.lotId);
     const balance = input.balances.find((row) => row.lotId === pick.lotId);
     if (!balance || new Big(balance.quantity).lte(0)) { errors.push(`${name}: one picked lot has no stock here`); continue; }
-    if (quantity.gt(balance.quantity)) errors.push(`${name}: lot Rs ${balance.unitPrice} has only ${plain(balance.quantity)} ${unit} here`);
+    if (quantity.gt(balance.quantity)) errors.push(`${name}: ${lotDateLabel(balance, input.balances)} has only ${plain(balance.quantity)} ${unit} here`);
     total = total.plus(quantity);
   }
   if (!errors.length && !total.eq(input.required))
@@ -71,6 +71,43 @@ export function defaultLotPicks(required: string, balances: LotBalance[]): LotPi
   const stocked = balances.filter((row) => new Big(row.quantity).gt(0));
   if (stocked.length !== 1 || new Big(stocked[0].quantity).lt(required) || new Big(required).lte(0)) return [];
   return [{ lotId: stocked[0].lotId, quantity: new Big(required).toFixed(3) }];
+}
+
+// Operator screens name lots by date only. The second lot with the same first date gets "(2)".
+export function lotDateLabel(lot: LotBalance, lots: LotBalance[]) {
+  const day = format(new Date(lot.firstPurchasedAt), "d MMM");
+  const sameDay = lots.filter((row) => format(new Date(row.firstPurchasedAt), "d MMM") === day);
+  const position = sameDay.findIndex((row) => row.lotId === lot.lotId) + 1;
+  return position > 1 ? `Lot ${day} (${position})` : `Lot ${day}`;
+}
+
+// balances must be oldest first, as listLotBalances returns them.
+export function oldestFirstPicks(required: string, balances: LotBalance[]): LotPick[] {
+  let left = new Big(required);
+  if (left.lte(0)) return [];
+  const picks: LotPick[] = [];
+  for (const lot of balances) {
+    if (left.lte(0)) break;
+    const take = new Big(lot.quantity).lt(left) ? new Big(lot.quantity) : left;
+    if (take.lte(0)) continue;
+    picks.push({ lotId: lot.lotId, quantity: take.toFixed(3) });
+    left = left.minus(take);
+  }
+  return left.gt(0) ? [] : picks;
+}
+
+// Only meaningful once checkLotPicks passes. Short stock is left to checkLotPicks to report.
+export function checkOldestFirst(input: { name: string; unit: string; required: string; picks: LotPick[]; balances: LotBalance[] }) {
+  const expected = oldestFirstPicks(input.required, input.balances);
+  if (!expected.length) return [];
+  const given = (lotId: string) => new Big(input.picks.find((pick) => pick.lotId === lotId)?.quantity || 0);
+  for (const lot of input.balances) {
+    const want = new Big(expected.find((pick) => pick.lotId === lot.lotId)?.quantity ?? 0);
+    if (given(lot.lotId).eq(want)) continue;
+    // The first lot that differs is the one the operator should have taken more from.
+    return [`${input.name}: use the oldest stock first. Take ${plain(want)} ${input.unit} from ${lotDateLabel(lot, input.balances)} before a newer lot.`];
+  }
+  return [];
 }
 
 const PURCHASE_SOURCES = new Set(["purchase", "purchase_edit", "purchase_delete"]);

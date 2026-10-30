@@ -90,27 +90,27 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("material price lots, whole flow
     // 2. Move 100 kg of the Rs 115 lot and 50 kg of the Rs 125 lot to the second floor.
     await transferStockFn({ data: { fromWarehouseId: floor.id, toWarehouseId: secondFloor.id, materialType: "chemical", materialId: soda.id, quantity: "150", looseUnits: "0", notes: "", lotPicks: [{ lotId: lot115.id, quantity: "100" }, { lotId: lot125.id, quantity: "50" }] }, context } as never);
 
-    // 3. Start a 200 kg batch on the first floor: 120 kg at Rs 115 and 80 kg at Rs 125.
+    // 3. Start a 250 kg batch on the first floor, oldest first: all 200 kg left at Rs 115, then 50 kg at Rs 125.
     const [product] = await tx.insert(products).values({ name: id }).returning();
-    const [formula] = await tx.insert(formulas).values({ productId: product.id, name: id, batchSize: "200", batchUnit: "kg" }).returning();
-    await tx.insert(formulaIngredients).values({ formulaId: formula.id, chemicalId: soda.id, quantityPerBatch: "200" });
+    const [formula] = await tx.insert(formulas).values({ productId: product.id, name: id, batchSize: "250", batchUnit: "kg" }).returning();
+    await tx.insert(formulaIngredients).values({ formulaId: formula.id, chemicalId: soda.id, quantityPerBatch: "250" });
     const [run] = await tx.insert(mixingRuns).values({
       batchId: `T-${id}`, formulaId: formula.id, warehouseId: floor.id, operatorId: actor.id, initiatorId: actor.id,
-      targetBulkQuantity: "200", bulkUnit: "kg", status: "scheduled",
+      targetBulkQuantity: "250", bulkUnit: "kg", status: "scheduled",
     }).returning();
-    await startMixingRunFn({ data: { mixingRunId: run.id, lotPicks: [{ materialId: soda.id, picks: [{ lotId: lot115.id, quantity: "120" }, { lotId: lot125.id, quantity: "80" }] }] }, context } as never);
+    await startMixingRunFn({ data: { mixingRunId: run.id, lotPicks: [{ materialId: soda.id, picks: [{ lotId: lot115.id, quantity: "200" }, { lotId: lot125.id, quantity: "50" }] }] }, context } as never);
     const [started] = await tx.select().from(mixingRuns).where(eq(mixingRuns.id, run.id));
-    expect(started.totalChemicalCost).toBe("23800.00");
+    expect(started.totalChemicalCost).toBe("29250.00");
 
-    // 4. Count short by 2 kg in the Rs 115 lot on the first floor.
+    // 4. Count short by 2 kg in the Rs 125 lot on the first floor.
     await tx.update(warehouses).set({ isActive: false }).where(eq(warehouses.id, secondFloor.id));
-    await adjustStockFn({ data: { materialType: "chemical", materialId: soda.id, lotId: lot115.id, adjustment: -2, reason: "Count short" }, context } as never);
+    await adjustStockFn({ data: { materialType: "chemical", materialId: soda.id, lotId: lot125.id, adjustment: -2, reason: "Count short" }, context } as never);
 
-    // 5. Lot stock per floor: first floor 78 + 370, second floor 100 + 50.
+    // 5. Lot stock per floor: first floor 0 + 398, second floor 100 + 50.
     const stockOf = async (warehouseId: string) =>
       (await tx.select().from(materialLotStock).where(eq(materialLotStock.warehouseId, warehouseId)))
         .map((row) => [row.lotId, row.quantity]).sort();
-    expect(await stockOf(floor.id)).toEqual([[lot115.id, "78.000"], [lot125.id, "370.000"]].sort());
+    expect(await stockOf(floor.id)).toEqual([[lot115.id, "0.000"], [lot125.id, "398.000"]].sort());
     expect(await stockOf(secondFloor.id)).toEqual([[lot115.id, "100.000"], [lot125.id, "50.000"]].sort());
     await assertLotLedger(tx, [floor.id, secondFloor.id], ref);
   }));

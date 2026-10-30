@@ -100,6 +100,7 @@ export const startMixingRunFn = createServerFn({ method: "POST" })
           picks: chosen.picks,
           sourceType: "mixing",
           sourceId: mixingRun.id,
+          oldestFirst: true,
         });
         for (const row of picked) {
           totalChemicalCost = totalChemicalCost.plus(row.totalCost);

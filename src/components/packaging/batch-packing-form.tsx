@@ -273,7 +273,7 @@ export function BatchPackingEditor({
   const lotsValid =
     !materialsError &&
     (needed.length === 0 || !!lots.data) &&
-    needed.every((item) => lotPicksValid(item.required, item.picks, item.lots, item.name, "pcs"));
+    needed.every((item) => lotPicksValid(item.required, item.picks, item.lots, item.name, "pcs", true));
   const valid =
     dateValid &&
     draft.lines.length > 0 &&
@@ -604,7 +604,7 @@ export function BatchPackingEditor({
                 <CardHeader>
                   <CardTitle>Materials used</CardTitle>
                   <CardDescription>
-                    Choose which price lot each packaging material comes from.
+                    Stock is taken from the oldest lot first.
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="flex flex-col gap-4">
@@ -617,6 +617,7 @@ export function BatchPackingEditor({
                   ) : (
                     needed.map((item) => (
                       <LotPicker
+                        oldestFirst
                         key={item.materialId}
                         name={item.name}
                         unit="pcs"

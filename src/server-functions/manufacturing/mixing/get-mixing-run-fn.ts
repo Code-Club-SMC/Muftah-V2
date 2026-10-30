@@ -61,5 +61,20 @@ export const getMixingRunFn = createServerFn()
       throw new Error("This mixing batch is assigned to another operator");
     }
 
+    // Operators run the batch but never see what it costs.
+    const seesCosts = hasPermission(context.authContext.permissions, "manufacturing.run.manage") || hasPermission(context.authContext.permissions, "manufacturing.run.read") || hasPermission(context.authContext.permissions, "manufacturing.view");
+    if (!seesCosts) {
+      const noChemicalCost = <T extends { costPerUnit: string | null }>(chemical: T) => ({ ...chemical, costPerUnit: "0" });
+      return {
+        ...mixingRun, totalChemicalCost: null, chemicalCostPerUnit: null,
+        formula: { ...mixingRun.formula, estimatedIngredientsCost: null, ingredients: mixingRun.formula.ingredients.map((row) => ({ ...row, chemical: noChemicalCost(row.chemical) })) },
+        materialsUsed: mixingRun.materialsUsed.map((row) => ({ ...row, costPerUnit: "0", totalCost: "0", chemical: noChemicalCost(row.chemical) })),
+        packagingAllocations: mixingRun.packagingAllocations.map((row) => ({
+          ...row, allocatedChemicalCost: "0", totalPackagingCost: "0", totalProductionCost: "0", actualCostPerPack: "0", actualCostPerCarton: "0",
+          mixingRun: { ...row.mixingRun, totalChemicalCost: null, chemicalCostPerUnit: null },
+        })),
+      };
+    }
+
     return mixingRun;
   });
