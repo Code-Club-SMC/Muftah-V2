@@ -372,6 +372,12 @@ export const requireAuditExportMiddleware = createPermissionMiddleware(
 export const requireReportsViewMiddleware = createPermissionMiddleware(
   "reports.view",
 );
+export const requireLossReportViewMiddleware = createPermissionMiddleware(
+  "reports.loss.view",
+);
+export const requireLossLimitsManageMiddleware = createPermissionMiddleware(
+  "reports.loss.limits.manage",
+);
 export const requireOrderBookerViewMiddleware = createPermissionMiddleware(
   "order-booker.view",
 );

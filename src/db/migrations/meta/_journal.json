@@ -169,6 +169,13 @@
       "when": 1793346509003,
       "tag": "0023_sad_peter_parker",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1793374896215,
+      "tag": "0024_bouncy_magus",
+      "breakpoints": true
     }
   ]
 }

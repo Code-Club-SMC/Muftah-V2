@@ -641,4 +641,20 @@ export const outsidePackMovements = pgTable("outside_pack_movements", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, t => ({ referenceIdx: index("outside_pack_reference_idx").on(t.referenceId, t.recipeId) }));
 
+// ---------------------------------------------------------------------------
+// PRODUCTION LOSS LIMITS — One row. Loss % above a limit shows red in the loss report.
+// ---------------------------------------------------------------------------
+export const PRODUCTION_LOSS_LIMITS_ID = "default";
+
+export const productionLossLimits = pgTable("production_loss_limits", {
+  id: text("id").primaryKey().default(PRODUCTION_LOSS_LIMITS_ID),
+  batch: decimal("batch", { precision: 4, scale: 1 }).notNull().default("10.0"),
+  chemical: decimal("chemical", { precision: 4, scale: 1 }).notNull().default("10.0"),
+  powder: decimal("powder", { precision: 4, scale: 1 }).notNull().default("10.0"),
+  shopper: decimal("shopper", { precision: 4, scale: 1 }).notNull().default("10.0"),
+  otherPacking: decimal("other_packing", { precision: 4, scale: 1 }).notNull().default("10.0"),
+  updatedBy: text("updated_by").references(() => user.id),
+  ...timestamps,
+});
+
 export const batchPackingReceiptsRelations = relations(batchPackingReceipts, ({ one }) => ({ mixingRun: one(mixingRuns, { fields: [batchPackingReceipts.mixingRunId], references: [mixingRuns.id] }) }));

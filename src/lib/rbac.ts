@@ -102,6 +102,8 @@ export const PERMISSION_KEYS = [
   "user-management.users.manage",
   "user-management.roles.manage",
   "reports.view",
+  "reports.loss.view",
+  "reports.loss.limits.manage",
   "order-booker.view",
   "order-booker.orders.manage",
   "order-booker.trips.manage",
@@ -657,6 +659,21 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
     routePattern: "/reports",
   },
   {
+    key: "reports.loss.view",
+    moduleKey: "reports",
+    label: "View loss report",
+    description: "Open the production loss report and print it.",
+    kind: "route",
+    routePattern: "/reports/production-loss",
+  },
+  {
+    key: "reports.loss.limits.manage",
+    moduleKey: "reports",
+    label: "Manage loss limits",
+    description: "Change the loss % limits that mark rows red in the production loss report.",
+    kind: "action",
+  },
+  {
     key: "order-booker.view",
     moduleKey: "order-booker",
     label: "Access order booker portal",
@@ -773,6 +790,8 @@ export const SYSTEM_ROLE_SEEDS: AppRoleSeed[] = [
       "operator.run.complete",
       "operator.run.fail",
       "reports.view",
+      "reports.loss.view",
+      "reports.loss.limits.manage",
     ],
   },
   {
@@ -953,6 +972,10 @@ export const ROUTE_PERMISSION_RULES: Array<{
   {
     matcher: /^\/user-management(?:\/.*)?$/,
     permissions: ["user-management.view", "user-management.roles.manage"],
+  },
+  {
+    matcher: /^\/reports\/production-loss(?:\/.*)?$/,
+    permissions: ["reports.loss.view"],
   },
   {
     matcher: /^\/reports(?:\/.*)?$/,
