@@ -131,22 +131,15 @@ export function formatIndianStyle(value: number | string): string {
 
   if (isNaN(num)) return "0";
 
-  const parts = Math.floor(Math.abs(num)).toString().split("");
+  const digits = Math.floor(Math.abs(num)).toString();
   const isNegative = num < 0;
 
-  const formatted: string[] = [];
+  // Last three digits, then groups of two: 1,08,000
+  const formatted =
+    digits.length <= 3
+      ? [digits]
+      : [digits.slice(0, -3).replace(/\B(?=(\d{2})+$)/g, ","), digits.slice(-3)];
 
-  // Process from right to left
-  for (let i = parts.length - 1; i >= 0; i--) {
-    const idx = parts.length - 1 - i;
-
-    if (idx > 0 && idx % 2 === 0 && i !== parts.length - 1) {
-      formatted.unshift(",");
-    }
-
-    formatted.unshift(parts[i]);
-  }
-
-  const result = formatted.join("");
+  const result = formatted.join(",");
   return isNegative ? `-${result}` : result;
 }
