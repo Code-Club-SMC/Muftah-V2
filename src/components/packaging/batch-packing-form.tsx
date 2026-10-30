@@ -37,6 +37,9 @@ import { calculatePackingLine, packingMaterialNeeds } from "@/lib/production/bat
 import { LotPicker, lotPicksValid } from "@/components/inventory/lot-picker";
 import { useMaterialLots } from "@/hooks/stock/use-material-lots";
 import type { LotPick } from "@/lib/inventory/material-lots";
+import { packagingUnit } from "@/lib/inventory/material-units";
+import { POWDER_LOSS_REASONS, checkReason, type PACKING_REASONS } from "@/lib/production/material-use";
+import { MaterialUseRow, materialUseErrors, usedFor, type MaterialUseDraft } from "./material-use-row";
 import { PackingFormatRow } from "./packing-format-row";
 import {
   emptyPackingLine,
@@ -245,8 +248,8 @@ export function BatchPackingEditor({
     if (draft.lossBulk && !/^\d+(\.\d{1,3})?$/.test(draft.lossBulk))
       throw new Error("Enter zero or more, with up to 3 decimal places.");
     loss = new Big(draft.lossBulk || 0);
-    if (loss.gt(0) && !draft.lossReason.trim())
-      lossError = "Enter a reason for the loss.";
+    if (loss.gt(0))
+      lossError = checkReason(POWDER_LOSS_REASONS, draft.lossReason, draft.lossNote, "powder loss") ?? "";
   } catch {
     lossError = "Enter zero or more, with up to 3 decimal places.";
   }
@@ -261,19 +264,46 @@ export function BatchPackingEditor({
         .toISOString()
         .slice(0, 16)
     : "";
-  const needed = [...needs].map(([materialId, need]) => ({
-    materialId,
-    name: data.materials.find((item) => item.id === materialId)?.name ?? "Packaging material",
-    required: need.total.toString(),
-    picks: draft.lotPicks[materialId] ?? [],
-    lots: lots.data?.[materialId] ?? [],
-  }));
+  const needed = [...needs].map(([materialId, need]) => {
+    const material = data.materials.find((item) => item.id === materialId);
+    const measuredInKg = !!material?.measuredInKg;
+    const required = need.total.toString();
+    const use = draft.materialUse[materialId];
+    return {
+      materialId,
+      name: material?.name ?? "Packaging material",
+      measuredInKg,
+      gramsPerShopper: material?.weightPerPack ?? null,
+      unit: packagingUnit(material),
+      required,
+      use,
+      used: usedFor({ measuredInKg, needed: required, value: use }),
+      picks: draft.lotPicks[materialId] ?? [],
+      lots: lots.data?.[materialId] ?? [],
+    };
+  });
   const setLotPicks = (materialId: string, picks: LotPick[]) =>
     setDraft((current) => current && { ...current, lotPicks: { ...current.lotPicks, [materialId]: picks } });
+  // A new Used amount means new lots, so the picker pre-fills again for the new total.
+  const setMaterialUse = (materialId: string, value: MaterialUseDraft) =>
+    setDraft((current) => {
+      if (!current) return current;
+      const usedChanged = current.materialUse[materialId]?.used !== value.used;
+      const { [materialId]: _old, ...otherPicks } = current.lotPicks;
+      return {
+        ...current,
+        materialUse: { ...current.materialUse, [materialId]: value },
+        lotPicks: usedChanged ? otherPicks : current.lotPicks,
+      };
+    });
   const lotsValid =
     !materialsError &&
     (needed.length === 0 || !!lots.data) &&
-    needed.every((item) => lotPicksValid(item.required, item.picks, item.lots, item.name, "pcs", true));
+    needed.every(
+      (item) =>
+        materialUseErrors({ name: item.name, measuredInKg: item.measuredInKg, needed: item.required, gramsPerShopper: item.gramsPerShopper, value: item.use }).length === 0 &&
+        lotPicksValid(item.used, item.picks, item.lots, item.name, item.unit, true),
+    );
   const valid =
     dateValid &&
     draft.lines.length > 0 &&
@@ -293,12 +323,18 @@ export function BatchPackingEditor({
       packedAt: draft.packedAt,
       lines: draft.lines.map(packingLineInput),
       lossBulk: loss.toFixed(3),
-      ...(draft.lossReason.trim()
-        ? { lossReason: "other" as const, lossNote: draft.lossReason.trim() }
+      ...(draft.lossReason
+        ? { lossReason: draft.lossReason as (typeof POWDER_LOSS_REASONS)[number]["code"] }
         : {}),
+      lossNote: draft.lossNote.trim() || undefined,
       lotPicks: needed.map((item) => ({
         materialId: item.materialId,
         picks: item.picks.filter((pick) => pick.quantity !== ""),
+        used: item.used,
+        ...(item.use?.reason
+          ? { reason: item.use.reason as (typeof PACKING_REASONS)[number]["code"] }
+          : {}),
+        ...(item.use?.note.trim() ? { note: item.use.note.trim() } : {}),
       })),
     };
     const next = { ...draft, submitted: submission };
@@ -604,7 +640,7 @@ export function BatchPackingEditor({
                 <CardHeader>
                   <CardTitle>Materials used</CardTitle>
                   <CardDescription>
-                    Stock is taken from the oldest lot first.
+                    Enter what was really used and pick the price lot it came from.
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="flex flex-col gap-4">
@@ -616,16 +652,31 @@ export function BatchPackingEditor({
                     <Skeleton className="h-24 w-full" />
                   ) : (
                     needed.map((item) => (
-                      <LotPicker
-                        oldestFirst
-                        key={item.materialId}
-                        name={item.name}
-                        unit="pcs"
-                        required={item.required}
-                        lots={item.lots}
-                        value={item.picks}
-                        onChange={(picks) => setLotPicks(item.materialId, picks)}
-                      />
+                      <div key={item.materialId} className="flex flex-col gap-3 rounded-lg border p-3">
+                        <MaterialUseRow
+                          name={item.name}
+                          unit={item.unit}
+                          measuredInKg={item.measuredInKg}
+                          needed={item.required}
+                          gramsPerShopper={item.gramsPerShopper}
+                          value={item.use}
+                          disabled={editingDisabled}
+                          onChange={(value) => setMaterialUse(item.materialId, value)}
+                        />
+                        {item.used === "" ? (
+                          <p className="text-sm text-muted-foreground">Enter the KG used to pick lots</p>
+                        ) : (
+                          <LotPicker
+                            oldestFirst
+                            name={item.name}
+                            unit={item.unit}
+                            required={item.used}
+                            lots={item.lots}
+                            value={item.picks}
+                            onChange={(picks) => setLotPicks(item.materialId, picks)}
+                          />
+                        )}
+                      </div>
                     ))
                   )}
                 </CardContent>
@@ -704,10 +755,9 @@ export function BatchPackingEditor({
                   <FieldLabel htmlFor={`loss-reason-${batch.id}`}>
                     Reason for loss
                   </FieldLabel>
-                  <Input
+                  <NativeSelect
                     id={`loss-reason-${batch.id}`}
                     value={draft.lossReason}
-                    maxLength={500}
                     disabled={editingDisabled || review}
                     onChange={(event) =>
                       updateDraft({ lossReason: event.target.value })
@@ -715,6 +765,28 @@ export function BatchPackingEditor({
                     aria-invalid={!!lossError}
                     aria-describedby={
                       lossError ? `loss-error-${batch.id}` : undefined
+                    }
+                  >
+                    <NativeSelectOption value="">Pick a reason</NativeSelectOption>
+                    {POWDER_LOSS_REASONS.map((reason) => (
+                      <NativeSelectOption key={reason.code} value={reason.code}>
+                        {reason.label}
+                      </NativeSelectOption>
+                    ))}
+                  </NativeSelect>
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor={`loss-note-${batch.id}`}>
+                    Loss note
+                  </FieldLabel>
+                  <Input
+                    id={`loss-note-${batch.id}`}
+                    value={draft.lossNote}
+                    maxLength={500}
+                    disabled={editingDisabled || review}
+                    placeholder={draft.lossReason === "other" ? "Note (required)" : "Note (optional)"}
+                    onChange={(event) =>
+                      updateDraft({ lossNote: event.target.value })
                     }
                   />
                 </Field>

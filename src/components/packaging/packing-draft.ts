@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { lotPickSchema, materialLotPicksSchema } from "@/lib/inventory/material-lots";
-import { POWDER_LOSS_REASONS, reasonCodes } from "@/lib/production/material-use";
+import { PACKING_REASONS, POWDER_LOSS_REASONS, reasonCodes } from "@/lib/production/material-use";
 
 const lineSchema = z.object({
   recipeId: z.string(),
@@ -28,7 +28,15 @@ export const packingSubmissionSchema = z.object({
   lossBulk: z.string(),
   lossReason: z.enum(reasonCodes(POWDER_LOSS_REASONS)).optional(),
   lossNote: z.string().optional(),
-  lotPicks: z.array(materialLotPicksSchema).default([]),
+  lotPicks: z
+    .array(
+      materialLotPicksSchema.extend({
+        used: z.string().optional(),
+        reason: z.enum(reasonCodes(PACKING_REASONS)).optional(),
+        note: z.string().optional(),
+      }),
+    )
+    .default([]),
 });
 
 export const packingDraftSchema = z.object({
@@ -38,6 +46,10 @@ export const packingDraftSchema = z.object({
   lines: z.array(lineSchema),
   lossBulk: z.string(),
   lossReason: z.string(),
+  lossNote: z.string().default(""),
+  materialUse: z
+    .record(z.string(), z.object({ used: z.string(), reason: z.string(), note: z.string() }))
+    .default({}),
   // Drafts saved before lots existed have no picks.
   lotPicks: z.record(z.string(), z.array(lotPickSchema)).default({}),
   submitted: packingSubmissionSchema.optional(),
@@ -55,6 +67,8 @@ export function newPackingDraft(): PackingDraft {
     lines: [],
     lossBulk: "",
     lossReason: "",
+    lossNote: "",
+    materialUse: {},
     lotPicks: {},
   };
 }

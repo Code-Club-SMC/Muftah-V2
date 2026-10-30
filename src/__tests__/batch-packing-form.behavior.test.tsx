@@ -81,8 +81,8 @@ function context() {
     })),
     extras: [],
     materials: [
-      { id: "pouch", name: "Pouch" },
-      { id: "carton", name: "Carton" },
+      { id: "pouch", name: "Pouch", measuredInKg: false, weightPerPack: null },
+      { id: "carton", name: "Carton", measuredInKg: false, weightPerPack: null },
     ],
   };
 }
@@ -190,8 +190,8 @@ describe("batch packing operator form", () => {
     await screen.findByText("Packing saved");
     expect(mocks.record.mock.calls[0][0].data.lotPicks).toEqual(
       expect.arrayContaining([
-        { materialId: "pouch", picks: [{ lotId: "pouch-a", quantity: "80.000" }] },
-        { materialId: "carton", picks: expect.arrayContaining([{ lotId: "carton-a", quantity: "1" }, { lotId: "carton-b", quantity: "1" }]) },
+        { materialId: "pouch", picks: [{ lotId: "pouch-a", quantity: "80.000" }], used: "80" },
+        { materialId: "carton", picks: expect.arrayContaining([{ lotId: "carton-a", quantity: "1" }, { lotId: "carton-b", quantity: "1" }]), used: "2" },
       ]),
     );
   });
