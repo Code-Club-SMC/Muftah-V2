@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { useState } from "react";
 import {
   useLogMixingProgress,
@@ -13,6 +14,9 @@ import {
 import { useViewerAccess } from "@/hooks/use-viewer-access";
 import { BatchPackingForm } from "@/components/packaging/batch-packing-form";
 import { hasPermission } from "@/lib/rbac";
+import { MIXING_REASONS, checkReason } from "@/lib/production/material-use";
+import { useMaterialLots } from "@/hooks/stock/use-material-lots";
+import { MixingActualUse, chemicalUseChange, chemicalUseRows, chemicalUseValid, type ChemicalUseDraft } from "@/components/operator/mixing-actual-use";
 import { ArrowLeftIcon, Database, CheckCircle2 } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 
@@ -23,11 +27,18 @@ export const MixingConsole = ({ runId }: { runId: string }) => {
   });
 
   const [yieldAmount, setYieldAmount] = useState("");
+  // Free-text reason, only for failing a zero-output batch.
   const [shortfallReason, setShortfallReason] = useState("");
+  const [shortfallCode, setShortfallCode] = useState("");
+  const [shortfallNote, setShortfallNote] = useState("");
+  const [uses, setUses] = useState<Record<string, ChemicalUseDraft>>({});
   const logProgress = useLogMixingProgress();
   const completeRun = useCompleteMixingRun();
   const failRun = useFailMixingRun();
   const { data: viewerAccess } = useViewerAccess();
+  const rows = chemicalUseRows(run?.materialsUsed as never);
+  const extraIds = rows.filter((row) => chemicalUseChange(row, uses[row.chemicalId])?.kind === "extra").map((row) => row.chemicalId);
+  const floor = useMaterialLots(run?.warehouseId, "chemical", extraIds);
 
   const handleLog = () => {
     if (!yieldAmount || isNaN(Number(yieldAmount))) return;
@@ -47,15 +58,22 @@ export const MixingConsole = ({ runId }: { runId: string }) => {
   };
 
   const handleComplete = () => {
-    completeRun.mutate(
-      {
-        data: {
-          mixingRunId: runId,
-          shortfallReason: shortfallReason.trim() ? "other" : undefined,
-          shortfallNote: shortfallReason.trim() || undefined,
-        },
+    completeRun.mutate({
+      data: {
+        mixingRunId: runId,
+        ...(produced < target ? { shortfallReason: shortfallCode as never, shortfallNote: shortfallNote.trim() || undefined } : {}),
+        uses: rows.map((row) => {
+          const draft = uses[row.chemicalId];
+          return {
+            chemicalId: row.chemicalId,
+            used: draft?.used ?? row.formula,
+            picks: (draft?.picks ?? []).filter((pick) => pick.quantity !== ""),
+            ...(draft?.reason ? { reason: draft.reason as never } : {}),
+            ...(draft?.note.trim() ? { note: draft.note.trim() } : {}),
+          };
+        }),
       },
-    );
+    });
   };
 
   if (!run) return <div>Mixing batch not found</div>;
@@ -77,6 +95,8 @@ export const MixingConsole = ({ runId }: { runId: string }) => {
   const canComplete =
     canAct &&
     (canManage || hasPermission(permissions, "operator.run.complete"));
+  const usesValid = rows.every((row) => chemicalUseValid(row, uses[row.chemicalId], floor.data?.[row.chemicalId] ?? []));
+  const shortfallValid = produced >= target || !checkReason(MIXING_REASONS, shortfallCode, shortfallNote, "completing below target");
   const canFail =
     canAct &&
     produced === 0 &&
@@ -171,7 +191,34 @@ export const MixingConsole = ({ runId }: { runId: string }) => {
               )}
 
               <div className="pt-6 border-t border-border/50">
-                {(canComplete || canFail) && produced < target && (
+                {canComplete && produced > 0 && (
+                  <div className="mb-6">
+                    <MixingActualUse rows={rows} floorLots={floor.data ?? {}} value={uses} onChange={setUses} />
+                  </div>
+                )}
+                {canComplete && produced > 0 && produced < target && (
+                  <div className="mb-3 flex flex-wrap gap-3">
+                    <NativeSelect
+                      aria-label="Reason for completing below target"
+                      value={shortfallCode}
+                      onChange={(event) => setShortfallCode(event.target.value)}
+                    >
+                      <NativeSelectOption value="">Pick a reason</NativeSelectOption>
+                      {MIXING_REASONS.map((reason) => (
+                        <NativeSelectOption key={reason.code} value={reason.code}>{reason.label}</NativeSelectOption>
+                      ))}
+                    </NativeSelect>
+                    <Input
+                      aria-label="Shortfall note"
+                      value={shortfallNote}
+                      onChange={(event) => setShortfallNote(event.target.value)}
+                      placeholder="Note (required for Other)"
+                      maxLength={500}
+                      className="flex-1"
+                    />
+                  </div>
+                )}
+                {canFail && (
                   <Input
                     value={shortfallReason}
                     onChange={(event) => setShortfallReason(event.target.value)}
@@ -187,7 +234,8 @@ export const MixingConsole = ({ runId }: { runId: string }) => {
                     disabled={
                       completeRun.isPending ||
                       produced <= 0 ||
-                      (produced < target && !shortfallReason.trim())
+                      !usesValid ||
+                      !shortfallValid
                     }
                   >
                     <CheckCircle2 className="w-5 h-5 mr-2" />

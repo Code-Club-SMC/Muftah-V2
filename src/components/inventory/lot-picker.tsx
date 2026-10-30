@@ -16,7 +16,7 @@ export function lotPicksValid(required: string, picks: LotPick[], lots: LotBalan
 const samePicks = (a: LotPick[], b: LotPick[]) => a.length === b.length && a.every((pick) => b.some((other) => other.lotId === pick.lotId && other.quantity === pick.quantity));
 
 // oldestFirst: mixing and packing. Pre-fills from the oldest lot, blocks a newer lot and hides prices.
-export function LotPicker({ name, unit, required, lots, value, onChange, oldestFirst = false, hidePrices = false }: { name: string; unit: string; required: string; lots: LotBalance[]; value: LotPick[]; onChange: (picks: LotPick[]) => void; oldestFirst?: boolean; hidePrices?: boolean }) {
+export function LotPicker({ name, unit, required, lots, value, onChange, oldestFirst = false, hidePrices = false, legend, whereLabel = "here" }: { name: string; unit: string; required: string; lots: LotBalance[]; value: LotPick[]; onChange: (picks: LotPick[]) => void; oldestFirst?: boolean; hidePrices?: boolean; legend?: string; whereLabel?: string }) {
   const id = useId();
   const prefill = oldestFirst ? oldestFirstPicks : defaultLotPicks;
   const previousRequired = useRef(required);
@@ -49,9 +49,9 @@ export function LotPicker({ name, unit, required, lots, value, onChange, oldestF
   if (!lots.length) return <p className="text-sm text-destructive">{`${name}: no stock in this store`}</p>;
   return (
     <fieldset className="flex flex-col gap-2 rounded-lg border p-3">
-      <legend className="px-1 text-sm font-medium">{`${name}: ${Number(required)} ${unit} needed`}</legend>
+      <legend className="px-1 text-sm font-medium">{legend ?? `${name}: ${Number(required)} ${unit} needed`}</legend>
       {lots.map((lot) => {
-        const label = `${oldestFirst || hidePrices ? lotDateLabel(lot, lots) : lotLabel(lot, unit)}, ${Number(lot.quantity)} ${unit} here`;
+        const label = `${oldestFirst || hidePrices ? lotDateLabel(lot, lots) : lotLabel(lot, unit)}, ${Number(lot.quantity)} ${unit} ${whereLabel}`;
         return (
           <div key={lot.lotId} className="flex items-center justify-between gap-3">
             <label htmlFor={`${id}-${lot.lotId}`} className="min-w-0 text-sm">{label}</label>
