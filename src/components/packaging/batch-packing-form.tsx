@@ -294,7 +294,7 @@ export function BatchPackingEditor({
       lines: draft.lines.map(packingLineInput),
       lossBulk: loss.toFixed(3),
       ...(draft.lossReason.trim()
-        ? { lossReason: draft.lossReason.trim() }
+        ? { lossReason: "other" as const, lossNote: draft.lossReason.trim() }
         : {}),
       lotPicks: needed.map((item) => ({
         materialId: item.materialId,

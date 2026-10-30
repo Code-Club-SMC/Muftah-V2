@@ -1,22 +1,30 @@
 import Big from "big.js";
 import { and, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import type { db } from "@/db";
-import { batchPackingReceipts, formulas, mixingRuns, packagingAllocations, packagingMaterialsUsed, outsidePackMovements } from "@/db/schemas/production-schema";
+import { batchPackingReceipts, formulas, mixingRuns, packagingAllocations, packagingMaterialsUsed, packingMaterialUse, outsidePackMovements } from "@/db/schemas/production-schema";
 import { finishedGoodsStock, inventoryAuditLog, packagingMaterials, recipePackaging, recipes, warehouses, wacHistory } from "@/db/schemas/inventory-schema";
 import { cartons, adjustmentLog } from "@/db/schemas/manufacturing-schema";
 import { calculatePackingLine, packingBulk, packingMaterialNeeds } from "@/lib/production/batch-packing";
 import { materialLotPicksSchema } from "@/lib/inventory/material-lots";
 import { lockMaterialStock, takeLotPicks } from "@/lib/inventory/material-lots.server";
+import { packagingUnit } from "@/lib/inventory/material-units";
+import { PACKING_REASONS, POWDER_LOSS_REASONS, checkPiecesUse, checkReason, reasonCodes, shopperNumbers } from "@/lib/production/material-use";
 import { lockFinishedGoods } from "@/lib/production/finished-goods-lock.server";
 import { hasPermission } from "@/lib/rbac";
 import { z } from "zod";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+// Used is what really went in. Pieces default to needed; shoppers in KG must always be typed.
+export const packingMaterialUseSchema = materialLotPicksSchema.extend({
+  used: z.string().trim().regex(/^\d+(?:\.\d{1,3})?$/, "Use a number with up to 3 decimals").optional(),
+  reason: z.enum(reasonCodes(PACKING_REASONS)).optional(),
+  note: z.string().trim().max(500).optional(),
+});
 export const batchPackingSchema = z.object({
   mixingRunId: z.string().min(1), requestId: z.string().min(1).max(100), packedAt: z.coerce.date(),
   lines: z.array(z.object({ recipeId: z.string().min(1), fullCartons: z.number().int().nonnegative(), partialPacks: z.number().int().nonnegative(), loosePacks: z.number().int().nonnegative(), actualBulk: z.string().optional(), varianceReason: z.string().max(2000).optional() })).min(1).max(100),
-  lossBulk: z.string(), lossReason: z.string().max(2000).optional(),
-  lotPicks: z.array(materialLotPicksSchema).max(100),
+  lossBulk: z.string(), lossReason: z.enum(reasonCodes(POWDER_LOSS_REASONS)).optional(), lossNote: z.string().trim().max(500).optional(),
+  lotPicks: z.array(packingMaterialUseSchema).max(100),
 });
 export type BatchPackingInput = z.infer<typeof batchPackingSchema>;
 export type PackingActor = { id: string; permissions: readonly string[] | Set<string> };
@@ -58,7 +66,10 @@ export async function recordBatchPackingCore(tx: Tx, input: BatchPackingInput, a
   });
   const consumed = prepared.reduce((total, item) => total.plus(item.quantity.actualBulk), new Big(0));
   const lossBulk = packingBulk(data.lossBulk, "Powder loss");
-  if (new Big(lossBulk).gt(0) && !data.lossReason?.trim()) throw new Error("Give a reason for powder loss");
+  if (new Big(lossBulk).gt(0)) {
+    const error = checkReason(POWDER_LOSS_REASONS, data.lossReason, data.lossNote, "powder loss");
+    if (error) throw new Error(error);
+  }
   if (consumed.plus(lossBulk).gt(await packingAvailability(tx, run))) throw new Error("Packing and loss exceed the available batch bulk");
   const totalPacks = prepared.reduce((total, item) => total + item.quantity.totalPacks, 0);
   if (totalPacks > 2147483647) throw new Error("Total pack count exceeds the supported limit");
@@ -70,12 +81,36 @@ export async function recordBatchPackingCore(tx: Tx, input: BatchPackingInput, a
   // A material shared by two formats is split by how many each used; lots split the same way.
   // Shares are assigned cumulatively so quantities and cents add up to what each lot gave.
   const usageByFormat = new Map<string, { materialId: string; lotId: string; unitPrice: string; quantity: string; totalCost: string }[]>();
+  const useRows: Omit<typeof packingMaterialUse.$inferInsert, "receiptId">[] = [];
   for (const [materialId, need] of [...needs].sort(([a], [b]) => a.localeCompare(b))) {
     const material = materials.find(row => row.id === materialId);
     if (!material) throw new Error("Packaging material not found");
+    const unit = packagingUnit(material);
     const chosen = data.lotPicks.find(row => row.materialId === materialId);
     if (!chosen) throw new Error(`Pick lots for ${material.name}`);
-    const picked = await takeLotPicks(tx, { warehouseId: run.warehouseId, ref: { materialType: "packaging", materialId }, name: material.name, unit: "pcs", required: packingBulk(need.total.toString(), "Packaging material quantity"), picks: chosen.picks, sourceType: "packing", sourceId: data.requestId, oldestFirst: true });
+    const needed = packingBulk(need.total.toString(), "Packaging material quantity");
+    let used: string;
+    let shopper: ReturnType<typeof shopperNumbers> | null = null;
+    if (material.measuredInKg) {
+      // Shoppers are weighed: the operator always types the KG, never pre-filled.
+      if (!chosen.used || new Big(chosen.used).lte(0)) throw new Error(`${material.name}: enter the KG used`);
+      used = packingBulk(chosen.used, `${material.name} KG used`);
+      shopper = shopperNumbers({ kgUsed: used, gramsPerShopper: material.weightPerPack ?? "0", actualPacks: need.total.toNumber() });
+    } else {
+      used = chosen.used ? packingBulk(chosen.used, `${material.name} used`) : needed;
+      const errors = checkPiecesUse({ name: material.name, needed, used, reason: chosen.reason, note: chosen.note });
+      if (errors.length) throw new Error(errors.join("; "));
+    }
+    const picked = await takeLotPicks(tx, { warehouseId: run.warehouseId, ref: { materialType: "packaging", materialId }, name: material.name, unit, required: used, picks: chosen.picks, sourceType: "packing", sourceId: data.requestId, oldestFirst: true });
+    const totalCost = picked.reduce((sum, lot) => sum.plus(lot.totalCost), new Big(0));
+    const extra = shopper ? new Big(0) : new Big(used).minus(needed);
+    // Cost of what went beyond the need: extra pieces, or shoppers the weight should have given.
+    const extraCost = shopper
+      ? (shopper.loss > 0 ? totalCost.times(shopper.loss).div(shopper.expected).round(2) : new Big(0))
+      : totalCost.times(extra).div(used).round(2);
+    useRows.push({ materialId, measuredInKg: material.measuredInKg, neededQuantity: needed, usedQuantity: used, extraQuantity: extra.toFixed(3), extraCost: extraCost.toFixed(2), totalCost: totalCost.toFixed(2),
+      reason: extra.gt(0) ? chosen.reason! : null, note: extra.gt(0) ? chosen.note || null : null,
+      shopperWeightGrams: shopper ? new Big(material.weightPerPack!).toFixed(3) : null, expectedShoppers: shopper?.expected ?? null, actualShoppers: shopper?.actual ?? null, lossShoppers: shopper?.loss ?? null });
     for (const lot of picked) {
       let share = new Big(0);
       let assignedQuantity = new Big(0);
@@ -104,7 +139,8 @@ export async function recordBatchPackingCore(tx: Tx, input: BatchPackingInput, a
   const remainingBulk = new Big(run.actualBulkProduced!).minus(legacy.bulk);
   const chemicalTotal = remainingCost.times(new Big(prior.bulk).plus(consumed).plus(lossBulk)).div(remainingBulk).round(2).minus(prior.cost);
   if (remainingCost.lt(0) || chemicalTotal.lt(0)) throw new Error("Existing packing cost reservations require reconciliation before recording packing");
-  const [receipt] = await tx.insert(batchPackingReceipts).values({ mixingRunId: run.id, requestId: data.requestId, requestPayload: payload, actorId: actor.id, packedAt: data.packedAt, bulkConsumed: consumed.toFixed(3), lossBulk, lossReason: data.lossReason?.trim(), totalPacks, costAudit: { chemicalCost: chemicalTotal.toFixed(2), lossCostPolicy: "Loss chemical cost is absorbed by this receipt's outputs, apportioned by actual bulk consumed" } }).returning();
+  const [receipt] = await tx.insert(batchPackingReceipts).values({ mixingRunId: run.id, requestId: data.requestId, requestPayload: payload, actorId: actor.id, packedAt: data.packedAt, bulkConsumed: consumed.toFixed(3), lossBulk, lossReasonCode: data.lossReason ?? null, lossReason: data.lossNote?.trim() || null, totalPacks, costAudit: { chemicalCost: chemicalTotal.toFixed(2), lossCostPolicy: "Loss chemical cost is absorbed by this receipt's outputs, apportioned by actual bulk consumed" } }).returning();
+  if (useRows.length) await tx.insert(packingMaterialUse).values(useRows.map(row => ({ ...row, receiptId: receipt.id })));
   let assignedChemical = new Big(0);
   let assignedBulk = new Big(0);
   for (const item of prepared) {

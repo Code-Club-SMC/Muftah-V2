@@ -23,7 +23,7 @@ export const getBatchPackingContextFn = createServerFn()
     const receipts = await tx.select().from(batchPackingReceipts).where(eq(batchPackingReceipts.mixingRunId, run.id)).orderBy(desc(batchPackingReceipts.recordedAt));
     const allocations = await tx.select().from(packagingAllocations).where(eq(packagingAllocations.mixingRunId, run.id));
     const extras = formats.length ? await tx.select().from(recipePackaging).where(inArray(recipePackaging.recipeId, formats.map(format => format.id))) : [];
-    const materials = await tx.select({ id: packagingMaterials.id, name: packagingMaterials.name }).from(packagingMaterials);
+    const materials = await tx.select({ id: packagingMaterials.id, name: packagingMaterials.name, measuredInKg: packagingMaterials.measuredInKg, weightPerPack: packagingMaterials.weightPerPack }).from(packagingMaterials);
     return {
       warehouseId: run.warehouseId,
       formatMaterials: formats.map(format => ({ formatId: format.id, containerPackagingId: format.containerPackagingId, cartonPackagingId: format.cartonPackagingId })),

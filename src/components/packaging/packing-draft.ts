@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { lotPickSchema, materialLotPicksSchema } from "@/lib/inventory/material-lots";
+import { POWDER_LOSS_REASONS, reasonCodes } from "@/lib/production/material-use";
 
 const lineSchema = z.object({
   recipeId: z.string(),
@@ -25,7 +26,8 @@ export const packingSubmissionSchema = z.object({
     }),
   ),
   lossBulk: z.string(),
-  lossReason: z.string().optional(),
+  lossReason: z.enum(reasonCodes(POWDER_LOSS_REASONS)).optional(),
+  lossNote: z.string().optional(),
   lotPicks: z.array(materialLotPicksSchema).default([]),
 });
 
