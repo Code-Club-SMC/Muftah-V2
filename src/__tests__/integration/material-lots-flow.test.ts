@@ -104,7 +104,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("material price lots, whole flow
 
     // 4. Count short by 2 kg in the Rs 125 lot on the first floor.
     await tx.update(warehouses).set({ isActive: false }).where(eq(warehouses.id, secondFloor.id));
-    await adjustStockFn({ data: { materialType: "chemical", materialId: soda.id, lotId: lot125.id, adjustment: -2, reason: "Count short" }, context } as never);
+    await adjustStockFn({ data: { materialType: "chemical", materialId: soda.id, lotId: lot125.id, adjustment: -2, reason: "count_short" }, context } as never);
 
     // 5. Lot stock per floor: first floor 0 + 398, second floor 100 + 50.
     const stockOf = async (warehouseId: string) =>

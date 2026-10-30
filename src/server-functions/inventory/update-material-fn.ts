@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { and, eq, gt } from "drizzle-orm";
 import Big from "big.js";
-import { db, packagingMaterials, chemicals, materialStock, materialLots, inventoryAuditLog } from "@/db";
+import { db, packagingMaterials, chemicals, materialStock, materialLots, inventoryAuditLog, materialAdjustments } from "@/db";
 import { lotQuantity } from "@/lib/inventory/material-lots";
 import { packagingMaterialsUsed } from "@/db/schemas/production-schema";
 import { lockMaterialStock, moveLotStock, type Tx } from "@/lib/inventory/material-lots.server";
@@ -63,6 +63,15 @@ export const updateMaterialFn = createServerFn()
               .where(and(eq(materialLots.id, stock.lotId), eq(type === "chemical" ? materialLots.chemicalId : materialLots.packagingMaterialId, id)));
             if (!lot) throw new Error("This lot belongs to another item");
             await moveLotStock(tx, { ref, lotId: lot.id, warehouseId: row.warehouseId, delta: delta.toFixed(3), sourceType: "adjustment", sourceId: null });
+            // A quantity edit is a count, so it is saved as Count short or Count over.
+            await tx.insert(materialAdjustments).values({
+              warehouseId: row.warehouseId, materialType: type,
+              chemicalId: type === "chemical" ? id : null,
+              packagingMaterialId: type === "packaging" ? id : null,
+              lotId: lot.id, delta: delta.toFixed(3), unitPrice: lot.unitPrice,
+              value: delta.times(lot.unitPrice).round(2).toFixed(2),
+              reason: delta.gt(0) ? "count_over" : "count_short", note: null, source: "material_edit", performedById: context.session.user.id,
+            });
             await tx.insert(inventoryAuditLog).values({
               warehouseId: row.warehouseId,
               materialType: type,

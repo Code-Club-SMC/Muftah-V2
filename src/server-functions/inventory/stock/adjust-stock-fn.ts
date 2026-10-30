@@ -8,8 +8,10 @@ import {
   warehouses,
   chemicals,
   packagingMaterials,
+  materialAdjustments,
 } from "@/db/schemas/inventory-schema";
 import { lockMaterialStock, moveLotStock } from "@/lib/inventory/material-lots.server";
+import { ADJUSTMENT_REASONS, checkAdjustmentReason, reasonCodes, reasonLabel } from "@/lib/production/material-use";
 import { requireInventoryManageMiddleware } from "@/lib/middlewares";
 import { eq, and } from "drizzle-orm";
 import { z } from "zod";
@@ -21,13 +23,16 @@ const adjustStockSchema = z.object({
   lotId: z.string().min(1),
   adjustment: z.number().finite().min(-999_999_999.999).max(999_999_999.999)
     .refine(value => new Big(value).round(3).eq(value), "Use at most three decimal places"), // positive = add back, negative = remove
-  reason: z.string().min(1, "Reason is required for stock adjustments"),
+  reason: z.enum(reasonCodes(ADJUSTMENT_REASONS)),
+  note: z.string().trim().max(500).optional(),
 });
 
 export const adjustStockFn = createServerFn()
   .middleware([requireInventoryManageMiddleware])
   .inputValidator(adjustStockSchema)
   .handler(async ({ data, context }) => {
+    const reasonError = checkAdjustmentReason(data.reason, data.note, data.adjustment > 0);
+    if (reasonError) throw new Error(reasonError);
     return await db.transaction(async (tx) => {
       // Get factory floor
       const [factoryFloor] = await tx.select().from(warehouses)
@@ -50,6 +55,14 @@ export const adjustStockFn = createServerFn()
             : eq(materialStock.packagingMaterialId, data.materialId),
         ));
       await moveLotStock(tx, { ref, lotId: lot.id, warehouseId: factoryFloor.id, delta: adjustment, sourceType: "adjustment", sourceId: null });
+      await tx.insert(materialAdjustments).values({
+        warehouseId: factoryFloor.id, materialType: data.materialType,
+        chemicalId: data.materialType === "chemical" ? data.materialId : null,
+        packagingMaterialId: data.materialType === "packaging" ? data.materialId : null,
+        lotId: lot.id, delta: adjustment, unitPrice: lot.unitPrice,
+        value: new Big(adjustment).times(lot.unitPrice).round(2).toFixed(2),
+        reason: data.reason, note: data.note || null, source: "manual", performedById: context.session.user.id,
+      });
       const currentQty = Number(before?.quantity ?? 0);
       const newQty = new Big(currentQty).plus(adjustment).toNumber();
 
@@ -75,7 +88,7 @@ export const adjustStockFn = createServerFn()
         lotId: lot.id,
         type: data.adjustment > 0 ? "credit" : "debit",
         amount: Math.abs(data.adjustment).toString(),
-        reason: `[MANUAL ADJUSTMENT] ${data.reason} | Material: ${materialName}`,
+        reason: `[MANUAL ADJUSTMENT] ${reasonLabel(ADJUSTMENT_REASONS, data.reason)}${data.note ? ` (${data.note})` : ""} | Material: ${materialName}`,
         performedById: context.session.user.id,
       });
 

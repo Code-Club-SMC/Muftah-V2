@@ -9,6 +9,7 @@ import { useMaterialLots } from "@/hooks/stock/use-material-lots";
 import { useRecoverFailedProductionChemical } from "@/hooks/stock/use-recover-failed-production-chemical";
 import { useViewerAccess } from "@/hooks/use-viewer-access";
 import { lotLabel, splitRecoveryAcrossLots, type LotPick } from "@/lib/inventory/material-lots";
+import { adjustmentReasonsFor, checkAdjustmentReason, type ADJUSTMENT_REASONS } from "@/lib/production/material-use";
 import { hasPermission } from "@/lib/rbac";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
@@ -21,6 +22,7 @@ import {
   DialogTitle,
 } from "../ui/dialog";
 import { Input } from "../ui/input";
+import { NativeSelect, NativeSelectOption } from "../ui/native-select";
 import { Label } from "../ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import { Textarea } from "../ui/textarea";
@@ -52,7 +54,10 @@ export const AdjustStockDialog = ({
 }: AdjustStockDialogProps) => {
   const [mode, setMode] = useState<"add" | "remove">("add");
   const [amount, setAmount] = useState("");
+  // Free text for failed-batch recovery; a fixed code plus a note for every other adjustment.
   const [reason, setReason] = useState("");
+  const [reasonCode, setReasonCode] = useState("");
+  const [note, setNote] = useState("");
   const [batchId, setBatchId] = useState("");
   const [recoveryContext, setRecoveryContext] =
     useState<FailedBatchRecoveryContext | null>(null);
@@ -104,6 +109,8 @@ export const AdjustStockDialog = ({
     setMode("add");
     setAmount("");
     setReason("");
+    setReasonCode("");
+    setNote("");
     setBatchId("");
     setRecoveryContext(null);
     setLotEdits(null);
@@ -117,6 +124,7 @@ export const AdjustStockDialog = ({
   }, [open]);
 
   useEffect(() => {
+    setReasonCode("");
     if (mode === "remove") {
       setBatchId("");
       setRecoveryContext(null);
@@ -209,17 +217,19 @@ export const AdjustStockDialog = ({
     });
   };
 
+  const reasonError = checkAdjustmentReason(reasonCode, note, mode === "add");
+
   const closeDialog = () => {
     onOpenChange(false);
   };
 
   const handleSubmit = () => {
-    if (!reason.trim()) {
-      toast.error("Reason is required.");
-      return;
-    }
-
     if (isChemicalRecoveryFlow) {
+      if (!reason.trim()) {
+        toast.error("Reason is required.");
+        return;
+      }
+
       if (!recoveryContext || isSettledRecovery) {
         toast.error("This failed batch chemical is already settled.");
         return;
@@ -266,6 +276,11 @@ export const AdjustStockDialog = ({
       return;
     }
 
+    if (reasonError) {
+      toast.error(reasonError);
+      return;
+    }
+
     if (!genericAmountValid) {
       toast.error("Please enter a valid positive quantity.");
       return;
@@ -290,7 +305,8 @@ export const AdjustStockDialog = ({
           materialId,
           lotId: selectedLot.lotId,
           adjustment: mode === "add" ? numericAmount : -numericAmount,
-          reason: reason.trim(),
+          reason: reasonCode as (typeof ADJUSTMENT_REASONS)[number]["code"],
+          ...(note.trim() ? { note: note.trim() } : {}),
         },
       },
       {
@@ -310,7 +326,7 @@ export const AdjustStockDialog = ({
     recoveryLookup.isPending;
   const submitDisabled = isChemicalRecoveryFlow
     ? !reason.trim() || !recoveryAmountValid || !!lotSplitError || isSettledRecovery || submitPending
-    : !canManageInventory || !reason.trim() || !genericAmountValid || !selectedLot || submitPending;
+    : !canManageInventory || !!reasonError || !genericAmountValid || !selectedLot || submitPending;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -587,24 +603,66 @@ export const AdjustStockDialog = ({
             </div>
           ) : null}
 
-          <div className="space-y-2">
-            <Label>
-              Reason{" "}
-              <Badge variant="destructive" className="ml-1 text-[9px]">
-                Required
-              </Badge>
-            </Label>
-            <Textarea
-              placeholder={
-                isChemicalRecoveryFlow
-                  ? "e.g., Failed batch AB1042 recovered from reactor cleanup; remaining chemical was spoiled."
-                  : "e.g., Machine breakdown, cleanup spill, verified manual correction."
-              }
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              rows={3}
-            />
-          </div>
+          {isChemicalRecoveryFlow ? (
+            <div className="space-y-2">
+              <Label>
+                Reason{" "}
+                <Badge variant="destructive" className="ml-1 text-[9px]">
+                  Required
+                </Badge>
+              </Label>
+              <Textarea
+                placeholder="e.g., Failed batch AB1042 recovered from reactor cleanup; remaining chemical was spoiled."
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                rows={3}
+              />
+            </div>
+          ) : (
+            <>
+              <div className="space-y-2">
+                <Label htmlFor="adjust-stock-reason">
+                  Reason{" "}
+                  <Badge variant="destructive" className="ml-1 text-[9px]">
+                    Required
+                  </Badge>
+                </Label>
+                <NativeSelect
+                  id="adjust-stock-reason"
+                  aria-label="Reason"
+                  className="w-full"
+                  value={reasonCode}
+                  onChange={(e) => setReasonCode(e.target.value)}
+                >
+                  <NativeSelectOption value="">Pick a reason</NativeSelectOption>
+                  {adjustmentReasonsFor(mode === "add").map((item) => (
+                    <NativeSelectOption key={item.code} value={item.code}>
+                      {item.label}
+                    </NativeSelectOption>
+                  ))}
+                </NativeSelect>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="adjust-stock-note">
+                  Note{" "}
+                  {reasonCode === "other" ? (
+                    <Badge variant="destructive" className="ml-1 text-[9px]">
+                      Required
+                    </Badge>
+                  ) : null}
+                </Label>
+                <Textarea
+                  id="adjust-stock-note"
+                  aria-label="Note"
+                  placeholder="e.g., Drum tipped over during cleanup."
+                  value={note}
+                  maxLength={500}
+                  onChange={(e) => setNote(e.target.value)}
+                  rows={2}
+                />
+              </div>
+            </>
+          )}
 
           <div className="rounded-md border border-amber-100 bg-amber-50/60 p-3 text-xs text-muted-foreground">
             All adjustments are permanently logged with your name, reason, and

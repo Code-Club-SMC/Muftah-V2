@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { and, eq, ne } from "drizzle-orm";
 import { describe, expect, it, vi } from "vitest";
 import { db, user, warehouses, chemicals, materialStock, inventoryAuditLog } from "@/db";
-import { materialLotMovements, materialLotStock } from "@/db/schemas/inventory-schema";
+import { materialAdjustments, materialLotMovements, materialLotStock } from "@/db/schemas/inventory-schema";
 import { findOrCreateLot, moveLotStock, type Tx } from "@/lib/inventory/material-lots.server";
 import { adjustStockFn } from "@/server-functions/inventory/stock/adjust-stock-fn";
 import { updateMaterialFn } from "@/server-functions/inventory/update-material-fn";
@@ -65,8 +65,8 @@ async function seed(tx: Tx) {
   const otherLot = await findOrCreateLot(tx, { materialType: "chemical", materialId: other.id }, "40");
   await moveLotStock(tx, { ref, lotId: lotA.id, warehouseId: floor.id, delta: "120", sourceType: "purchase" });
   const context = { session: { user: actor }, authContext: { session: { user: actor }, permissions: [] } };
-  const adjust = (lotId: string, adjustment: number) =>
-    adjustStockFn({ data: { materialType: "chemical", materialId: chemical.id, lotId, adjustment, reason: "Count short" }, context } as never);
+  const adjust = (lotId: string, adjustment: number, reason = adjustment > 0 ? "count_over" : "damaged", note?: string) =>
+    adjustStockFn({ data: { materialType: "chemical", materialId: chemical.id, lotId, adjustment, reason, note }, context } as never);
   const onFloor = async () => {
     const [lot] = await tx.select().from(materialLotStock).where(and(eq(materialLotStock.lotId, lotA.id), eq(materialLotStock.warehouseId, floor.id)));
     const [total] = await tx.select().from(materialStock).where(and(eq(materialStock.warehouseId, floor.id), eq(materialStock.chemicalId, chemical.id)));
@@ -122,6 +122,34 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("stock adjustments with lots", (
       await expect(edit("200", lotA.id)).resolves.toMatchObject({ success: true });
       await expect(edit("0", lotA.id)).resolves.toMatchObject({ success: true });
       expect(await onFloor()).toEqual({ lot: "0.000", total: "0.000" });
+    });
+  });
+
+  it("saves each adjustment with its lot, price and fixed reason", async () => {
+    await withFloor(async (tx, { lotA, adjust, onFloor }) => {
+      await expect(adjust(lotA.id, -2, "count_over")).rejects.toThrow("Count over can't be used when removing stock");
+      await expect(adjust(lotA.id, 2, "damaged")).rejects.toThrow("Damaged can't be used when adding stock");
+      await expect(adjust(lotA.id, -2, "other")).rejects.toThrow('Write a note for "Other"');
+      // Free text is refused by input validation, which the test transport runs before the handler.
+      expect(() => adjust(lotA.id, -2, "dropped it")).toThrow();
+      expect(await onFloor()).toEqual({ lot: "120.000", total: "120.000" });
+      await adjust(lotA.id, -2, "spilled", "drum tipped");
+      const rows = await tx.select().from(materialAdjustments).where(eq(materialAdjustments.lotId, lotA.id));
+      expect(rows.map((row) => [row.delta, row.unitPrice, row.value, row.reason, row.note, row.source])).toEqual([["-2.000", "115.00", "-230.00", "spilled", "drum tipped", "manual"]]);
+      const [audit] = await tx.select().from(inventoryAuditLog).where(eq(inventoryAuditLog.lotId, lotA.id));
+      expect(audit.reason).toContain("[MANUAL ADJUSTMENT] Spilled (drum tipped)");
+    });
+  });
+
+  it("saves an edit-form quantity change as Count short or Count over", async () => {
+    await withFloor(async (tx, { lotA, edit }) => {
+      await edit("117", lotA.id);
+      await edit("121", lotA.id);
+      const rows = await tx.select().from(materialAdjustments).where(eq(materialAdjustments.lotId, lotA.id));
+      expect(rows.map((row) => [row.delta, row.value, row.reason, row.note, row.source]).sort()).toEqual([
+        ["-3.000", "-345.00", "count_short", null, "material_edit"],
+        ["4.000", "460.00", "count_over", null, "material_edit"],
+      ]);
     });
   });
 });

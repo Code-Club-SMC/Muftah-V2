@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import { and, eq, gte, inArray, sql } from "drizzle-orm";
-import { db, user, warehouses, chemicals, packagingMaterials, materialStock, inventoryAuditLog, suppliers, wallets, purchaseRecords, supplierPayments, expenses, transactions, materialLots, materialLotStock, materialLotMovements } from "@/db";
+import { db, user, warehouses, chemicals, packagingMaterials, materialStock, inventoryAuditLog, suppliers, wallets, purchaseRecords, supplierPayments, expenses, transactions, materialLots, materialLotStock, materialLotMovements, materialAdjustments } from "@/db";
 import { adjustStockFn } from "@/server-functions/inventory/stock/adjust-stock-fn";
 import { addStockFn } from "@/server-functions/inventory/stock/add-stock-fn";
 import { findOrCreateLot } from "@/lib/inventory/material-lots.server";
@@ -74,6 +74,7 @@ async function withFixture(check: (f: Fixture) => Promise<void>) {
       await tx.delete(materialStock).where(eq(materialStock.packagingMaterialId, f.packaging.id));
       const lotIds = [f.lots.chemical.id, f.lots.packaging.id];
       await tx.delete(inventoryAuditLog).where(inArray(inventoryAuditLog.lotId, lotIds));
+      await tx.delete(materialAdjustments).where(inArray(materialAdjustments.lotId, lotIds));
       await tx.delete(materialLotMovements).where(inArray(materialLotMovements.lotId, lotIds));
       await tx.delete(materialLotStock).where(inArray(materialLotStock.lotId, lotIds));
       await tx.delete(materialLots).where(eq(materialLots.chemicalId, f.chemical.id));
@@ -167,7 +168,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("two phase raw stock serializati
       try {
         const [stock] = await db.insert(materialStock).values({ warehouseId: active.id, chemicalId: f.chemical.id, quantity: "4" }).returning();
         await expect(invoke(addStockFn, purchaseData(f, "chemical", true), f.actor.id)).rejects.toThrow("inactive");
-        await invoke(adjustStockFn, { materialType: "chemical", materialId: f.chemical.id, lotId: f.lots.chemical.id, adjustment: 1, reason: "Active floor recount" }, f.actor.id);
+        await invoke(adjustStockFn, { materialType: "chemical", materialId: f.chemical.id, lotId: f.lots.chemical.id, adjustment: 1, reason: "count_over" }, f.actor.id);
         expect((await db.query.materialStock.findFirst({ where: eq(materialStock.id, stock.id) }))?.quantity).toBe("5.000");
         expect((await db.query.materialStock.findFirst({ where: eq(materialStock.id, material(f, "chemical").stock.id) }))?.quantity).toBe("10.000");
         expect(await db.select().from(inventoryAuditLog).where(eq(inventoryAuditLog.warehouseId, active.id))).toMatchObject([{ type: "credit", amount: "1.000" }]);
@@ -175,6 +176,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("two phase raw stock serializati
         expect((await db.query.wallets.findFirst({ where: eq(wallets.id, f.wallet.id) }))?.balance).toBe("100.00");
       } finally {
         await db.delete(inventoryAuditLog).where(eq(inventoryAuditLog.warehouseId, active.id));
+        await db.delete(materialAdjustments).where(eq(materialAdjustments.warehouseId, active.id));
         await db.delete(materialStock).where(eq(materialStock.warehouseId, active.id));
         await db.delete(materialLotMovements).where(eq(materialLotMovements.warehouseId, active.id));
         await db.delete(materialLotStock).where(eq(materialLotStock.warehouseId, active.id));
@@ -201,7 +203,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("two phase raw stock serializati
     await withFixture(async f => {
       const { stock, materialId, lotId } = material(f, "chemical");
       for (const adjustment of [NaN, Infinity, -Infinity, 0.0001, -0.0001, 1_000_000_000]) {
-        await expect(invoke(adjustStockFn, { materialType: "chemical", materialId, lotId, adjustment, reason: "Invalid quantity" }, f.actor.id)).rejects.toThrow();
+        await expect(invoke(adjustStockFn, { materialType: "chemical", materialId, lotId, adjustment, reason: "other", note: "Invalid quantity" }, f.actor.id)).rejects.toThrow();
       }
       expect((await db.query.materialStock.findFirst({ where: eq(materialStock.id, stock.id) }))?.quantity).toBe("10.000");
       expect(await db.select().from(inventoryAuditLog).where(eq(inventoryAuditLog.materialId, materialId))).toEqual([]);
@@ -211,7 +213,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("two phase raw stock serializati
   it.each(["chemical", "packaging"] as const)("serializes manual %s adjustment after a production debit", async type => {
     await withFixture(async f => {
       const { stock, materialId, lotId } = material(f, type);
-      const result = await afterHeldDebit(f, type, () => invoke(adjustStockFn, { materialType: type, materialId, lotId, adjustment: 1, reason: "Returned unused material" }, f.actor.id));
+      const result = await afterHeldDebit(f, type, () => invoke(adjustStockFn, { materialType: type, materialId, lotId, adjustment: 1, reason: "count_over" }, f.actor.id));
       expect(result.status).toBe("fulfilled");
       if (result.status === "fulfilled") expect(result.value).toMatchObject({ previousQty: 0, newQty: 1 });
       expect((await db.query.materialStock.findFirst({ where: eq(materialStock.id, stock.id) }))?.quantity).toBe("1.000");
@@ -244,7 +246,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("two phase raw stock serializati
     await withFixture(async f => {
       const { stock, materialId, lotId } = material(f, "chemical");
       const result = await afterHeldDebit(f, "chemical", () =>
-        invoke(adjustStockFn, { materialType: "chemical", materialId, lotId, adjustment: -1, reason: "Remove shortage" }, f.actor.id));
+        invoke(adjustStockFn, { materialType: "chemical", materialId, lotId, adjustment: -1, reason: "count_short" }, f.actor.id));
       expect(result.status).toBe("rejected");
       if (result.status === "rejected") expect(result.reason.message).toMatch(/Not enough stock in this lot/);
       expect((await db.query.materialStock.findFirst({ where: eq(materialStock.id, stock.id) }))?.quantity).toBe("0.000");
