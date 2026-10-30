@@ -11,6 +11,7 @@ export const useAdjustStock = () => {
       queryClient.invalidateQueries({ queryKey: ["materials"] });
       queryClient.invalidateQueries({ queryKey: ["consumption-history"] });
       queryClient.invalidateQueries({ queryKey: ["low-stock-alerts"] });
+      queryClient.invalidateQueries({ queryKey: ["material-lots"] });
     },
   });
 };

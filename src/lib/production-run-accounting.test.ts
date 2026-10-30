@@ -44,11 +44,11 @@ describe("production packaging quantity math", () => {
 describe("two phase production regression guards", () => {
   const read = (path: string) => readFileSync(resolve(process.cwd(), path), "utf8");
 
-  it("deducts packaging only during progress and attaches each debit to its log", () => {
+  it("retires packing-job progress and keeps material debits out of completion", () => {
     const progress = read("src/server-functions/manufacturing/packaging/log-packaging-progress-fn.ts");
     const completion = read("src/server-functions/manufacturing/packaging/complete-packaging-allocation-core.server.ts");
-    expect(progress).toContain("progressLogId: progressLog.id");
-    expect(progress).toContain(".update(materialStock)");
+    expect(progress).toContain("This packing flow is retired");
+    expect(progress).not.toContain("materialStock");
     expect(completion).not.toContain(".update(materialStock)");
     expect(completion).toContain('type: "PRODUCTION_RECEIPT"');
   });

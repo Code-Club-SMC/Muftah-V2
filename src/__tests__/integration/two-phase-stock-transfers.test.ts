@@ -29,7 +29,6 @@ import {
 import { completePackagingAllocationCore } from "@/server-functions/manufacturing/packaging/complete-packaging-allocation-core.server";
 import { transferStockFn } from "@/server-functions/inventory/stock/transfer-stock-fn";
 import { toggleWarehouseStatusFn } from "@/server-functions/inventory/toggle-warehouse-status-fn";
-import { updateStockFn } from "@/server-functions/inventory/stock/update-stock-fn";
 import { createMixingRunFn } from "@/server-functions/manufacturing/mixing/create-mixing-run-fn";
 import { createPackagingAllocationFn } from "@/server-functions/manufacturing/packaging/create-packaging-allocation-fn";
 import {
@@ -1127,60 +1126,6 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)(
           quantityContainers: 1,
           totalInventoryValue: "65.00",
         });
-      } finally {
-        await cleanup(f);
-      }
-    });
-    it("allows raw stock audit foreign keys while deactivation waits for stock on another connection", async () => {
-      const f = await db.transaction(seed);
-      try {
-        const [raw] = await db
-          .insert(materialStock)
-          .values({
-            warehouseId: f.source.id,
-            chemicalId: f.chemical.id,
-            quantity: "0.300",
-          })
-          .returning();
-        const results = await assertBlocked(
-          () =>
-            invoke(
-              updateStockFn,
-              {
-                stockId: raw.id,
-                quantity: "0.100",
-                adjustmentType: "subtract",
-                reason: "Race regression",
-              },
-              f,
-            ),
-          () =>
-            invoke(
-              toggleWarehouseStatusFn,
-              {
-                warehouseId: f.source.id,
-                isActive: false,
-                transferToWarehouseId: f.target.id,
-              },
-              f,
-            ),
-          (query) =>
-            query.sql.includes('from "material_stock"') &&
-            query.sql.includes("for update") &&
-            query.params.includes(raw.id),
-        );
-        expect(results.map((result) => result.status)).toEqual([
-          "fulfilled",
-          "fulfilled",
-        ]);
-        expect(
-          await db.query.materialStock.findFirst({
-            where: and(
-              eq(materialStock.warehouseId, f.target.id),
-              eq(materialStock.chemicalId, f.chemical.id),
-            ),
-          }),
-        ).toMatchObject({ quantity: "0.200" });
       } finally {
         await cleanup(f);
       }

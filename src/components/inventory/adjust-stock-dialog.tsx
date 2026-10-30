@@ -5,6 +5,7 @@ import { AlertTriangle, Loader2, Minus, Plus, Search } from "lucide-react";
 import { toast } from "sonner";
 import { getFailedProductionChemicalRecoveryContextFn } from "@/server-functions/inventory/stock/get-failed-production-chemical-recovery-context-fn";
 import { useAdjustStock } from "@/hooks/stock/use-adjust-stock";
+import { useMaterialLots } from "@/hooks/stock/use-material-lots";
 import { useRecoverFailedProductionChemical } from "@/hooks/stock/use-recover-failed-production-chemical";
 import { useViewerAccess } from "@/hooks/use-viewer-access";
 import { lotLabel, splitRecoveryAcrossLots, type LotPick } from "@/lib/inventory/material-lots";
@@ -21,9 +22,11 @@ import {
 } from "../ui/dialog";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import { Textarea } from "../ui/textarea";
 
 type AdjustStockDialogProps = {
+  factoryFloorId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   materialType: "chemical" | "packaging";
@@ -38,6 +41,7 @@ type FailedBatchRecoveryContext = Awaited<
 >;
 
 export const AdjustStockDialog = ({
+  factoryFloorId,
   open,
   onOpenChange,
   materialType,
@@ -54,6 +58,7 @@ export const AdjustStockDialog = ({
     useState<FailedBatchRecoveryContext | null>(null);
   // Lot quantities the operator typed over the default split; null keeps the default.
   const [lotEdits, setLotEdits] = useState<Record<string, string> | null>(null);
+  const [lotId, setLotId] = useState("");
 
   const { data: viewerAccess } = useViewerAccess();
   const canManageInventory = viewerAccess
@@ -65,6 +70,15 @@ export const AdjustStockDialog = ({
     : false;
 
   const adjustStock = useAdjustStock();
+  const { data: floorLots, isLoading: lotsLoading } = useMaterialLots(
+    open ? factoryFloorId : undefined,
+    materialType,
+    [materialId],
+  );
+  const lots = floorLots?.[materialId] ?? [];
+  // A single lot is picked for the person; with more than one they choose.
+  const chosenLotId = lotId || (lots.length === 1 ? lots[0].lotId : "");
+  const selectedLot = lots.find((lot) => lot.lotId === chosenLotId);
   const recoverFailedChemical = useRecoverFailedProductionChemical();
   const recoveryLookup = useMutation({
     mutationFn: getFailedProductionChemicalRecoveryContextFn,
@@ -93,6 +107,7 @@ export const AdjustStockDialog = ({
     setBatchId("");
     setRecoveryContext(null);
     setLotEdits(null);
+    setLotId("");
   };
 
   useEffect(() => {
@@ -256,9 +271,14 @@ export const AdjustStockDialog = ({
       return;
     }
 
-    if (mode === "remove" && numericAmount > currentStock) {
+    if (!selectedLot) {
+      toast.error("Pick a lot.");
+      return;
+    }
+
+    if (mode === "remove" && numericAmount > Number(selectedLot.quantity)) {
       toast.error(
-        `Cannot remove ${numericAmount} ${unit}. Only ${currentStock.toFixed(2)} ${unit} available.`,
+        `Cannot remove ${numericAmount} ${unit}. Only ${Number(selectedLot.quantity)} ${unit} in this lot.`,
       );
       return;
     }
@@ -268,6 +288,7 @@ export const AdjustStockDialog = ({
         data: {
           materialType,
           materialId,
+          lotId: selectedLot.lotId,
           adjustment: mode === "add" ? numericAmount : -numericAmount,
           reason: reason.trim(),
         },
@@ -289,7 +310,7 @@ export const AdjustStockDialog = ({
     recoveryLookup.isPending;
   const submitDisabled = isChemicalRecoveryFlow
     ? !reason.trim() || !recoveryAmountValid || !!lotSplitError || isSettledRecovery || submitPending
-    : !canManageInventory || !reason.trim() || !genericAmountValid || submitPending;
+    : !canManageInventory || !reason.trim() || !genericAmountValid || !selectedLot || submitPending;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -446,6 +467,32 @@ export const AdjustStockDialog = ({
                   )}
                 </div>
               ) : null}
+            </div>
+          ) : null}
+
+          {canManageInventory && !isChemicalRecoveryFlow ? (
+            <div className="space-y-2">
+              <Label>Lot</Label>
+              {lotsLoading ? (
+                <p className="text-xs text-muted-foreground">Loading lots...</p>
+              ) : lots.length === 0 ? (
+                <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+                  No lot to add to. Use Add stock to buy at a price.
+                </p>
+              ) : (
+                <Select value={chosenLotId} onValueChange={setLotId}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Pick a lot" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {lots.map((lot) => (
+                      <SelectItem key={lot.lotId} value={lot.lotId}>
+                        {lotLabel(lot, unit)}, {Number(lot.quantity)} {unit} on floor
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
           ) : null}
 

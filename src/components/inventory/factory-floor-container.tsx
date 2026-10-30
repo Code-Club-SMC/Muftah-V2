@@ -299,7 +299,7 @@ export const FactoryFloorContainer = () => {
 
       {/* ── Adjust Stock Dialog ───────────────────────────────────────────── */}
       {adjustTarget && (
-        <AdjustStockDialog open={adjustDialogOpen} onOpenChange={(open) => { setAdjustDialogOpen(open); if (!open) setAdjustTarget(null); }} materialType={adjustTarget.materialType} materialId={adjustTarget.materialId} materialName={adjustTarget.materialName} currentStock={adjustTarget.currentStock} unit={adjustTarget.unit} />
+        <AdjustStockDialog factoryFloorId={factoryFloor.id} open={adjustDialogOpen} onOpenChange={(open) => { setAdjustDialogOpen(open); if (!open) setAdjustTarget(null); }} materialType={adjustTarget.materialType} materialId={adjustTarget.materialId} materialName={adjustTarget.materialName} currentStock={adjustTarget.currentStock} unit={adjustTarget.unit} />
       )}
     </motion.div>
   );

@@ -1,19 +1,17 @@
 import { createServerFn } from "@tanstack/react-start";
 import { eq } from "drizzle-orm";
-import { db, materialStock, packagingMaterials, chemicals } from "@/db";
+import { db, packagingMaterials, chemicals } from "@/db";
 import { requireInventoryManageMiddleware } from "@/lib/middlewares";
 import { z } from "zod";
 
 const updateMaterialSchema = z.object({
   id: z.string(),
-  stockId: z.string().optional(),
   type: z.enum(["chemical", "packaging"]),
   data: z.object({
     name: z.string().min(1),
     unit: z.string().optional(),
     costPerUnit: z.string().min(1),
     minimumStockLevel: z.union([z.string(), z.number()]),
-    quantity: z.string().optional(),
     materialType: z.string().optional(), // Maps to 'type' in packaging_materials
     capacity: z.string().optional(),
     capacityUnit: z.string().optional(),
@@ -25,7 +23,7 @@ export const updateMaterialFn = createServerFn()
   .inputValidator(updateMaterialSchema)
   .handler(async ({ data }) => {
     try {
-      const { id, type, stockId, data: fields } = data;
+      const { id, type, data: fields } = data;
 
       return await db.transaction(async (tx) => {
         if (type === "chemical") {
@@ -50,13 +48,6 @@ export const updateMaterialFn = createServerFn()
               capacityUnit: fields.capacityUnit || null,
             })
             .where(eq(packagingMaterials.id, id));
-        }
-
-        if (stockId && fields.quantity !== undefined) {
-          await tx
-            .update(materialStock)
-            .set({ quantity: fields.quantity.toString() })
-            .where(eq(materialStock.id, stockId));
         }
 
         return { success: true };

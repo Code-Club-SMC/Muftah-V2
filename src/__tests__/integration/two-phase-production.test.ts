@@ -309,57 +309,6 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("two phase production database r
     });
   });
 
-  it("reconciles rounded packaging material costs with allocation totals and finished stock value", async () => {
-    await withFixture(async (tx, f) => {
-      await tx.update(recipes).set({ cartonPackagingId: null, containersPerCarton: 0 })
-        .where(eq(recipes.id, f.recipe.id));
-      await tx.update(packagingMaterials).set({ costPerUnit: "0" }).where(eq(packagingMaterials.id, f.primary.id));
-      const [secondMaterial] = await tx.insert(packagingMaterials).values({ name: randomUUID(), costPerUnit: "5" }).returning();
-      const [repeatedMaterial] = await tx.insert(packagingMaterials).values({ name: randomUUID(), costPerUnit: "0.50" }).returning();
-      const materialIds = [f.master.id, secondMaterial.id];
-      await tx.update(packagingMaterials).set({ costPerUnit: "5" }).where(inArray(packagingMaterials.id, materialIds));
-      await tx.insert(recipePackaging).values(materialIds.map(packagingMaterialId => ({
-        recipeId: f.recipe.id, packagingMaterialId, quantityPerContainer: "0.001", usageBasis: "per_unit",
-      })));
-      await tx.insert(recipePackaging).values(["0.001", "0.009"].map(quantityPerContainer => ({
-        recipeId: f.recipe.id, packagingMaterialId: repeatedMaterial.id, quantityPerContainer, usageBasis: "per_unit",
-      })));
-      await tx.insert(materialStock).values([
-        { warehouseId: f.warehouse.id, packagingMaterialId: f.primary.id, quantity: "1" },
-        { warehouseId: f.warehouse.id, packagingMaterialId: repeatedMaterial.id, quantity: "0.010" },
-        ...materialIds.map(packagingMaterialId => ({ warehouseId: f.warehouse.id, packagingMaterialId, quantity: "0.001" })),
-      ]);
-      const [allocation] = await tx.insert(packagingAllocations).values({
-        mixingRunId: f.run.id, recipeId: f.recipe.id, warehouseId: f.warehouse.id, operatorId: f.actor.id,
-        allocatedBulkQuantity: "1", allocatedBulkUnit: "kg", allocatedChemicalCost: "0.03",
-        targetContainers: 1, status: "in_progress",
-      }).returning();
-      const transactionSpy = vi.spyOn(db, "transaction").mockImplementation(
-        ((callback: Parameters<typeof db.transaction>[0]) => tx.transaction(callback)) as typeof db.transaction,
-      );
-      try {
-        await invoke(logPackagingProgressFn, { allocationId: allocation.id, containersProduced: 1 }, f.actor.id);
-        const usage = await tx.select().from(packagingMaterialsUsed)
-          .where(eq(packagingMaterialsUsed.packagingAllocationId, allocation.id));
-        expect(usage.filter(row => materialIds.includes(row.materialId)).map(row => row.totalCost)).toEqual(["0.01", "0.01"]);
-        expect(usage.find(row => row.materialId === repeatedMaterial.id)).toMatchObject({ quantityUsed: "0.010", totalCost: "0.01" });
-        const [recorded] = await tx.select({ total: sql<string>`sum(${packagingMaterialsUsed.totalCost})` })
-          .from(packagingMaterialsUsed).where(eq(packagingMaterialsUsed.packagingAllocationId, allocation.id));
-        const packed = await tx.query.packagingAllocations.findFirst({ where: eq(packagingAllocations.id, allocation.id) });
-        expect(Number(recorded.total)).toBe(0.03);
-        expect(packed?.status).toBe("completed");
-        expect.soft(Number(packed?.totalPackagingCost)).toBe(Number(recorded.total));
-        expect.soft(Number(packed?.totalProductionCost)).toBe(0.06);
-        const [stock] = await tx.select().from(finishedGoodsStock).where(eq(finishedGoodsStock.recipeId, f.recipe.id));
-        expect(stock.quantityContainers).toBe(1);
-        expect.soft(Number(stock.weightedAverageCostPerPack)).toBe(0.06);
-        expect.soft(Number(stock.totalInventoryValue)).toBe(0.06);
-      } finally {
-        transactionSpy.mockRestore();
-      }
-    });
-  });
-
   it("preserves standard full cartons when loose units and cartons share an invoice", async () => {
     await withFixture(async (tx, f) => {
       async function receipt(units: number) {
@@ -1089,22 +1038,11 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("two phase production database r
         await expect(invoke(createPackagingAllocationFn, request, f.actor.id)).rejects.toThrow("Insufficient bulk");
         await invoke(startPackagingAllocationFn, { allocationId }, f.actor.id, ["operator.run.log"]);
         await expect(invoke(cancelPackagingAllocationFn, { allocationId }, f.actor.id)).rejects.toThrow("untouched");
-        await expect(invoke(logPackagingProgressFn, { allocationId, containersProduced: 4 }, f.actor.id, ["operator.run.log"])).rejects.toThrow("Insufficient");
+        // The packing-job flow is retired; packing is recorded from the mixing batch with picked lots.
+        await expect(invoke(logPackagingProgressFn, { allocationId, containersProduced: 4 }, f.actor.id, ["operator.run.log"])).rejects.toThrow("retired");
         expect(await tx.select().from(packagingProgressLogs)).toHaveLength(0);
         const [bottles] = await tx.select().from(materialStock).where(eq(materialStock.packagingMaterialId, f.primary.id));
         expect(Number(bottles.quantity)).toBe(10);
-        await tx.update(materialStock).set({ quantity: "2" }).where(eq(materialStock.packagingMaterialId, f.master.id));
-        await invoke(logPackagingProgressFn, { allocationId, containersProduced: 4 }, f.actor.id, ["operator.run.log"]);
-        expect(await tx.select().from(finishedGoodsStock).where(eq(finishedGoodsStock.recipeId, f.recipe.id))).toHaveLength(0);
-        await expect(invoke(logPackagingProgressFn, { allocationId, containersProduced: 3 }, f.actor.id)).rejects.toThrow("target");
-        await invoke(logPackagingProgressFn, { allocationId, containersProduced: 2 }, f.actor.id, ["operator.run.log"]);
-        const packed = await tx.query.packagingAllocations.findFirst({ where: eq(packagingAllocations.id, allocationId) });
-        expect(packed?.status).toBe("completed");
-        expect(Number(packed?.totalPackagingCost)).toBe(22);
-        expect(Number(packed?.totalProductionCost)).toBe(82);
-        const [stock] = await tx.select().from(finishedGoodsStock).where(eq(finishedGoodsStock.recipeId, f.recipe.id));
-        expect(stock.quantityCartons).toBe(1);
-        expect(stock.quantityContainers).toBe(2);
       } finally {
         transactionSpy.mockRestore();
       }

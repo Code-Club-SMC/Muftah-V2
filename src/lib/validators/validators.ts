@@ -181,13 +181,6 @@ export const addStockSchema = z.object({
   bankName: z.string(),
 });
 
-export const updateStockSchema = z.object({
-  stockId: z.string(),
-  quantity: z.string(),
-  adjustmentType: z.enum(["set", "add", "subtract"]),
-  reason: z.string().min(1, "Reason is required"),
-});
-
 export const transferStockSchema = z
   .object({
     fromWarehouseId: z.string().min(1, "Source warehouse is required"),

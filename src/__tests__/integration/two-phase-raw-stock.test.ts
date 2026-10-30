@@ -3,8 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 import { and, eq, gte, sql } from "drizzle-orm";
 import { db, user, warehouses, chemicals, packagingMaterials, materialStock, inventoryAuditLog, suppliers, wallets, purchaseRecords, supplierPayments, expenses, transactions, materialLots, materialLotStock, materialLotMovements } from "@/db";
 import { adjustStockFn } from "@/server-functions/inventory/stock/adjust-stock-fn";
-import { updateStockFn } from "@/server-functions/inventory/stock/update-stock-fn";
 import { addStockFn } from "@/server-functions/inventory/stock/add-stock-fn";
+import { findOrCreateLot } from "@/lib/inventory/material-lots.server";
 
 // Only HTTP/session transport is bypassed; validators, handlers and SQL are real.
 vi.mock("@tanstack/react-start", () => ({ createServerFn: () => {
@@ -46,7 +46,12 @@ async function seed(tx: Tx) {
   ]).returning();
   const [supplier] = await tx.insert(suppliers).values({ supplierName: id }).returning();
   const [wallet] = await tx.insert(wallets).values({ id, name: id, type: "cash", balance: "100" }).returning();
-  return { actor, warehouse, chemical, packaging, stock, supplier, wallet };
+  // Lots at the items' current price, so adjustments can name them. Their stock appears on first lock.
+  const lots = {
+    chemical: await findOrCreateLot(tx, { materialType: "chemical", materialId: chemical.id }, "10"),
+    packaging: await findOrCreateLot(tx, { materialType: "packaging", materialId: packaging.id }, "10"),
+  };
+  return { actor, warehouse, chemical, packaging, stock, supplier, wallet, lots };
 }
 type Fixture = Awaited<ReturnType<typeof seed>>;
 
@@ -82,7 +87,7 @@ async function withFixture(check: (f: Fixture) => Promise<void>) {
 function material(f: Fixture, type: MaterialType) {
   const materialId = type === "chemical" ? f.chemical.id : f.packaging.id;
   const stock = f.stock.find(row => (type === "chemical" ? row.chemicalId : row.packagingMaterialId) === materialId)!;
-  return { materialId, stock };
+  return { materialId, stock, lotId: f.lots[type].id };
 }
 
 // A waiter may queue behind the holder directly, or behind a sibling that already queued on it.
@@ -158,7 +163,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("two phase raw stock serializati
       try {
         const [stock] = await db.insert(materialStock).values({ warehouseId: active.id, chemicalId: f.chemical.id, quantity: "4" }).returning();
         await expect(invoke(addStockFn, purchaseData(f, "chemical", true), f.actor.id)).rejects.toThrow("inactive");
-        await invoke(adjustStockFn, { materialType: "chemical", materialId: f.chemical.id, adjustment: 1, reason: "Active floor recount" }, f.actor.id);
+        await invoke(adjustStockFn, { materialType: "chemical", materialId: f.chemical.id, lotId: f.lots.chemical.id, adjustment: 1, reason: "Active floor recount" }, f.actor.id);
         expect((await db.query.materialStock.findFirst({ where: eq(materialStock.id, stock.id) }))?.quantity).toBe("5.000");
         expect((await db.query.materialStock.findFirst({ where: eq(materialStock.id, material(f, "chemical").stock.id) }))?.quantity).toBe("10.000");
         expect(await db.select().from(inventoryAuditLog).where(eq(inventoryAuditLog.warehouseId, active.id))).toMatchObject([{ type: "credit", amount: "1.000" }]);
@@ -167,19 +172,10 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("two phase raw stock serializati
       } finally {
         await db.delete(inventoryAuditLog).where(eq(inventoryAuditLog.warehouseId, active.id));
         await db.delete(materialStock).where(eq(materialStock.warehouseId, active.id));
+        await db.delete(materialLotMovements).where(eq(materialLotMovements.warehouseId, active.id));
+        await db.delete(materialLotStock).where(eq(materialLotStock.warehouseId, active.id));
         await db.delete(warehouses).where(eq(warehouses.id, active.id));
       }
-    });
-  });
-
-  it.each(["add", "subtract", "set"] as const)("rejects invalid %s quantities before changing stock or audit", async adjustmentType => {
-    await withFixture(async f => {
-      const { stock, materialId } = material(f, "chemical");
-      for (const quantity of ["-1", "NaN", "Infinity", "0.0001", "1000000000", ""]) {
-        await expect(invoke(updateStockFn, { stockId: stock.id, quantity, adjustmentType, reason: "Invalid quantity" }, f.actor.id)).rejects.toThrow();
-      }
-      expect((await db.query.materialStock.findFirst({ where: eq(materialStock.id, stock.id) }))?.quantity).toBe("10.000");
-      expect(await db.select().from(inventoryAuditLog).where(eq(inventoryAuditLog.materialId, materialId))).toEqual([]);
     });
   });
 
@@ -199,9 +195,9 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("two phase raw stock serializati
 
   it("rejects nonfinite and unrepresentable manual adjustments before changing stock or audit", async () => {
     await withFixture(async f => {
-      const { stock, materialId } = material(f, "chemical");
+      const { stock, materialId, lotId } = material(f, "chemical");
       for (const adjustment of [NaN, Infinity, -Infinity, 0.0001, -0.0001, 1_000_000_000]) {
-        await expect(invoke(adjustStockFn, { materialType: "chemical", materialId, adjustment, reason: "Invalid quantity" }, f.actor.id)).rejects.toThrow();
+        await expect(invoke(adjustStockFn, { materialType: "chemical", materialId, lotId, adjustment, reason: "Invalid quantity" }, f.actor.id)).rejects.toThrow();
       }
       expect((await db.query.materialStock.findFirst({ where: eq(materialStock.id, stock.id) }))?.quantity).toBe("10.000");
       expect(await db.select().from(inventoryAuditLog).where(eq(inventoryAuditLog.materialId, materialId))).toEqual([]);
@@ -210,23 +206,14 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("two phase raw stock serializati
 
   it.each(["chemical", "packaging"] as const)("serializes manual %s adjustment after a production debit", async type => {
     await withFixture(async f => {
-      const { stock, materialId } = material(f, type);
-      const result = await afterHeldDebit(f, type, () => invoke(adjustStockFn, { materialType: type, materialId, adjustment: 1, reason: "Returned unused material" }, f.actor.id));
+      const { stock, materialId, lotId } = material(f, type);
+      const result = await afterHeldDebit(f, type, () => invoke(adjustStockFn, { materialType: type, materialId, lotId, adjustment: 1, reason: "Returned unused material" }, f.actor.id));
       expect(result.status).toBe("fulfilled");
       if (result.status === "fulfilled") expect(result.value).toMatchObject({ previousQty: 0, newQty: 1 });
       expect((await db.query.materialStock.findFirst({ where: eq(materialStock.id, stock.id) }))?.quantity).toBe("1.000");
       const audit = await db.select().from(inventoryAuditLog).where(eq(inventoryAuditLog.materialId, materialId));
       expect(audit).toHaveLength(2);
       expect(audit.map(row => ({ type: row.type, amount: row.amount }))).toEqual(expect.arrayContaining([{ type: "debit", amount: "10.000" }, { type: "credit", amount: "1.000" }]));
-    });
-  });
-
-  it.each(["chemical", "packaging"] as const)("serializes additive %s stock edits after a production debit", async type => {
-    await withFixture(async f => {
-      const { stock } = material(f, type);
-      const result = await afterHeldDebit(f, type, () => invoke(updateStockFn, { stockId: stock.id, quantity: "1", adjustmentType: "add", reason: "Returned unused material" }, f.actor.id));
-      expect(result.status).toBe("fulfilled");
-      expect((await db.query.materialStock.findFirst({ where: eq(materialStock.id, stock.id) }))?.quantity).toBe("1.000");
     });
   });
 
@@ -249,29 +236,17 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("two phase raw stock serializati
     });
   });
 
-  it.each(["adjust", "subtract"] as const)("rejects a stale %s debit without writing its audit after production consumed stock", async operation => {
+  it("rejects a stale adjust debit without writing its audit after production consumed stock", async () => {
     await withFixture(async f => {
-      const { stock, materialId } = material(f, "chemical");
-      const result = await afterHeldDebit(f, "chemical", () => operation === "adjust"
-        ? invoke(adjustStockFn, { materialType: "chemical", materialId, adjustment: -1, reason: "Remove shortage" }, f.actor.id)
-        : invoke(updateStockFn, { stockId: stock.id, quantity: "1", adjustmentType: "subtract", reason: "Remove shortage" }, f.actor.id));
+      const { stock, materialId, lotId } = material(f, "chemical");
+      const result = await afterHeldDebit(f, "chemical", () =>
+        invoke(adjustStockFn, { materialType: "chemical", materialId, lotId, adjustment: -1, reason: "Remove shortage" }, f.actor.id));
       expect(result.status).toBe("rejected");
-      if (result.status === "rejected") expect(result.reason.message).toMatch(/negative stock|Insufficient stock/);
+      if (result.status === "rejected") expect(result.reason.message).toMatch(/Not enough stock in this lot/);
       expect((await db.query.materialStock.findFirst({ where: eq(materialStock.id, stock.id) }))?.quantity).toBe("0.000");
       const audit = await db.select().from(inventoryAuditLog).where(eq(inventoryAuditLog.materialId, materialId));
       expect(audit).toHaveLength(1);
       expect(audit[0]).toMatchObject({ reason: "Production guarded debit", amount: "10.000" });
-    });
-  });
-
-  it("audits an explicit set against the current locked quantity after production consumed stock", async () => {
-    await withFixture(async f => {
-      const { stock, materialId } = material(f, "chemical");
-      const result = await afterHeldDebit(f, "chemical", () => invoke(updateStockFn, { stockId: stock.id, quantity: "5", adjustmentType: "set", reason: "Measured stock count" }, f.actor.id));
-      expect(result.status).toBe("fulfilled");
-      expect((await db.query.materialStock.findFirst({ where: eq(materialStock.id, stock.id) }))?.quantity).toBe("5.000");
-      const audit = await db.select().from(inventoryAuditLog).where(eq(inventoryAuditLog.materialId, materialId));
-      expect(audit.find(row => row.reason === "Measured stock count")).toMatchObject({ type: "credit", amount: "5.000", referenceId: stock.id });
     });
   });
 

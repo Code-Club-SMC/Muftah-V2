@@ -38,7 +38,6 @@ export const EditMaterialDialog = ({
       unit: material?.unit || (type === "chemical" ? "kg" : ""),
       costPerUnit: material?.costPerUnit || "0",
       minimumStockLevel: material?.minimumStockLevel || "0",
-      quantity: item.quantity || "0",
       materialType:
         (material?.type?.toLowerCase() as "primary" | "master") || "primary",
       capacity: material?.capacity || "",
@@ -49,14 +48,12 @@ export const EditMaterialDialog = ({
         {
           data: {
             id: material.id,
-            stockId: item.id,
             type,
             data: {
               name: value.name,
               unit: value.unit,
               costPerUnit: value.costPerUnit,
               minimumStockLevel: value.minimumStockLevel,
-              quantity: value.quantity,
               materialType: value.materialType,
               capacity: value.capacity,
               capacityUnit: value.capacityUnit,
@@ -228,19 +225,6 @@ export const EditMaterialDialog = ({
                   </form.Field>
                 </>
               )}
-
-              <form.Field name="quantity">
-                {(field) => (
-                  <Field>
-                    <FieldLabel>Stock Quantity</FieldLabel>
-                    <Input
-                      type="number"
-                      value={field.state.value}
-                      onChange={(e) => field.handleChange(e.target.value)}
-                    />
-                  </Field>
-                )}
-              </form.Field>
 
               {type === "chemical" && (
                 <form.Field name="unit">

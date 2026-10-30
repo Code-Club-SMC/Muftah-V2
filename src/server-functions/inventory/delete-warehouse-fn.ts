@@ -4,10 +4,10 @@ import {
   db,
   finishedGoodsStock,
   inventoryAuditLog,
-  materialStock,
   stockTransfers,
   warehouses,
 } from "@/db";
+import { deleteWarehouseLotStock } from "@/lib/inventory/material-lots.server";
 import { requireInventoryManageMiddleware } from "@/lib/middlewares";
 import { z } from "zod";
 
@@ -45,9 +45,7 @@ export const deleteWarehouseFn = createServerFn()
         }
 
         // 3. Clear transient stock data
-        await tx
-          .delete(materialStock)
-          .where(eq(materialStock.warehouseId, warehouseId));
+        await deleteWarehouseLotStock(tx, warehouseId);
         await tx
           .delete(finishedGoodsStock)
           .where(eq(finishedGoodsStock.warehouseId, warehouseId));

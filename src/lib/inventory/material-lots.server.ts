@@ -1,6 +1,6 @@
 // src/lib/inventory/material-lots.server.ts
 import Big from "big.js";
-import { and, asc, eq, gte, sql } from "drizzle-orm";
+import { and, asc, eq, gt, gte, inArray, ne, sql } from "drizzle-orm";
 import type { db } from "@/db";
 import { chemicals, materialLotMovements, materialLots, materialLotStock, materialStock, packagingMaterials } from "@/db/schemas/inventory-schema";
 import { checkLotPicks, costLotPicks, lotPrice, lotQuantity, type LotBalance, type LotPick, type MaterialRef, type PickedLot } from "./material-lots";
@@ -111,4 +111,28 @@ export async function relocateAllLots(tx: Tx, input: { fromWarehouseId: string; 
     await moveLotStock(tx, { ref: input.ref, lotId: row.lotId, warehouseId: input.toWarehouseId, delta: row.quantity, sourceType: "warehouse_close", sourceId: input.sourceId });
   }
   return picked;
+}
+
+// Removes an item's lots and stock rows. Refused once the item has any history beyond its opening lot.
+export async function deleteItemLots(tx: Tx, ref: MaterialRef) {
+  const lots = tx.select({ id: materialLots.id }).from(materialLots).where(eq(lotColumn(ref), ref.materialId));
+  const [used] = await tx.select({ id: materialLotMovements.id }).from(materialLotMovements)
+    .where(and(inArray(materialLotMovements.lotId, lots), ne(materialLotMovements.sourceType, "opening"))).limit(1);
+  const [stocked] = await tx.select({ id: materialLotStock.id }).from(materialLotStock)
+    .where(and(inArray(materialLotStock.lotId, lots), gt(materialLotStock.quantity, "0"))).limit(1);
+  if (used || stocked) throw new Error("This item has stock history and can't be deleted.");
+  await tx.delete(materialLotMovements).where(inArray(materialLotMovements.lotId, lots));
+  await tx.delete(materialLotStock).where(inArray(materialLotStock.lotId, lots));
+  await tx.delete(materialLots).where(eq(lotColumn(ref), ref.materialId));
+  await tx.delete(materialStock).where(eq(stockColumn(ref), ref.materialId));
+}
+
+// Clears a store's material stock before the store is deleted. Refused while any lot there still holds stock.
+export async function deleteWarehouseLotStock(tx: Tx, warehouseId: string) {
+  const [stocked] = await tx.select({ id: materialLotStock.id }).from(materialLotStock)
+    .where(and(eq(materialLotStock.warehouseId, warehouseId), gt(materialLotStock.quantity, "0"))).limit(1);
+  if (stocked) throw new Error("This store still has material stock. Move it to another store before deleting.");
+  await tx.delete(materialLotMovements).where(eq(materialLotMovements.warehouseId, warehouseId));
+  await tx.delete(materialLotStock).where(eq(materialLotStock.warehouseId, warehouseId));
+  await tx.delete(materialStock).where(eq(materialStock.warehouseId, warehouseId));
 }
