@@ -97,6 +97,8 @@ export const updateRecipeFn = createServerFn({ method: "POST" })
               (m) => m.id === pkg.packagingMaterialId,
             );
             if (!material) throw new Error("Additional packaging material not found");
+            // Shoppers in KG are counted by weight, so they can only be the pack itself.
+            if (material.measuredInKg) throw new Error(`${material.name} is measured in KG, so it can only be the pack, not an extra item`);
             const costPerUnit = parseFloat(
               material.costPerUnit?.toString() || "0",
             );
