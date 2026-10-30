@@ -5,6 +5,7 @@ import { db, user, warehouses, chemicals, materialStock, inventoryAuditLog } fro
 import { materialLotMovements, materialLotStock } from "@/db/schemas/inventory-schema";
 import { findOrCreateLot, moveLotStock, type Tx } from "@/lib/inventory/material-lots.server";
 import { adjustStockFn } from "@/server-functions/inventory/stock/adjust-stock-fn";
+import { updateMaterialFn } from "@/server-functions/inventory/update-material-fn";
 
 // Only the session transport is replaced. Validation, handlers, locks and SQL are real.
 vi.mock("@tanstack/react-start", () => ({
@@ -71,7 +72,11 @@ async function seed(tx: Tx) {
     const [total] = await tx.select().from(materialStock).where(and(eq(materialStock.warehouseId, floor.id), eq(materialStock.chemicalId, chemical.id)));
     return { lot: lot.quantity, total: total.quantity };
   };
-  return { floor, chemical, lotA, otherLot, adjust, onFloor };
+  const edit = async (quantity: string, lotId?: string) => {
+    const [stock] = await tx.select().from(materialStock).where(and(eq(materialStock.warehouseId, floor.id), eq(materialStock.chemicalId, chemical.id)));
+    return updateMaterialFn({ data: { id: chemical.id, type: "chemical", data: { name: chemical.name, unit: "kg", costPerUnit: "130", minimumStockLevel: "0" }, stock: { stockId: stock.id, quantity, lotId } }, context } as never);
+  };
+  return { floor, chemical, lotA, otherLot, adjust, edit, onFloor };
 }
 
 describe.skipIf(!process.env.TEST_DATABASE_URL)("stock adjustments with lots", () => {
@@ -100,6 +105,23 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("stock adjustments with lots", (
     await withFloor(async (_tx, { otherLot, adjust, onFloor }) => {
       await expect(adjust(otherLot.id, 5)).rejects.toThrow("This lot belongs to another item");
       expect(await onFloor()).toEqual({ lot: "120.000", total: "120.000" });
+    });
+  });
+
+  it("changes stock from the edit form through the picked lot", async () => {
+    await withFloor(async (tx, { floor, chemical, lotA, edit, onFloor }) => {
+      await expect(edit("118")).rejects.toThrow("Pick the lot this stock change belongs to");
+      await edit("118", lotA.id);
+      expect(await onFloor()).toEqual({ lot: "118.000", total: "118.000" });
+      await edit("118");
+      const [saved] = await tx.select().from(chemicals).where(eq(chemicals.id, chemical.id));
+      expect(saved.costPerUnit).toBe("130.00");
+      const movements = await tx.select().from(materialLotMovements)
+        .where(and(eq(materialLotMovements.warehouseId, floor.id), eq(materialLotMovements.sourceType, "adjustment")));
+      expect(movements.map((row) => row.delta)).toEqual(["-2.000"]);
+      await expect(edit("200", lotA.id)).resolves.toMatchObject({ success: true });
+      await expect(edit("0", lotA.id)).resolves.toMatchObject({ success: true });
+      expect(await onFloor()).toEqual({ lot: "0.000", total: "0.000" });
     });
   });
 });

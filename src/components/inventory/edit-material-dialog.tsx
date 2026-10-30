@@ -1,8 +1,12 @@
+import { useState } from "react";
 import { useForm } from "@tanstack/react-form";
+import Big from "big.js";
 import { Loader2, Package, Box } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { useUpdateMaterial } from "@/hooks/inventory/use-material-actions";
+import { useMaterialLots } from "@/hooks/stock/use-material-lots";
+import { lotLabel } from "@/lib/inventory/material-lots";
 import { Field, FieldError, FieldGroup, FieldLabel } from "../ui/field";
 import { Input } from "../ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../ui/dialog";
@@ -31,6 +35,23 @@ export const EditMaterialDialog = ({
   const mutate = useUpdateMaterial();
   const queryclient = useQueryClient();
   const material = type === "chemical" ? item.chemical : item.packagingMaterial;
+  const unit = type === "chemical" ? material?.unit || "kg" : "pcs";
+  const [lotId, setLotId] = useState("");
+  const { data: storeLots, isLoading: lotsLoading } = useMaterialLots(
+    open ? item?.warehouseId : undefined,
+    type,
+    [material?.id],
+  );
+  const lots = storeLots?.[material?.id] ?? [];
+  // A single lot is picked for the person; with more than one they choose.
+  const chosenLotId = lotId || (lots.length === 1 ? lots[0].lotId : "");
+  const stockChange = (quantity: string) => {
+    try {
+      return new Big(quantity || "0").minus(item?.quantity || "0");
+    } catch {
+      return new Big(0);
+    }
+  };
 
   const form = useForm({
     defaultValues: {
@@ -38,12 +59,14 @@ export const EditMaterialDialog = ({
       unit: material?.unit || (type === "chemical" ? "kg" : ""),
       costPerUnit: material?.costPerUnit || "0",
       minimumStockLevel: material?.minimumStockLevel || "0",
+      quantity: new Big(item?.quantity || "0").toString(),
       materialType:
         (material?.type?.toLowerCase() as "primary" | "master") || "primary",
       capacity: material?.capacity || "",
       capacityUnit: material?.capacityUnit || "",
     },
     onSubmit: async ({ value }) => {
+      const changed = !stockChange(value.quantity).eq(0);
       await mutate.mutateAsync(
         {
           data: {
@@ -58,6 +81,9 @@ export const EditMaterialDialog = ({
               capacity: value.capacity,
               capacityUnit: value.capacityUnit,
             },
+            stock: changed
+              ? { stockId: item.id, quantity: value.quantity, lotId: chosenLotId || undefined }
+              : undefined,
           },
         },
         {
@@ -274,6 +300,55 @@ export const EditMaterialDialog = ({
                 )}
               </form.Field>
             </div>
+
+            <form.Field name="quantity">
+              {(field) => {
+                const change = stockChange(field.state.value);
+                return (
+                  <Field>
+                    <FieldLabel>
+                      Stock Quantity{item.warehouse?.name ? ` (${item.warehouse.name})` : ""}
+                    </FieldLabel>
+                    <Input
+                      type="number"
+                      step="0.001"
+                      min="0"
+                      value={field.state.value}
+                      onChange={(e) => field.handleChange(e.target.value)}
+                    />
+                    {!change.eq(0) && (
+                      <div className="space-y-2">
+                        <FieldLabel>
+                          {change.gt(0)
+                            ? `Add ${change.toString()} ${unit} to lot`
+                            : `Take ${change.abs().toString()} ${unit} from lot`}
+                        </FieldLabel>
+                        {lotsLoading ? (
+                          <p className="text-xs text-muted-foreground">Loading lots...</p>
+                        ) : lots.length === 0 ? (
+                          <p className="text-xs text-muted-foreground">
+                            No lot to change. Use Add stock to buy at a price.
+                          </p>
+                        ) : (
+                          <Select value={chosenLotId} onValueChange={setLotId}>
+                            <SelectTrigger className="w-full">
+                              <SelectValue placeholder="Pick a lot" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {lots.map((lot) => (
+                                <SelectItem key={lot.lotId} value={lot.lotId}>
+                                  {lotLabel(lot, unit)}, {Number(lot.quantity)} {unit} here
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        )}
+                      </div>
+                    )}
+                  </Field>
+                );
+              }}
+            </form.Field>
 
             <Button
               disabled={form.state.isSubmitting}
