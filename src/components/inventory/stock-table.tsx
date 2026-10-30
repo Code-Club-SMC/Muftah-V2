@@ -14,6 +14,7 @@ import { Button } from "../ui/button";
 import { GenericEmpty } from "../custom/empty";
 import { InventoryEmptyIllustration } from "@/components/illustrations/InventoryEmptyIllustration";
 import { useState, useMemo } from "react";
+import { packagingUnit } from "@/lib/inventory/material-units";
 import { AddRawMaterialDialog } from "./add-raw-material-sheet";
 import { AddPackagingMaterialDialog } from "./add-packaging-material-dialog";
 import { getInventoryFn } from "@/server-functions/inventory/get-inventory-fn";
@@ -70,6 +71,7 @@ type StockItem = {
     type: string;
     capacity: string | null;
     capacityUnit: string | null;
+    measuredInKg?: boolean | null;
     unit?: string;
     size?: string | null;
     minimumStockLevel: string | number | null;
@@ -198,8 +200,10 @@ export const StockTable = ({
                 {parseFloat(row.original.quantity).toFixed(2)}
               </span>
               <span className="text-[9px] font-black px-1 py-0.5 rounded bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 w-fit leading-none">
-                {material?.unit?.toUpperCase() ||
-                  (type === "packaging" ? "PCS" : "KG")}
+                {(isChemical
+                  ? material?.unit || "kg"
+                  : packagingUnit(row.original.packagingMaterial)
+                ).toUpperCase()}
               </span>
             </div>
           );

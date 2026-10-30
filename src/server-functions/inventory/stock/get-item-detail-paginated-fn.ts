@@ -9,6 +9,7 @@ import {
   stockTransfers,
 } from "@/db";
 import { requireInventoryViewMiddleware } from "@/lib/middlewares";
+import { packagingUnit } from "@/lib/inventory/material-units";
 
 export const getItemDetailPaginatedFn = createServerFn()
   .middleware([requireInventoryViewMiddleware])
@@ -90,6 +91,7 @@ export const getItemDetailPaginatedFn = createServerFn()
         type: result.type,
         capacity: result.capacity,
         capacityUnit: result.capacityUnit,
+        unit: packagingUnit(result),
         costPerUnit: result.costPerUnit,
         minimumStockLevel: result.minimumStockLevel,
         totalStock,

@@ -24,6 +24,7 @@ import type { LotPick } from "@/lib/inventory/material-lots";
 import { type Warehouse } from "@/lib/types";
 import { Badge } from "../ui/badge";
 import { transferStockSchema } from "@/lib/validators/validators";
+import { packagingUnit } from "@/lib/inventory/material-units";
 
 type CartonStats = {
   total: number;
@@ -122,11 +123,19 @@ export const TransferStockDialog = ({
   const lotPicks = pickState.key === pickKey ? pickState.picks : [];
   const setLotPicks = (picks: LotPick[]) => setPickState({ key: pickKey, picks });
   const selectedMaterial = isRaw
-    ? (availableMaterials as { id: string; name: string; unit?: string }[]).find(
-        (m) => m.id === materialId,
-      )
+    ? (
+        availableMaterials as {
+          id: string;
+          name: string;
+          unit?: string;
+          measuredInKg?: boolean | null;
+        }[]
+      ).find((m) => m.id === materialId)
     : undefined;
-  const lotUnit = selectedMaterial?.unit ?? "pcs";
+  const lotUnit =
+    materialType === "packaging"
+      ? packagingUnit(selectedMaterial)
+      : (selectedMaterial?.unit ?? "kg");
   const materialLots = lots.data?.[materialId] ?? [];
   const showLotPicker =
     !!selectedMaterial && !!lots.data && Number(quantity) > 0;

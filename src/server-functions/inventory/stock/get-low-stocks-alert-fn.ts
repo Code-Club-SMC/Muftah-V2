@@ -9,6 +9,7 @@ import {
   warehouses,
 } from "@/db";
 import { requireFactoryFloorViewMiddleware } from "@/lib/middlewares";
+import { packagingUnitSql } from "@/lib/inventory/material-units.server";
 import { calculateTotalUnits } from "@/lib/wac";
 
 export const getLowStockAlertsFn = createServerFn()
@@ -55,7 +56,7 @@ export const getLowStockAlertsFn = createServerFn()
         materialType: sql<string>`'packaging'`,
         currentStock: materialStock.quantity,
         minLevel: sql<string>`${packagingMaterials.minimumStockLevel}::text`,
-        unit: packagingMaterials.capacityUnit,
+        unit: packagingUnitSql(packagingMaterials.measuredInKg),
       })
       .from(materialStock)
       .innerJoin(

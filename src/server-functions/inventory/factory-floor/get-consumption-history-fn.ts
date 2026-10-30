@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { chemicals, packagingMaterials, recipes } from "@/db/schemas/inventory-schema";
 import { mixingMaterialsUsed, mixingRuns, formulas, packagingMaterialsUsed, packagingAllocations } from "@/db/schemas/production-schema";
 import { requireFactoryFloorViewMiddleware } from "@/lib/middlewares";
+import { packagingUnitSql } from "@/lib/inventory/material-units.server";
 import { desc, count, eq, ilike, sql } from "drizzle-orm";
 import { z } from "zod";
 
@@ -38,7 +39,7 @@ export const getConsumptionHistoryFn = createServerFn()
       quantityUsed: packagingMaterialsUsed.quantityUsed, costPerUnit: packagingMaterialsUsed.costPerUnit,
       totalCost: packagingMaterialsUsed.totalCost, createdAt: packagingMaterialsUsed.createdAt,
       materialName: sql<string>`${packagingMaterials.name}`.as("material_name"),
-      materialUnit: sql<string>`'units'`.as("material_unit"),
+      materialUnit: sql<string>`${packagingUnitSql(packagingMaterials.measuredInKg)}`.as("material_unit"),
       batchId: mixingRuns.batchId, productionName: sql<string>`${recipes.name}`.as("production_name"),
     }).from(packagingMaterialsUsed)
       .innerJoin(packagingAllocations, eq(packagingMaterialsUsed.packagingAllocationId, packagingAllocations.id))
@@ -54,7 +55,7 @@ export const getConsumptionHistoryFn = createServerFn()
     return { totalCount, data: history.map(row => ({
       ...row,
       chemical: row.materialType === "chemical" ? { name: row.materialName, unit: row.materialUnit } : undefined,
-      packagingMaterial: row.materialType === "packaging" ? { name: row.materialName } : undefined,
+      packagingMaterial: row.materialType === "packaging" ? { name: row.materialName, unit: row.materialUnit } : undefined,
       productionRun: { batchId: row.batchId, recipe: { name: row.productionName } },
     })) };
   });

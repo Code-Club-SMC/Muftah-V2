@@ -19,7 +19,7 @@ type MaterialUsage = {
   totalCost: string;
   createdAt: Date;
   chemical?: { name: string; unit: string };
-  packagingMaterial?: { name: string };
+  packagingMaterial?: { name: string; unit?: string };
   productionRun?: { batchId: string; recipe: { name: string } };
 };
 
@@ -110,7 +110,7 @@ export const ConsumptionTable = ({
             <span className="text-xs text-muted-foreground ml-1">
               {row.original.materialType === "chemical"
                 ? row.original.chemical?.unit
-                : "units"}
+                : row.original.packagingMaterial?.unit ?? "pcs"}
             </span>
           </div>
         ),

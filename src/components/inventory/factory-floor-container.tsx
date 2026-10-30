@@ -21,6 +21,7 @@ import { AdjustStockDialog } from "./adjust-stock-dialog";
 import { Button } from "../ui/button";
 import { FactoryFloorProductionIllustration } from "../illustrations/FactoryFloorProductionIllustration";
 import { cn } from "@/lib/utils";
+import { packagingUnit } from "@/lib/inventory/material-units";
 
 // ── Animation Variants ─────────────────────────────────────────────────────
 
@@ -148,7 +149,7 @@ export const FactoryFloorContainer = () => {
       materialId: material.id,
       materialName: material.name,
       currentStock: parseFloat(item.quantity),
-      unit: type === "chemical" ? material.unit || "kg" : "pcs",
+      unit: type === "chemical" ? material.unit || "kg" : packagingUnit(material),
     });
     setAdjustDialogOpen(true);
   };

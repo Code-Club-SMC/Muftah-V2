@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { createId } from "@paralleldrive/cuid2";
-import { eq, inArray, sql } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import Big from "big.js";
 import {
   db,
@@ -11,6 +11,7 @@ import {
   warehouses,
 } from "@/db";
 import type { PickedLot } from "@/lib/inventory/material-lots";
+import { packagingUnitSql } from "@/lib/inventory/material-units.server";
 import { logActivityQuiet } from "@/lib/activity-logger.server";
 import { requireInventoryManageMiddleware } from "@/lib/middlewares";
 import { transferStockSchema } from "@/lib/validators/validators";
@@ -114,7 +115,7 @@ export const transferStockFn = createServerFn()
                 .from(chemicals)
                 .where(eq(chemicals.id, data.materialId))
             : await tx
-                .select({ name: packagingMaterials.name, unit: sql<string>`'pcs'` })
+                .select({ name: packagingMaterials.name, unit: packagingUnitSql(packagingMaterials.measuredInKg) })
                 .from(packagingMaterials)
                 .where(eq(packagingMaterials.id, data.materialId));
         if (!item) throw new Error("Material not found");

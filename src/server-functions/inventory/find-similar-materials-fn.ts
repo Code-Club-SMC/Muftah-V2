@@ -4,6 +4,7 @@ import { z } from "zod";
 import { db } from "@/db";
 import { chemicals, materialStock, packagingMaterials } from "@/db/schemas/inventory-schema";
 import { isSimilarMaterialName } from "@/lib/inventory/material-lots";
+import { packagingUnitSql } from "@/lib/inventory/material-units.server";
 import { requireInventoryManageMiddleware } from "@/lib/middlewares";
 
 // Typo guard: existing items whose name is the same or close to the typed one, with total stock.
@@ -20,10 +21,10 @@ export const findSimilarMaterialsFn = createServerFn()
             .leftJoin(materialStock, eq(materialStock.chemicalId, chemicals.id))
             .groupBy(chemicals.id, chemicals.name, chemicals.unit)
         : await db
-            .select({ id: packagingMaterials.id, name: packagingMaterials.name, unit: sql<string>`'pcs'`, stock })
+            .select({ id: packagingMaterials.id, name: packagingMaterials.name, unit: packagingUnitSql(packagingMaterials.measuredInKg), stock })
             .from(packagingMaterials)
             .leftJoin(materialStock, eq(materialStock.packagingMaterialId, packagingMaterials.id))
-            .groupBy(packagingMaterials.id, packagingMaterials.name);
+            .groupBy(packagingMaterials.id, packagingMaterials.name, packagingMaterials.measuredInKg);
     const typed = data.name.trim();
     return rows
       .filter((row) => isSimilarMaterialName(row.name, data.name))

@@ -28,6 +28,7 @@ import { PurchaseRecord } from "@/components/suppliers/purchase-history-table";
 import { PaymentMethodSelect } from "@/components/suppliers/payment-method-select";
 import Big from "big.js";
 import { useMaterialLots } from "@/hooks/stock/use-material-lots";
+import { packagingUnit } from "@/lib/inventory/material-units";
 import { lotLabel, lotPrice } from "@/lib/inventory/material-lots";
 
 // Tells the person whether this purchase joins an existing price lot or starts a new one.
@@ -80,11 +81,16 @@ const CostCalculatorEffect = ({
       } else if (materialType === "packaging" && activeMaterial) {
         const pkg = activeMaterial as any;
         if (pkg.type === "primary") {
-          const weight = parseFloat(pkg.weightPerPack || "0");
           const price = parseFloat(pricePerKg || "0");
-          if (weight > 0 && price > 0) {
-            // Formula: (Weight/1000) * PricePerKg * Qty
-            total = price * (weight / 1000) * qty;
+          if (pkg.measuredInKg) {
+            // Shoppers are bought by weight: KG × price per KG.
+            if (price > 0) total = price * qty;
+          } else {
+            const weight = parseFloat(pkg.weightPerPack || "0");
+            if (weight > 0 && price > 0) {
+              // Formula: (Weight/1000) * PricePerKg * Qty
+              total = price * (weight / 1000) * qty;
+            }
           }
         } else {
           // Master / Sticker / Others -> Simple Unit Price
@@ -214,6 +220,13 @@ export const AddStockForm = ({
     if (qty <= 0 || totalCost <= 0) return;
 
     if (
+      materialType === "packaging" &&
+      (activeMaterial as any)?.type === "primary" &&
+      (activeMaterial as any).measuredInKg
+    ) {
+      // Bought by weight, so the old cost per quantity is the KG price.
+      setPricePerKg((totalCost / qty).toFixed(2));
+    } else if (
       materialType === "packaging" &&
       (activeMaterial as any)?.type === "primary"
     ) {
@@ -442,10 +455,18 @@ export const AddStockForm = ({
 
             {materialType === "packaging" &&
               (activeMaterial as any).type === "primary" && (
-                <div className="grid grid-cols-3 gap-3">
+                <div
+                  className={
+                    (activeMaterial as any).measuredInKg
+                      ? "grid grid-cols-2 gap-3"
+                      : "grid grid-cols-3 gap-3"
+                  }
+                >
                   <div className="space-y-2">
                     <label className="text-xs text-muted-foreground font-medium">
-                      Qty (Bags)
+                      {(activeMaterial as any).measuredInKg
+                        ? "Qty (KG)"
+                        : "Qty (Bags)"}
                     </label>
                     <form.Field name="quantity">
                       {(field) => (
@@ -459,16 +480,18 @@ export const AddStockForm = ({
                       )}
                     </form.Field>
                   </div>
-                  <div className="space-y-2">
-                    <label className="text-xs text-muted-foreground font-medium">
-                      Weight/Pack (g)
-                    </label>
-                    <Input
-                      value={(activeMaterial as any).weightPerPack || 0}
-                      disabled
-                      className="h-9 bg-background/50"
-                    />
-                  </div>
+                  {!(activeMaterial as any).measuredInKg && (
+                    <div className="space-y-2">
+                      <label className="text-xs text-muted-foreground font-medium">
+                        Weight/Pack (g)
+                      </label>
+                      <Input
+                        value={(activeMaterial as any).weightPerPack || 0}
+                        disabled
+                        className="h-9 bg-background/50"
+                      />
+                    </div>
+                  )}
                   <div className="space-y-2">
                     <label className="text-xs text-muted-foreground font-medium">
                       Price/Kg (PKR)
@@ -487,7 +510,11 @@ export const AddStockForm = ({
             <div className="text-[10px] text-muted-foreground italic flex justify-end">
               {materialType === "packaging" &&
               (activeMaterial as any).type === "primary" ? (
-                <span>Formula: (Weight/1000) * Price/Kg * Qty</span>
+                (activeMaterial as any).measuredInKg ? (
+                  <span>Formula: KG × Price/KG</span>
+                ) : (
+                  <span>Formula: (Weight/1000) * Price/Kg * Qty</span>
+                )
               ) : (
                 <span>Formula: Price/Unit * Qty</span>
               )}
@@ -579,7 +606,7 @@ export const AddStockForm = ({
                       unit={
                         materialType === "chemical"
                           ? (activeMaterial as any)?.unit || ""
-                          : "pcs"
+                          : packagingUnit(activeMaterial as any)
                       }
                     />
                   ) : null

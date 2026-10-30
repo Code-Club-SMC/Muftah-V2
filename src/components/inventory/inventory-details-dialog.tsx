@@ -30,6 +30,7 @@ import { getTransferHistoryFn } from "@/server-functions/inventory/stock/get-tra
 import { LabReportsList } from "./lab-reports/lab-reports-list";
 import { Separator } from "@/components/ui/separator";
 import { calculateTotalUnits } from "@/lib/wac";
+import { packagingUnit } from "@/lib/inventory/material-units";
 
 type DetailsProps = {
   open: boolean;
@@ -142,8 +143,7 @@ export const InventoryDetailsDialog = ({
                     <span className="text-[10px] font-bold text-emerald-500 bg-emerald-500/10 px-2 py-1 rounded-md border border-emerald-500/20 uppercase w-fit">
                       {isFinished
                         ? "Packs"
-                        : material.unit ||
-                        (type === "packaging" ? "pcs" : "kg")}
+                        : type === "packaging" ? packagingUnit(material) : material.unit || "kg"}
                     </span>
                   </div>
                 </CardContent>
@@ -180,7 +180,7 @@ export const InventoryDetailsDialog = ({
                     </span>
                     {!isFinished && (
                       <span className="text-[10px] font-bold text-muted-foreground bg-muted px-2 py-1 rounded-md border border-border uppercase w-fit">
-                        {material.unit || (type === "packaging" ? "pcs" : "kg")}
+                        {type === "packaging" ? packagingUnit(material) : material.unit || "kg"}
                       </span>
                     )}
                   </div>
@@ -246,7 +246,7 @@ export const InventoryDetailsDialog = ({
                               isFinished ? 0 : 2,
                             )}
                             <span className="text-[10px] text-muted-foreground ml-1">
-                              {isFinished ? "ctn" : material.unit || "units"}
+                              {isFinished ? "ctn" : type === "packaging" ? packagingUnit(material) : material.unit || "kg"}
                             </span>
                             {transfer.notes?.includes("loose units") && (
                               <div className="text-[10px] text-amber-600 font-bold tracking-tight">
