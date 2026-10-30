@@ -44,6 +44,7 @@ import { Route as ProtectedReportsSalesIndexRouteImport } from './routes/_protec
 import { Route as ProtectedReportsSalariesIndexRouteImport } from './routes/_protected/reports/salaries/index'
 import { Route as ProtectedReportsPurchasesIndexRouteImport } from './routes/_protected/reports/purchases/index'
 import { Route as ProtectedReportsProfitLossIndexRouteImport } from './routes/_protected/reports/profit-loss/index'
+import { Route as ProtectedReportsProductionLossIndexRouteImport } from './routes/_protected/reports/production-loss/index'
 import { Route as ProtectedReportsOutstandingIndexRouteImport } from './routes/_protected/reports/outstanding/index'
 import { Route as ProtectedReportsExpensesIndexRouteImport } from './routes/_protected/reports/expenses/index'
 import { Route as ProtectedReportsCollectionsIndexRouteImport } from './routes/_protected/reports/collections/index'
@@ -289,6 +290,12 @@ const ProtectedReportsProfitLossIndexRoute =
   ProtectedReportsProfitLossIndexRouteImport.update({
     id: '/profit-loss/',
     path: '/profit-loss/',
+    getParentRoute: () => ProtectedReportsRouteRoute,
+  } as any)
+const ProtectedReportsProductionLossIndexRoute =
+  ProtectedReportsProductionLossIndexRouteImport.update({
+    id: '/production-loss/',
+    path: '/production-loss/',
     getParentRoute: () => ProtectedReportsRouteRoute,
   } as any)
 const ProtectedReportsOutstandingIndexRoute =
@@ -670,6 +677,7 @@ export interface FileRoutesByFullPath {
   '/reports/collections/': typeof ProtectedReportsCollectionsIndexRoute
   '/reports/expenses/': typeof ProtectedReportsExpensesIndexRoute
   '/reports/outstanding/': typeof ProtectedReportsOutstandingIndexRoute
+  '/reports/production-loss/': typeof ProtectedReportsProductionLossIndexRoute
   '/reports/profit-loss/': typeof ProtectedReportsProfitLossIndexRoute
   '/reports/purchases/': typeof ProtectedReportsPurchasesIndexRoute
   '/reports/salaries/': typeof ProtectedReportsSalariesIndexRoute
@@ -758,6 +766,7 @@ export interface FileRoutesByTo {
   '/reports/collections': typeof ProtectedReportsCollectionsIndexRoute
   '/reports/expenses': typeof ProtectedReportsExpensesIndexRoute
   '/reports/outstanding': typeof ProtectedReportsOutstandingIndexRoute
+  '/reports/production-loss': typeof ProtectedReportsProductionLossIndexRoute
   '/reports/profit-loss': typeof ProtectedReportsProfitLossIndexRoute
   '/reports/purchases': typeof ProtectedReportsPurchasesIndexRoute
   '/reports/salaries': typeof ProtectedReportsSalariesIndexRoute
@@ -850,6 +859,7 @@ export interface FileRoutesById {
   '/_protected/reports/collections/': typeof ProtectedReportsCollectionsIndexRoute
   '/_protected/reports/expenses/': typeof ProtectedReportsExpensesIndexRoute
   '/_protected/reports/outstanding/': typeof ProtectedReportsOutstandingIndexRoute
+  '/_protected/reports/production-loss/': typeof ProtectedReportsProductionLossIndexRoute
   '/_protected/reports/profit-loss/': typeof ProtectedReportsProfitLossIndexRoute
   '/_protected/reports/purchases/': typeof ProtectedReportsPurchasesIndexRoute
   '/_protected/reports/salaries/': typeof ProtectedReportsSalariesIndexRoute
@@ -941,6 +951,7 @@ export interface FileRouteTypes {
     | '/reports/collections/'
     | '/reports/expenses/'
     | '/reports/outstanding/'
+    | '/reports/production-loss/'
     | '/reports/profit-loss/'
     | '/reports/purchases/'
     | '/reports/salaries/'
@@ -1029,6 +1040,7 @@ export interface FileRouteTypes {
     | '/reports/collections'
     | '/reports/expenses'
     | '/reports/outstanding'
+    | '/reports/production-loss'
     | '/reports/profit-loss'
     | '/reports/purchases'
     | '/reports/salaries'
@@ -1120,6 +1132,7 @@ export interface FileRouteTypes {
     | '/_protected/reports/collections/'
     | '/_protected/reports/expenses/'
     | '/_protected/reports/outstanding/'
+    | '/_protected/reports/production-loss/'
     | '/_protected/reports/profit-loss/'
     | '/_protected/reports/purchases/'
     | '/_protected/reports/salaries/'
@@ -1410,6 +1423,13 @@ declare module '@tanstack/react-router' {
       path: '/profit-loss'
       fullPath: '/reports/profit-loss/'
       preLoaderRoute: typeof ProtectedReportsProfitLossIndexRouteImport
+      parentRoute: typeof ProtectedReportsRouteRoute
+    }
+    '/_protected/reports/production-loss/': {
+      id: '/_protected/reports/production-loss/'
+      path: '/production-loss'
+      fullPath: '/reports/production-loss/'
+      preLoaderRoute: typeof ProtectedReportsProductionLossIndexRouteImport
       parentRoute: typeof ProtectedReportsRouteRoute
     }
     '/_protected/reports/outstanding/': {
@@ -1818,6 +1838,7 @@ interface ProtectedReportsRouteRouteChildren {
   ProtectedReportsCollectionsIndexRoute: typeof ProtectedReportsCollectionsIndexRoute
   ProtectedReportsExpensesIndexRoute: typeof ProtectedReportsExpensesIndexRoute
   ProtectedReportsOutstandingIndexRoute: typeof ProtectedReportsOutstandingIndexRoute
+  ProtectedReportsProductionLossIndexRoute: typeof ProtectedReportsProductionLossIndexRoute
   ProtectedReportsProfitLossIndexRoute: typeof ProtectedReportsProfitLossIndexRoute
   ProtectedReportsPurchasesIndexRoute: typeof ProtectedReportsPurchasesIndexRoute
   ProtectedReportsSalariesIndexRoute: typeof ProtectedReportsSalariesIndexRoute
@@ -1831,6 +1852,8 @@ const ProtectedReportsRouteRouteChildren: ProtectedReportsRouteRouteChildren = {
   ProtectedReportsCollectionsIndexRoute: ProtectedReportsCollectionsIndexRoute,
   ProtectedReportsExpensesIndexRoute: ProtectedReportsExpensesIndexRoute,
   ProtectedReportsOutstandingIndexRoute: ProtectedReportsOutstandingIndexRoute,
+  ProtectedReportsProductionLossIndexRoute:
+    ProtectedReportsProductionLossIndexRoute,
   ProtectedReportsProfitLossIndexRoute: ProtectedReportsProfitLossIndexRoute,
   ProtectedReportsPurchasesIndexRoute: ProtectedReportsPurchasesIndexRoute,
   ProtectedReportsSalariesIndexRoute: ProtectedReportsSalariesIndexRoute,

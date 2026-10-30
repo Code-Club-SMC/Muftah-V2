@@ -7,10 +7,19 @@ import {
   ShoppingCart,
   Banknote,
   BarChart3,
+  Factory,
 } from "lucide-react";
 import { OfflineReportPendingBanner } from "@/components/reports/offline-report-pending-banner";
+import { useViewerAccess } from "@/hooks/use-viewer-access";
+import { hasPermission, type PermissionKey } from "@/lib/rbac";
 
-const reportTypes = [
+const reportTypes: {
+  title: string;
+  description: string;
+  href: string;
+  icon: typeof BarChart3;
+  permission?: PermissionKey;
+}[] = [
   {
     title: "Company Profitability",
     description:
@@ -54,6 +63,14 @@ const reportTypes = [
     href: "/reports/expenses",
     icon: Banknote,
   },
+  {
+    title: "Production Loss",
+    description:
+      "Every loss in mixing, packing and the stores, with its cost and reason.",
+    href: "/reports/production-loss",
+    icon: Factory,
+    permission: "reports.loss.view",
+  },
 ];
 
 export const Route = createFileRoute("/_protected/reports/")({
@@ -61,6 +78,13 @@ export const Route = createFileRoute("/_protected/reports/")({
 });
 
 function ReportsLandingPage() {
+  const { data: access } = useViewerAccess();
+  const visible = reportTypes.filter(
+    (report) =>
+      !report.permission ||
+      hasPermission(access?.permissions ?? [], report.permission),
+  );
+
   return (
     <div className="space-y-6">
       <div>
@@ -73,7 +97,7 @@ function ReportsLandingPage() {
       <OfflineReportPendingBanner />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {reportTypes.map((report) => {
+        {visible.map((report) => {
           const Icon = report.icon;
           return (
             <Link
