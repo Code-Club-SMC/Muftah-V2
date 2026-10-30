@@ -9,6 +9,7 @@ import {
   FieldLabel,
 } from "../ui/field";
 import { Input } from "../ui/input";
+import { Switch } from "../ui/switch";
 import {
   Select,
   SelectContent,
@@ -88,6 +89,8 @@ export const AddPackagingMaterialForm = ({
 
   const initialType = (initialValues?.type as "primary" | "master" | "sticker") || "primary";
   const [activeType, setActiveType] = useState<"primary" | "master" | "sticker">(initialType);
+  // Shoppers bought by weight: stock is in KG and the KG price is the unit price.
+  const [inKg, setInKg] = useState(false);
 
   const { data: suppliers } = useSuspenseQuery({
     queryKey: ["suppliers"],
@@ -111,6 +114,7 @@ export const AddPackagingMaterialForm = ({
       capacityUnit: initialValues?.capacityUnit || "",
       weightPerPack: "",
       pricePerKg: "",
+      measuredInKg: false,
       associatedStickerId: "",
       stickerCost: "",
       supplierId: initialValues?.supplierId || preselectedSupplierId || "",
@@ -194,6 +198,8 @@ export const AddPackagingMaterialForm = ({
             onClick={() => {
               setActiveType("master");
               form.setFieldValue("type", "master");
+              setInKg(false);
+              form.setFieldValue("measuredInKg", false);
               form.setFieldValue("capacityUnit", "units");
             }}
             variant={activeType === "master" ? "default" : "outline"}
@@ -207,6 +213,8 @@ export const AddPackagingMaterialForm = ({
             onClick={() => {
               setActiveType("sticker");
               form.setFieldValue("type", "sticker");
+              setInKg(false);
+              form.setFieldValue("measuredInKg", false);
               form.setFieldValue("capacityUnit", "pcs");
             }}
             variant={activeType === "sticker" ? "default" : "outline"}
@@ -331,13 +339,35 @@ export const AddPackagingMaterialForm = ({
           )}
 
           {activeType === "primary" && !isEditMode && (
+            <form.Field name="measuredInKg">
+              {(field) => (
+                <Field orientation="horizontal">
+                  <Switch
+                    id="measured-in-kg"
+                    checked={field.state.value}
+                    onCheckedChange={(checked) => {
+                      field.handleChange(checked);
+                      setInKg(checked);
+                      if (checked) form.setFieldValue("costPerUnit", form.state.values.pricePerKg);
+                    }}
+                  />
+                  <div>
+                    <FieldLabel htmlFor="measured-in-kg">Measured in KG</FieldLabel>
+                    <FieldDescription>Turn on for shoppers bought and used by weight.</FieldDescription>
+                  </div>
+                </Field>
+              )}
+            </form.Field>
+          )}
+
+          {activeType === "primary" && !isEditMode && (
             <div className="grid grid-cols-2 gap-4 border p-3 rounded-lg bg-muted/20">
               <form.Field name="weightPerPack">
                 {(field) => (
                   <Field>
-                    <FieldLabel>Weight / Pack (g)</FieldLabel>
-                    <Input type="number" value={field.state.value || ""} onChange={(e) => field.handleChange(e.target.value)} placeholder="e.g. 6.5" />
-                    <FieldDescription>Weight of the empty bottle/wrapper.</FieldDescription>
+                    <FieldLabel htmlFor="weight-per-pack">{inKg ? "Weight of one shopper (grams)" : "Weight / Pack (g)"}</FieldLabel>
+                    <Input id="weight-per-pack" type="number" value={field.state.value || ""} onChange={(e) => field.handleChange(e.target.value)} placeholder="e.g. 6.5" />
+                    <FieldDescription>{inKg ? "Used to work out how many shoppers one KG should give." : "Weight of the empty bottle/wrapper."}</FieldDescription>
                     <FieldError errors={field.state.meta.errors} />
                   </Field>
                 )}
@@ -345,8 +375,17 @@ export const AddPackagingMaterialForm = ({
               <form.Field name="pricePerKg">
                 {(field) => (
                   <Field>
-                    <FieldLabel>Material Price / Kg (PKR)</FieldLabel>
-                    <Input type="number" value={field.state.value || ""} onChange={(e) => field.handleChange(e.target.value)} placeholder="e.g. 980" />
+                    <FieldLabel htmlFor="price-per-kg">{inKg ? "Price per KG (PKR)" : "Material Price / Kg (PKR)"}</FieldLabel>
+                    <Input
+                      id="price-per-kg"
+                      type="number"
+                      value={field.state.value || ""}
+                      onChange={(e) => {
+                        field.handleChange(e.target.value);
+                        if (inKg) form.setFieldValue("costPerUnit", e.target.value);
+                      }}
+                      placeholder="e.g. 980"
+                    />
                     <FieldDescription>Purchase price per kg of the material.</FieldDescription>
                     <FieldError errors={field.state.meta.errors} />
                   </Field>
@@ -355,7 +394,7 @@ export const AddPackagingMaterialForm = ({
             </div>
           )}
 
-          {!isEditMode && (
+          {!isEditMode && !inKg && (
             <form.Subscribe
               selector={(state) => [state.values.weightPerPack, state.values.pricePerKg, state.values.type]}
               children={([weight, price, type]) => {
@@ -392,8 +431,9 @@ export const AddPackagingMaterialForm = ({
             <form.Field name="quantity">
               {(field) => (
                 <Field>
-                  <FieldLabel>{isEditMode ? "Quantity" : "Initial Stock"}</FieldLabel>
+                  <FieldLabel htmlFor="initial-stock">{isEditMode ? "Quantity" : inKg ? "Initial stock (KG)" : "Initial Stock"}</FieldLabel>
                   <Input
+                    id="initial-stock"
                     type="number"
                     value={field.state.value}
                     onChange={(e) => {
@@ -406,17 +446,18 @@ export const AddPackagingMaterialForm = ({
                     }}
                     placeholder="0"
                   />
-                  {!isEditMode && <FieldDescription>Current physical count.</FieldDescription>}
+                  {!isEditMode && <FieldDescription>{inKg ? "Current weight in KG." : "Current physical count."}</FieldDescription>}
                   <FieldError errors={field.state.meta.errors} />
                 </Field>
               )}
             </form.Field>
 
-            <form.Field name="costPerUnit">
+            {!inKg && <form.Field name="costPerUnit">
               {(field) => (
                 <Field>
-                  <FieldLabel>Cost Per Unit (PKR)</FieldLabel>
+                  <FieldLabel htmlFor="cost-per-unit">Cost Per Unit (PKR)</FieldLabel>
                   <Input
+                    id="cost-per-unit"
                     type="number"
                     value={field.state.value}
                     onChange={(e) => {
@@ -434,7 +475,7 @@ export const AddPackagingMaterialForm = ({
                   <FieldError errors={field.state.meta.errors} />
                 </Field>
               )}
-            </form.Field>
+            </form.Field>}
           </div>
 
           <form.Field name="minimumStockLevel">

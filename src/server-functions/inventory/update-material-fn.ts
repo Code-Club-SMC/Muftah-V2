@@ -1,9 +1,10 @@
 import { createServerFn } from "@tanstack/react-start";
-import { and, eq } from "drizzle-orm";
+import { and, eq, gt } from "drizzle-orm";
 import Big from "big.js";
 import { db, packagingMaterials, chemicals, materialStock, materialLots, inventoryAuditLog } from "@/db";
 import { lotQuantity } from "@/lib/inventory/material-lots";
-import { lockMaterialStock, moveLotStock } from "@/lib/inventory/material-lots.server";
+import { packagingMaterialsUsed } from "@/db/schemas/production-schema";
+import { lockMaterialStock, moveLotStock, type Tx } from "@/lib/inventory/material-lots.server";
 import { requireInventoryManageMiddleware } from "@/lib/middlewares";
 import { z } from "zod";
 
@@ -18,6 +19,8 @@ const updateMaterialSchema = z.object({
     materialType: z.string().optional(), // Maps to 'type' in packaging_materials
     capacity: z.string().optional(),
     capacityUnit: z.string().optional(),
+    measuredInKg: z.boolean().optional(),
+    weightPerPack: z.string().optional(),
   }),
   // A new quantity for one store. The difference is taken from or added to the picked lot.
   stock: z.object({
@@ -26,6 +29,15 @@ const updateMaterialSchema = z.object({
     lotId: z.string().optional(),
   }).optional(),
 });
+
+// Old quantities must never change meaning, so the unit is fixed once stock or history exists.
+export async function kgSwitchLocked(tx: Tx, materialId: string) {
+  const [lot] = await tx.select({ id: materialLots.id }).from(materialLots).where(eq(materialLots.packagingMaterialId, materialId)).limit(1);
+  const [stock] = await tx.select({ id: materialStock.id }).from(materialStock)
+    .where(and(eq(materialStock.packagingMaterialId, materialId), gt(materialStock.quantity, "0"))).limit(1);
+  const [used] = await tx.select({ id: packagingMaterialsUsed.id }).from(packagingMaterialsUsed).where(eq(packagingMaterialsUsed.materialId, materialId)).limit(1);
+  return !!(lot || stock || used);
+}
 
 export const updateMaterialFn = createServerFn()
   .middleware([requireInventoryManageMiddleware])
@@ -75,6 +87,15 @@ export const updateMaterialFn = createServerFn()
             })
             .where(eq(chemicals.id, id));
         } else {
+          const [current] = await tx.select().from(packagingMaterials).where(eq(packagingMaterials.id, id)).for("update");
+          if (!current) throw new Error("Packaging material not found");
+          const measuredInKg = fields.measuredInKg ?? current.measuredInKg;
+          const materialType = fields.materialType ?? current.type;
+          if (measuredInKg !== current.measuredInKg && await kgSwitchLocked(tx, id))
+            throw new Error("Measured in KG can't change once this material has stock or has been used.");
+          if (measuredInKg && materialType !== "primary") throw new Error("Only primary packaging can be measured in KG");
+          const weightPerPack = fields.weightPerPack ?? current.weightPerPack;
+          if (measuredInKg && !(Number(weightPerPack) > 0)) throw new Error("Weight of one shopper (grams) is required");
           await tx
             .update(packagingMaterials)
             .set({
@@ -84,6 +105,9 @@ export const updateMaterialFn = createServerFn()
               type: fields.materialType,
               capacity: fields.capacity || null,
               capacityUnit: fields.capacityUnit || null,
+              measuredInKg,
+              weightPerPack: weightPerPack || null,
+              ...(measuredInKg ? { pricePerKg: fields.costPerUnit } : {}),
             })
             .where(eq(packagingMaterials.id, id));
         }

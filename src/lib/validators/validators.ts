@@ -129,6 +129,7 @@ export const addPackagingMaterialSchema = z.object({
   // New Fields
   weightPerPack: z.string(),
   pricePerKg: z.string(),
+  measuredInKg: z.boolean(),
   associatedStickerId: z.string(),
   stickerCost: z.string(),
   supplierId: z.string().min(1, "Supplier is required"),

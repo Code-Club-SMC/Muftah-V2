@@ -7,8 +7,10 @@ import { Button } from "@/components/ui/button";
 import { useUpdateMaterial } from "@/hooks/inventory/use-material-actions";
 import { useMaterialLots } from "@/hooks/stock/use-material-lots";
 import { lotLabel } from "@/lib/inventory/material-lots";
-import { Field, FieldError, FieldGroup, FieldLabel } from "../ui/field";
+import { packagingUnit } from "@/lib/inventory/material-units";
+import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "../ui/field";
 import { Input } from "../ui/input";
+import { Switch } from "../ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../ui/dialog";
 import {
   Select,
@@ -35,7 +37,7 @@ export const EditMaterialDialog = ({
   const mutate = useUpdateMaterial();
   const queryclient = useQueryClient();
   const material = type === "chemical" ? item.chemical : item.packagingMaterial;
-  const unit = type === "chemical" ? material?.unit || "kg" : "pcs";
+  const unit = type === "chemical" ? material?.unit || "kg" : packagingUnit(material);
   const [lotId, setLotId] = useState("");
   const { data: storeLots, isLoading: lotsLoading } = useMaterialLots(
     open ? item?.warehouseId : undefined,
@@ -45,6 +47,8 @@ export const EditMaterialDialog = ({
   const lots = storeLots?.[material?.id] ?? [];
   // A single lot is picked for the person; with more than one they choose.
   const chosenLotId = lotId || (lots.length === 1 ? lots[0].lotId : "");
+  // The server makes the final call; this only stops an obviously locked change.
+  const kgLocked = Number(item?.quantity) > 0 || lots.length > 0;
   const stockChange = (quantity: string) => {
     try {
       return new Big(quantity || "0").minus(item?.quantity || "0");
@@ -64,6 +68,8 @@ export const EditMaterialDialog = ({
         (material?.type?.toLowerCase() as "primary" | "master") || "primary",
       capacity: material?.capacity || "",
       capacityUnit: material?.capacityUnit || "",
+      measuredInKg: !!material?.measuredInKg,
+      weightPerPack: material?.weightPerPack || "",
     },
     onSubmit: async ({ value }) => {
       const changed = !stockChange(value.quantity).eq(0);
@@ -80,6 +86,9 @@ export const EditMaterialDialog = ({
               materialType: value.materialType,
               capacity: value.capacity,
               capacityUnit: value.capacityUnit,
+              ...(type === "packaging"
+                ? { measuredInKg: value.measuredInKg, weightPerPack: value.weightPerPack || undefined }
+                : {}),
             },
             stock: changed
               ? { stockId: item.id, quantity: value.quantity, lotId: chosenLotId || undefined }
@@ -196,6 +205,55 @@ export const EditMaterialDialog = ({
               )}
             </form.Field>
 
+            {type === "packaging" && (
+              <form.Subscribe selector={(state) => state.values.materialType}>
+                {(materialType) =>
+                  materialType === "primary" && (
+                    <form.Field name="measuredInKg">
+                      {(field) => (
+                        <Field orientation="horizontal">
+                          <Switch
+                            id="edit-measured-in-kg"
+                            checked={field.state.value}
+                            disabled={kgLocked}
+                            onCheckedChange={(checked) => field.handleChange(checked)}
+                          />
+                          <div>
+                            <FieldLabel htmlFor="edit-measured-in-kg">Measured in KG</FieldLabel>
+                            <FieldDescription>
+                              {kgLocked
+                                ? "Locked: this material already has stock or history."
+                                : "Turn on for shoppers bought and used by weight."}
+                            </FieldDescription>
+                          </div>
+                        </Field>
+                      )}
+                    </form.Field>
+                  )
+                }
+              </form.Subscribe>
+            )}
+
+            <form.Subscribe selector={(state) => state.values.measuredInKg && state.values.materialType === "primary"}>
+              {(inKg) =>
+                type === "packaging" && inKg && (
+                  <form.Field name="weightPerPack">
+                    {(field) => (
+                      <Field>
+                        <FieldLabel htmlFor="edit-weight-per-pack">Weight of one shopper (grams)</FieldLabel>
+                        <Input
+                          id="edit-weight-per-pack"
+                          type="number"
+                          value={field.state.value}
+                          onChange={(e) => field.handleChange(e.target.value)}
+                        />
+                      </Field>
+                    )}
+                  </form.Field>
+                )
+              }
+            </form.Subscribe>
+
             <div className="grid grid-cols-2 gap-4">
               {type === "packaging" && (
                 <>
@@ -277,8 +335,13 @@ export const EditMaterialDialog = ({
               <form.Field name="costPerUnit">
                 {(field) => (
                   <Field>
-                    <FieldLabel>Cost Per Unit</FieldLabel>
+                    <form.Subscribe selector={(state) => type === "packaging" && state.values.measuredInKg && state.values.materialType === "primary"}>
+                      {(inKg) => (
+                        <FieldLabel htmlFor="edit-cost-per-unit">{inKg ? "Price per KG (PKR)" : "Cost Per Unit"}</FieldLabel>
+                      )}
+                    </form.Subscribe>
                     <Input
+                      id="edit-cost-per-unit"
                       type="number"
                       value={field.state.value}
                       onChange={(e) => field.handleChange(e.target.value)}

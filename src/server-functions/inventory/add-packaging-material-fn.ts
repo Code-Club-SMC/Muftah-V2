@@ -94,11 +94,19 @@ export const addPackagingMaterialFn = createServerFn()
       const similar = candidates.find((row) => isSimilarMaterialName(row.name, data.name));
       if (similar && !data.confirmSimilarName) throw new Error(`Similar item already exists: "${similar.name}"`);
 
+      // Shoppers in KG: the KG price is the unit price, and the shopper weight drives loss maths.
+      if (data.measuredInKg) {
+        if (data.type !== "primary") throw new Error("Only primary packaging can be measured in KG");
+        if (!(Number(data.weightPerPack) > 0)) throw new Error("Weight of one shopper (grams) is required");
+        if (!(Number(data.pricePerKg) > 0)) throw new Error("Price per KG is required");
+      }
+      const unitPrice = data.measuredInKg ? data.pricePerKg : data.costPerUnit;
+
       const [finalMaterial] = await tx
         .insert(packagingMaterials)
         .values({
           name: data.name.trim(),
-          costPerUnit: lotPrice(data.costPerUnit),
+          costPerUnit: lotPrice(unitPrice),
           minimumStockLevel: data.minimumStockLevel,
           type: data.type,
           capacity: data.capacity === "" ? null : data.capacity,
@@ -109,6 +117,7 @@ export const addPackagingMaterialFn = createServerFn()
           pricePerKg: data.pricePerKg ? data.pricePerKg.toString() : null,
           associatedStickerId: data.associatedStickerId || null,
           stickerCost: data.stickerCost ? data.stickerCost.toString() : "0",
+          measuredInKg: data.measuredInKg,
           lastSupplierId: data.supplierId,
         })
         .returning();
@@ -119,11 +128,11 @@ export const addPackagingMaterialFn = createServerFn()
       if (parseFloat(data.quantity || "0") > 0) {
         const ref = { materialType: "packaging", materialId } as const;
         await lockMaterialStock(tx, [targetWarehouseId], [ref]);
-        const lot = await findOrCreateLot(tx, ref, data.costPerUnit);
+        const lot = await findOrCreateLot(tx, ref, unitPrice);
 
         // 3. Create Purchase Record
         const totalCost = (
-          parseFloat(data.costPerUnit) * parseFloat(data.quantity)
+          parseFloat(unitPrice) * parseFloat(data.quantity)
         ).toFixed(2);
 
         // Determine paid amount based on paymentStatus
