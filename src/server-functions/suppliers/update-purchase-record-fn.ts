@@ -1,9 +1,12 @@
 import { createServerFn } from "@tanstack/react-start";
-import { db, purchaseRecords, materialStock, transactions, wallets, expenses } from "@/db";
-import { eq, sql, and } from "drizzle-orm";
+import { db, purchaseRecords, transactions, wallets, expenses } from "@/db";
+import { eq, sql } from "drizzle-orm";
+import Big from "big.js";
 import { requireSuppliersManageMiddleware } from "@/lib/middlewares";
 import { z } from "zod";
 import { createId } from "@paralleldrive/cuid2";
+import { lotPrice, lotQuantity, PURCHASE_LOCKED_MESSAGE } from "@/lib/inventory/material-lots";
+import { findOrCreateLot, lockMaterialStock, moveLotStock, purchaseIsUntouched } from "@/lib/inventory/material-lots.server";
 
 import { packagingMaterials } from "@/db/schemas/inventory-schema";
 import { expenseCategories } from "@/db/schemas/finance-schema";
@@ -84,54 +87,35 @@ export const updatePurchaseRecordFn = createServerFn()
   .handler(async ({ data, context }) => {
     return await db.transaction(async (tx) => {
       // 1. Get existing purchase record
-      const existingRecord = await tx.query.purchaseRecords.findFirst({
-        where: eq(purchaseRecords.id, data.id),
-      });
+      const [existingRecord] = await tx.select().from(purchaseRecords)
+        .where(eq(purchaseRecords.id, data.id)).for("update");
 
       if (!existingRecord) {
         throw new Error("Purchase record not found");
       }
 
-      let qtyDiff = 0;
-      if (data.quantity) {
-        const oldQty = parseFloat(existingRecord.quantity);
-        const newQty = parseFloat(data.quantity);
-        qtyDiff = newQty - oldQty;
-      }
-
-      // 2. Update Stock if quantity changed
-      if (qtyDiff !== 0) {
-        const materialField =
-          existingRecord.materialType === "chemical"
-            ? materialStock.chemicalId
-            : materialStock.packagingMaterialId;
-
-        const materialId =
-          existingRecord.materialType === "chemical"
-            ? existingRecord.chemicalId
-            : existingRecord.packagingMaterialId;
-
-        if (materialId) {
-          const stockRecord = await tx.query.materialStock.findFirst({
-            where: and(
-              eq(materialStock.warehouseId, existingRecord.warehouseId),
-              eq(materialField, materialId),
-            ),
-          });
-
-          if (stockRecord) {
-            await tx
-              .update(materialStock)
-              .set({
-                quantity: sql`${materialStock.quantity} + ${qtyDiff.toString()}`,
-                updatedAt: new Date(),
-              })
-              .where(eq(materialStock.id, stockRecord.id));
-          } else {
-            // If no stock record exists (weird, but possible if deleted manually), create one?
-            // For now, ignore or throw. Stock should exist if purchase exists.
-          }
+      // 2. Move lot stock if quantity or price changed. Only allowed while the purchase is untouched.
+      const ref = existingRecord.materialType === "chemical"
+        ? { materialType: "chemical" as const, materialId: existingRecord.chemicalId! }
+        : { materialType: "packaging" as const, materialId: existingRecord.packagingMaterialId! };
+      const newQuantity = data.quantity ? lotQuantity(data.quantity) : new Big(existingRecord.quantity).toFixed(3);
+      if (new Big(newQuantity).lte(0)) throw new Error("Quantity must be more than zero");
+      const newCost = data.cost ?? existingRecord.cost;
+      const newPrice = lotPrice(new Big(newCost).div(newQuantity));
+      const quantityChanged = !new Big(newQuantity).eq(existingRecord.quantity);
+      const priceChanged = !existingRecord.lotId || newPrice !== lotPrice(existingRecord.unitCost);
+      let lotId = existingRecord.lotId;
+      if (quantityChanged || (priceChanged && existingRecord.lotId)) {
+        await lockMaterialStock(tx, [existingRecord.warehouseId], [ref]);
+        const untouched = await purchaseIsUntouched(tx, existingRecord);
+        if (quantityChanged && !untouched) throw new Error(PURCHASE_LOCKED_MESSAGE);
+        if (untouched) {
+          const target = await findOrCreateLot(tx, ref, newPrice);
+          await moveLotStock(tx, { ref, lotId: existingRecord.lotId!, warehouseId: existingRecord.warehouseId, delta: `-${new Big(existingRecord.quantity).toFixed(3)}`, sourceType: "purchase_edit", sourceId: existingRecord.id });
+          await moveLotStock(tx, { ref, lotId: target.id, warehouseId: existingRecord.warehouseId, delta: newQuantity, sourceType: "purchase_edit", sourceId: existingRecord.id });
+          lotId = target.id;
         }
+        // Not untouched and only the price changed: the bill changes, the lot price does not.
       }
 
       // 3. Update Material if applicable (Packaging only as per user request)
@@ -161,13 +145,10 @@ export const updatePurchaseRecordFn = createServerFn()
         updatedAt: new Date(),
       };
 
-      if (data.quantity && data.cost) {
-        updateData.quantity = data.quantity;
-        updateData.cost = data.cost;
-        updateData.unitCost = (
-          parseFloat(data.cost) / parseFloat(data.quantity)
-        ).toFixed(4);
-      }
+      updateData.quantity = newQuantity;
+      updateData.cost = new Big(newCost).toFixed(2);
+      updateData.unitCost = new Big(newCost).div(newQuantity).toFixed(4);
+      updateData.lotId = lotId;
 
       await tx
         .update(purchaseRecords)

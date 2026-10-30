@@ -1,9 +1,9 @@
 // src/lib/inventory/material-lots.server.ts
 import Big from "big.js";
-import { and, asc, eq, gt, gte, inArray, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, inArray, ne, sql } from "drizzle-orm";
 import type { db } from "@/db";
 import { chemicals, materialLotMovements, materialLots, materialLotStock, materialStock, packagingMaterials } from "@/db/schemas/inventory-schema";
-import { checkLotPicks, costLotPicks, lotPrice, lotQuantity, type LotBalance, type LotPick, type MaterialRef, type PickedLot } from "./material-lots";
+import { checkLotPicks, costLotPicks, lotPrice, lotQuantity, purchaseUntouched, type LotBalance, type LotPick, type MaterialRef, type PickedLot } from "./material-lots";
 
 export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 export type LotSourceType = "opening" | "purchase" | "purchase_edit" | "purchase_delete" | "transfer_out" | "transfer_in" | "mixing" | "packing" | "recovery" | "adjustment" | "warehouse_close";
@@ -135,4 +135,22 @@ export async function deleteWarehouseLotStock(tx: Tx, warehouseId: string) {
   await tx.delete(materialLotMovements).where(eq(materialLotMovements.warehouseId, warehouseId));
   await tx.delete(materialLotStock).where(eq(materialLotStock.warehouseId, warehouseId));
   await tx.delete(materialStock).where(eq(materialStock.warehouseId, warehouseId));
+}
+
+// True while the purchase's lot in its store still holds everything bought since the purchase.
+// Purchases from before lots have no lot and count as touched.
+export async function purchaseIsUntouched(tx: Tx, purchase: { id: string; lotId: string | null; warehouseId: string }) {
+  if (!purchase.lotId) return false;
+  // The purchase's own credit on its current lot: the original purchase, or the latest
+  // purchase_edit credit if an edit moved it to this lot.
+  const [own] = await tx.select({ createdAt: materialLotMovements.createdAt, id: materialLotMovements.id }).from(materialLotMovements)
+    .where(and(eq(materialLotMovements.lotId, purchase.lotId), eq(materialLotMovements.warehouseId, purchase.warehouseId), inArray(materialLotMovements.sourceType, ["purchase", "purchase_edit"]), eq(materialLotMovements.sourceId, purchase.id), sql`${materialLotMovements.delta} > 0`))
+    .orderBy(desc(materialLotMovements.createdAt)).limit(1);
+  if (!own) return false;
+  const movements = await tx.select({ delta: materialLotMovements.delta, sourceType: materialLotMovements.sourceType }).from(materialLotMovements)
+    .where(and(eq(materialLotMovements.lotId, purchase.lotId), eq(materialLotMovements.warehouseId, purchase.warehouseId), gte(materialLotMovements.createdAt, own.createdAt)))
+    .orderBy(asc(materialLotMovements.createdAt), asc(materialLotMovements.id));
+  const [stock] = await tx.select({ quantity: materialLotStock.quantity }).from(materialLotStock)
+    .where(and(eq(materialLotStock.lotId, purchase.lotId), eq(materialLotStock.warehouseId, purchase.warehouseId)));
+  return purchaseUntouched({ balanceNow: stock?.quantity ?? "0", movements });
 }

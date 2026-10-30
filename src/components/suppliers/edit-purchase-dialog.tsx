@@ -1,13 +1,15 @@
 import { Button } from "@/components/ui/button";
 import { ResponsiveDialog } from "@/components/custom/responsive-dialog";
 import { useForm } from "@tanstack/react-form";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Loader2, Edit } from "lucide-react";
 import { updatePurchaseRecordFn } from "@/server-functions/suppliers/update-purchase-record-fn";
+import { getPurchaseEditStateFn } from "@/server-functions/suppliers/get-purchase-edit-state-fn";
+import { PURCHASE_LOCKED_MESSAGE } from "@/lib/inventory/material-lots";
 import { useEffect } from "react";
 import {
   Select,
@@ -52,6 +54,13 @@ type Props = {
 
 export const EditPurchaseDialog = ({ open, onOpenChange, purchase }: Props) => {
   const queryClient = useQueryClient();
+  // Once some of the bought stock is used or moved, only the bill can change.
+  const editState = useQuery({
+    queryKey: ["purchase-edit-state", purchase?.id],
+    queryFn: () => getPurchaseEditStateFn({ data: { id: purchase!.id } }),
+    enabled: open && !!purchase,
+  });
+  const stockLocked = editState.data?.stockLocked ?? false;
 
   const mutate = useMutation({
     mutationFn: updatePurchaseRecordFn,
@@ -59,6 +68,8 @@ export const EditPurchaseDialog = ({ open, onOpenChange, purchase }: Props) => {
       toast.success("Purchase record updated successfully");
       queryClient.invalidateQueries({ queryKey: ["supplier"] });
       queryClient.invalidateQueries({ queryKey: ["inventory"] });
+      queryClient.invalidateQueries({ queryKey: ["material-lots"] });
+      queryClient.invalidateQueries({ queryKey: ["purchase-edit-state"] });
       queryClient.invalidateQueries({ queryKey: ["wallets"] });
       queryClient.invalidateQueries({ queryKey: ["expenses"] });
       onOpenChange(false);
@@ -144,6 +155,12 @@ export const EditPurchaseDialog = ({ open, onOpenChange, purchase }: Props) => {
         }}
         className="space-y-4"
       >
+        {stockLocked ? (
+          <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+            {PURCHASE_LOCKED_MESSAGE} You can still correct the bill total.
+          </p>
+        ) : null}
+
         {/* ─── QUANTITY + UNIT COST → live total ─── */}
         <div className="grid grid-cols-2 gap-4">
           <form.Field name="quantity">
@@ -155,6 +172,7 @@ export const EditPurchaseDialog = ({ open, onOpenChange, purchase }: Props) => {
                 <Input
                   type="number"
                   step="any"
+                  disabled={stockLocked || editState.isLoading}
                   value={field.state.value || ""}
                   onChange={(e) => {
                     field.handleChange(e.target.value);
@@ -181,6 +199,7 @@ export const EditPurchaseDialog = ({ open, onOpenChange, purchase }: Props) => {
                     className="pl-10"
                     type="number"
                     step="0.01"
+                    disabled={stockLocked || editState.isLoading}
                     value={field.state.value || ""}
                     onChange={(e) => {
                       field.handleChange(e.target.value);
@@ -227,11 +246,11 @@ export const EditPurchaseDialog = ({ open, onOpenChange, purchase }: Props) => {
           }}
         />
 
-        {/* hidden cost field — kept in sync by quantity/unitCost onChange */}
+        {/* cost field — kept in sync by quantity/unitCost onChange; the only price field once stock is locked */}
         <form.Field name="cost">
           {(field) => (
             <Field>
-              <FieldLabel>Total Cost (PKR)</FieldLabel>
+              <FieldLabel>{stockLocked ? "Bill total (Rs)" : "Total Cost (PKR)"}</FieldLabel>
               <div className="relative">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">PKR</span>
                 <Input

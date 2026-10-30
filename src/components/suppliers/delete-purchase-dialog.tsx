@@ -1,9 +1,11 @@
 import { Button } from "@/components/ui/button";
 import { ResponsiveDialog } from "@/components/custom/responsive-dialog";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Loader2, AlertTriangle, Trash2 } from "lucide-react";
 import { deletePurchaseRecordFn } from "@/server-functions/suppliers/delete-purchase-record-fn";
+import { getPurchaseEditStateFn } from "@/server-functions/suppliers/get-purchase-edit-state-fn";
+import { PURCHASE_LOCKED_MESSAGE } from "@/lib/inventory/material-lots";
 
 type Props = {
   open: boolean;
@@ -22,6 +24,12 @@ export const DeletePurchaseDialog = ({
   purchase,
 }: Props) => {
   const queryClient = useQueryClient();
+  const editState = useQuery({
+    queryKey: ["purchase-edit-state", purchase?.id],
+    queryFn: () => getPurchaseEditStateFn({ data: { id: purchase!.id } }),
+    enabled: open && !!purchase,
+  });
+  const stockLocked = editState.data?.stockLocked ?? false;
 
   const mutate = useMutation({
     mutationFn: deletePurchaseRecordFn,
@@ -29,6 +37,8 @@ export const DeletePurchaseDialog = ({
       toast.success("Purchase record deleted successfully");
       queryClient.invalidateQueries({ queryKey: ["supplier"] });
       queryClient.invalidateQueries({ queryKey: ["inventory"] });
+      queryClient.invalidateQueries({ queryKey: ["material-lots"] });
+      queryClient.invalidateQueries({ queryKey: ["purchase-edit-state"] });
       onOpenChange(false);
     },
     onError: (err) =>
@@ -54,6 +64,12 @@ export const DeletePurchaseDialog = ({
           </p>
         </div>
 
+        {stockLocked ? (
+          <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+            {PURCHASE_LOCKED_MESSAGE}
+          </p>
+        ) : null}
+
         <div className="flex justify-end gap-2">
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
@@ -61,7 +77,7 @@ export const DeletePurchaseDialog = ({
           <Button
             variant="destructive"
             onClick={() => mutate.mutate({ data: { id: purchase.id } })}
-            disabled={mutate.isPending}
+            disabled={mutate.isPending || stockLocked || editState.isLoading}
           >
             {mutate.isPending && (
               <Loader2 className="mr-2 size-4 animate-spin" />

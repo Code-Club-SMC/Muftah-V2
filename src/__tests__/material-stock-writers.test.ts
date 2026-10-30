@@ -10,12 +10,7 @@ function files(dir: string): string[] {
   });
 }
 
-const ALLOWED = new Set([
-  "src/lib/inventory/material-lots.server.ts",
-  // Removed from this list in Task 12, once purchase edit and delete use lots.
-  "src/server-functions/suppliers/update-purchase-record-fn.ts",
-  "src/server-functions/suppliers/delete-purchase-record-fn.ts",
-]);
+const ALLOWED = new Set(["src/lib/inventory/material-lots.server.ts"]);
 const WRITE = /\.(insert|update|delete)\(\s*(materialStock|materialLotStock|materialLotMovements)\b/;
 
 describe("material stock writers", () => {

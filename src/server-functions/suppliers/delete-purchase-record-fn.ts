@@ -3,13 +3,15 @@ import {
   db,
   purchaseRecords,
   supplierPayments,
-  materialStock,
   wallets,
   expenses,
   transactions,
 } from "@/db";
 import { eq, and, sql } from "drizzle-orm";
 import { requireSuppliersManageMiddleware } from "@/lib/middlewares";
+import Big from "big.js";
+import { PURCHASE_LOCKED_MESSAGE } from "@/lib/inventory/material-lots";
+import { lockMaterialStock, moveLotStock, purchaseIsUntouched } from "@/lib/inventory/material-lots.server";
 import { z } from "zod";
 
 const deletePurchaseSchema = z.object({
@@ -20,16 +22,25 @@ export const deletePurchaseRecordFn = createServerFn()
   .middleware([requireSuppliersManageMiddleware])
   .inputValidator(deletePurchaseSchema)
   .handler(async ({ data }) => {
-    const purchase = await db.query.purchaseRecords.findFirst({
-      where: eq(purchaseRecords.id, data.id),
-      with: { payments: true },
-    });
-
-    if (!purchase) {
-      throw new Error("Purchase record not found");
-    }
-
     await db.transaction(async (tx) => {
+      // Read inside the transaction so the check and the delete see the same row
+      const [locked] = await tx.select({ id: purchaseRecords.id }).from(purchaseRecords)
+        .where(eq(purchaseRecords.id, data.id)).for("update");
+      const purchase = locked && await tx.query.purchaseRecords.findFirst({
+        where: eq(purchaseRecords.id, data.id),
+        with: { payments: true },
+      });
+
+      if (!purchase) {
+        throw new Error("Purchase record not found");
+      }
+
+      const ref = purchase.materialType === "chemical"
+        ? { materialType: "chemical" as const, materialId: purchase.chemicalId! }
+        : { materialType: "packaging" as const, materialId: purchase.packagingMaterialId! };
+      await lockMaterialStock(tx, [purchase.warehouseId], [ref]);
+      if (!(await purchaseIsUntouched(tx, purchase))) throw new Error(PURCHASE_LOCKED_MESSAGE);
+
       // 1. Restore wallet balances for any payments that debited a real wallet
       for (const payment of purchase.payments) {
         if (!payment.walletId || payment.walletId === "pay_later") continue;
@@ -69,37 +80,7 @@ export const deletePurchaseRecordFn = createServerFn()
         .where(eq(supplierPayments.purchaseId, data.id));
 
       // 3. Revert stock
-      if (purchase.materialType === "chemical" && purchase.chemicalId) {
-        await tx
-          .update(materialStock)
-          .set({
-            quantity: sql`${materialStock.quantity} - ${purchase.quantity}`,
-          })
-          .where(
-            and(
-              eq(materialStock.warehouseId, purchase.warehouseId),
-              eq(materialStock.chemicalId, purchase.chemicalId),
-            ),
-          );
-      } else if (
-        purchase.materialType === "packaging" &&
-        purchase.packagingMaterialId
-      ) {
-        await tx
-          .update(materialStock)
-          .set({
-            quantity: sql`${materialStock.quantity} - ${purchase.quantity}`,
-          })
-          .where(
-            and(
-              eq(materialStock.warehouseId, purchase.warehouseId),
-              eq(
-                materialStock.packagingMaterialId,
-                purchase.packagingMaterialId,
-              ),
-            ),
-          );
-      }
+      await moveLotStock(tx, { ref, lotId: purchase.lotId!, warehouseId: purchase.warehouseId, delta: `-${new Big(purchase.quantity).toFixed(3)}`, sourceType: "purchase_delete", sourceId: purchase.id });
 
       // 4. Delete the purchase record
       await tx.delete(purchaseRecords).where(eq(purchaseRecords.id, data.id));
