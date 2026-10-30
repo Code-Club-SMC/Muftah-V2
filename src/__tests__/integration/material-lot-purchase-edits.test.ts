@@ -55,36 +55,41 @@ async function fixture() {
 describe.skipIf(!process.env.TEST_DATABASE_URL)("purchase edits and deletes with lots", () => {
   it("allows quantity and price edits until the stock is used, then only the bill", async () => {
     const { floor, soda, ref, buy, edit, remove, locked, record, lotAt } = await fixture();
-    const p1 = await buy("11500", "100"); // Rs 115
+    try {
+      const p1 = await buy("11500", "100"); // Rs 115
 
-    await edit(p1.id, { quantity: "90", cost: "10350" });
-    expect((await lotAt("115.00")).quantity).toBe("90.000");
-    expect(await locked(p1.id)).toBe(false);
+      await edit(p1.id, { quantity: "90", cost: "10350" });
+      expect((await lotAt("115.00")).quantity).toBe("90.000");
+      expect(await locked(p1.id)).toBe(false);
 
-    await edit(p1.id, { quantity: "90", cost: "10080" }); // Rs 112
-    expect((await lotAt("115.00")).quantity).toBe("0.000");
-    const lot112 = await lotAt("112.00");
-    expect(lot112.quantity).toBe("90.000");
-    expect((await record(p1.id)).lotId).toBe(lot112.id);
+      await edit(p1.id, { quantity: "90", cost: "10080" }); // Rs 112
+      expect((await lotAt("115.00")).quantity).toBe("0.000");
+      const lot112 = await lotAt("112.00");
+      expect(lot112.quantity).toBe("90.000");
+      expect((await record(p1.id)).lotId).toBe(lot112.id);
 
-    await db.transaction((tx) => takeLotPicks(tx, {
-      warehouseId: floor.id, ref, name: soda.name, unit: "kg", required: "60",
-      picks: [{ lotId: lot112.id, quantity: "60" }], sourceType: "mixing",
-    }));
-    expect(await locked(p1.id)).toBe(true);
-    await expect(edit(p1.id, { quantity: "80", cost: "8960" })).rejects.toThrow(PURCHASE_LOCKED_MESSAGE);
-    await expect(remove(p1.id)).rejects.toThrow(PURCHASE_LOCKED_MESSAGE);
+      await db.transaction((tx) => takeLotPicks(tx, {
+        warehouseId: floor.id, ref, name: soda.name, unit: "kg", required: "60",
+        picks: [{ lotId: lot112.id, quantity: "60" }], sourceType: "mixing",
+      }));
+      expect(await locked(p1.id)).toBe(true);
+      await expect(edit(p1.id, { quantity: "80", cost: "8960" })).rejects.toThrow(PURCHASE_LOCKED_MESSAGE);
+      await expect(remove(p1.id)).rejects.toThrow(PURCHASE_LOCKED_MESSAGE);
 
-    await edit(p1.id, { quantity: "90", cost: "10000" });
-    expect((await record(p1.id)).cost).toBe("10000.00");
-    expect((await record(p1.id)).lotId).toBe(lot112.id);
-    expect(await lotAt("112.00")).toEqual({ id: lot112.id, quantity: "30.000" });
+      await edit(p1.id, { quantity: "90", cost: "10000" });
+      expect((await record(p1.id)).cost).toBe("10000.00");
+      expect((await record(p1.id)).lotId).toBe(lot112.id);
+      expect(await lotAt("112.00")).toEqual({ id: lot112.id, quantity: "30.000" });
 
-    const p2 = await buy("5600", "50"); // Rs 112, joins the same lot
-    expect((await lotAt("112.00")).quantity).toBe("80.000");
-    expect(await locked(p2.id)).toBe(false);
-    await remove(p2.id);
-    expect((await lotAt("112.00")).quantity).toBe("30.000");
-    expect(await record(p2.id)).toBeUndefined();
+      const p2 = await buy("5600", "50"); // Rs 112, joins the same lot
+      expect((await lotAt("112.00")).quantity).toBe("80.000");
+      expect(await locked(p2.id)).toBe(false);
+      await remove(p2.id);
+      expect((await lotAt("112.00")).quantity).toBe("30.000");
+      expect(await record(p2.id)).toBeUndefined();
+    } finally {
+      // Switched off so suites running in parallel still find their own single active floor.
+      await db.update(warehouses).set({ isActive: false }).where(eq(warehouses.id, floor.id));
+    }
   });
 });

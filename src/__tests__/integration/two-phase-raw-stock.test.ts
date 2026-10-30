@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
-import { and, eq, gte, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, sql } from "drizzle-orm";
 import { db, user, warehouses, chemicals, packagingMaterials, materialStock, inventoryAuditLog, suppliers, wallets, purchaseRecords, supplierPayments, expenses, transactions, materialLots, materialLotStock, materialLotMovements } from "@/db";
 import { adjustStockFn } from "@/server-functions/inventory/stock/adjust-stock-fn";
 import { addStockFn } from "@/server-functions/inventory/stock/add-stock-fn";
@@ -70,8 +70,12 @@ async function withFixture(check: (f: Fixture) => Promise<void>) {
       await tx.delete(purchaseRecords).where(eq(purchaseRecords.warehouseId, f.warehouse.id));
       await tx.delete(inventoryAuditLog).where(eq(inventoryAuditLog.warehouseId, f.warehouse.id));
       await tx.delete(materialStock).where(eq(materialStock.warehouseId, f.warehouse.id));
-      await tx.delete(materialLotMovements).where(eq(materialLotMovements.warehouseId, f.warehouse.id));
-      await tx.delete(materialLotStock).where(eq(materialLotStock.warehouseId, f.warehouse.id));
+      await tx.delete(materialStock).where(eq(materialStock.chemicalId, f.chemical.id));
+      await tx.delete(materialStock).where(eq(materialStock.packagingMaterialId, f.packaging.id));
+      const lotIds = [f.lots.chemical.id, f.lots.packaging.id];
+      await tx.delete(inventoryAuditLog).where(inArray(inventoryAuditLog.lotId, lotIds));
+      await tx.delete(materialLotMovements).where(inArray(materialLotMovements.lotId, lotIds));
+      await tx.delete(materialLotStock).where(inArray(materialLotStock.lotId, lotIds));
       await tx.delete(materialLots).where(eq(materialLots.chemicalId, f.chemical.id));
       await tx.delete(materialLots).where(eq(materialLots.packagingMaterialId, f.packaging.id));
       await tx.delete(chemicals).where(eq(chemicals.id, f.chemical.id));
