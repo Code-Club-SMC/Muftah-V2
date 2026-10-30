@@ -82,6 +82,9 @@ export const packagingMaterials = pgTable("packaging_materials", {
   // Primary Packaging Specifics
   weightPerPack: decimal("weight_per_pack", { precision: 10, scale: 3 }), // Weight of empty pack in grams? or content weight? User said "weight/pack e.g 6g" for primary.
   pricePerKg: decimal("price_per_kg", { precision: 10, scale: 2 }), // Reference price
+  // Shoppers: bought, stocked, moved and used in KG. weightPerPack is then the grams of one
+  // shopper and costPerUnit the price per KG. Locked once the item has stock or history.
+  measuredInKg: boolean("measured_in_kg").notNull().default(false),
 
   // Master Container Specifics
   associatedStickerId: text("associated_sticker_id").references(
@@ -207,6 +210,33 @@ export const materialLotMovements = pgTable(
   (t) => ({
     lotWarehouseIdx: index("material_lot_movements_lot_warehouse_idx").on(t.lotId, t.warehouseId, t.createdAt),
     sourceIdx: index("material_lot_movements_source_idx").on(t.sourceType, t.sourceId),
+  }),
+);
+
+// --- MATERIAL ADJUSTMENTS ---
+// One row per manual stock adjustment, with the lot, its price and a fixed reason.
+// The Loss Report reads this table. Count over and other additions are not losses.
+export const materialAdjustments = pgTable(
+  "material_adjustments",
+  {
+    id: text("id").primaryKey().$defaultFn(() => createId()),
+    warehouseId: text("warehouse_id").notNull().references(() => warehouses.id),
+    materialType: text("material_type").notNull(), // "chemical" | "packaging"
+    chemicalId: text("chemical_id").references(() => chemicals.id),
+    packagingMaterialId: text("packaging_material_id").references(() => packagingMaterials.id),
+    lotId: text("lot_id").notNull().references(() => materialLots.id),
+    delta: decimal("delta", { precision: 12, scale: 3 }).notNull(), // negative = removed
+    unitPrice: decimal("unit_price", { precision: 12, scale: 2 }).notNull(),
+    value: decimal("value", { precision: 12, scale: 2 }).notNull(), // delta × unit price
+    reason: text("reason").notNull(), // ADJUSTMENT_REASONS code
+    note: text("note"),
+    source: text("source").notNull(), // "manual" | "material_edit"
+    performedById: text("performed_by_id").notNull().references(() => user.id),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    warehouseCreatedIdx: index("material_adjustments_warehouse_created_idx").on(t.warehouseId, t.createdAt),
+    reasonIdx: index("material_adjustments_reason_idx").on(t.reason),
   }),
 );
 

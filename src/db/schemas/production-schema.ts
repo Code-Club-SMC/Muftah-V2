@@ -141,6 +141,8 @@ export const mixingRuns = pgTable(
       scale: 3,
     }).default("0"),
     shortfallReason: text("shortfall_reason"),
+    // Fixed reason (MIXING_REASONS code). shortfallReason holds the optional note.
+    shortfallReasonCode: text("shortfall_reason_code"),
 
     // Batch lifecycle
     closedBy: text("closed_by").references(() => user.id),
@@ -218,11 +220,34 @@ export const mixingMaterialsUsed = pgTable(
       scale: 2,
     }).notNull(),
     totalCost: decimal("total_cost", { precision: 12, scale: 2 }).notNull(),
+    // "formula" rows are taken at start. "extra" rows are taken at completion.
+    // "returned" rows put leftover back and carry negative quantity and cost.
+    useType: text("use_type").notNull().default("formula"),
     ...timestamps,
   },
   (t) => ({
     mixingRunIdx: index("mixing_materials_mixing_run_idx").on(t.mixingRunId),
   }),
+);
+
+// ---------------------------------------------------------------------------
+// MIXING MATERIAL USE — Formula amount vs real use, one row per chemical per batch
+// ---------------------------------------------------------------------------
+export const mixingMaterialUse = pgTable(
+  "mixing_material_use",
+  {
+    id: text("id").primaryKey().$defaultFn(() => createId()),
+    mixingRunId: text("mixing_run_id").notNull().references(() => mixingRuns.id, { onDelete: "cascade" }),
+    chemicalId: text("chemical_id").notNull().references(() => chemicals.id),
+    formulaQuantity: decimal("formula_quantity", { precision: 12, scale: 3 }).notNull(),
+    usedQuantity: decimal("used_quantity", { precision: 12, scale: 3 }).notNull(),
+    extraQuantity: decimal("extra_quantity", { precision: 12, scale: 3 }).notNull(), // used − formula; negative when leftover went back
+    extraCost: decimal("extra_cost", { precision: 12, scale: 2 }).notNull(), // lot cost of the extra; negative for leftover
+    reason: text("reason"), // MIXING_REASONS code, only when extra > 0
+    note: text("note"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => ({ runChemicalIdx: uniqueIndex("mixing_material_use_run_chemical_idx").on(t.mixingRunId, t.chemicalId) }),
 );
 
 // ---------------------------------------------------------------------------
@@ -485,6 +510,10 @@ export const mixingMaterialsUsedRelations = relations(
       fields: [mixingMaterialsUsed.chemicalId],
       references: [chemicals.id],
     }),
+    lot: one(materialLots, {
+      fields: [mixingMaterialsUsed.lotId],
+      references: [materialLots.id],
+    }),
   }),
 );
 
@@ -574,9 +603,31 @@ export const batchPackingReceipts = pgTable("batch_packing_receipts", {
   bulkConsumed: decimal("bulk_consumed", { precision: 12, scale: 3 }).notNull(),
   lossBulk: decimal("loss_bulk", { precision: 12, scale: 3 }).notNull(),
   lossReason: text("loss_reason"),
+  lossReasonCode: text("loss_reason_code"), // POWDER_LOSS_REASONS code; lossReason holds the note
   totalPacks: integer("total_packs").notNull(),
   costAudit: jsonb("cost_audit").$type<{ chemicalCost: string; lossCostPolicy: string }>().notNull(),
 }, t => ({ requestIdx: uniqueIndex("batch_packing_request_idx").on(t.mixingRunId, t.requestId) }));
+
+// Needed vs real use for every packaging material in one packing entry.
+// Shoppers in KG: needed is the pack count, used is KG, and the shopper columns are filled.
+export const packingMaterialUse = pgTable("packing_material_use", {
+  id: text("id").primaryKey().$defaultFn(() => createId()),
+  receiptId: text("receipt_id").notNull().references(() => batchPackingReceipts.id),
+  materialId: text("material_id").notNull().references(() => packagingMaterials.id),
+  measuredInKg: boolean("measured_in_kg").notNull(),
+  neededQuantity: decimal("needed_quantity", { precision: 12, scale: 3 }).notNull(),
+  usedQuantity: decimal("used_quantity", { precision: 12, scale: 3 }).notNull(),
+  extraQuantity: decimal("extra_quantity", { precision: 12, scale: 3 }).notNull().default("0"),
+  extraCost: decimal("extra_cost", { precision: 12, scale: 2 }).notNull().default("0"), // cost of extra pieces or lost shoppers
+  totalCost: decimal("total_cost", { precision: 12, scale: 2 }).notNull(),
+  reason: text("reason"), // PACKING_REASONS code, pieces only
+  note: text("note"),
+  shopperWeightGrams: decimal("shopper_weight_grams", { precision: 10, scale: 3 }),
+  expectedShoppers: integer("expected_shoppers"),
+  actualShoppers: integer("actual_shoppers"),
+  lossShoppers: integer("loss_shoppers"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, t => ({ receiptMaterialIdx: uniqueIndex("packing_material_use_receipt_material_idx").on(t.receiptId, t.materialId) }));
 
 // Separate evidence for packs that were never placed inside a carton.
 export const outsidePackMovements = pgTable("outside_pack_movements", {

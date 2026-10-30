@@ -70,6 +70,7 @@ export const {
   materialLots,
   materialLotStock,
   materialLotMovements,
+  materialAdjustments,
   finishedGoodsStock,
   returnedFinishedGoodsStock,
   recipes,
