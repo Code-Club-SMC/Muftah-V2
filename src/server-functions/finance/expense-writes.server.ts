@@ -20,12 +20,11 @@ import {
   type ExpenseSnapshot,
   type WalletChange,
 } from "@/lib/finance/expense-corrections";
+import { MAX_EXPENSE_AMOUNT } from "@/lib/finance/expense-entry";
 import type { FinanceDynamicFieldValueInput } from "@/lib/types/finance-types";
 
 export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
-// expenses.amount is decimal(12, 2).
-const MAX_EXPENSE_AMOUNT = 9_999_999_999.99;
 
 /** A rupee amount that is still above zero once rounded to paisa, and fits the column. */
 export const expenseAmountSchema = z

@@ -2,6 +2,9 @@ import Big from "big.js";
 
 export const QUICK_CATEGORY_COUNT = 6;
 
+/** expenses.amount is decimal(12, 2). */
+export const MAX_EXPENSE_AMOUNT = 9_999_999_999.99;
+
 // 1250000 -> "12,50,000": last three digits, then groups of two.
 function groupLacCrore(digits: string): string {
   if (digits.length <= 3) return digits;
