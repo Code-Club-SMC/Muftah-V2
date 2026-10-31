@@ -62,6 +62,9 @@ const LotPreview = ({
   );
 };
 
+// Only shoppers measured in KG are bought by weight; every other packaging is bought by count.
+const boughtByKg = (material: any) => material?.type === "primary" && !!material?.measuredInKg;
+
 const CostCalculatorEffect = ({
   form,
   quantity,
@@ -79,21 +82,12 @@ const CostCalculatorEffect = ({
         const price = parseFloat(pricePerUnit || "0");
         total = price * qty;
       } else if (materialType === "packaging" && activeMaterial) {
-        const pkg = activeMaterial as any;
-        if (pkg.type === "primary") {
+        if (boughtByKg(activeMaterial)) {
+          // Shoppers are bought by weight: KG × price per KG.
           const price = parseFloat(pricePerKg || "0");
-          if (pkg.measuredInKg) {
-            // Shoppers are bought by weight: KG × price per KG.
-            if (price > 0) total = price * qty;
-          } else {
-            const weight = parseFloat(pkg.weightPerPack || "0");
-            if (weight > 0 && price > 0) {
-              // Formula: (Weight/1000) * PricePerKg * Qty
-              total = price * (weight / 1000) * qty;
-            }
-          }
+          if (price > 0) total = price * qty;
         } else {
-          // Master / Sticker / Others -> Simple Unit Price
+          // Bottles, cartons, stickers and others are bought by count.
           const price = parseFloat(pricePerUnit || "0");
           total = price * qty;
         }
@@ -209,9 +203,8 @@ export const AddStockForm = ({
     );
   }, [form.state.values.materialId, materials, materialType]);
 
-  // Initialize unit costs from previous purchase if available.
-  // We guard with activeMaterial being truthy so the reverse calc waits until
-  // the material data is resolved — prevents wrong pricePerKg from null weight.
+  // Initialize unit costs from previous purchase if available, once the
+  // material is resolved so we know whether it is bought by KG.
   useEffect(() => {
     if (!itemToRestock || !activeMaterial) return;
 
@@ -219,27 +212,9 @@ export const AddStockForm = ({
     const qty = parseFloat(itemToRestock.quantity);
     if (qty <= 0 || totalCost <= 0) return;
 
-    if (
-      materialType === "packaging" &&
-      (activeMaterial as any)?.type === "primary" &&
-      (activeMaterial as any).measuredInKg
-    ) {
+    if (materialType === "packaging" && boughtByKg(activeMaterial)) {
       // Bought by weight, so the old cost per quantity is the KG price.
       setPricePerKg((totalCost / qty).toFixed(2));
-    } else if (
-      materialType === "packaging" &&
-      (activeMaterial as any)?.type === "primary"
-    ) {
-      // Reverse formula: Cost = (Weight/1000) * PricePerKg * Qty
-      // => PricePerKg = Cost / ((Weight/1000) * Qty)
-      const weight = parseFloat((activeMaterial as any).weightPerPack || "0");
-      if (weight > 0) {
-        const derivedPricePerKg = totalCost / ((weight / 1000) * qty);
-        setPricePerKg(derivedPricePerKg.toFixed(2));
-      } else {
-        // Fallback: cost / qty as unit price
-        setPricePerUnit((totalCost / qty).toFixed(2));
-      }
     } else {
       setPricePerUnit((totalCost / qty).toFixed(2));
     }
@@ -411,8 +386,7 @@ export const AddStockForm = ({
               <span>Cost Calculator</span>
             </div>
 
-            {(materialType === "chemical" ||
-              (activeMaterial as any).type !== "primary") && (
+            {(materialType === "chemical" || !boughtByKg(activeMaterial)) && (
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <label className="text-xs text-muted-foreground font-medium">
@@ -453,68 +427,42 @@ export const AddStockForm = ({
               </div>
             )}
 
-            {materialType === "packaging" &&
-              (activeMaterial as any).type === "primary" && (
-                <div
-                  className={
-                    (activeMaterial as any).measuredInKg
-                      ? "grid grid-cols-2 gap-3"
-                      : "grid grid-cols-3 gap-3"
-                  }
-                >
-                  <div className="space-y-2">
-                    <label className="text-xs text-muted-foreground font-medium">
-                      {(activeMaterial as any).measuredInKg
-                        ? "Qty (KG)"
-                        : "Qty (Bags)"}
-                    </label>
-                    <form.Field name="quantity">
-                      {(field) => (
-                        <Input
-                          type="number"
-                          placeholder="0.00"
-                          value={field.state.value}
-                          onChange={(e) => field.handleChange(e.target.value)}
-                          className="h-9 bg-background"
-                        />
-                      )}
-                    </form.Field>
-                  </div>
-                  {!(activeMaterial as any).measuredInKg && (
-                    <div className="space-y-2">
-                      <label className="text-xs text-muted-foreground font-medium">
-                        Weight/Pack (g)
-                      </label>
+            {materialType === "packaging" && boughtByKg(activeMaterial) && (
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <label className="text-xs text-muted-foreground font-medium">
+                    Qty (KG)
+                  </label>
+                  <form.Field name="quantity">
+                    {(field) => (
                       <Input
-                        value={(activeMaterial as any).weightPerPack || 0}
-                        disabled
-                        className="h-9 bg-background/50"
+                        type="number"
+                        placeholder="0.00"
+                        value={field.state.value}
+                        onChange={(e) => field.handleChange(e.target.value)}
+                        className="h-9 bg-background"
                       />
-                    </div>
-                  )}
-                  <div className="space-y-2">
-                    <label className="text-xs text-muted-foreground font-medium">
-                      Price/Kg (PKR)
-                    </label>
-                    <Input
-                      type="number"
-                      placeholder="e.g. 980"
-                      value={pricePerKg}
-                      onChange={(e) => setPricePerKg(e.target.value)}
-                      className="h-9 bg-background"
-                    />
-                  </div>
+                    )}
+                  </form.Field>
                 </div>
-              )}
+                <div className="space-y-2">
+                  <label className="text-xs text-muted-foreground font-medium">
+                    Price/Kg (PKR)
+                  </label>
+                  <Input
+                    type="number"
+                    placeholder="e.g. 980"
+                    value={pricePerKg}
+                    onChange={(e) => setPricePerKg(e.target.value)}
+                    className="h-9 bg-background"
+                  />
+                </div>
+              </div>
+            )}
 
             <div className="text-[10px] text-muted-foreground italic flex justify-end">
-              {materialType === "packaging" &&
-              (activeMaterial as any).type === "primary" ? (
-                (activeMaterial as any).measuredInKg ? (
-                  <span>Formula: KG × Price/KG</span>
-                ) : (
-                  <span>Formula: (Weight/1000) * Price/Kg * Qty</span>
-                )
+              {materialType === "packaging" && boughtByKg(activeMaterial) ? (
+                <span>Formula: KG × Price/KG</span>
               ) : (
                 <span>Formula: Price/Unit * Qty</span>
               )}

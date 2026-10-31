@@ -39,6 +39,26 @@ describe("shoppers measured in KG", () => {
     expect(screen.queryByLabelText("Cost Per Unit (PKR)")).toBeNull();
   });
 
+  it("asks a bottle only for its price per piece, with no weight calculator", () => {
+    const warehouses = [{ id: "f1", name: "Floor", type: "factory_floor" }] as never;
+    render(wrap(<AddPackagingMaterialForm onSuccess={vi.fn()} warehouses={warehouses} preselectedWarehouse="f1" />));
+    expect(screen.getByLabelText("Cost Per Unit (PKR)")).toBeTruthy();
+    expect(screen.getByLabelText("Initial Stock")).toBeTruthy();
+    expect(screen.queryByLabelText(/Weight/)).toBeNull();
+    expect(screen.queryByLabelText(/Price per KG|Price \/ Kg/)).toBeNull();
+    expect(screen.queryByText("The Golden Formula")).toBeNull();
+  });
+
+  it("clears the KG fields when Measured in KG is turned off again", () => {
+    const warehouses = [{ id: "f1", name: "Floor", type: "factory_floor" }] as never;
+    render(wrap(<AddPackagingMaterialForm onSuccess={vi.fn()} warehouses={warehouses} preselectedWarehouse="f1" />));
+    const toggle = screen.getByRole("switch", { name: "Measured in KG" });
+    fireEvent.click(toggle);
+    fireEvent.change(screen.getByLabelText("Price per KG (PKR)"), { target: { value: "520" } });
+    fireEvent.click(toggle);
+    expect((screen.getByLabelText("Cost Per Unit (PKR)") as HTMLInputElement).value).toBe("");
+  });
+
   it("shows the switch locked in the edit dialog once the item has stock", () => {
     const item = { id: "st1", warehouseId: "f1", quantity: "10", packagingMaterial: { id: "p1", name: "100g shopper", type: "primary", costPerUnit: "2", minimumStockLevel: 0, measuredInKg: false } };
     render(wrap(<EditMaterialDialog open onOpenChange={vi.fn()} type="packaging" item={item} />));

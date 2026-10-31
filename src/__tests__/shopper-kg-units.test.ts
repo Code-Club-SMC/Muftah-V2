@@ -27,7 +27,14 @@ describe("shopper stock is shown in KG", () => {
 
   it("prices KG shoppers as KG × price per KG in Add stock", () => {
     const source = read("src/components/inventory/add-stock-dialog-form.tsx");
-    expect(source).toContain("pkg.measuredInKg");
+    expect(source).toContain("!!material?.measuredInKg");
     expect(source).toContain("Formula: KG × Price/KG");
+  });
+
+  it("prices bottles and other counted packaging by count, like cartons", () => {
+    const source = read("src/components/inventory/add-stock-dialog-form.tsx");
+    expect(source).not.toContain("weightPerPack");
+    expect(source).not.toContain("Weight/1000");
+    expect(source).toContain("(materialType === \"chemical\" || !boughtByKg(activeMaterial))");
   });
 });

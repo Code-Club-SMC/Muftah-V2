@@ -349,6 +349,12 @@ export const AddPackagingMaterialForm = ({
                       field.handleChange(checked);
                       setInKg(checked);
                       if (checked) form.setFieldValue("costPerUnit", form.state.values.pricePerKg);
+                      else {
+                        // Back to counted: drop the weight and KG price, the unit price is typed fresh.
+                        form.setFieldValue("weightPerPack", "");
+                        form.setFieldValue("pricePerKg", "");
+                        form.setFieldValue("costPerUnit", "");
+                      }
                     }}
                   />
                   <div>
@@ -360,14 +366,15 @@ export const AddPackagingMaterialForm = ({
             </form.Field>
           )}
 
-          {activeType === "primary" && !isEditMode && (
+          {/* Bottles and other counted packaging use Cost Per Unit, like cartons. */}
+          {activeType === "primary" && inKg && !isEditMode && (
             <div className="grid grid-cols-2 gap-4 border p-3 rounded-lg bg-muted/20">
               <form.Field name="weightPerPack">
                 {(field) => (
                   <Field>
-                    <FieldLabel htmlFor="weight-per-pack">{inKg ? "Weight of one shopper (grams)" : "Weight / Pack (g)"}</FieldLabel>
+                    <FieldLabel htmlFor="weight-per-pack">Weight of one shopper (grams)</FieldLabel>
                     <Input id="weight-per-pack" type="number" value={field.state.value || ""} onChange={(e) => field.handleChange(e.target.value)} placeholder="e.g. 6.5" />
-                    <FieldDescription>{inKg ? "Used to work out how many shoppers one KG should give." : "Weight of the empty bottle/wrapper."}</FieldDescription>
+                    <FieldDescription>Used to work out how many shoppers one KG should give.</FieldDescription>
                     <FieldError errors={field.state.meta.errors} />
                   </Field>
                 )}
@@ -375,14 +382,14 @@ export const AddPackagingMaterialForm = ({
               <form.Field name="pricePerKg">
                 {(field) => (
                   <Field>
-                    <FieldLabel htmlFor="price-per-kg">{inKg ? "Price per KG (PKR)" : "Material Price / Kg (PKR)"}</FieldLabel>
+                    <FieldLabel htmlFor="price-per-kg">Price per KG (PKR)</FieldLabel>
                     <Input
                       id="price-per-kg"
                       type="number"
                       value={field.state.value || ""}
                       onChange={(e) => {
                         field.handleChange(e.target.value);
-                        if (inKg) form.setFieldValue("costPerUnit", e.target.value);
+                        form.setFieldValue("costPerUnit", e.target.value);
                       }}
                       placeholder="e.g. 980"
                     />
@@ -392,39 +399,6 @@ export const AddPackagingMaterialForm = ({
                 )}
               </form.Field>
             </div>
-          )}
-
-          {!isEditMode && !inKg && (
-            <form.Subscribe
-              selector={(state) => [state.values.weightPerPack, state.values.pricePerKg, state.values.type]}
-              children={([weight, price, type]) => {
-                if (type !== "primary" || !weight || !price) return null;
-                const w = parseFloat(weight || "0");
-                const p = parseFloat(price || "0");
-                if (w <= 0 || p <= 0) return null;
-                const exactCost = p * (w / 1000);
-                const roundedCost = Math.round(exactCost);
-                return (
-                  <div className="flex flex-col gap-3 bg-primary/5 p-4 rounded-xl border border-primary/10 animate-in fade-in slide-in-from-top-2">
-                    <div className="flex items-center justify-between">
-                      <div className="space-y-0.5">
-                        <div className="text-[10px] uppercase tracking-wider font-bold text-muted-foreground">The Golden Formula</div>
-                        <div className="text-sm font-medium text-primary">
-                          {w}g × {p} PKR/kg = <span className="text-lg font-bold">PKR {exactCost.toFixed(2)}</span>
-                        </div>
-                      </div>
-                      <div className="flex gap-2">
-                        <Button type="button" size="sm" variant="outline" className="h-8 text-xs font-semibold px-4" onClick={() => form.setFieldValue("costPerUnit", exactCost.toFixed(4))}>Apply Exact</Button>
-                        <Button type="button" size="sm" className="h-8 text-xs font-semibold px-4 active:scale-95" onClick={() => form.setFieldValue("costPerUnit", roundedCost.toString())}>Apply Rounded ({roundedCost})</Button>
-                      </div>
-                    </div>
-                    <p className="text-[10px] text-muted-foreground italic border-t pt-2 border-primary/5">
-                      Matches the spreadsheet logic: {w}g is {(w / 1000).toFixed(3)}kg. Total = {(w / 1000).toFixed(3)} × {p} = {exactCost.toFixed(2)}.
-                    </p>
-                  </div>
-                );
-              }}
-            />
           )}
 
           <div className="grid grid-cols-2 gap-4">
