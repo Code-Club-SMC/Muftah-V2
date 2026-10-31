@@ -176,6 +176,13 @@
       "when": 1793374896215,
       "tag": "0024_bouncy_magus",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1793433903493,
+      "tag": "0025_rapid_ozymandias",
+      "breakpoints": true
     }
   ]
 }

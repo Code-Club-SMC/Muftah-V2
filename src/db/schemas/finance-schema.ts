@@ -5,6 +5,7 @@ import {
   decimal,
   index,
   integer,
+  jsonb,
   pgTable,
   text,
   timestamp,
@@ -144,6 +145,15 @@ export const expenses = pgTable("expenses", {
   amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
   slipNumber: text("slip_number"),
   remarks: text("remarks"),
+  payee: text("payee"),
+  // "manual" = Record expense form (can be edited/voided); "system" = made by another screen.
+  origin: text("origin").notNull().default("system"),
+  voidedAt: timestamp("voided_at", { withTimezone: true }),
+  voidedById: text("voided_by_id").references(() => user.id),
+  voidReason: text("void_reason"),
+  voidTransactionId: text("void_transaction_id").references(
+    (): AnyPgColumn => transactions.id,
+  ),
 
   walletId: text("wallet_id")
     .notNull()
@@ -214,6 +224,29 @@ export const expenseFieldValues = pgTable(
   }),
 );
 
+// --- EXPENSE EDITS (who changed what on a manual expense) ---
+export const expenseEdits = pgTable(
+  "expense_edits",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => createId()),
+    expenseId: text("expense_id")
+      .notNull()
+      .references(() => expenses.id, { onDelete: "cascade" }),
+    editedById: text("edited_by_id")
+      .notNull()
+      .references(() => user.id),
+    changes: jsonb("changes")
+      .$type<Array<{ field: string; from: string; to: string }>>()
+      .notNull(),
+    ...timestamps,
+  },
+  (table) => ({
+    expenseIdx: index("expense_edits_expense_idx").on(table.expenseId, table.createdAt),
+  }),
+);
+
 // --- TRANSACTIONS (Journal) ---
 export const transactions = pgTable(
   "transactions",
@@ -228,6 +261,7 @@ export const transactions = pgTable(
 
     source: text("source").notNull(), // "Sale", "Expense", "Payroll", "Manual Adjustment"
     referenceId: text("reference_id"), // ID of Invoice, Expense, or Payroll record
+    description: text("description"), // e.g. "Correction to expense of 12 Oct 2026"
     effectiveDate: timestamp("effective_date", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -293,7 +327,24 @@ export const expensesRelations = relations(expenses, ({ one, many }) => ({
     fields: [expenses.performedById],
     references: [user.id],
   }),
+  voidedBy: one(user, {
+    fields: [expenses.voidedById],
+    references: [user.id],
+    relationName: "expenseVoidedBy",
+  }),
   fieldValues: many(expenseFieldValues),
+  edits: many(expenseEdits),
+}));
+
+export const expenseEditsRelations = relations(expenseEdits, ({ one }) => ({
+  expense: one(expenses, {
+    fields: [expenseEdits.expenseId],
+    references: [expenses.id],
+  }),
+  editor: one(user, {
+    fields: [expenseEdits.editedById],
+    references: [user.id],
+  }),
 }));
 
 export const expenseFieldValuesRelations = relations(expenseFieldValues, ({ one }) => ({
