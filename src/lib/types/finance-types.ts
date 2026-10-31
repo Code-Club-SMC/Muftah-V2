@@ -132,3 +132,9 @@ export type CreateExpenseInput = {
   remarks?: string;
   fieldValues?: FinanceDynamicFieldValueInput[];
 };
+
+export type ExpenseEditChange = {
+  field: string;
+  from: string;
+  to: string;
+};
