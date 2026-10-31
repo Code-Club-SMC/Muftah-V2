@@ -19,5 +19,7 @@ export default defineConfig({
     testTimeout: 120_000,
     hookTimeout: 120_000,
     pool: "forks",
+    // Many suites resolve "the" active factory floor, so files must not run side by side.
+    fileParallelism: false,
   },
 });
