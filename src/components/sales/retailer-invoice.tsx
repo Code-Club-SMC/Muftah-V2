@@ -1,6 +1,5 @@
 import { useRef } from "react";
 import { Button } from "@/components/ui/button";
-import { amountInWords } from "@/lib/amount-in-words";
 import { Printer } from "lucide-react";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -49,6 +48,33 @@ function fmtD(val: number): string {
     return val.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+function numberToWords(n: number): string {
+    if (n === 0) return "Zero Rupees Only";
+
+    const ones = [
+        "", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine",
+        "Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen",
+        "Seventeen", "Eighteen", "Nineteen",
+    ];
+    const tensArr = ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"];
+
+    function convert(num: number): string {
+        if (num === 0) return "";
+        if (num < 20) return ones[num];
+        if (num < 100) return tensArr[Math.floor(num / 10)] + (num % 10 !== 0 ? " " + ones[num % 10] : "");
+        if (num < 1_000) return ones[Math.floor(num / 100)] + " Hundred" + (num % 100 !== 0 ? " " + convert(num % 100) : "");
+        if (num < 1_00_000) return convert(Math.floor(num / 1000)) + " Thousand" + (num % 1000 !== 0 ? " " + convert(num % 1000) : "");
+        if (num < 1_00_00_000) return convert(Math.floor(num / 1_00_000)) + " Lakh" + (num % 1_00_000 !== 0 ? " " + convert(num % 1_00_000) : "");
+        return convert(Math.floor(num / 1_00_00_000)) + " Crore" + (num % 1_00_00_000 !== 0 ? " " + convert(num % 1_00_00_000) : "");
+    }
+
+    const rupees = Math.floor(n);
+    const paisa = Math.round((n - rupees) * 100);
+    let result = convert(rupees) + " Rupees";
+    if (paisa > 0) result += " and " + convert(paisa) + " Paisa";
+    return result + " Only";
+}
+
 // ── Theme colours ─────────────────────────────────────────────────────────────
 const YELLOW = "#FFC000";
 const YELLOW_LT = "#FFF2CC";
@@ -91,7 +117,7 @@ export const RetailerInvoiceView = ({
     const cgstAmt = grossTotal * invoice.cgstRate / 100;
     const sgstAmt = grossTotal * invoice.sgstRate / 100;
     const grandTotal = grossTotal + cgstAmt + sgstAmt;
-    const amtWords = amountInWords(Math.round(grandTotal));
+    const amtWords = numberToWords(Math.round(grandTotal));
     const MIN_ROWS = 10;
     const blankRows = Math.max(0, MIN_ROWS - invoice.items.length);
 
