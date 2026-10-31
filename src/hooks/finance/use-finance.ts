@@ -262,8 +262,12 @@ export const useCreateExpense = () => {
       toast.success("Expense recorded");
     },
     onError: (err: Error) => {
-      // The form turns an overdraft refusal into the "Save anyway?" dialog.
-      if (isOverdrawConfirmError(err)) return;
+      // The form turns an overdraft refusal into the "Save anyway?" dialog. The balance the form
+      // showed was out of date, so fetch the real one for that dialog.
+      if (isOverdrawConfirmError(err)) {
+        queryClient.invalidateQueries({ queryKey: ["wallets"] });
+        return;
+      }
       toast.error("Failed to record expense", { description: err.message });
     },
   });
@@ -280,7 +284,10 @@ export const useUpdateExpense = () => {
       else toast.info("Nothing changed");
     },
     onError: (err: Error) => {
-      if (isOverdrawConfirmError(err)) return;
+      if (isOverdrawConfirmError(err)) {
+        queryClient.invalidateQueries({ queryKey: ["wallets"] });
+        return;
+      }
       toast.error("Failed to update expense", { description: err.message });
     },
   });

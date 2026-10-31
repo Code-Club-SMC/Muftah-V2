@@ -55,7 +55,7 @@ import { format, startOfMonth, endOfMonth } from "date-fns";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { DepositSheet } from "./deposit-sheet";
-import { ExpenseRecordSheet } from "./expense-record-sheet";
+import { ExpenseFormSheet } from "./expense-form-sheet";
 
 const MAX_BALANCE = 999999999999.99;
 
@@ -120,10 +120,9 @@ export const FinanceContainer = () => {
   const bankBalance = wallets
     .filter((w) => w.type === "bank")
     .reduce((sum, w) => sum + parseFloat(w.balance || "0"), 0);
-  const totalExpenses = expenses.data.reduce(
-    (sum: number, e) => sum + parseFloat(e.amount || "0"),
-    0,
-  );
+  const totalExpenses = expenses.data
+    .filter((e) => !e.voidedAt)
+    .reduce((sum: number, e) => sum + parseFloat(e.amount || "0"), 0);
 
   return (
     <motion.div
@@ -302,7 +301,7 @@ export const FinanceContainer = () => {
         wallets={wallets}
         preselectedWalletId={selectedWalletId}
       />
-      <ExpenseSheet
+      <ExpenseFormSheet
         open={isExpenseOpen}
         onOpenChange={(open) => {
           setIsExpenseOpen(open);
@@ -426,7 +425,8 @@ function WalletCard({
   isSuperAdmin: boolean;
 }) {
   const balance = parseFloat(wallet.balance || "0");
-  const isLowBalance = balance < 5000;
+  const isOverdrawn = balance < 0;
+  const isLowBalance = !isOverdrawn && balance < 5000;
   const isBank = wallet.type === "bank";
 
   return (
@@ -434,11 +434,13 @@ function WalletCard({
       whileHover={{ y: -2, transition: { duration: 0.2 } }}
       className={cn(
         "relative flex flex-col p-5 bg-card border rounded-none shadow-none border-t-2",
-        isLowBalance
-          ? "border-t-amber-500 border-x-amber-500/20 border-b-amber-500/20"
-          : isBank
-            ? "border-t-blue-500 border-border"
-            : "border-t-violet-500 border-border",
+        isOverdrawn
+          ? "border-t-rose-500 border-x-rose-500/30 border-b-rose-500/30"
+          : isLowBalance
+            ? "border-t-amber-500 border-x-amber-500/20 border-b-amber-500/20"
+            : isBank
+              ? "border-t-blue-500 border-border"
+              : "border-t-violet-500 border-border",
       )}
     >
       <div
@@ -476,8 +478,13 @@ function WalletCard({
           </div>
         </div>
         <div className="flex items-center gap-1">
-          {isLowBalance && (
-            <div className="flex items-center gap-1 text-amber-500">
+          {(isLowBalance || isOverdrawn) && (
+            <div
+              className={cn(
+                "flex items-center gap-1",
+                isOverdrawn ? "text-rose-500" : "text-amber-500",
+              )}
+            >
               <AlertTriangleIcon className="size-4" />
             </div>
           )}
@@ -509,12 +516,20 @@ function WalletCard({
         <p
           className={cn(
             "text-3xl font-black tracking-tight mt-1 tabular-nums",
-            isLowBalance ? "text-amber-500" : "text-foreground",
+            isOverdrawn
+              ? "text-rose-500"
+              : isLowBalance
+                ? "text-amber-500"
+                : "text-foreground",
           )}
         >
-          ₨ {balance.toLocaleString()}
+          {balance < 0 ? "−" : ""}₨ {Math.abs(balance).toLocaleString()}
         </p>
-        {isLowBalance ? (
+        {isOverdrawn ? (
+          <p className="mt-1.5 flex items-center gap-1 text-xs font-semibold text-rose-500">
+            <AlertTriangleIcon className="size-3" /> Overdrawn. Record the missing deposit.
+          </p>
+        ) : isLowBalance ? (
           <p className="text-[10px] text-amber-500 font-bold mt-1.5 flex items-center gap-1 uppercase tracking-wider">
             <AlertTriangleIcon className="size-3" /> Low balance warning
           </p>
@@ -570,6 +585,9 @@ function TransactionRow({ txn }: { txn: any }) {
           <p className="text-sm font-bold leading-tight text-foreground">
             {txn.source}
           </p>
+          {txn.description ? (
+            <p className="mt-0.5 text-xs text-muted-foreground">{txn.description}</p>
+          ) : null}
           <div className="flex items-center gap-2 mt-1">
             <span className="text-[10px] text-muted-foreground font-bold uppercase  flex items-center gap-1">
               {txn.wallet?.type === "bank" ? (
@@ -1204,26 +1222,5 @@ function DeleteWalletDialog({
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
-  );
-}
-
-function ExpenseSheet({
-  open,
-  onOpenChange,
-  wallets,
-  preselectedWalletId,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  wallets: Awaited<ReturnType<typeof getWalletsListFn>>;
-  preselectedWalletId: string | null;
-}) {
-  return (
-    <ExpenseRecordSheet
-      open={open}
-      onOpenChange={onOpenChange}
-      wallets={wallets}
-      preselectedWalletId={preselectedWalletId}
-    />
   );
 }
