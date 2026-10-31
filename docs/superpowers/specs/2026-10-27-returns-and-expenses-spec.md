@@ -1,7 +1,7 @@
 # Sales Returns, Expense Entry and Digital Payments — Spec
 
 Date: 2026-10-27
-Status: Draft for review
+Status: Approved (2026-10-29)
 
 ## Why
 
@@ -170,8 +170,8 @@ Schema changes go through the normal generated-migration process only.
 In this order:
 1. **Amount**: large input, Lac/Crore grouping as you type, amount in words underneath.
 2. **What for**: category picker showing the 6 most-used categories as big tiles, with search for the rest.
-3. **Paid to**: autocomplete of previous payees (e.g. LESCO, Shell Pump Ravi Road); new names saved automatically.
-4. **Paid from**: defaults to the account this user last used, balance shown next to it.
+3. **Paid to**: free text with suggestions taken from names already used on past expenses (e.g. LESCO, Shell Pump Ravi Road). A new name is simply saved on the expense; no separate payee list to manage.
+4. **Paid from**: defaults to the account used on this user's most recent expense, balance shown next to it.
 5. **Date**: defaults to today.
 6. **Note**: one optional field (replaces Description + Remarks).
 7. **More details** (collapsed): slip/reference number and the category's custom fields. Required custom fields auto-expand this section.
@@ -186,7 +186,7 @@ Description is no longer required. The list shows "Category · Paid to" when no 
 - Receipt photos are explicitly out of scope.
 
 ### Fix mistakes
-- Expenses are **editable at any time** by their creator and by users with finance manage rights. Every edit is logged with old and new values, who and when. If the amount or account changes, the wallet is corrected with an adjusting transaction so balances and history stay consistent.
+- Expenses are **editable at any time** by their creator and by users with finance manage rights. Every edit is logged with old and new values, who and when. If the amount or account changes, the wallet is corrected with an adjusting transaction so balances and history stay consistent. The adjusting transaction is dated on the edit day and its description names the original expense date (e.g. "Correction to expense of 12 Oct 2026").
 - **Void** (reason required) removes an expense entirely: it creates a reversing wallet transaction dated today, and the original stays visible, struck through.
 
 ### Repeats
@@ -204,8 +204,8 @@ Description is no longer required. The list shows "Category · Paid to" when no 
 - Customer refunds (Fix 3) appear in the wallet's transaction list as "Customer refund", not under Expenses.
 
 ## B4. Data changes (conceptual)
-- Expense: payee, voided-by/at/reason, void transaction link.
-- New: payee list, expense templates, expense edit log.
+- Expense: payee (plain text), voided-by/at/reason, void transaction link.
+- New: expense templates, expense edit log. (Phase 2 needs only the edit log; templates come in phase 7.)
 - Description becomes optional.
 
 ---
@@ -248,7 +248,7 @@ Schema changes go through the normal generated-migration process only.
 | 4 | Fix 3 (credit notes, customer credit, refunds) | Depends on the Completed step from phase 3 |
 | 5 | Fix 2 (salvage value, write-offs, disposal) | Plugs into the inspection screen |
 | 6 | Recovery-based commission (separate spec) | Independent; replaces the clawback |
-| 7 | Part B extras (payees, templates, list redesign) and Fix 7 (supplier returns) | Nice-to-have and new module |
+| 7 | Part B extras (templates, list redesign) and Fix 7 (supplier returns) | Nice-to-have and new module |
 | 8 | Part C (Digital Account as a real payment method) | Independent; small; can be pulled earlier if reports need it |
 
 Each phase ships independently and is tested before the next starts.
@@ -258,6 +258,12 @@ Each phase ships independently and is tested before the next starts.
 Resolved 2026-10-27:
 - No receipt photo upload.
 - Super-admins and users with the approve permission approve on their own; no second person.
+
+Resolved 2026-10-29 (phase 2):
+- "Paid to" ships in phase 2 as a text field on the expense with suggestions from past expenses. No separate payee list.
+- "Paid from" default comes from the user's most recent expense; nothing new stored.
+- Edit corrections are dated on the edit day and mention the original expense date.
+- Spec approved.
 - Finance managers may overdraw an account after a confirm dialog.
 - Expenses are editable at any time (logged, wallet corrected).
 - Commission switches to recovery-based (separate spec).
