@@ -516,6 +516,11 @@ export const getExpensesFn = createServerFn()
         },
         wallet: { columns: { id: true, name: true, type: true } },
         performer: { columns: { id: true, name: true } },
+        voidedBy: { columns: { id: true, name: true } },
+        edits: {
+          orderBy: (edit, { desc }) => [desc(edit.createdAt), desc(edit.id)],
+          with: { editor: { columns: { id: true, name: true } } },
+        },
         fieldValues: {
           with: {
             field: {
@@ -553,6 +558,17 @@ export const getExpensesFn = createServerFn()
       amount: expense.amount,
       slipNumber: expense.slipNumber,
       remarks: expense.remarks,
+      payee: expense.payee,
+      origin: expense.origin === "manual" ? "manual" : "system",
+      voidedAt: expense.voidedAt,
+      voidReason: expense.voidReason,
+      voidedBy: expense.voidedBy ? { id: expense.voidedBy.id, name: expense.voidedBy.name } : null,
+      edits: expense.edits.map((edit) => ({
+        id: edit.id,
+        editedAt: edit.createdAt,
+        editor: edit.editor ? { id: edit.editor.id, name: edit.editor.name } : null,
+        changes: edit.changes,
+      })),
       category: expense.category
         ? {
             id: expense.category.id,

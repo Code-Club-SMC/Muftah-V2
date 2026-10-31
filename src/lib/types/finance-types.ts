@@ -82,6 +82,13 @@ export type FinanceWalletSummary = {
   balance?: string;
 };
 
+export type ExpenseEditEntry = {
+  id: string;
+  editedAt: Date | string;
+  editor: { id: string; name: string | null } | null;
+  changes: ExpenseEditChange[];
+};
+
 export type ExpenseListItem = {
   id: string;
   expenseDate: Date | string;
@@ -89,6 +96,13 @@ export type ExpenseListItem = {
   amount: string;
   slipNumber: string | null;
   remarks: string | null;
+  payee: string | null;
+  origin: "manual" | "system";
+  voidedAt: Date | string | null;
+  voidReason: string | null;
+  voidedBy: { id: string; name: string | null } | null;
+  /** Newest first. */
+  edits: ExpenseEditEntry[];
   category: {
     id: string;
     name: string;

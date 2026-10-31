@@ -13,8 +13,12 @@ import {
   updateWalletFn,
 } from "@/server-functions/finance-fn";
 import { listCategoryDefinitionsFn } from "@/server-functions/finance/expense-categories-fn";
+import { getExpenseEntryDefaultsFn } from "@/server-functions/finance/expense-entry-defaults-fn";
+import { updateExpenseFn, voidExpenseFn } from "@/server-functions/finance/expense-corrections-fn";
+import { isOverdrawConfirmError } from "@/lib/finance/expense-corrections";
 import type {
   CreateExpenseInput,
+  ExpenseEntryDefaults,
   ExpenseCategoryDefinition,
   ExpenseKpis,
   ExpenseListResponse,
@@ -60,6 +64,7 @@ export const financeExpenseKeys = {
     [...financeExpenseKeys.all, "list", params] as const,
   kpis: (params: ExpenseKpiParams) =>
     [...financeExpenseKeys.all, "kpis", params] as const,
+  entryDefaults: ["expenses", "entry-defaults"] as const,
 };
 
 export const financeExpenseCategoryKeys = {
@@ -153,6 +158,12 @@ export const getExpenseKpiQueryOptions = (params: ExpenseKpiParams = {}) => {
   };
 };
 
+export const getExpenseEntryDefaultsQueryOptions = () => ({
+  queryKey: financeExpenseKeys.entryDefaults,
+  queryFn: () => getExpenseEntryDefaultsFn() as Promise<ExpenseEntryDefaults>,
+  staleTime: EXPENSES_STALE_TIME,
+});
+
 // ── Wallets ────────────────────────────────────────────────
 
 export const useWallets = () =>
@@ -231,21 +242,66 @@ export const useDepositToWallet = () => {
 export const useExpenseCategoryDefinitions = () =>
   useQuery(getExpenseCategoryDefinitionsQueryOptions());
 
+// Anything that moves money on an expense changes balances, lists, totals, the journal and reports.
+const invalidateExpenseMoney = (queryClient: ReturnType<typeof useQueryClient>) => {
+  queryClient.invalidateQueries({ queryKey: ["wallets"] });
+  queryClient.invalidateQueries({ queryKey: financeExpenseKeys.all });
+  queryClient.invalidateQueries({ queryKey: ["transactions"] });
+  queryClient.invalidateQueries({ queryKey: ["transactions-recent"] });
+  queryClient.invalidateQueries({ queryKey: ["reports", "profit-loss"] });
+  queryClient.invalidateQueries({ queryKey: ["reports", "expenses"] });
+};
+
 export const useCreateExpense = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: createExpenseFn,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["wallets"] });
-      queryClient.invalidateQueries({ queryKey: financeExpenseKeys.all });
-      queryClient.invalidateQueries({ queryKey: ["transactions"] });
+      invalidateExpenseMoney(queryClient);
       toast.success("Expense recorded");
     },
-    onError: (err: Error) =>
-      toast.error("Failed to record expense", { description: err.message }),
+    onError: (err: Error) => {
+      // The form turns an overdraft refusal into the "Save anyway?" dialog.
+      if (isOverdrawConfirmError(err)) return;
+      toast.error("Failed to record expense", { description: err.message });
+    },
   });
 };
+
+export const useUpdateExpense = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: updateExpenseFn,
+    onSuccess: (result: { changed: boolean }) => {
+      invalidateExpenseMoney(queryClient);
+      if (result.changed) toast.success("Expense updated");
+      else toast.info("Nothing changed");
+    },
+    onError: (err: Error) => {
+      if (isOverdrawConfirmError(err)) return;
+      toast.error("Failed to update expense", { description: err.message });
+    },
+  });
+};
+
+export const useVoidExpense = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: voidExpenseFn,
+    onSuccess: () => {
+      invalidateExpenseMoney(queryClient);
+      toast.success("Expense voided");
+    },
+    onError: (err: Error) =>
+      toast.error("Failed to void expense", { description: err.message }),
+  });
+};
+
+export const useExpenseEntryDefaults = (enabled = true) =>
+  useQuery({ ...getExpenseEntryDefaultsQueryOptions(), enabled });
 
 export const useExpenses = (params: ExpenseListParams = {}) =>
   useQuery(getExpenseListQueryOptions(params));
