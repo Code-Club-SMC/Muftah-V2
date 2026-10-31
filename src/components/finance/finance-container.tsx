@@ -12,6 +12,8 @@ import {
   useDeleteWallet,
 } from "@/hooks/finance/use-finance";
 import { authClient } from "@/lib/auth-client";
+import { useViewerAccess } from "@/hooks/use-viewer-access";
+import { hasPermission } from "@/lib/rbac";
 import { GenericEmpty } from "@/components/custom/empty";
 import { Button } from "@/components/ui/button";
 import { FinanceEmptyIllustration } from "@/components/illustrations/FinanceEmptyIllustration";
@@ -59,6 +61,10 @@ import { ExpenseFormSheet } from "./expense-form-sheet";
 
 const MAX_BALANCE = 999999999999.99;
 
+/** "₨ 2,000" or "−₨ 3,000": the minus sits before the symbol, like everywhere else in finance. */
+const formatSignedRupees = (value: number) =>
+  `${value < 0 ? "−" : ""}₨ ${Math.abs(value).toLocaleString()}`;
+
 const containerVariants: Variants = {
   hidden: { opacity: 0 },
   show: {
@@ -86,6 +92,11 @@ export const FinanceContainer = () => {
 
   const { data: session } = authClient.useSession();
   const isSuperAdmin = session?.user?.role === "super-admin";
+  // Moving money and changing accounts need finance.manage on the server; view-only users just look.
+  const { data: viewerAccess } = useViewerAccess();
+  const canManageFinance = viewerAccess
+    ? hasPermission(viewerAccess.permissions, "finance.manage")
+    : false;
 
   const today = new Date();
   const dateFrom = startOfMonth(today).toISOString();
@@ -131,38 +142,40 @@ export const FinanceContainer = () => {
       animate="show"
       className="space-y-6 font-sans antialiased"
     >
-      <motion.div
-        variants={itemVariants}
-        className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4"
-      >
-        <div className="flex items-center gap-2 flex-wrap">
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-10 px-4 rounded-none shadow-none border-border hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-200 transition-colors gap-2 font-bold"
-            onClick={() => setIsDepositOpen(true)}
-            disabled={wallets.length === 0}
-          >
-            <ArrowDownIcon className="size-3.5 text-emerald-600" /> Deposit
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-10 px-4 rounded-none shadow-none border-border hover:bg-rose-50 hover:text-rose-700 hover:border-rose-200 transition-colors gap-2 font-bold"
-            onClick={() => setIsExpenseOpen(true)}
-            disabled={wallets.length === 0}
-          >
-            <ReceiptIcon className="size-3.5 text-rose-600" /> Record Expense
-          </Button>
-        </div>
-        <Button
-          size="sm"
-          className="h-10 px-4 rounded-none shadow-none gap-2 font-bold"
-          onClick={() => setIsCreateWalletOpen(true)}
+      {canManageFinance ? (
+        <motion.div
+          variants={itemVariants}
+          className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4"
         >
-          <PlusIcon className="size-3.5" /> New Account
-        </Button>
-      </motion.div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-10 px-4 rounded-none shadow-none border-border hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-200 transition-colors gap-2 font-bold"
+              onClick={() => setIsDepositOpen(true)}
+              disabled={wallets.length === 0}
+            >
+              <ArrowDownIcon className="size-3.5 text-emerald-600" /> Deposit
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-10 px-4 rounded-none shadow-none border-border hover:bg-rose-50 hover:text-rose-700 hover:border-rose-200 transition-colors gap-2 font-bold"
+              onClick={() => setIsExpenseOpen(true)}
+              disabled={wallets.length === 0}
+            >
+              <ReceiptIcon className="size-3.5 text-rose-600" /> Record Expense
+            </Button>
+          </div>
+          <Button
+            size="sm"
+            className="h-10 px-4 rounded-none shadow-none gap-2 font-bold"
+            onClick={() => setIsCreateWalletOpen(true)}
+          >
+            <PlusIcon className="size-3.5" /> New Account
+          </Button>
+        </motion.div>
+      ) : null}
 
       <motion.div
         variants={itemVariants}
@@ -170,20 +183,20 @@ export const FinanceContainer = () => {
       >
         <SharpKPICard
           label="Total Balance"
-          value={`₨ ${totalBalance.toLocaleString()}`}
+          value={formatSignedRupees(totalBalance)}
           icon={TrendingUpIcon}
           theme="emerald"
         />
         <SharpKPICard
           label="Cash Balance"
-          value={`₨ ${cashBalance.toLocaleString()}`}
+          value={formatSignedRupees(cashBalance)}
           icon={BanknoteIcon}
           theme="violet"
           subtext={`${wallets.filter((w) => w.type === "cash").length} cash account(s)`}
         />
         <SharpKPICard
           label="Bank Balance"
-          value={`₨ ${bankBalance.toLocaleString()}`}
+          value={formatSignedRupees(bankBalance)}
           icon={Building2}
           theme="blue"
           subtext={`${wallets.filter((w) => w.type === "bank").length} bank account(s)`}
@@ -191,7 +204,7 @@ export const FinanceContainer = () => {
         <SharpKPICard
           label="Total Expenses"
           value={
-            isExpensesFetching ? "—" : `₨ ${totalExpenses.toLocaleString()}`
+            isExpensesFetching ? "—" : formatSignedRupees(totalExpenses)
           }
           icon={ReceiptIcon}
           theme="rose"
@@ -206,7 +219,11 @@ export const FinanceContainer = () => {
               <GenericEmpty
                 icon={FinanceEmptyIllustration}
                 title="No Accounts Yet"
-                description='Create your first account (Cash Box or Bank Account) to start tracking finances. Click "New Account" above.'
+                description={
+                  canManageFinance
+                    ? 'Create your first account (Cash Box or Bank Account) to start tracking finances. Click "New Account" above.'
+                    : "No cash boxes or bank accounts have been set up yet."
+                }
               />
             </div>
           </div>
@@ -233,6 +250,7 @@ export const FinanceContainer = () => {
                   setIsDeleteDialogOpen(true);
                 }}
                 isSuperAdmin={isSuperAdmin}
+                canManage={canManageFinance}
               />
             ))}
           </div>
@@ -416,6 +434,7 @@ function WalletCard({
   onEdit,
   onDelete,
   isSuperAdmin,
+  canManage,
 }: {
   wallet: WalletType;
   onDeposit: () => void;
@@ -423,6 +442,7 @@ function WalletCard({
   onEdit: () => void;
   onDelete: () => void;
   isSuperAdmin: boolean;
+  canManage: boolean;
 }) {
   const balance = parseFloat(wallet.balance || "0");
   const isOverdrawn = balance < 0;
@@ -488,14 +508,16 @@ function WalletCard({
               <AlertTriangleIcon className="size-4" />
             </div>
           )}
-          <button
-            type="button"
-            onClick={onEdit}
-            className="p-1.5 rounded-none text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
-            title="Edit account"
-          >
-            <PencilIcon className="size-3.5" />
-          </button>
+          {canManage && (
+            <button
+              type="button"
+              onClick={onEdit}
+              className="p-1.5 rounded-none text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+              title="Edit account"
+            >
+              <PencilIcon className="size-3.5" />
+            </button>
+          )}
           {isSuperAdmin && (
             <button
               type="button"
@@ -523,7 +545,7 @@ function WalletCard({
                 : "text-foreground",
           )}
         >
-          {balance < 0 ? "−" : ""}₨ {Math.abs(balance).toLocaleString()}
+          {formatSignedRupees(balance)}
         </p>
         {isOverdrawn ? (
           <p className="mt-1.5 flex items-center gap-1 text-xs font-semibold text-rose-500">
@@ -539,22 +561,26 @@ function WalletCard({
       </div>
 
       <div className="relative z-10 flex gap-2">
-        <Button
-          variant="outline"
-          size="sm"
-          className="flex-1 h-9 rounded-none shadow-none text-xs font-bold gap-1.5 border-border hover:bg-emerald-50 hover:border-emerald-200 hover:text-emerald-700 transition-colors"
-          onClick={onDeposit}
-        >
-          <ArrowDownIcon className="size-3.5 text-emerald-600" /> Deposit
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          className="flex-1 h-9 rounded-none shadow-none text-xs font-bold gap-1.5 border-border hover:bg-rose-50 hover:border-rose-200 hover:text-rose-700 transition-colors"
-          onClick={onExpense}
-        >
-          <ArrowUpIcon className="size-3.5 text-rose-500" /> Expense
-        </Button>
+        {canManage ? (
+          <>
+            <Button
+              variant="outline"
+              size="sm"
+              className="flex-1 h-9 rounded-none shadow-none text-xs font-bold gap-1.5 border-border hover:bg-emerald-50 hover:border-emerald-200 hover:text-emerald-700 transition-colors"
+              onClick={onDeposit}
+            >
+              <ArrowDownIcon className="size-3.5 text-emerald-600" /> Deposit
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="flex-1 h-9 rounded-none shadow-none text-xs font-bold gap-1.5 border-border hover:bg-rose-50 hover:border-rose-200 hover:text-rose-700 transition-colors"
+              onClick={onExpense}
+            >
+              <ArrowUpIcon className="size-3.5 text-rose-500" /> Expense
+            </Button>
+          </>
+        ) : null}
       </div>
     </motion.div>
   );
