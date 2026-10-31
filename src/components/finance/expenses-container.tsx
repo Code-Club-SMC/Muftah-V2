@@ -314,7 +314,8 @@ export const ExpensesContainer = () => {
         </Alert>
       ) : null}
 
-      <div className="border border-border rounded-none overflow-x-auto">
+      {/* w-0 + min-w-full: the table scrolls inside its box instead of widening the whole page. */}
+      <div className="w-0 min-w-full overflow-x-auto border border-border rounded-none">
         <Table>
           <TableHeader>
             <TableRow>
@@ -387,7 +388,7 @@ export const ExpensesContainer = () => {
                       <TableCell className="font-medium tabular-nums align-top">
                         {format(new Date(expense.expenseDate), "dd MMM yyyy")}
                       </TableCell>
-                      <TableCell className="font-medium align-top">
+                      <TableCell className="min-w-44 whitespace-normal wrap-break-word font-medium align-top">
                         <div className="flex flex-col gap-1">
                           <span className={cn(isVoided && "line-through")}>{getExpenseTitle(expense)}</span>
                           {isVoided ? (
@@ -397,7 +398,7 @@ export const ExpensesContainer = () => {
                           ) : null}
                         </div>
                       </TableCell>
-                      <TableCell className="align-top">
+                      <TableCell className="whitespace-normal align-top">
                         <div className="flex flex-col gap-2">
                           <span>{expense.category?.name ?? "—"}</span>
                           {expense.category?.isArchived ? (
@@ -411,12 +412,12 @@ export const ExpensesContainer = () => {
                           ) : null}
                         </div>
                       </TableCell>
-                      <TableCell className="align-top">{expense.payee ?? "—"}</TableCell>
-                      <TableCell className="align-top">{expense.wallet?.name ?? "—"}</TableCell>
+                      <TableCell className="min-w-28 whitespace-normal wrap-break-word align-top">{expense.payee ?? "—"}</TableCell>
+                      <TableCell className="whitespace-normal align-top">{expense.wallet?.name ?? "—"}</TableCell>
                       <TableCell className={cn("text-right font-semibold tabular-nums align-top", isVoided && "line-through")}>
                         ₨ {Number(expense.amount || 0).toLocaleString()}
                       </TableCell>
-                      <TableCell className="align-top">{expense.performer?.name ?? "—"}</TableCell>
+                      <TableCell className="whitespace-normal align-top">{expense.performer?.name ?? "—"}</TableCell>
                       <TableCell className="align-top text-right">
                         {isVoided ? null : lockReason ? (
                           <Badge
