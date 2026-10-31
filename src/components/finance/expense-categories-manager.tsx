@@ -210,7 +210,7 @@ export function ExpenseCategoriesManager() {
       steps: [
         {
           popover: {
-            title: "Expense Schema Setup",
+            title: "Expense Categories Setup",
             description:
               "This wizard helps you configure expenses in 3 simple steps: categories, fields, and select options.",
           },
@@ -287,7 +287,7 @@ export function ExpenseCategoriesManager() {
         <div>
           <h2 className="text-base font-semibold uppercase tracking-wide">Setup Wizard</h2>
           <p className="text-sm text-muted-foreground">
-            Configure your expense schema in 3 simple steps.
+            Set up your expense categories in 3 simple steps.
           </p>
         </div>
         <Button

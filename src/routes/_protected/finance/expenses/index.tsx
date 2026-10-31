@@ -9,6 +9,7 @@ import {
   getCurrentMonthRange,
   getExpenseDateRangeFilters,
 } from "@/lib/finance-expenses";
+import { getWalletsListFn } from "@/server-functions/finance-fn";
 
 export const Route = createFileRoute("/_protected/finance/expenses/")({
   loader: async ({ context }) => {
@@ -36,6 +37,12 @@ export const Route = createFileRoute("/_protected/finance/expenses/")({
         dateTo,
       }),
     );
+
+    // The record/edit form lists accounts with their balances.
+    void context.queryClient.prefetchQuery({
+      queryKey: ["wallets"],
+      queryFn: () => getWalletsListFn(),
+    });
   },
   component: RouteComponent,
 });

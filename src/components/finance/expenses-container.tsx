@@ -1,17 +1,17 @@
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { format } from "date-fns";
 import type { DateRange } from "react-day-picker";
-import { driver } from "driver.js";
-import "driver.js/dist/driver.css";
 import { motion } from "framer-motion";
 import {
+  Ban,
   Banknote,
-  BookOpen,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   ChevronUp,
+  Pencil,
+  Plus,
   Receipt,
   Settings2,
   TrendingUp,
@@ -26,6 +26,7 @@ import {
   useExpenseCategoryDefinitions,
   useExpenseKpis,
   useExpenses,
+  useWallets,
 } from "@/hooks/finance/use-finance";
 import {
   ALL_EXPENSE_CATEGORIES,
@@ -33,6 +34,8 @@ import {
   getExpenseDateRangeFilters,
   resolveExpenseCategoryFilter,
 } from "@/lib/finance-expenses";
+import { getExpenseLockReason } from "@/lib/finance/expense-corrections";
+import { getExpenseTitle, isNewExpenseShortcut } from "@/lib/finance/expense-entry";
 import { hasPermission } from "@/lib/rbac";
 import type {
   ExpenseFieldValueDisplay,
@@ -42,6 +45,7 @@ import { cn } from "@/lib/utils";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Kbd } from "@/components/ui/kbd";
 import {
   Table,
   TableBody,
@@ -50,20 +54,28 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ExpenseFormSheet } from "./expense-form-sheet";
+import { ExpenseHistory } from "./expense-history";
+import { VoidExpenseDialog } from "./void-expense-dialog";
 
 const LIMIT = 60;
+const COLUMN_COUNT = 9;
 
 export const ExpensesContainer = () => {
   const [offset, setOffset] = useState(0);
   const [activeCategoryId, setActiveCategoryId] = useState(ALL_EXPENSE_CATEGORIES);
   const [expandedExpenseId, setExpandedExpenseId] = useState<string | null>(null);
   const [range, setRange] = useState<DateRange>(() => getCurrentMonthRange());
+  const [formOpen, setFormOpen] = useState(false);
+  const [editingExpense, setEditingExpense] = useState<ExpenseListItem | null>(null);
+  const [voidTarget, setVoidTarget] = useState<ExpenseListItem | null>(null);
 
   const { data: viewerAccess } = useViewerAccess();
   const canManageFinance = viewerAccess
     ? hasPermission(viewerAccess.permissions, "finance.manage")
     : false;
 
+  const { data: wallets = [] } = useWallets();
   const {
     data: categories = [],
     isLoading: isCategoriesLoading,
@@ -108,6 +120,30 @@ export const ExpensesContainer = () => {
   const page = Math.floor(offset / LIMIT) + 1;
   const pageCount = Math.max(1, Math.ceil(total / LIMIT));
 
+  const openCreate = () => {
+    setEditingExpense(null);
+    setFormOpen(true);
+  };
+
+  const openEdit = (expense: ExpenseListItem) => {
+    setEditingExpense(expense);
+    setFormOpen(true);
+  };
+
+  // "N" opens Record expense, unless the user is typing or another dialog is open.
+  useEffect(() => {
+    if (!canManageFinance) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!isNewExpenseShortcut(event)) return;
+      if (document.querySelector('[role="dialog"], [role="alertdialog"]')) return;
+      event.preventDefault();
+      setEditingExpense(null);
+      setFormOpen(true);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [canManageFinance]);
+
   const onRangeChange = (nextRange: DateRange | undefined) => {
     setRange(nextRange ?? getCurrentMonthRange());
     setOffset(0);
@@ -123,71 +159,26 @@ export const ExpensesContainer = () => {
     setExpandedExpenseId((current) => (current === expenseId ? null : expenseId));
   };
 
-  const startTutorial = () => {
-    const tour = driver({
-      showProgress: true,
-      allowClose: true,
-      steps: [
-        {
-          popover: {
-            title: "Expense Management Guide",
-            description:
-              "This guide shows how to filter, review, and manage expense records.",
-          },
-        },
-        {
-          element: '[data-tour="manage-tutorial-btn"]',
-          popover: {
-            title: "Replay Tutorial",
-            description: "Use this button anytime to run the guide again.",
-          },
-        },
-        {
-          element: '[data-tour="category-filters"]',
-          popover: {
-            title: "Filter by Category",
-            description: "Click category tabs to show only expenses from that category.",
-          },
-        },
-        {
-          element: '[data-tour="date-filter"]',
-          popover: {
-            title: "Filter by Date",
-            description: "Use date range to focus on a specific period.",
-          },
-        },
-        {
-          element: '[data-tour="schema-btn"]',
-          popover: {
-            title: "Manage Schema",
-            description:
-              "Open schema settings to change categories and fields used in expenses.",
-          },
-        },
-        {
-          element: '[data-tour="expense-table"]',
-          popover: {
-            title: "Review Expenses",
-            description: "This table shows all matching expenses with amount, account, and remarks.",
-          },
-        },
-        {
-          element: '[data-tour="expense-expand"]',
-          popover: {
-            title: "View Saved Field Details",
-            description: "Use the expand arrow to see saved custom fields for a record.",
-          },
-        },
-      ],
-    });
-
-    tour.drive();
-  };
-
   return (
     <div className="space-y-5">
+      {canManageFinance ? (
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <Button className="h-10 gap-2 rounded-none shadow-none" onClick={openCreate}>
+            <Plus className="size-4" />
+            Record expense
+            <Kbd className="ml-1">N</Kbd>
+          </Button>
+          <Button asChild variant="outline" className="h-10 rounded-none shadow-none">
+            <Link to="/finance/expenses/settings">
+              <Settings2 className="mr-2 size-4" />
+              Expense Categories
+            </Link>
+          </Button>
+        </div>
+      ) : null}
+
       <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2" data-tour="category-filters">
+        <div className="flex flex-wrap items-center gap-2">
           <Button
             variant={
               effectiveCategoryId === ALL_EXPENSE_CATEGORIES ? "default" : "outline"
@@ -216,36 +207,13 @@ export const ExpensesContainer = () => {
           ))}
         </div>
 
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-          <DatePicker
-            mode="range"
-            range={range}
-            onRangeChange={onRangeChange}
-            placeholder="Current month"
-            className="h-9 min-w-65 rounded-none shadow-none"
-            tourId="date-filter"
-          />
-
-          <Button
-            type="button"
-            variant="outline"
-            className="h-9 rounded-none shadow-none"
-            onClick={startTutorial}
-            data-tour="manage-tutorial-btn"
-          >
-            <BookOpen className="size-4 mr-2" />
-            Start Tutorial
-          </Button>
-
-          {canManageFinance ? (
-            <Button asChild variant="outline" className="h-9 rounded-none shadow-none" data-tour="schema-btn">
-              <Link to="/finance/expenses/settings">
-                <Settings2 className="size-4 mr-2" />
-                Manage Schema
-              </Link>
-            </Button>
-          ) : null}
-        </div>
+        <DatePicker
+          mode="range"
+          range={range}
+          onRangeChange={onRangeChange}
+          placeholder="Current month"
+          className="h-9 min-w-65 rounded-none shadow-none"
+        />
       </div>
 
       {isCategoriesLoading ? (
@@ -274,19 +242,19 @@ export const ExpensesContainer = () => {
           <TriangleAlert className="size-4" />
           <AlertTitle>No active expense categories</AlertTitle>
           <AlertDescription>
-            Reporting still shows saved historical expenses, but there are no active categories
-            available for filtering.
+            Saved expenses still show below, but there are no active categories to filter by or
+            to record new expenses with.
             {canManageFinance ? (
               <>
                 {" "}
-                Use{" "}
+                Add or switch them on in{" "}
                 <Link
                   to="/finance/expenses/settings"
                   className="font-medium underline underline-offset-4"
                 >
-                  schema settings
-                </Link>{" "}
-                to add or reactivate categories.
+                  Expense Categories
+                </Link>
+                .
               </>
             ) : null}
           </AlertDescription>
@@ -346,25 +314,25 @@ export const ExpensesContainer = () => {
         </Alert>
       ) : null}
 
-      <div className="border border-border rounded-none overflow-hidden" data-tour="expense-table">
+      <div className="border border-border rounded-none overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead className="w-14" />
               <TableHead>Date</TableHead>
-              <TableHead>Description</TableHead>
+              <TableHead>Expense</TableHead>
               <TableHead>Category</TableHead>
+              <TableHead>Paid to</TableHead>
               <TableHead>Account</TableHead>
               <TableHead className="text-right">Amount</TableHead>
-              <TableHead>Slip / Ref</TableHead>
-              <TableHead>Remarks</TableHead>
-              <TableHead>Performed By</TableHead>
+              <TableHead>By</TableHead>
+              <TableHead className="w-24" />
             </TableRow>
           </TableHeader>
           <TableBody>
             {expensesQuery.isFetching && !expensesQuery.data ? (
               <TableRow>
-                <TableCell colSpan={9} className="h-28 text-center">
+                <TableCell colSpan={COLUMN_COUNT} className="h-28 text-center">
                   <GenericLoader
                     title="Loading expenses"
                     description="Fetching expense records for the selected filters."
@@ -373,7 +341,7 @@ export const ExpensesContainer = () => {
               </TableRow>
             ) : expensesQuery.isError ? (
               <TableRow>
-                <TableCell colSpan={9} className="p-0">
+                <TableCell colSpan={COLUMN_COUNT} className="p-0">
                   <Alert variant="destructive" className="rounded-none border-0">
                     <TriangleAlert className="size-4" />
                     <AlertTitle>Expense list unavailable</AlertTitle>
@@ -387,7 +355,7 @@ export const ExpensesContainer = () => {
               </TableRow>
             ) : expenses.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={9} className="h-28 p-0">
+                <TableCell colSpan={COLUMN_COUNT} className="h-28 p-0">
                   <GenericEmpty
                     icon={FinanceEmptyIllustration}
                     title="No Expenses Found"
@@ -398,10 +366,12 @@ export const ExpensesContainer = () => {
             ) : (
               expenses.map((expense) => {
                 const isExpanded = expandedExpenseId === expense.id;
+                const isVoided = expense.voidedAt !== null;
+                const lockReason = getExpenseLockReason(expense);
 
                 return (
                   <Fragment key={expense.id}>
-                    <TableRow>
+                    <TableRow className={cn(isVoided && "opacity-60")}>
                       <TableCell className="align-top">
                         <Button
                           type="button"
@@ -409,25 +379,23 @@ export const ExpensesContainer = () => {
                           size="icon-sm"
                           className="rounded-none"
                           onClick={() => toggleExpenseDetails(expense.id)}
-                          aria-label={
-                            isExpanded
-                              ? "Hide expense details"
-                              : "Show expense details"
-                          }
-                          data-tour="expense-expand"
+                          aria-label={isExpanded ? "Hide expense details" : "Show expense details"}
                         >
-                          {isExpanded ? (
-                            <ChevronUp className="size-4" />
-                          ) : (
-                            <ChevronDown className="size-4" />
-                          )}
+                          {isExpanded ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
                         </Button>
                       </TableCell>
                       <TableCell className="font-medium tabular-nums align-top">
                         {format(new Date(expense.expenseDate), "dd MMM yyyy")}
                       </TableCell>
                       <TableCell className="font-medium align-top">
-                        {expense.description}
+                        <div className="flex flex-col gap-1">
+                          <span className={cn(isVoided && "line-through")}>{getExpenseTitle(expense)}</span>
+                          {isVoided ? (
+                            <Badge variant="destructive" className="rounded-none w-fit">
+                              Voided
+                            </Badge>
+                          ) : null}
+                        </div>
                       </TableCell>
                       <TableCell className="align-top">
                         <div className="flex flex-col gap-2">
@@ -443,27 +411,52 @@ export const ExpensesContainer = () => {
                           ) : null}
                         </div>
                       </TableCell>
-                      <TableCell className="align-top">
-                        {expense.wallet?.name ?? "—"}
-                      </TableCell>
-                      <TableCell className="text-right font-semibold tabular-nums align-top">
+                      <TableCell className="align-top">{expense.payee ?? "—"}</TableCell>
+                      <TableCell className="align-top">{expense.wallet?.name ?? "—"}</TableCell>
+                      <TableCell className={cn("text-right font-semibold tabular-nums align-top", isVoided && "line-through")}>
                         ₨ {Number(expense.amount || 0).toLocaleString()}
                       </TableCell>
-                      <TableCell className="align-top">
-                        {expense.slipNumber || "—"}
-                      </TableCell>
-                      <TableCell className="align-top">
-                        {expense.remarks || "—"}
-                      </TableCell>
-                      <TableCell className="align-top">
-                        {expense.performer?.name ?? "—"}
+                      <TableCell className="align-top">{expense.performer?.name ?? "—"}</TableCell>
+                      <TableCell className="align-top text-right">
+                        {isVoided ? null : lockReason ? (
+                          <Badge
+                            variant="outline"
+                            className="rounded-none"
+                            title={lockReason}
+                          >
+                            Auto
+                          </Badge>
+                        ) : canManageFinance ? (
+                          <div className="flex justify-end gap-1">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon-sm"
+                              className="rounded-none"
+                              aria-label="Edit expense"
+                              onClick={() => openEdit(expense)}
+                            >
+                              <Pencil className="size-4" />
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon-sm"
+                              className="rounded-none text-rose-500 hover:text-rose-600"
+                              aria-label="Void expense"
+                              onClick={() => setVoidTarget(expense)}
+                            >
+                              <Ban className="size-4" />
+                            </Button>
+                          </div>
+                        ) : null}
                       </TableCell>
                     </TableRow>
 
                     {isExpanded ? (
                       <TableRow className="bg-muted/10">
-                        <TableCell colSpan={9}>
-                          <ExpenseDynamicFieldDetails expense={expense} />
+                        <TableCell colSpan={COLUMN_COUNT}>
+                          <ExpenseRowDetails expense={expense} />
                         </TableCell>
                       </TableRow>
                     ) : null}
@@ -507,6 +500,21 @@ export const ExpensesContainer = () => {
           </Button>
         </div>
       </div>
+
+      <ExpenseFormSheet
+        open={formOpen}
+        // The expense stays set while the sheet animates closed; opening "Record expense" clears it.
+        onOpenChange={setFormOpen}
+        wallets={wallets}
+        expense={editingExpense}
+      />
+      <VoidExpenseDialog
+        expense={voidTarget}
+        open={voidTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setVoidTarget(null);
+        }}
+      />
     </div>
   );
 };
@@ -591,6 +599,38 @@ const sharpThemeStyles = {
   },
 };
 
+function ExpenseRowDetails({ expense }: { expense: ExpenseListItem }) {
+  const facts = (
+    [
+      ["Note", expense.description],
+      ["Slip / ref", expense.slipNumber],
+      ["Remarks", expense.remarks],
+    ] satisfies Array<[string, string | null]>
+  ).filter((entry): entry is [string, string] => Boolean(entry[1]?.trim()));
+
+  return (
+    <div className="grid gap-6 py-2 lg:grid-cols-2">
+      <div className="space-y-4">
+        {facts.length > 0 ? (
+          <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
+            {facts.map(([label, value]) => (
+              <Fragment key={label}>
+                <dt className="text-muted-foreground">{label}</dt>
+                <dd>{value}</dd>
+              </Fragment>
+            ))}
+          </dl>
+        ) : null}
+        <ExpenseDynamicFieldDetails expense={expense} />
+      </div>
+      <div className="space-y-2">
+        <p className="text-sm font-semibold">History</p>
+        <ExpenseHistory expense={expense} />
+      </div>
+    </div>
+  );
+}
+
 function ExpenseDynamicFieldDetails({
   expense,
 }: {
@@ -599,7 +639,7 @@ function ExpenseDynamicFieldDetails({
   if (expense.dynamicFields.length === 0) {
     return (
       <div className="py-2">
-        <p className="text-sm font-medium">No custom field data saved for this expense.</p>
+        <p className="text-sm text-muted-foreground">No extra details saved for this expense.</p>
       </div>
     );
   }
@@ -608,9 +648,9 @@ function ExpenseDynamicFieldDetails({
     <div className="space-y-3 py-2">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <p className="text-sm font-semibold">Saved Custom Fields</p>
+          <p className="text-sm font-semibold">Extra details</p>
           <p className="text-xs text-muted-foreground">
-            Historical field values remain visible even if the schema changed later.
+            Saved values stay visible even if the category's fields change later.
           </p>
         </div>
         <Badge variant="outline" className="rounded-none">
@@ -618,7 +658,7 @@ function ExpenseDynamicFieldDetails({
         </Badge>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {expense.dynamicFields.map((field) => (
           <ExpenseDynamicFieldCard key={field.id} field={field} />
         ))}
@@ -635,9 +675,7 @@ function ExpenseDynamicFieldCard({
   return (
     <div className="border border-border rounded-none p-3 space-y-2 bg-background">
       <div className="flex flex-wrap items-center gap-2">
-        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          {field.fieldLabel}
-        </p>
+        <p className="text-sm font-medium text-muted-foreground">{field.fieldLabel}</p>
         {field.isFieldActive === false ? (
           <Badge variant="outline" className="rounded-none">
             Inactive Field
@@ -651,10 +689,6 @@ function ExpenseDynamicFieldCard({
       </div>
 
       <p className="text-sm font-semibold wrap-break-word">{field.displayValue}</p>
-
-      <p className="text-xs text-muted-foreground">
-        {[field.fieldKey, field.fieldType].filter(Boolean).join(" · ")}
-      </p>
     </div>
   );
 }

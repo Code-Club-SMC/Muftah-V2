@@ -24,12 +24,12 @@ function RouteComponent() {
               <div className="flex items-center gap-3">
                 <Settings2 className="size-6" />
                 <h1 className="font-bold text-3xl uppercase tracking-tighter">
-                  Expense Schema
+                  Expense Categories
                 </h1>
               </div>
               <p className="mt-2 text-muted-foreground">
-                Manage categories, fields, and select options used by expense
-                entry and reporting.
+                Add the categories people pick when recording an expense, and
+                any extra details each one asks for.
               </p>
             </div>
 
