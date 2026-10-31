@@ -867,6 +867,7 @@ export const getExpensesFn = createServerFn()
           valueNumber: fieldValue.valueNumber,
           valueDate: fieldValue.valueDate,
           valueBoolean: fieldValue.valueBoolean,
+          valueOptionId: fieldValue.valueOptionId,
         })),
     }));
 

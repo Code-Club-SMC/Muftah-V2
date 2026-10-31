@@ -72,6 +72,7 @@ export type ExpenseFieldValueDisplay = {
   valueNumber: string | null;
   valueDate: Date | string | null;
   valueBoolean: boolean | null;
+  valueOptionId: string | null;
 };
 
 export type FinanceWalletSummary = {

@@ -9,6 +9,7 @@ import type { DateRange } from "react-day-picker";
 import type {
   ExpenseCategoryDefinition,
   ExpenseCategoryFieldDefinition,
+  ExpenseFieldValueDisplay,
   FinanceDynamicFieldValueInput,
 } from "@/lib/types/finance-types";
 
@@ -160,4 +161,29 @@ export const buildExpenseFieldValueInputs = (
   }
 
   return { values };
+};
+
+/** Saved custom-field values -> the shapes the form inputs use (for the edit form). */
+export const toExpenseFieldDrafts = (
+  fields: ExpenseFieldValueDisplay[],
+): Record<string, ExpenseFieldDraftValue> => {
+  const drafts: Record<string, ExpenseFieldDraftValue> = {};
+
+  for (const field of fields) {
+    if (field.fieldType === "text" || field.fieldType === "textarea") {
+      drafts[field.fieldId] = { valueText: field.valueText ?? "" };
+    } else if (field.fieldType === "number") {
+      drafts[field.fieldId] = { valueNumber: field.valueNumber ?? "" };
+    } else if (field.fieldType === "date") {
+      drafts[field.fieldId] = { valueDate: field.valueDate ? new Date(field.valueDate) : undefined };
+    } else if (field.fieldType === "select") {
+      drafts[field.fieldId] = { valueOptionId: field.valueOptionId ?? "" };
+    } else if (field.fieldType === "boolean") {
+      drafts[field.fieldId] = {
+        valueBoolean: field.valueBoolean === null ? "" : field.valueBoolean ? "true" : "false",
+      };
+    }
+  }
+
+  return drafts;
 };

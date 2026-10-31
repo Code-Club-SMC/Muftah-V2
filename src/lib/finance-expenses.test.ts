@@ -7,8 +7,9 @@ import {
   getDefaultExpenseCategoryId,
   getExpenseDateRangeFilters,
   resolveExpenseCategoryFilter,
+  toExpenseFieldDrafts,
 } from "@/lib/finance-expenses";
-import type { ExpenseCategoryDefinition } from "@/lib/types/finance-types";
+import type { ExpenseCategoryDefinition, ExpenseFieldValueDisplay } from "@/lib/types/finance-types";
 
 describe("finance-expenses helpers", () => {
   it("uses the exact selected range boundaries", () => {
@@ -153,5 +154,32 @@ describe("finance-expenses helpers", () => {
         valueNumber: "4200",
       }),
     ).toBe("4,200");
+  });
+});
+
+describe("toExpenseFieldDrafts", () => {
+  const base: ExpenseFieldValueDisplay = {
+    id: "v", fieldId: "f", fieldKey: null, fieldLabel: "Label", fieldType: "text", displayValue: "",
+    isFieldActive: true, isOptionActive: null, optionLabel: null,
+    valueText: null, valueNumber: null, valueDate: null, valueBoolean: null, valueOptionId: null,
+  };
+
+  it("turns saved values back into form values", () => {
+    const drafts = toExpenseFieldDrafts([
+      { ...base, fieldId: "meter", fieldType: "text", valueText: "M-12" },
+      { ...base, fieldId: "units", fieldType: "number", valueNumber: "340.00" },
+      { ...base, fieldId: "due", fieldType: "date", valueDate: "2026-10-20T00:00:00.000Z" },
+      { ...base, fieldId: "area", fieldType: "select", valueOptionId: "opt-1" },
+      { ...base, fieldId: "late", fieldType: "boolean", valueBoolean: false },
+      { ...base, fieldId: "unknown", fieldType: null },
+    ]);
+
+    expect(drafts).toEqual({
+      meter: { valueText: "M-12" },
+      units: { valueNumber: "340.00" },
+      due: { valueDate: new Date("2026-10-20T00:00:00.000Z") },
+      area: { valueOptionId: "opt-1" },
+      late: { valueBoolean: "false" },
+    });
   });
 });
