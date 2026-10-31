@@ -1,9 +1,9 @@
-// src/lib/production/loss-display.ts
 import Big from "big.js";
 import { formatIndianStyle, formatNumber } from "@/lib/currency-format";
 import { formatReportDate } from "@/lib/report-dates";
+import { ADJUSTMENT_REASONS, reasonLabel } from "./material-use";
 import {
-  LOSS_PAGE_SIZE, LOSS_TABS, lossPercent, sumMoney, weightedShopperPercent,
+  LOSS_PAGE_SIZE, LOSS_TABS, STORE_LOSS_REASONS, lossPercent, sumMoney, weightedShopperPercent,
   type LossRow, type LossRowOf, type LossTab,
 } from "./loss-report";
 
@@ -12,7 +12,12 @@ const rupees = (value: Big.BigSource) => `Rs ${formatLossMoney(value)}`;
 const UNIT_LABELS: Record<string, string> = { kg: "KG", liters: "L", l: "L", pcs: "pcs" };
 export const unitLabel = (unit: string) => UNIT_LABELS[unit.toLowerCase()] ?? unit;
 export const formatLossQuantity = (value: Big.BigSource, unit: string) => `${formatNumber(new Big(value).toNumber())} ${unitLabel(unit)}`.trim();
-export const formatLossRange = (dateFrom: string, dateTo: string) => `${formatReportDate(dateFrom)} – ${formatReportDate(dateTo)}`;
+const rangeDay = (key: string, withYear: boolean) => new Intl.DateTimeFormat("en-GB", {
+  timeZone: "UTC", day: "numeric", month: "short", year: withYear ? "numeric" : undefined,
+}).format(new Date(`${key}T00:00:00Z`));
+// "1 Oct – 29 Oct 2026"; the year shows twice only when the range crosses one.
+export const formatLossRange = (dateFrom: string, dateTo: string) =>
+  `${rangeDay(dateFrom, dateFrom.slice(0, 4) !== dateTo.slice(0, 4))} – ${rangeDay(dateTo, true)}`;
 const percentText = (percent: string | null) => (percent === null ? "—" : `${percent}%`);
 
 // Sums a quantity per unit: "4,500 KG · 200 L".
@@ -125,9 +130,9 @@ export function lossSummary(tab: LossTab, rows: LossRow[]): LossSummaryItem[] {
     return [cost, { label: "Shopper loss %", value: percentText(weightedShopperPercent(shoppers)) }, { label: "Most-lost material", value: mostLost(r, name) }];
   }
   const r = rows as LossRowOf<"store">[];
-  const byReason = new Map<string, Big>();
-  for (const x of r) byReason.set(x.reasonName, (byReason.get(x.reasonName) ?? new Big(0)).plus(x.cost));
-  return [cost, { label: "By reason", value: [...byReason].map(([reason, sum]) => `${reason} ${rupees(sum)}`).join(" · ") || "—" }];
+  // Every loss reason shows, even at Rs 0.
+  const byReason = STORE_LOSS_REASONS.map((code) => `${reasonLabel(ADJUSTMENT_REASONS, code)} ${rupees(sumCost(r.filter((x) => x.reasonCode === code)))}`);
+  return [cost, { label: "By reason", value: byReason.join(" · ") }];
 }
 
 export type LossFilterKey = "productId" | "formulaId" | "chemicalId" | "materialId" | "storeId" | "reason";

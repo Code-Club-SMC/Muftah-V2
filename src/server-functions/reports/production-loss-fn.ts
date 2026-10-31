@@ -1,11 +1,10 @@
-import Big from "big.js";
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { db } from "@/db";
 import { PRODUCTION_LOSS_LIMITS_ID, productionLossLimits } from "@/db/schemas/production-schema";
 import { requireLossLimitsManageMiddleware, requireLossReportViewMiddleware } from "@/lib/middlewares";
 import { reportDateBounds } from "@/lib/report-dates";
-import { LOSS_PRINT_MAX_ROWS, LOSS_TABS, TOO_MANY_TO_PRINT, type LossTab } from "@/lib/production/loss-report";
+import { isValidLossLimit, LOSS_LIMIT_ERROR, LOSS_PRINT_MAX_ROWS, LOSS_TABS, TOO_MANY_TO_PRINT, type LossTab } from "@/lib/production/loss-report";
 import {
   filterLossRows, lossColumns, lossFilterOptions, lossFiltersText, lossStripTotals, lossSummary, pageLossRows, type LossSummaryItem,
 } from "@/lib/production/loss-display";
@@ -69,9 +68,7 @@ export const getProductionLossPrintFn = createServerFn()
     };
   });
 
-const limitValue = z.string().trim()
-  .regex(/^\d{1,3}(?:\.\d)?$/, "Use a number with up to one decimal place")
-  .refine((value) => new Big(value).lte(100), "Use a limit from 0 to 100");
+const limitValue = z.string().trim().refine(isValidLossLimit, LOSS_LIMIT_ERROR);
 
 export const updateLossLimitsFn = createServerFn()
   .middleware([requireLossLimitsManageMiddleware])

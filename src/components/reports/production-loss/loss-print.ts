@@ -16,7 +16,6 @@ function escapeHtml(value: string | null | undefined) {
 // Same look as the Production QC print, but landscape for the wide tables.
 const PRINT_STYLES = `
 * { margin: 0; padding: 0; box-sizing: border-box; }
-@page { size: A4 landscape; margin: 12mm 12mm 16mm; @bottom-right { content: "Page " counter(page) " / " counter(pages); font: 10px Arial, Helvetica, sans-serif; color: #6b7280; } }
 body { font-family: Arial, Helvetica, sans-serif; font-size: 11px; color: #111827; background: #fff; }
 .sheet { display: flex; flex-direction: column; gap: 14px; }
 .head { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #111827; padding-bottom: 10px; }
@@ -41,7 +40,6 @@ tr.over td { color: #b91c1c; font-weight: 700; }
 tr.total td { font-weight: 700; background: #f3f4f6; }
 .signs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; margin-top: 30px; break-inside: avoid; }
 .sign { border-top: 1.5px solid #111827; padding-top: 6px; color: #4b5563; }
-.foot { color: #6b7280; font-size: 10px; border-top: 1px solid #d1d5db; padding-top: 6px; }
 `;
 
 export function productionLossPrintHtml(data: LossPrintData, printedAt = new Date(), origin = window.location.origin) {
@@ -54,12 +52,17 @@ export function productionLossPrintHtml(data: LossPrintData, printedAt = new Dat
   const summary = data.summary.map((item) => `<div><span>${escapeHtml(item.label)}</span><b>${escapeHtml(item.value)}</b></div>`).join("");
   const printed = printedAt.toLocaleString("en-PK", { timeZone: "Asia/Karachi", day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit" });
 
+  // The page footer repeats the print time and page number on every page.
+  const pageRule = `@page { size: A4 landscape; margin: 12mm 12mm 16mm;
+  @bottom-left { content: ${JSON.stringify(`Printed ${printed}`)}; font: 10px Arial, Helvetica, sans-serif; color: #6b7280; }
+  @bottom-right { content: "Page " counter(page) " / " counter(pages); font: 10px Arial, Helvetica, sans-serif; color: #6b7280; } }`;
+
   return `<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8" />
 <title>${escapeHtml(title)}</title>
-<style>${PRINT_STYLES}</style>
+<style>${pageRule}${PRINT_STYLES}</style>
 </head>
 <body>
 <main class="sheet">
@@ -82,7 +85,6 @@ export function productionLossPrintHtml(data: LossPrintData, printedAt = new Dat
     <div class="sign">Approved by (name and signature)</div>
     <div class="sign">Date</div>
   </section>
-  <footer class="foot">Printed ${escapeHtml(printed)}</footer>
 </main>
 <script>window.onload = function () { window.focus(); window.print(); };</script>
 </body>

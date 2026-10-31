@@ -25,9 +25,12 @@ describe("production loss print", () => {
     expect(html).toContain("tr { break-inside: avoid; }");
     expect(html).toContain("counter(page)");
   });
+  it("repeats the print time in every page footer", () => {
+    expect(html).toMatch(/@bottom-left \{ content: "Printed [^"]+"/);
+  });
   it("has the title, range, filters, summary and logo", () => {
     expect(html).toContain("Production Loss Report · Batch loss");
-    expect(html).toContain("01 Oct 2026 – 29 Oct 2026");
+    expect(html).toContain("1 Oct – 29 Oct 2026");
     expect(html).toContain("Filters: Product All · Formula All · Reason All");
     expect(html).toContain("Rs 33,115");
     expect(html).toContain('src="https://erp.test/company-logo.svg"');

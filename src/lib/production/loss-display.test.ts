@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_LOSS_LIMITS, toBatchRow, toChemicalRow, toPackingRow, toStoreRow, type LossRow } from "./loss-report";
 import {
-  filterLossRows, formatLossMoney, formatLossQuantity, lossColumns, lossFilterOptions, lossFiltersText, lossStripTotals, lossSummary, pageLossRows,
+  filterLossRows, formatLossMoney, formatLossQuantity, formatLossRange, lossColumns, lossFilterOptions, lossFiltersText, lossStripTotals, lossSummary, pageLossRows,
 } from "./loss-display";
 
 const limits = DEFAULT_LOSS_LIMITS;
@@ -38,6 +38,8 @@ describe("columns and totals", () => {
     const columns = lossColumns("packing");
     expect(columns.find((c) => c.key === "loss")!.cell(rows[1])).toBe("-10 · check weight");
     expect(columns.find((c) => c.key === "cost")!.total!(rows)).toBe("62");
+    expect(lossFilterOptions("packing", rows).find((o) => o.key === "reason")!.options).toEqual([{ value: "measured", label: "Measured" }]);
+    expect(filterLossRows("packing", rows, { reason: "measured" }, false)).toHaveLength(2);
     expect(lossSummary("packing", rows)).toEqual([
       { label: "Loss cost", value: "Rs 62" }, { label: "Shopper loss %", value: "10.0%" }, { label: "Most-lost material", value: "Shopper" },
     ]);
@@ -57,7 +59,7 @@ describe("summaries", () => {
   it("splits store loss by reason", () => {
     const store = (id: string, reasonCode: string, value: string) => toStoreRow({ id, date: new Date("2026-10-18T05:00:00Z"), storeId: "w", store: "Floor", materialType: "chemical", chemicalId: "c", chemicalName: "Soda Ash", chemicalUnit: "kg", packagingId: null, packagingName: null, measuredInKg: null, lotPrice: "115", delta: "-2", value, reasonCode, note: null, by: "Ali" }, limits);
     expect(lossSummary("store", [store("1", "damaged", "-260"), store("2", "count_short", "-230")])).toEqual([
-      { label: "Loss cost", value: "Rs 490" }, { label: "By reason", value: "Damaged Rs 260 · Count short Rs 230" },
+      { label: "Loss cost", value: "Rs 490" }, { label: "By reason", value: "Damaged Rs 260 · Spilled Rs 0 · Expired Rs 0 · Count short Rs 230 · Other Rs 0" },
     ]);
   });
 });
@@ -82,5 +84,12 @@ describe("filters, strip and paging", () => {
     expect(pageLossRows(many, 2).rows).toHaveLength(5);
     expect(pageLossRows(many, 9).page).toBe(2);
     expect(pageLossRows([], 1)).toEqual({ rows: [], page: 1, pageCount: 1 });
+  });
+});
+
+describe("date range text", () => {
+  it("shows the year once unless the range crosses a year", () => {
+    expect(formatLossRange("2026-10-01", "2026-10-29")).toBe("1 Oct – 29 Oct 2026");
+    expect(formatLossRange("2025-12-28", "2026-01-03")).toBe("28 Dec 2025 – 3 Jan 2026");
   });
 });

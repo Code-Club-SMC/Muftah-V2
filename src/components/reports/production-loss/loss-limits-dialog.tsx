@@ -6,10 +6,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { formatReportTimestamp } from "@/lib/report-dates";
-import { LOSS_LIMIT_KEYS, LOSS_LIMIT_LABELS, type LossLimits } from "@/lib/production/loss-report";
+import { isValidLossLimit, LOSS_LIMIT_ERROR, LOSS_LIMIT_KEYS, LOSS_LIMIT_LABELS, type LossLimits } from "@/lib/production/loss-report";
 import { updateLossLimitsFn } from "@/server-functions/reports/production-loss-fn";
-
-const VALID = /^\d{1,3}(?:\.\d)?$/;
 
 export function LossLimitsDialog({ open, onOpenChange, limits, updatedAt, updatedBy }: {
   open: boolean; onOpenChange: (open: boolean) => void; limits: LossLimits; updatedAt: string | null; updatedBy: string | null;
@@ -26,7 +24,7 @@ export function LossLimitsDialog({ open, onOpenChange, limits, updatedAt, update
     },
     onError: (error) => toast.error(error instanceof Error ? error.message : "Could not save loss limits"),
   });
-  const invalid = LOSS_LIMIT_KEYS.some((key) => !VALID.test(draft[key].trim()) || Number(draft[key]) > 100);
+  const invalid = LOSS_LIMIT_KEYS.some((key) => !isValidLossLimit(draft[key]));
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -46,7 +44,7 @@ export function LossLimitsDialog({ open, onOpenChange, limits, updatedAt, update
               </div>
             </div>
           ))}
-          {invalid && <p className="text-sm text-destructive">Use 0 to 100, with up to one decimal place.</p>}
+          {invalid && <p className="text-sm text-destructive">{LOSS_LIMIT_ERROR}</p>}
           <p className="text-xs text-muted-foreground">
             {updatedAt ? `Last changed by ${updatedBy ?? "someone"} on ${formatReportTimestamp(updatedAt)}` : "Not changed yet. Every limit starts at 10%."}
           </p>

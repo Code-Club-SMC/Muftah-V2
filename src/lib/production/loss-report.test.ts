@@ -1,7 +1,7 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import {
-  DEFAULT_LOSS_LIMITS, batchLoss, chemicalLoss, isOverLimit, lossPercent, piecesLoss, powderLoss, shopperLoss,
+  DEFAULT_LOSS_LIMITS, batchLoss, chemicalLoss, isOverLimit, isValidLossLimit, lossPercent, piecesLoss, powderLoss, shopperLoss,
   sumMoney, toBatchRow, toPackingRow, toStoreRow, weightedShopperPercent,
 } from "./loss-report";
 
@@ -13,6 +13,10 @@ describe("loss percent and limits", () => {
     expect(lossPercent(5, 400)).toBe("1.3");
     expect(lossPercent(30, 1080)).toBe("2.8");
     expect(lossPercent(1, 0)).toBeNull();
+  });
+  it("accepts limits from 0 to 100 with one decimal place", () => {
+    for (const ok of ["0", "10", "10.5", "100", "100.0", " 25 "]) expect(isValidLossLimit(ok)).toBe(true);
+    for (const bad of ["", "-1", "100.1", "101", "10.55", "abc", "1e2"]) expect(isValidLossLimit(bad)).toBe(false);
   });
   it("is red only strictly above the limit", () => {
     expect(isOverLimit("10.0", "10.0")).toBe(false);

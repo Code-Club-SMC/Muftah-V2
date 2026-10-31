@@ -18,6 +18,14 @@ export const LOSS_LIMIT_LABELS: Record<LossLimitKey, string> = {
   batch: "Batch loss", chemical: "Chemical loss", powder: "Powder loss", shopper: "Shopper loss", otherPacking: "Other packing material",
 };
 export const DEFAULT_LOSS_LIMITS: LossLimits = { batch: "10.0", chemical: "10.0", powder: "10.0", shopper: "10.0", otherPacking: "10.0" };
+// A limit is 0 to 100 with at most one decimal place.
+export function isValidLossLimit(value: string) {
+  const limit = value.trim();
+  return /^\d{1,3}(?:\.\d)?$/.test(limit) && new Big(limit).lte(100);
+}
+export const LOSS_LIMIT_ERROR = "Use 0 to 100, with up to one decimal place.";
+// Shopper rows have no typed reason; they filter as "Measured".
+export const MEASURED_REASON = "measured";
 
 // Stock removals that count as loss. "count_over" only ever adds stock.
 export const STORE_LOSS_REASONS = ["damaged", "spilled", "expired", "count_short", "other"] as const;
@@ -140,7 +148,7 @@ export function toPackingRow(row: PackingQueryRow, limits: LossLimits): PackingL
     return {
       ...common, material: `${row.material} (${new Big(row.used).toFixed(2)} KG)`, shopper: true,
       needed: String(row.expectedShoppers ?? 0), used: String(row.actualShoppers ?? 0), loss: String(loss.loss), percent: loss.percent, cost: loss.cost,
-      checkWeight: loss.checkWeight, reasonCode: null, reasonName: "Measured", reason: "Measured",
+      checkWeight: loss.checkWeight, reasonCode: MEASURED_REASON, reasonName: "Measured", reason: "Measured",
       over: !loss.checkWeight && isOverLimit(loss.percent, limits.shopper),
     };
   }
