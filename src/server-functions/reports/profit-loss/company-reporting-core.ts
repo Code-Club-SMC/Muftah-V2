@@ -567,6 +567,7 @@ export async function loadContext(
         where: and(
           gte(expenses.expenseDate, fromDate),
           lte(expenses.expenseDate, toDate),
+          isNull(expenses.voidedAt),
         ),
       })
       .then((rows) =>
@@ -1364,6 +1365,7 @@ async function buildFinanceReconciliation(
         where: and(
           gte(expenses.expenseDate, range.fromDate),
           lte(expenses.expenseDate, range.toDate),
+          isNull(expenses.voidedAt),
         ),
       })
       .then((rows) =>

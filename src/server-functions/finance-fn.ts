@@ -18,7 +18,7 @@ import type {
   ExpenseListResponse,
   FinanceDynamicFieldType,
 } from "@/lib/types/finance-types";
-import { and, count, eq, SQL, sql, gte, lte } from "drizzle-orm";
+import { and, count, eq, isNull, SQL, sql, gte, lte } from "drizzle-orm";
 import { parseISO, isValid } from "date-fns";
 import { z } from "zod";
 import { createId } from "@paralleldrive/cuid2";
@@ -641,8 +641,8 @@ export const getExpensesKpisFn = createServerFn()
     }),
   )
   .handler(async ({ data }) => {
-    const conditions = buildExpenseFilterConditions(data);
-    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+    // The list still shows voided expenses (struck through); totals leave them out.
+    const whereClause = and(...buildExpenseFilterConditions(data), isNull(expenses.voidedAt));
 
     const [agg] = await db
       .select({

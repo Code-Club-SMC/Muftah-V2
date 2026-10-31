@@ -12,7 +12,7 @@ import {
 } from "@/db/schemas/inventory-schema";
 import { packagingAllocations, mixingRuns, formulas } from "@/db/schemas/production-schema";
 import { z } from "zod";
-import { and, eq, gte, lte, sql, desc } from "drizzle-orm";
+import { and, eq, gte, isNull, lte, sql, desc } from "drizzle-orm";
 import { reportDateBounds } from "@/lib/report-dates";
 
 export const getExpensesReportFn = createServerFn()
@@ -25,7 +25,8 @@ export const getExpensesReportFn = createServerFn()
   )
   .handler(async ({ data }) => {
     const { fromDate, toDate } = reportDateBounds(data);
-    const conditions = [];
+    // Voided expenses gave their money back; they are not spending.
+    const conditions = [isNull(expenses.voidedAt)];
 
     if (fromDate) {
       conditions.push(gte(expenses.expenseDate, fromDate));

@@ -62,6 +62,8 @@ export const deletePurchaseRecordFn = createServerFn()
               eq(expenses.walletId, payment.walletId),
               eq(expenses.amount, payment.amount),
               eq(expenses.category, "Supplier Purchase"),
+              // Never a hand-recorded expense that happens to match; those are edited or voided instead.
+              eq(expenses.origin, "system"),
             ),
           )
           .returning();

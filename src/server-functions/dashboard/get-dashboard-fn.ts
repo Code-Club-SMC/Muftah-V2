@@ -15,7 +15,7 @@ import {
 } from "@/db/schemas/inventory-schema";
 import { payslips, payrolls, employees } from "@/db/schemas/hr-schema";
 import { expenses } from "@/db/schemas/finance-schema";
-import { sql, and, or, gte, lte, eq, desc, inArray } from "drizzle-orm";
+import { sql, and, or, gte, lte, eq, desc, inArray, isNull } from "drizzle-orm";
 import {
   format,
   startOfMonth,
@@ -90,7 +90,7 @@ async function computePeriodMetrics(
     db
       .select({ total: sql<string>`coalesce(sum(${expenses.amount}), 0)` })
       .from(expenses)
-      .where(and(gte(expenses.createdAt, rangeStart), lte(expenses.createdAt, rangeEnd)))
+      .where(and(gte(expenses.createdAt, rangeStart), lte(expenses.createdAt, rangeEnd), isNull(expenses.voidedAt)))
       .then((r) => r[0]),
 
     db.query.payrolls.findMany({
@@ -274,7 +274,7 @@ export const getDashboardStatsFn = createServerFn()
           total: sql<string>`coalesce(sum(${expenses.amount}), 0)`,
         })
         .from(expenses)
-        .where(and(gte(expenses.createdAt, chartWindowStart), lte(expenses.createdAt, rangeEnd)))
+        .where(and(gte(expenses.createdAt, chartWindowStart), lte(expenses.createdAt, rangeEnd), isNull(expenses.voidedAt)))
         .groupBy(sql`date_trunc('month', ${expenses.createdAt})`)
         .orderBy(sql`date_trunc('month', ${expenses.createdAt})`),
 
