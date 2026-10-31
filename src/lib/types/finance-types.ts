@@ -122,15 +122,41 @@ export type ExpenseKpis = {
 };
 
 export type CreateExpenseInput = {
-  description: string;
+  description?: string;
   category?: string;
   categoryId?: string;
   amount: number;
   walletId: string;
+  payee?: string;
   expenseDate?: string;
   slipNumber?: string;
   remarks?: string;
+  allowOverdraw?: boolean;
   fieldValues?: FinanceDynamicFieldValueInput[];
+};
+
+export type ExpenseEntryDefaults = {
+  lastWalletId: string | null;
+  categoryUsageRank: string[];
+  payees: string[];
+};
+
+export type UpdateExpenseInput = {
+  expenseId: string;
+  categoryId: string;
+  amount: number;
+  walletId: string;
+  payee?: string;
+  description?: string;
+  expenseDate: string;
+  slipNumber?: string;
+  allowOverdraw?: boolean;
+  fieldValues?: FinanceDynamicFieldValueInput[];
+};
+
+export type VoidExpenseInput = {
+  expenseId: string;
+  reason: string;
 };
 
 export type ExpenseEditChange = {

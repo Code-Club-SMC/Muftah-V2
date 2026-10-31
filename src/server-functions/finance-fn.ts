@@ -2,10 +2,6 @@ import { createServerFn } from "@tanstack/react-start";
 import { db } from "@/db";
 import { logActivityQuiet } from "@/lib/activity-logger.server";
 import {
-  categoryFieldOptions,
-  categoryFields,
-  expenseCategories,
-  expenseFieldValues,
   expenses,
   transactions,
   wallets,
@@ -26,67 +22,17 @@ import { and, count, eq, SQL, sql, gte, lte } from "drizzle-orm";
 import { parseISO, isValid } from "date-fns";
 import { z } from "zod";
 import { createId } from "@paralleldrive/cuid2";
-
-const dynamicFieldTypeSchema = z.enum([
-  "text",
-  "textarea",
-  "number",
-  "date",
-  "select",
-  "boolean",
-]);
-
-const dynamicFieldValueSchema = z
-  .object({
-    fieldId: z.string().min(1),
-    fieldType: dynamicFieldTypeSchema,
-    valueText: z.string().optional(),
-    valueNumber: z.number().optional(),
-    valueDate: z.string().optional(),
-    valueBoolean: z.boolean().optional(),
-    valueOptionId: z.string().optional(),
-  })
-  .superRefine((data, ctx) => {
-    if ((data.fieldType === "text" || data.fieldType === "textarea") && !data.valueText) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "Text value is required",
-        path: ["valueText"],
-      });
-    }
-
-    if (data.fieldType === "number" && data.valueNumber === undefined) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "Number value is required",
-        path: ["valueNumber"],
-      });
-    }
-
-    if (data.fieldType === "date" && !data.valueDate) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "Date value is required",
-        path: ["valueDate"],
-      });
-    }
-
-    if (data.fieldType === "select" && !data.valueOptionId) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "Select option is required",
-        path: ["valueOptionId"],
-      });
-    }
-
-    if (data.fieldType === "boolean" && data.valueBoolean === undefined) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "Boolean value is required",
-        path: ["valueBoolean"],
-      });
-    }
-  });
+import Big from "big.js";
+import {
+  applyWalletChange,
+  dynamicFieldTypeSchema,
+  dynamicFieldValueSchema,
+  expenseAmountSchema,
+  insertExpenseFieldValues,
+  parseExpenseDate,
+  resolveExpenseCategory,
+  validateExpenseFieldValues,
+} from "@/server-functions/finance/expense-writes.server";
 
 const dynamicFieldFilterSchema = z
   .object({
@@ -456,266 +402,62 @@ export const depositToWalletFn = createServerFn()
 // ─────────────────────────────────────────────────────────
 
 /**
- * Record an expense — validates wallet has enough balance
+ * Record an expense from the Record expense form. Taking an account below zero needs
+ * `allowOverdraw: true`, which the form sends after the user confirms.
  */
 export const createExpenseFn = createServerFn()
   .middleware([requireFinanceManageMiddleware])
   .inputValidator(
     z.object({
-      description: z.string().min(1, "Description is required"),
+      description: z.string().trim().max(1000).optional().default(""),
       category: z.string().optional(),
       categoryId: z.string().optional(),
-      amount: z.number().positive("Amount must be greater than 0"),
+      amount: expenseAmountSchema,
       walletId: z.string().min(1, "Please select a payment source"),
+      payee: z.string().trim().max(200).optional(),
       expenseDate: z.string().optional(),
-      slipNumber: z.string().max(100).optional(),
-      remarks: z.string().max(1000).optional(),
+      slipNumber: z.string().trim().max(100).optional(),
+      remarks: z.string().trim().max(1000).optional(),
+      allowOverdraw: z.boolean().optional().default(false),
       fieldValues: z.array(dynamicFieldValueSchema).optional().default([]),
     }),
   )
   .handler(async ({ data, context }) => {
     return await db.transaction(async (tx) => {
-      // 0. Resolve category from id (preferred) or name (compatibility path)
-      const categoryRecord = data.categoryId
-        ? await tx.query.expenseCategories.findFirst({
-            where: and(
-              eq(expenseCategories.id, data.categoryId),
-              eq(expenseCategories.isArchived, false),
-            ),
-            columns: { id: true, name: true, isActive: true },
-          })
-        : data.category
-          ? await tx.query.expenseCategories.findFirst({
-              where: and(
-                eq(expenseCategories.name, data.category),
-                eq(expenseCategories.isArchived, false),
-              ),
-              columns: { id: true, name: true, isActive: true },
-            })
-          : null;
+      const categoryRecord = await resolveExpenseCategory(tx, data);
+      await validateExpenseFieldValues(tx, categoryRecord.id, data.fieldValues);
 
-      if (!categoryRecord || !categoryRecord.isActive) {
-        throw new Error("Please select an active category");
-      }
-
-      // 1. Validate custom fields against active category definitions
-      const activeFields = await tx.query.categoryFields.findMany({
-        where: and(
-          eq(categoryFields.categoryId, categoryRecord.id),
-          eq(categoryFields.isActive, true),
-        ),
-        columns: {
-          id: true,
-          key: true,
-          label: true,
-          fieldType: true,
-          isRequired: true,
-          minLength: true,
-          maxLength: true,
-          minNumber: true,
-          maxNumber: true,
-          minDate: true,
-          maxDate: true,
-          regexPattern: true,
-        },
-      });
-
-      const defsById = new Map(activeFields.map((f) => [f.id, f]));
-
-      for (const value of data.fieldValues) {
-        const def = defsById.get(value.fieldId);
-        if (!def) {
-          throw new Error("Submitted field is not active for this category");
-        }
-
-        if (def.fieldType !== value.fieldType) {
-          throw new Error(`Field \"${def.label}\" type mismatch`);
-        }
-
-        if (value.fieldType === "text" || value.fieldType === "textarea") {
-          const textValue = value.valueText ?? "";
-
-          if (def.minLength !== null && textValue.length < def.minLength) {
-            throw new Error(`Field \"${def.label}\" is shorter than allowed`);
-          }
-
-          if (def.maxLength !== null && textValue.length > def.maxLength) {
-            throw new Error(`Field \"${def.label}\" is longer than allowed`);
-          }
-
-          if (def.regexPattern) {
-            const regex = new RegExp(def.regexPattern);
-            if (!regex.test(textValue)) {
-              throw new Error(`Field \"${def.label}\" format is invalid`);
-            }
-          }
-        }
-
-        if (value.fieldType === "number") {
-          const numberValue = value.valueNumber ?? 0;
-          const minNumber =
-            def.minNumber !== null ? parseFloat(def.minNumber) : undefined;
-          const maxNumber =
-            def.maxNumber !== null ? parseFloat(def.maxNumber) : undefined;
-
-          if (minNumber !== undefined && numberValue < minNumber) {
-            throw new Error(`Field \"${def.label}\" is below minimum value`);
-          }
-
-          if (maxNumber !== undefined && numberValue > maxNumber) {
-            throw new Error(`Field \"${def.label}\" exceeds maximum value`);
-          }
-        }
-
-        if (value.fieldType === "date") {
-          const dateValue = value.valueDate ? parseISO(value.valueDate) : null;
-          if (!dateValue || !isValid(dateValue)) {
-            throw new Error(`Field \"${def.label}\" has an invalid date`);
-          }
-
-          if (def.minDate && dateValue < def.minDate) {
-            throw new Error(`Field \"${def.label}\" is before minimum date`);
-          }
-
-          if (def.maxDate && dateValue > def.maxDate) {
-            throw new Error(`Field \"${def.label}\" is after maximum date`);
-          }
-        }
-
-        if (value.fieldType === "select") {
-          const optionId = value.valueOptionId;
-          if (!optionId) {
-            throw new Error(`Field \"${def.label}\" requires an option`);
-          }
-
-          const option = await tx.query.categoryFieldOptions.findFirst({
-            where: and(
-              eq(categoryFieldOptions.id, optionId),
-              eq(categoryFieldOptions.fieldId, def.id),
-              eq(categoryFieldOptions.isActive, true),
-            ),
-            columns: { id: true },
-          });
-
-          if (!option) {
-            throw new Error(`Field \"${def.label}\" has an invalid option`);
-          }
-        }
-      }
-
-      const providedFieldIds = new Set(data.fieldValues.map((f) => f.fieldId));
-      const missingRequired = activeFields.filter(
-        (f) => f.isRequired && !providedFieldIds.has(f.id),
-      );
-
-      if (missingRequired.length > 0) {
-        throw new Error(
-          `Missing required fields: ${missingRequired.map((f) => f.label).join(", ")}`,
-        );
-      }
-
-      // 2. Debit the wallet atomically so concurrent expense writes cannot overspend.
-      const [debitedWallet] = await tx
-        .update(wallets)
-        .set({
-          balance: sql`${wallets.balance} - ${data.amount}`,
-        })
-        .where(
-          and(
-            eq(wallets.id, data.walletId),
-            gte(wallets.balance, data.amount.toString()),
-          ),
-        )
-        .returning({
-          id: wallets.id,
-          name: wallets.name,
-          balance: wallets.balance,
-        });
-
-      if (!debitedWallet) {
-        const wallet = await tx.query.wallets.findFirst({
-          where: eq(wallets.id, data.walletId),
-          columns: {
-            id: true,
-            name: true,
-            balance: true,
-          },
-        });
-
-        if (!wallet) {
-          throw new Error("Wallet not found");
-        }
-
-        const currentBalance = parseFloat(wallet.balance || "0");
-
-        throw new Error(
-          `Insufficient balance in "${wallet.name}". Available: PKR ${currentBalance.toLocaleString()}, Required: PKR ${data.amount.toLocaleString()}`,
-        );
-      }
-
-      // 3. Create the expense record
+      const expenseDate = data.expenseDate ? parseExpenseDate(data.expenseDate) : new Date();
       const expenseId = createId();
-      const expenseDate = data.expenseDate ? parseISO(data.expenseDate) : new Date();
+      const amount = new Big(data.amount).toFixed(2);
+      const userId = context.session.user.id;
 
-      if (!isValid(expenseDate)) {
-        throw new Error("Invalid expense date");
-      }
+      // Wallet first: a missing account or a refused overdraft fails before anything else is written.
+      await applyWalletChange(
+        tx,
+        { walletId: data.walletId, type: "debit", amount },
+        { allowOverdraw: data.allowOverdraw, performedById: userId, referenceId: expenseId },
+      );
 
       const [expense] = await tx
         .insert(expenses)
         .values({
           id: expenseId,
           description: data.description,
+          payee: data.payee || null,
+          origin: "manual",
           category: categoryRecord.name,
           categoryId: categoryRecord.id,
           expenseDate,
-          amount: data.amount.toString(),
-          slipNumber: data.slipNumber ?? null,
-          remarks: data.remarks ?? null,
+          amount,
+          slipNumber: data.slipNumber || null,
+          remarks: data.remarks || null,
           walletId: data.walletId,
-          performedById: context.session.user.id,
+          performedById: userId,
         })
         .returning();
 
-      if (data.fieldValues.length > 0) {
-        await tx.insert(expenseFieldValues).values(
-          data.fieldValues.map((value) => {
-            const parsedDate = value.valueDate ? parseISO(value.valueDate) : null;
-            return {
-              id: createId(),
-              expenseId,
-              fieldId: value.fieldId,
-              valueText:
-                value.fieldType === "text" || value.fieldType === "textarea"
-                  ? (value.valueText ?? null)
-                  : null,
-              valueNumber:
-                value.fieldType === "number" && value.valueNumber !== undefined
-                  ? value.valueNumber.toString()
-                  : null,
-              valueDate:
-                value.fieldType === "date" && parsedDate && isValid(parsedDate)
-                  ? parsedDate
-                  : null,
-              valueBoolean:
-                value.fieldType === "boolean" ? (value.valueBoolean ?? null) : null,
-              valueOptionId:
-                value.fieldType === "select" ? (value.valueOptionId ?? null) : null,
-            };
-          }),
-        );
-      }
-
-      // 4. Create transaction journal entry
-      await tx.insert(transactions).values({
-        id: createId(),
-        walletId: data.walletId,
-        type: "debit",
-        amount: data.amount.toString(),
-        source: "Expense",
-        referenceId: expenseId,
-        performedById: context.session.user.id,
-      });
+      await insertExpenseFieldValues(tx, expenseId, data.fieldValues);
 
       logActivityQuiet({
         module: "finance",
@@ -723,7 +465,7 @@ export const createExpenseFn = createServerFn()
         entityType: "expense",
         actorId: context.authContext.session.user.id,
         actorName: context.authContext.session.user.name,
-        description: `Recorded expense of ${data.amount} for ${data.description}`,
+        description: `Recorded expense of ${amount} for ${data.description || data.payee || categoryRecord.name}`,
       });
 
       return expense;
