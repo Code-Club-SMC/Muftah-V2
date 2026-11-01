@@ -39,6 +39,71 @@ vi.mock("@/components/mixing/create-mixing-run-dialog", () => ({
 vi.mock("@/hooks/use-viewer-access", () => ({
   useViewerAccess: () => ({ data: { permissions: ["*"] } }),
 }));
+// Popover calendars and Radix selects do not run in jsdom; stand in plain inputs
+// that hand the same values to the filter bar.
+vi.mock("@/components/custom/date-range-picker", () => ({
+  DatePickerWithRange: ({
+    date,
+    onDateChange,
+  }: {
+    date?: { from?: Date; to?: Date };
+    onDateChange: (range?: { from?: Date; to?: Date }) => void;
+  }) => {
+    const day = (value?: Date) =>
+      value
+        ? `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`
+        : "";
+    const toDate = (value: string) =>
+      value ? new Date(`${value}T00:00:00`) : undefined;
+    return (
+      <>
+        <input
+          aria-label="Created from"
+          value={day(date?.from)}
+          onChange={(event) =>
+            onDateChange({ from: toDate(event.target.value), to: date?.to })
+          }
+        />
+        <input
+          aria-label="Created to"
+          value={day(date?.to)}
+          onChange={(event) =>
+            onDateChange({ from: date?.from, to: toDate(event.target.value) })
+          }
+        />
+      </>
+    );
+  },
+}));
+vi.mock("@/components/ui/select", () => ({
+  Select: ({
+    value,
+    onValueChange,
+    children,
+  }: {
+    value: string;
+    onValueChange: (value: string) => void;
+    children: React.ReactNode;
+  }) => (
+    <select
+      aria-label="Status"
+      value={value}
+      onChange={(event) => onValueChange(event.target.value)}
+    >
+      {children}
+    </select>
+  ),
+  SelectTrigger: () => null,
+  SelectValue: () => null,
+  SelectContent: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  SelectItem: ({
+    value,
+    children,
+  }: {
+    value: string;
+    children: React.ReactNode;
+  }) => <option value={value}>{children}</option>,
+}));
 vi.mock("@tanstack/react-router", () => ({
   Link: ({ children }: { children: React.ReactNode }) => <a>{children}</a>,
   useNavigate: () => vi.fn(),
@@ -92,6 +157,10 @@ function mount(component: React.ReactNode) {
   );
   return client;
 }
+
+// Each filter change reloads the list behind the Suspense fallback; wait for it to clear.
+const settled = () =>
+  waitFor(() => expect(screen.queryByText("Loading")).toBeNull());
 
 describe("manufacturing lists", () => {
   afterEach(cleanup);
@@ -276,7 +345,7 @@ describe("manufacturing lists", () => {
       "No packing jobs match your filters",
     ],
   ])(
-    "applies date and status filters, resets %s pagination and preserves filters for zero matches",
+    "applies date and status filters straight away, resets %s pagination and preserves filters for zero matches",
     async (kind, component, read, status, empty) => {
       mount(component);
       await screen.findByLabelText("Created from");
@@ -291,13 +360,14 @@ describe("manufacturing lists", () => {
       fireEvent.change(screen.getByLabelText("Created from"), {
         target: { value: "2026-10-08" },
       });
+      await settled();
       fireEvent.change(screen.getByLabelText("Created to"), {
         target: { value: "2026-10-08" },
       });
+      await settled();
       fireEvent.change(screen.getByLabelText("Status"), {
         target: { value: status },
       });
-      fireEvent.click(screen.getByRole("button", { name: "Apply filters" }));
       await screen.findByText(empty);
       expect(read).toHaveBeenLastCalledWith({
         data: expect.objectContaining({
@@ -316,23 +386,6 @@ describe("manufacturing lists", () => {
       ).toBe("");
     },
   );
-
-  it("rejects a reversed date range in the UI without fetching it", async () => {
-    mount(<MixingRunsContainer />);
-    await screen.findByLabelText("Created from");
-    fireEvent.change(screen.getByLabelText("Created from"), {
-      target: { value: "2026-10-09" },
-    });
-    fireEvent.change(screen.getByLabelText("Created to"), {
-      target: { value: "2026-10-08" },
-    });
-    const calls = mocks.mixing.mock.calls.length;
-    fireEvent.click(screen.getByRole("button", { name: "Apply filters" }));
-    expect(screen.getByRole("alert").textContent).toContain(
-      "End date must be on or after start date",
-    );
-    expect(mocks.mixing.mock.calls).toHaveLength(calls);
-  });
 
   it("requests the second job page and searches formats on the server", async () => {
     mount(<PackagingAllocationsContainer />);

@@ -43,10 +43,8 @@ export const MixingRunsContainer = ({
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex justify-end">
-        {canManage && <CreateMixingRunDialog />}
-      </div>
       <ProductionListFilters
+        actions={canManage && <CreateMixingRunDialog />}
         value={filters}
         onChange={(value) => {
           setFilters(value);

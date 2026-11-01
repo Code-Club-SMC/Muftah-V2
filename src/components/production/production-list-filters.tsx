@@ -1,117 +1,80 @@
-import { useId, useState } from "react";
+import type { ReactNode } from "react";
+import { format } from "date-fns";
+import type { DateRange } from "react-day-picker";
 import { Button } from "@/components/ui/button";
+import { DatePickerWithRange } from "@/components/custom/date-range-picker";
 import {
-  Field,
-  FieldDescription,
-  FieldError,
-  FieldGroup,
-  FieldLabel,
-} from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
-import {
-  NativeSelect,
-  NativeSelectOption,
-} from "@/components/ui/native-select";
-import {
-  productionDateRangeSchema,
-  type ProductionListFilters as Filters,
-} from "@/lib/production/list-filters";
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import type { ProductionListFilters as Filters } from "@/lib/production/list-filters";
 
+const toDay = (date: Date | undefined) =>
+  date ? format(date, "yyyy-MM-dd") : undefined;
+const fromDay = (day: string | undefined) =>
+  day ? new Date(`${day}T00:00:00`) : undefined;
+
+/**
+ * One compact row: created-date range and status on the left, page actions on
+ * the right. Dates are Pakistan calendar days, both inclusive.
+ */
 export function ProductionListFilters<Status extends string>({
   value,
   onChange,
   statuses,
+  actions,
 }: {
   value: Filters<Status>;
   onChange: (value: Filters<Status>) => void;
   statuses: { value: Status; label: string }[];
+  actions?: ReactNode;
 }) {
-  const id = useId();
-  const [draft, setDraft] = useState(value);
-  const [error, setError] = useState<string>();
+  const range: DateRange | undefined = value.from
+    ? { from: fromDay(value.from), to: fromDay(value.to) }
+    : undefined;
+  const hasFilters = !!(value.from || value.to || value.status);
+
   return (
-    <form
-      className="flex flex-col gap-3"
-      noValidate
-      onSubmit={(event) => {
-        event.preventDefault();
-        const validation = productionDateRangeSchema.safeParse(draft);
-        if (!validation.success) {
-          setError(validation.error.issues[0].message);
-          return;
-        }
-        setError(undefined);
-        onChange(draft);
-      }}
-    >
-      <FieldDescription>
-        Filter by creation date in Pakistan time. Both dates are inclusive. KPIs
-        cover all matching records.
-      </FieldDescription>
-      <FieldGroup className="flex flex-col gap-3 sm:flex-row sm:items-end">
-        <Field data-invalid={!!error}>
-          <FieldLabel htmlFor={`${id}-from`}>Created from</FieldLabel>
-          <Input
-            id={`${id}-from`}
-            type="date"
-            value={draft.from ?? ""}
-            aria-invalid={!!error}
-            onChange={(event) =>
-              setDraft({ ...draft, from: event.target.value || undefined })
-            }
-          />
-        </Field>
-        <Field data-invalid={!!error}>
-          <FieldLabel htmlFor={`${id}-to`}>Created to</FieldLabel>
-          <Input
-            id={`${id}-to`}
-            type="date"
-            value={draft.to ?? ""}
-            aria-invalid={!!error}
-            onChange={(event) =>
-              setDraft({ ...draft, to: event.target.value || undefined })
-            }
-          />
-        </Field>
-        <Field>
-          <FieldLabel htmlFor={`${id}-status`}>Status</FieldLabel>
-          <NativeSelect
-            id={`${id}-status`}
-            value={draft.status ?? "all"}
-            onChange={(event) =>
-              setDraft({
-                ...draft,
-                status:
-                  event.target.value === "all"
-                    ? undefined
-                    : (event.target.value as Status),
-              })
-            }
-          >
-            <NativeSelectOption value="all">All statuses</NativeSelectOption>
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-wrap items-center gap-2">
+        <DatePickerWithRange
+          className="w-full sm:w-64"
+          date={range}
+          onDateChange={(next) =>
+            onChange({ ...value, from: toDay(next?.from), to: toDay(next?.to) })
+          }
+        />
+        <Select
+          value={value.status ?? "all"}
+          onValueChange={(next) =>
+            onChange({
+              ...value,
+              status: next === "all" ? undefined : (next as Status),
+            })
+          }
+        >
+          <SelectTrigger className="w-full sm:w-40" aria-label="Status">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All statuses</SelectItem>
             {statuses.map((status) => (
-              <NativeSelectOption key={status.value} value={status.value}>
+              <SelectItem key={status.value} value={status.value}>
                 {status.label}
-              </NativeSelectOption>
+              </SelectItem>
             ))}
-          </NativeSelect>
-        </Field>
-        <div className="flex shrink-0 gap-2">
-          <Button type="submit">Apply filters</Button>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => {
-              setDraft({});
-              setError(undefined);
-              onChange({});
-            }}
-          >
+          </SelectContent>
+        </Select>
+        {hasFilters && (
+          <Button type="button" variant="ghost" onClick={() => onChange({})}>
             Clear filters
           </Button>
-        </div>
-      </FieldGroup>
-      {error && <FieldError role="alert">{error}</FieldError>}
-    </form>
+        )}
+      </div>
+      {actions && <div className="flex shrink-0 justify-end">{actions}</div>}
+    </div>
   );
 }
