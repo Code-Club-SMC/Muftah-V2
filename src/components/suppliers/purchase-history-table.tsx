@@ -127,7 +127,10 @@ export const PurchaseHistoryTable = ({
           "units";
         return (
           <span className="font-mono text-xs">
-            {row.getValue("quantity")} {unit}
+            {parseFloat(record.quantity).toLocaleString(undefined, {
+              maximumFractionDigits: 3,
+            })}{" "}
+            {unit}
           </span>
         );
       },
