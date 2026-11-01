@@ -62,6 +62,7 @@ type Props = {
   onRestock?: (item: PurchaseRecord) => void;
   isLoading?: boolean;
   manualPagination?: boolean;
+  autoResetPageIndex?: boolean;
   pageCount?: number;
   pagination?: { pageIndex: number; pageSize: number };
   onPaginationChange?: (updater: any) => void;

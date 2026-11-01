@@ -74,6 +74,7 @@ function overviewPagination(
   const state = { pageIndex: page - 1, pageSize: OVERVIEW_PAGE_SIZE };
   return {
     manualPagination: true,
+    autoResetPageIndex: false,
     pageCount: result?.metadata.totalPages ?? 1,
     totalRecords: result?.metadata.totalRecords ?? 0,
     isLoading: isFetching,
