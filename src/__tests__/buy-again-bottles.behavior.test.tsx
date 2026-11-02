@@ -72,6 +72,13 @@ describe("Buy Again", () => {
     expect(screen.getByText("Formula: KG × Price/KG")).toBeTruthy();
   });
 
+  it("keeps paisa in the total so a repeat purchase lands in the same price lot", async () => {
+    // 3 pieces at Rs 12.50 is Rs 37.50. Rounding to Rs 38 would make the price Rs 12.67 and open a new lot.
+    buyAgain(purchase(bottle, "3", "37.50"));
+    await waitFor(() => expect(value("12.50")).toBeTruthy());
+    expect(value("37.5")).toBeTruthy();
+  });
+
   it("fills a carton the same way as a bottle", async () => {
     buyAgain(purchase(carton, "50", "2000"));
     await waitFor(() => expect(value("40.00")).toBeTruthy());

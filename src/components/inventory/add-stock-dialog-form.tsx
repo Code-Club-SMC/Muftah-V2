@@ -74,27 +74,19 @@ const CostCalculatorEffect = ({
   activeMaterial,
 }: any) => {
   useEffect(() => {
-    const qty = parseFloat(quantity || "0");
-    let total = 0;
+    const qty = Number(quantity) > 0 ? new Big(quantity) : new Big(0);
+    let price = new Big(0);
 
-    if (qty > 0) {
-      if (materialType === "chemical") {
-        const price = parseFloat(pricePerUnit || "0");
-        total = price * qty;
-      } else if (materialType === "packaging" && activeMaterial) {
-        if (boughtByKg(activeMaterial)) {
-          // Shoppers are bought by weight: KG × price per KG.
-          const price = parseFloat(pricePerKg || "0");
-          if (price > 0) total = price * qty;
-        } else {
-          // Bottles, cartons, stickers and others are bought by count.
-          const price = parseFloat(pricePerUnit || "0");
-          total = price * qty;
-        }
-      }
+    if (qty.gt(0)) {
+      const byKg = materialType === "packaging" && activeMaterial && boughtByKg(activeMaterial);
+      // Shoppers are bought by weight (KG × price per KG); everything else by count.
+      const raw = byKg ? pricePerKg : materialType === "chemical" || activeMaterial ? pricePerUnit : "";
+      if (Number(raw) > 0) price = new Big(raw);
     }
 
-    const newCost = total > 0 ? Math.round(total).toString() : "";
+    // Keep paisa. Rounding to whole rupees shifts the price per unit and splits one price lot in two.
+    const total = price.times(qty).round(2, Big.roundHalfUp);
+    const newCost = total.gt(0) ? total.toString() : "";
     if (form.state.values.cost !== newCost) {
       // Always sync cost — even "0" so the field never shows a stale value
       form.setFieldValue("cost", newCost);
