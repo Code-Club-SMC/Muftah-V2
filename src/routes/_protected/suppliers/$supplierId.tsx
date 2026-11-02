@@ -44,8 +44,8 @@ import { cn } from "@/lib/utils";
 import { AddStockDialog } from "@/components/inventory/add-stock-dialog";
 import { GenericLoader } from "@/components/custom/generic-loader";
 
-// The overview shows 5 rows per page; the details page holds the long history.
-const OVERVIEW_PAGE_SIZE = 5;
+// The overview shows 10 rows per page grouped by material; the details page holds the long history.
+const OVERVIEW_PAGE_SIZE = 10;
 
 // Keyed under ["supplier", id] so purchase/payment changes refresh these pages too.
 const overviewPurchasesQuery = (supplierId: string, page: number) => ({

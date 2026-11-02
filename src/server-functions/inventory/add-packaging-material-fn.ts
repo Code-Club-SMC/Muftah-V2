@@ -17,6 +17,7 @@ import { requireInventoryManageMiddleware } from "@/lib/middlewares";
 import { addPackagingMaterialSchema } from "@/lib/validators/validators";
 import { createId } from "@paralleldrive/cuid2";
 import { expenseCategories } from "@/db/schemas/finance-schema";
+import { logActivityQuiet } from "@/lib/activity-logger.server";
 
 type FinanceWriter = Pick<typeof db, "query" | "select" | "insert" | "update">;
 
@@ -242,6 +243,54 @@ export const addPackagingMaterialFn = createServerFn()
           });
         }
       }
+
+      // Look up supplier for rich activity logging
+      const [supplier] = await tx
+        .select({ supplierName: suppliers.supplierName })
+        .from(suppliers)
+        .where(eq(suppliers.id, data.supplierId));
+      const supplierName = supplier?.supplierName ?? "Unknown Supplier";
+
+      const qty = parseFloat(data.quantity || "0");
+      const unitStr = data.measuredInKg ? "kg" : data.capacityUnit || "units";
+      const unitPriceNum = parseFloat(unitPrice || "0");
+      const totalCostNum = qty * unitPriceNum;
+      const totalCostFormatted = `PKR ${totalCostNum.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+      const paidNum = data.paymentStatus === "paid" ? totalCostNum : parseFloat(data.amountPaid || "0");
+      const paidFormatted = `PKR ${paidNum.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+
+      let purchaseDescription = "";
+      if (qty > 0) {
+        if (data.paymentStatus === "paid" || paidNum >= totalCostNum) {
+          purchaseDescription = ` (Purchased ${data.quantity} ${unitStr} from ${supplierName} for ${totalCostFormatted}, Paid in full)`;
+        } else if (data.paymentStatus === "partial" && paidNum > 0) {
+          const dueFormatted = `PKR ${(totalCostNum - paidNum).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+          purchaseDescription = ` (Purchased ${data.quantity} ${unitStr} from ${supplierName} for ${totalCostFormatted}, Paid: ${paidFormatted}, Balance Due: ${dueFormatted})`;
+        } else {
+          purchaseDescription = ` (Purchased ${data.quantity} ${unitStr} from ${supplierName} for ${totalCostFormatted}, Unpaid)`;
+        }
+      }
+
+      logActivityQuiet({
+        module: "inventory",
+        action: "created",
+        entityType: "packaging",
+        entityLabel: `${finalMaterial.name}${qty > 0 ? ` (${data.quantity} ${unitStr})` : ""}`,
+        actorId: context.authContext.session.user.id,
+        actorName: context.authContext.session.user.name,
+        description: `Created packaging material ${finalMaterial.name}${purchaseDescription}`,
+        metadata: {
+          materialName: finalMaterial.name,
+          materialType: "packaging",
+          initialQuantity: `${data.quantity} ${unitStr}`,
+          unitCost: `PKR ${unitPriceNum.toFixed(2)} / ${unitStr}`,
+          totalCost: totalCostFormatted,
+          amountPaid: paidFormatted,
+          supplier: supplierName,
+          supplierId: data.supplierId,
+          facility: warehouse.name,
+        },
+      });
 
       return finalMaterial;
     });

@@ -253,29 +253,83 @@ export const addStockFn = createServerFn()
 				performedById: context.session.user.id,
 			});
 
+			// Look up supplier and material details for rich activity logging
+			const [supplier] = await tx
+				.select({
+					supplierName: suppliers.supplierName,
+					supplierShopName: suppliers.supplierShopName,
+				})
+				.from(suppliers)
+				.where(eq(suppliers.id, data.supplierId));
+			const supplierName = supplier?.supplierName ?? "Unknown Supplier";
+
 			let loggedMaterialName = "Unknown Material";
+			let materialUnit = data.materialType === "chemical" ? "kg" : "units";
+
 			if (data.materialType === "chemical") {
 				const [chem] = await tx
-					.select()
+					.select({ name: chemicals.name, unit: chemicals.unit })
 					.from(chemicals)
 					.where(eq(chemicals.id, data.materialId));
-				loggedMaterialName = chem?.name ?? loggedMaterialName;
+				if (chem) {
+					loggedMaterialName = chem.name;
+					materialUnit = chem.unit || "kg";
+				}
 			} else {
 				const [pkg] = await tx
-					.select()
+					.select({
+						name: packagingMaterials.name,
+						capacityUnit: packagingMaterials.capacityUnit,
+						measuredInKg: packagingMaterials.measuredInKg,
+					})
 					.from(packagingMaterials)
 					.where(eq(packagingMaterials.id, data.materialId));
-				loggedMaterialName = pkg?.name ?? loggedMaterialName;
+				if (pkg) {
+					loggedMaterialName = pkg.name;
+					materialUnit = pkg.measuredInKg ? "kg" : pkg.capacityUnit || "units";
+				}
 			}
+
+			const costNum = parseFloat(data.cost || "0");
+			const totalCostFormatted = `PKR ${costNum.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+			const paidFormatted = `PKR ${amountToRecord.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+
+			let paymentSummary = "";
+			if (data.paymentStatus === "paid" || amountToRecord >= costNum) {
+				paymentSummary = `(Paid in full: ${totalCostFormatted})`;
+			} else if (data.paymentStatus === "partial" && amountToRecord > 0) {
+				const dueAmount = costNum - amountToRecord;
+				const dueFormatted = `PKR ${dueAmount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+				paymentSummary = `(Paid: ${paidFormatted}, Balance Due: ${dueFormatted})`;
+			} else {
+				paymentSummary = `(Total: ${totalCostFormatted}, Unpaid)`;
+			}
+
+			const logDescription = `Purchased ${data.quantity} ${materialUnit} of ${loggedMaterialName} from ${supplierName} ${paymentSummary}`;
 
 			logActivityQuiet({
 				module: "inventory",
-				action: "updated",
-				entityType: "stock",
-				entityLabel: loggedMaterialName,
+				action: "purchased",
+				entityType: "purchase",
+				entityId: purchase.id,
+				entityLabel: `${loggedMaterialName} (${data.quantity} ${materialUnit})`,
 				actorId: context.authContext.session.user.id,
 				actorName: context.authContext.session.user.name,
-				description: `Added stock for ${loggedMaterialName}`,
+				description: logDescription,
+				metadata: {
+					materialName: loggedMaterialName,
+					materialType: data.materialType,
+					quantityPurchased: `${data.quantity} ${materialUnit}`,
+					unitCost: `PKR ${parseFloat(lot.unitPrice).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / ${materialUnit}`,
+					totalPrice: totalCostFormatted,
+					amountPaid: paidFormatted,
+					paymentStatus: data.paymentStatus,
+					paymentMethod: data.paymentMethod || "pay_later",
+					supplier: supplierName,
+					supplierId: data.supplierId,
+					facility: warehouse.name,
+					notes: data.notes || undefined,
+				},
 			});
 
 			const [result] = await tx.select().from(materialStock).where(and(eq(materialStock.warehouseId, targetWarehouseId), eq(data.materialType === "chemical" ? materialStock.chemicalId : materialStock.packagingMaterialId, data.materialId)));

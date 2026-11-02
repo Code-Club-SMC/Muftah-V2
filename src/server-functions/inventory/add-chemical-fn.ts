@@ -228,14 +228,51 @@ export const addRawMaterialFn = createServerFn()
           });
         }
       }
+      // Look up supplier for rich activity logging
+      const [supplier] = await tx
+        .select({ supplierName: suppliers.supplierName })
+        .from(suppliers)
+        .where(eq(suppliers.id, data.supplierId));
+      const supplierName = supplier?.supplierName ?? "Unknown Supplier";
+
+      const qty = parseFloat(data.quantity || "0");
+      const unitCostNum = parseFloat(data.costPerUnit || "0");
+      const totalCostNum = qty * unitCostNum;
+      const totalCostFormatted = `PKR ${totalCostNum.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+      const paidNum = data.paymentStatus === "paid" ? totalCostNum : parseFloat(data.amountPaid || "0");
+      const paidFormatted = `PKR ${paidNum.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+
+      let purchaseDescription = "";
+      if (qty > 0) {
+        if (data.paymentStatus === "paid" || paidNum >= totalCostNum) {
+          purchaseDescription = ` (Purchased ${data.quantity} ${data.unit} from ${supplierName} for ${totalCostFormatted}, Paid in full)`;
+        } else if (data.paymentStatus === "partial" && paidNum > 0) {
+          const dueFormatted = `PKR ${(totalCostNum - paidNum).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+          purchaseDescription = ` (Purchased ${data.quantity} ${data.unit} from ${supplierName} for ${totalCostFormatted}, Paid: ${paidFormatted}, Balance Due: ${dueFormatted})`;
+        } else {
+          purchaseDescription = ` (Purchased ${data.quantity} ${data.unit} from ${supplierName} for ${totalCostFormatted}, Unpaid)`;
+        }
+      }
+
       logActivityQuiet({
         module: "inventory",
         action: "created",
         entityType: "chemical",
-        entityLabel: finalMaterial.name,
+        entityLabel: `${finalMaterial.name}${qty > 0 ? ` (${data.quantity} ${data.unit})` : ""}`,
         actorId: context.authContext.session.user.id,
         actorName: context.authContext.session.user.name,
-        description: `Added raw material ${finalMaterial.name} to inventory`,
+        description: `Created raw material ${finalMaterial.name}${purchaseDescription}`,
+        metadata: {
+          materialName: finalMaterial.name,
+          materialType: "chemical",
+          initialQuantity: `${data.quantity} ${data.unit}`,
+          unitCost: `PKR ${unitCostNum.toFixed(2)} / ${data.unit}`,
+          totalCost: totalCostFormatted,
+          amountPaid: paidFormatted,
+          supplier: supplierName,
+          supplierId: data.supplierId,
+          facility: warehouse.name,
+        },
       });
 
       return finalMaterial;
