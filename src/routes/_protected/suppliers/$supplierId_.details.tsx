@@ -23,7 +23,7 @@ import { AddRawMaterialDialog } from "@/components/inventory/add-raw-material-sh
 import { AddPackagingMaterialSheet } from "@/components/inventory/add-packaging-material-sheet";
 import { datePickerKey } from "@/lib/report-dates";
 
-// Newest 100 records per page; Next/Previous fetch the next 100 from the server.
+// 100 materials per page, each with all its purchases; Next/Previous fetch the next 100 from the server.
 const PAGE_SIZE = 100;
 
 const searchSchema = z.object({

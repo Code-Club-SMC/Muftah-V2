@@ -16,6 +16,53 @@ export const purchaseOrder = [
   desc(purchaseRecords.id),
 ];
 
+/** One key per material, so every purchase of a material lands in the same group. */
+const groupKey = sql<string>`coalesce(${purchaseRecords.chemicalId}, ${purchaseRecords.packagingMaterialId}, ${purchaseRecords.id})`;
+
+/**
+ * One page of purchases, paged by material instead of by purchase.
+ *
+ * The table shows one group per material, so a page holds `limit` materials
+ * with all of their purchases. Paging by purchase split a material across
+ * pages and showed it as two separate groups.
+ */
+export async function purchasesPageByMaterial(where: SQL | undefined, page: number, limit: number) {
+  const [{ materials, purchases }] = await db
+    .select({
+      materials: sql<number>`count(distinct ${groupKey})`,
+      purchases: sql<number>`count(*)`,
+    })
+    .from(purchaseRecords)
+    .where(where);
+
+  const latest = sql`max(coalesce(${purchaseRecords.purchaseDate}, ${purchaseRecords.createdAt}))`;
+  const pageKeys = await db
+    .select({ key: groupKey })
+    .from(purchaseRecords)
+    .where(where)
+    .groupBy(groupKey)
+    .orderBy(desc(latest), desc(groupKey))
+    .limit(limit)
+    .offset((page - 1) * limit);
+
+  const records = pageKeys.length
+    ? await db.query.purchaseRecords.findMany({
+        where: and(where, inArray(groupKey, pageKeys.map((row) => row.key))),
+        with: { warehouse: true, chemical: true, packagingMaterial: true },
+        orderBy: purchaseOrder,
+      })
+    : [];
+
+  return {
+    records,
+    metadata: {
+      totalRecords: Number(purchases),
+      totalPages: Math.max(1, Math.ceil(Number(materials) / limit)),
+      currentPage: page,
+    },
+  };
+}
+
 type PurchaseRow = {
   id: string;
   lotId: string | null;
