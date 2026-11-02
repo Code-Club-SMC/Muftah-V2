@@ -31,7 +31,7 @@ const updateMaterialSchema = z.object({
 });
 
 // Old quantities must never change meaning, so the unit is fixed once stock or history exists.
-export async function kgSwitchLocked(tx: Tx, materialId: string) {
+async function kgSwitchLocked(tx: Tx, materialId: string) {
   const [lot] = await tx.select({ id: materialLots.id }).from(materialLots).where(eq(materialLots.packagingMaterialId, materialId)).limit(1);
   const [stock] = await tx.select({ id: materialStock.id }).from(materialStock)
     .where(and(eq(materialStock.packagingMaterialId, materialId), gt(materialStock.quantity, "0"))).limit(1);
