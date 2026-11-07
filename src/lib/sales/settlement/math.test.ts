@@ -69,7 +69,7 @@ describe("invoice settlement math", () => {
 			]),
 		).toThrow("Payments cannot exceed invoice total");
 	});
-	it("rejects a new confirmed overpayment but preserves credits from approved returns", () => {
+	it("rejects a new confirmed overpayment but preserves credits from received returns", () => {
 		expect(() => calculateSettlement(100, [{ amount: 110, status: "confirmed", method: "cash" }])).toThrow("Payments cannot exceed invoice total");
 		const existingPayment = [{ amount: 100, status: "confirmed" as const, method: "cash" as const }];
 		expect(calculateSettlement(80, existingPayment, { allowCreditBalance: true })).toMatchObject({ paidAmount: 100, outstandingAmount: -20, paymentStatus: "paid" });

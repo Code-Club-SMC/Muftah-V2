@@ -17,7 +17,7 @@ import {
 	calculateSettlement,
 } from "@/lib/sales/settlement/math";
 import { moneyString, roundMoney } from "@/lib/sales/settlement/money";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, isNotNull, sql } from "drizzle-orm";
 import { recordInvoiceTimelineEvent } from "./invoice-timeline-log";
 
 export type SalesTransaction = Parameters<
@@ -226,14 +226,15 @@ async function listSettlementPayments(
 	return rows.map(paymentForMath);
 }
 
-async function getApprovedReturnAmount(
+async function getReceivedReturnAmount(
 	tx: SalesTransaction,
 	invoiceId: string,
 ): Promise<number> {
 	const rows = await tx.query.salesReturns.findMany({
 		where: and(
 			eq(salesReturns.invoiceId, invoiceId),
-			inArray(salesReturns.status, ["approved", "completed"]),
+			eq(salesReturns.status, "completed"),
+			isNotNull(salesReturns.completedAt),
 		),
 		columns: { totalAmount: true },
 	});
@@ -403,7 +404,7 @@ async function assertProposedSettlement(
 		method: payment.method,
 		status: payment.instantVerify ? "confirmed" : initialStatus(payment.method),
 	}));
-	const returnedAmount = await getApprovedReturnAmount(tx, invoice.id);
+	const returnedAmount = await getReceivedReturnAmount(tx, invoice.id);
 	const netReceivable = roundMoney(
 		Number(invoice.totalPrice) - returnedAmount,
 	);
@@ -424,7 +425,7 @@ export async function recalculateInvoiceSettlement(
 ): Promise<SettlementTotals> {
 	const invoice = await lockInvoice(tx, invoiceId);
 	const totalPrice = options?.totalPrice ?? Number(invoice.totalPrice);
-	const returnedAmount = await getApprovedReturnAmount(tx, invoice.id);
+	const returnedAmount = await getReceivedReturnAmount(tx, invoice.id);
 	const netReceivable = roundMoney(totalPrice - returnedAmount);
 	if (netReceivable < 0) {
 		throw new Error("Returned Amount cannot exceed invoice total");
@@ -436,7 +437,7 @@ export async function recalculateInvoiceSettlement(
 	const paymentTotals = calculateSettlement(
 		netReceivable,
 		await listSettlementPayments(tx, invoice.id),
-		// Approved returns may leave existing receipts above the reduced receivable.
+		// A received return may leave existing payments above the reduced receivable.
 		{ allowCreditBalance: true },
 	);
 	const totals: SettlementTotals = { ...paymentTotals, totalPrice };
@@ -469,18 +470,18 @@ export async function recalculateInvoiceSettlement(
 			returnedAmount: moneyString(returnedAmount),
 			outstandingAmount: moneyString(totals.outstandingAmount),
 			status:
-				totals.outstandingAmount === 0
+				totals.outstandingAmount <= 0
 					? "closed"
 					: totals.paidAmount > 0
 						? "partially_recovered"
 						: "open",
-			reconciledAt: totals.outstandingAmount === 0 ? new Date() : null,
-			recoveryStatus: totals.outstandingAmount === 0 ? null : undefined,
+			reconciledAt: totals.outstandingAmount <= 0 ? new Date() : null,
+			recoveryStatus: totals.outstandingAmount <= 0 ? null : undefined,
 			recoveryAssignedToId:
-				totals.outstandingAmount === 0 ? null : undefined,
-			nextFollowUpDate: totals.outstandingAmount === 0 ? null : undefined,
-			lastFollowUpDate: totals.outstandingAmount === 0 ? null : undefined,
-			escalationLevel: totals.outstandingAmount === 0 ? 0 : undefined,
+				totals.outstandingAmount <= 0 ? null : undefined,
+			nextFollowUpDate: totals.outstandingAmount <= 0 ? null : undefined,
+			lastFollowUpDate: totals.outstandingAmount <= 0 ? null : undefined,
+			escalationLevel: totals.outstandingAmount <= 0 ? 0 : undefined,
 		})
 		.where(eq(slipRecords.invoiceId, invoice.id));
 

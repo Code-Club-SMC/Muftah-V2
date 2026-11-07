@@ -311,7 +311,7 @@ function SalesmanLedgerPage() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <SummaryCard label="Total Sales" value={summary.periodTotalSales} color="text-emerald-700" />
         <SummaryCard label="Paid Amount" value={summary.periodPayments} color="text-blue-700" />
-        <SummaryCard label="Returns" value={summary.periodReturns} color="text-amber-700" />
+        <SummaryCard label="Net Returns" value={summary.periodReturns} color="text-amber-700" />
         <SummaryCard
           label="Closing Balance"
           value={summary.closingBalance}
@@ -451,7 +451,8 @@ function LedgerTableRow({ entry }: { entry: LedgerEntry }) {
           </Badge>
         ) : isReturn ? (
           <Badge variant="outline" className="text-[10px] gap-1 text-amber-700 border-amber-300">
-            <ArrowDownLeft className="size-3" /> Return
+            {entry.eventKind === "void" ? <ArrowUpRight className="size-3" /> : <ArrowDownLeft className="size-3" />}
+            Return{entry.eventKind === "void" ? " Void" : ""}
           </Badge>
         ) : (
           <Badge variant="outline" className="text-[10px] gap-1 text-emerald-600 border-emerald-200">
@@ -468,7 +469,7 @@ function LedgerTableRow({ entry }: { entry: LedgerEntry }) {
         ) : isReturn ? (
           <div className="space-y-1">
             <div className="font-medium text-amber-700 dark:text-amber-400">
-              Return #{entry.returnNumber}
+              Return{entry.eventKind === "void" ? " Void" : ""} #{entry.returnNumber}
             </div>
             <div className="text-xs text-muted-foreground">
               Invoice #{entry.invoiceNumber} · {entry.reason}
@@ -493,17 +494,17 @@ function LedgerTableRow({ entry }: { entry: LedgerEntry }) {
         </span>
       </TableCell>
       <TableCell className="text-sm text-right tabular-nums">
-        {isInvoice ? (
+        {isInvoice || (isReturn && entry.eventKind === "void") ? (
           <span className="text-rose-600 font-medium flex items-center justify-end gap-1">
             <ArrowUpRight className="size-3" />
-            {formatPKR(entry.totalPrice, false)}
+            {formatPKR(isInvoice ? entry.totalPrice : entry.amount, false)}
           </span>
         ) : (
           <span className="text-muted-foreground">—</span>
         )}
       </TableCell>
       <TableCell className="text-sm text-right tabular-nums">
-        {!isInvoice ? (
+        {!isInvoice && (!isReturn || entry.eventKind === "return") ? (
           <span
             className={cn(
               "font-medium flex items-center justify-end gap-1",

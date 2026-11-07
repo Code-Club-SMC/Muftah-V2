@@ -494,7 +494,7 @@ function DistributorLedgerPage() {
             </h3>
             <div className="space-y-2">
               <StatRow label="Paid Amount" value={summary.periodPayments} />
-              <StatRow label="Returns" value={summary.periodReturns} />
+              <StatRow label="Net Returns" value={summary.periodReturns} />
               <StatRow label="Invoices" value={summary.invoiceCount} isCount />
               <StatRow label="Payments" value={summary.paymentCount} isCount />
             </div>
@@ -618,7 +618,7 @@ function LedgerTableRow({
           ) : isReturn ? (
             <div className="space-y-1">
               <div className="font-medium text-amber-700 dark:text-amber-400">
-                Sales Return #{entry.returnNumber}
+                Sales Return{entry.eventKind === "void" ? " Void" : ""} #{entry.returnNumber}
               </div>
               <div className="text-xs text-muted-foreground">
                 Reason: {entry.reason}
@@ -668,10 +668,10 @@ function LedgerTableRow({
           )}
         </TableCell>
         <TableCell className={cn("text-sm tabular-nums text-right", isReturn ? "text-amber-600 font-medium" : "text-green-600 font-medium")}>
-          {!isInvoice ? formatPKR(entry.amount, false) : "—"}
+          {!isInvoice && (!isReturn || entry.eventKind === "return") ? formatPKR(entry.amount, false) : "—"}
         </TableCell>
         <TableCell className="text-sm tabular-nums text-right font-medium">
-          {isInvoice ? formatPKR(entry.totalPrice, false) : "—"}
+          {isInvoice ? formatPKR(entry.totalPrice, false) : isReturn && entry.eventKind === "void" ? formatPKR(entry.amount, false) : "—"}
         </TableCell>
         <TableCell className="text-sm tabular-nums text-right font-semibold">
           {formatBalance(entry.runningBalance)}

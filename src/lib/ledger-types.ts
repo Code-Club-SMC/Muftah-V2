@@ -2,7 +2,7 @@
  * Customer ledger rules:
  * - An invoice adds its full total to the amount owed.
  * - A confirmed payment reduces the amount owed.
- * - An approved return reduces the amount owed.
+ * - A received return reduces the amount owed at completion; its void adds it back at void time.
  * - Pending, returned, cancelled, and reversed payments are not ledger money.
  */
 
@@ -66,6 +66,7 @@ export interface LedgerPaymentEntry {
 
 export interface LedgerReturnEntry {
   type: "return";
+  eventKind: "return" | "void";
   id: string;
   date: Date;
   returnNumber: number;
@@ -93,7 +94,7 @@ export interface LedgerSummary {
   closingBalance: number;
   periodTotalSales: number;
   periodPayments: number;
-  periodReturns: number;
+  periodReturns: number; // Net receipt credit minus void reversals in the period.
   periodTotalProfit: number;
   invoiceCount: number;
   paymentCount: number;

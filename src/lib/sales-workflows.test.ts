@@ -238,7 +238,7 @@ describe("sales workflow regressions", () => {
     expect(ledgerSource).toContain("lineProfit - safeNumber(invoice.invoiceDiscount)");
   });
 
-  it("threads approved returns through ledgers and audits full export fetches separately from paginated views", () => {
+  it("threads receipt and void events through ledgers and audits full export fetches separately from paginated views", () => {
     const ledgerSource = readFileSync(
       resolve(SALES_FN_DIR, "ledger-fn.ts"),
       "utf8",
@@ -248,14 +248,16 @@ describe("sales workflow regressions", () => {
       "utf8",
     );
 
-    expect(ledgerSource).toContain("buildApprovedReturnWindow");
-    expect(ledgerSource).toContain("buildApprovedReturnBeforeDate");
+    expect(ledgerSource).toContain("returnMoneyEvents");
+    expect(ledgerSource).toContain("salesReturns.completedAt");
+    expect(ledgerSource).toContain("salesReturns.voidedAt");
+    expect(ledgerSource).toContain("eventKind:");
     expect(ledgerSource).toContain('kind: "invoice" | "return" | "payment"');
     expect(ledgerSource).toContain('type: "return"');
     expect(ledgerSource).toContain('eq(payments.status, "confirmed")');
     expect(ledgerSource).toContain("payments.effectiveDate");
-    expect(ledgerSource).toContain("runningBalance += totalPrice");
-    expect(ledgerSource).toContain("runningBalance -= amount");
+    expect(ledgerSource).toContain("runningBalance = roundMoney(runningBalance + totalPrice)");
+    expect(ledgerSource).toContain("runningBalance = roundMoney(runningBalance - amount)");
     expect(ledgerSource).toContain('includeFullEntries: z.boolean().optional()');
     expect(ledgerSource).toContain('exportType: z.enum(["view", "print", "csv", "pdf"]).optional()');
     expect(ledgerSource).toContain("entries: query.includeFullEntries");

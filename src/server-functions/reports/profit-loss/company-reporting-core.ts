@@ -23,6 +23,7 @@ import {
 } from "@/db/schemas/sales-erp-schema";
 import { customers, invoiceItems, invoices } from "@/db/schemas/sales-schema";
 import type { ReportSource } from "@/lib/report-source";
+import { returnMoneyEvents } from "@/lib/sales/returns/return-lifecycle";
 import {
   calculateCumulativeRealization,
   calculateDelta,
@@ -37,7 +38,7 @@ import {
   type ReportDateRange,
 } from "./reporting-math";
 
-const APPROVED_RETURN_STATUSES = ["approved", "completed"] as const;
+const RECEIVED_RETURN_STATUSES = ["completed", "voided"] as const;
 const TREND_MONTHS = 6;
 
 const FINANCE_SALE_SOURCES = [
@@ -548,16 +549,15 @@ export async function loadContext(
         and(
           ne(invoices.status, "voided"),
           sourceCondition,
-          inArray(salesReturns.status, [...APPROVED_RETURN_STATUSES]),
+          inArray(salesReturns.status, [...RECEIVED_RETURN_STATUSES]),
           or(
             and(
-              isNull(salesReturns.approvedAt),
-              gte(salesReturns.returnDate, fromDate),
-              lte(salesReturns.returnDate, toDate),
+              gte(salesReturns.completedAt, fromDate),
+              lte(salesReturns.completedAt, toDate),
             ),
             and(
-              gte(salesReturns.approvedAt, fromDate),
-              lte(salesReturns.approvedAt, toDate),
+              gte(salesReturns.voidedAt, fromDate),
+              lte(salesReturns.voidedAt, toDate),
             ),
           ),
         ),
@@ -789,13 +789,10 @@ export async function loadContext(
           .findMany({
             where: and(
               inArray(salesReturns.invoiceId, invoiceIds),
-              inArray(salesReturns.status, [...APPROVED_RETURN_STATUSES]),
+              inArray(salesReturns.status, [...RECEIVED_RETURN_STATUSES]),
               or(
-                and(
-                  isNull(salesReturns.approvedAt),
-                  lte(salesReturns.returnDate, toDate),
-                ),
-                lte(salesReturns.approvedAt, toDate),
+                lte(salesReturns.completedAt, toDate),
+                lte(salesReturns.voidedAt, toDate),
               ),
             ),
             with: {
@@ -808,19 +805,26 @@ export async function loadContext(
 
             for (const row of rows) {
               for (const item of row.items) {
-                const totalCost = row.stockTraces
-                  .filter((trace) => trace.salesReturnItemId === item.id)
-                  .reduce((sum, trace) => sum + toNumber(trace.totalCost), 0);
-
-                flattened.push({
-                  invoiceId: row.invoiceId,
-                  invoiceItemId: item.invoiceItemId,
-                  effectiveDate: row.approvedAt ?? row.returnDate,
-                  totalRefund: toNumber(item.totalRefund),
-                  totalCost,
-                  cartonsReturned: item.cartonsReturned ?? 0,
-                  quantityReturned: item.quantityReturned ?? 0,
+                const events = returnMoneyEvents({
+                  ...row,
+                  totalAmount: item.totalRefund,
+                  stockTraces: row.stockTraces.filter(
+                    (trace) => trace.salesReturnItemId === item.id,
+                  ),
                 });
+                for (const event of events) {
+                  if (event.date > toDate) continue;
+                  const direction = event.kind === "return" ? 1 : -1;
+                  flattened.push({
+                    invoiceId: row.invoiceId,
+                    invoiceItemId: item.invoiceItemId,
+                    effectiveDate: event.date,
+                    totalRefund: direction * event.amount,
+                    totalCost: direction * event.cost,
+                    cartonsReturned: direction * (item.cartonsReturned ?? 0),
+                    quantityReturned: direction * (item.quantityReturned ?? 0),
+                  });
+                }
               }
             }
 

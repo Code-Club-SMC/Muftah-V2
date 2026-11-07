@@ -527,12 +527,16 @@ describe("P&L Phase 4 — edge-case audit on company reporting core", () => {
 		expect(src).toContain("realizedCogs");
 	});
 
-	it("reduces revenue, units, and COGS for approved sales returns before realization", () => {
+	it("adjusts revenue, received units and event-specific COGS on receipt and void before realization", () => {
 		const src = source();
 
-		expect(src).toContain("APPROVED_RETURN_STATUSES");
-		expect(src).toContain('"approved"');
+		expect(src).not.toContain("APPROVED_RETURN_STATUSES");
+		expect(src).toContain("returnMoneyEvents");
 		expect(src).toContain('"completed"');
+		expect(src).toContain('"voided"');
+		expect(src).toContain("salesReturns.completedAt");
+		expect(src).toContain("salesReturns.voidedAt");
+		expect(src).toContain("event.cost");
 		expect(src).toContain("totalRefund");
 		expect(src).toContain("totalCost");
 		expect(src).toContain("returnedCartons");
@@ -642,7 +646,7 @@ describe("P&L Phase 4 — edge-case audit on company reporting core", () => {
 		expect(scoped).toContain("netImpact");
 	});
 
-	it("includes older invoices when payment recovery or approved return lands in range", () => {
+	it("includes older invoices when payment recovery, receipt or void lands in range", () => {
 		const src = source();
 
 		expect(src).toContain("paymentWindowRows");
