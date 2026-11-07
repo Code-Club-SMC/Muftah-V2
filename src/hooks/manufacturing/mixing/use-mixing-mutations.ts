@@ -6,19 +6,20 @@ import { logMixingProgressFn } from "@/server-functions/manufacturing/mixing/log
 import { completeMixingRunFn } from "@/server-functions/manufacturing/mixing/complete-mixing-run-fn";
 import { cancelMixingRunFn } from "@/server-functions/manufacturing/mixing/cancel-mixing-run-fn";
 import { failMixingRunFn } from "@/server-functions/manufacturing/mixing/fail-mixing-run-fn";
+import { invalidateStockQueries } from "@/lib/inventory/invalidate-stock";
 
 export const useCreateMixingRun = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: createMixingRunFn,
-    onSuccess: (result) => {
+    onSuccess: async (result) => {
       if (result.success === false) {
         toast.error(
           "Mixing batch was not created. Transfer the missing chemicals to the selected factory floor.",
         );
         return;
       }
-      queryClient.invalidateQueries({ queryKey: ["factory-floor"] });
+      await invalidateStockQueries(queryClient);
       toast.success("Mixing batch created successfully");
       queryClient.invalidateQueries({ queryKey: ["mixing-runs"] });
       queryClient.invalidateQueries({ queryKey: ["operator-mixing-runs"] });
@@ -33,8 +34,8 @@ export const useStartMixingRun = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: startMixingRunFn,
-    onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["factory-floor"] });
+    onSuccess: async (_data, variables) => {
+      await invalidateStockQueries(queryClient);
       toast.success("Mixing batch started successfully");
       queryClient.invalidateQueries({ queryKey: ["mixing-runs"] });
       queryClient.invalidateQueries({
@@ -44,7 +45,6 @@ export const useStartMixingRun = () => {
         queryKey: ["operator-mixing-run", variables.data.mixingRunId],
       });
       queryClient.invalidateQueries({ queryKey: ["operator-mixing-runs"] });
-      queryClient.invalidateQueries({ queryKey: ["material-lots"] });
     },
     onError: (error) => {
       toast.error(error.message || "Failed to start mixing batch");
@@ -56,8 +56,8 @@ export const useLogMixingProgress = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: logMixingProgressFn,
-    onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["factory-floor"] });
+    onSuccess: async (_data, variables) => {
+      await invalidateStockQueries(queryClient);
       toast.success("Progress logged successfully");
       queryClient.invalidateQueries({ queryKey: ["mixing-runs"] });
       queryClient.invalidateQueries({
@@ -78,8 +78,8 @@ export const useCompleteMixingRun = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: completeMixingRunFn,
-    onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["factory-floor"] });
+    onSuccess: async (_data, variables) => {
+      await invalidateStockQueries(queryClient);
       toast.success("Mixing batch completed successfully");
       queryClient.invalidateQueries({ queryKey: ["mixing-runs"] });
       queryClient.invalidateQueries({
@@ -100,8 +100,8 @@ export const useCancelMixingRun = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: cancelMixingRunFn,
-    onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["factory-floor"] });
+    onSuccess: async (_data, variables) => {
+      await invalidateStockQueries(queryClient);
       toast.success("Mixing batch cancelled successfully");
       queryClient.invalidateQueries({ queryKey: ["mixing-runs"] });
       queryClient.invalidateQueries({
@@ -122,8 +122,8 @@ export const useFailMixingRun = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: failMixingRunFn,
-    onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["factory-floor"] });
+    onSuccess: async (_data, variables) => {
+      await invalidateStockQueries(queryClient);
       toast.success("Mixing batch marked as failed");
       queryClient.invalidateQueries({ queryKey: ["mixing-runs"] });
       queryClient.invalidateQueries({

@@ -26,8 +26,10 @@ import { useMemo, useRef, useState } from "react";
 import { Textarea } from "../ui/textarea";
 import { updatePurchaseRecordFn } from "@/server-functions/suppliers/update-purchase-record-fn";
 import { toast } from "sonner";
+import { invalidateStockQueries } from "@/lib/inventory/invalidate-stock";
 import { findSimilarMaterialsFn } from "@/server-functions/inventory/find-similar-materials-fn";
 import { SimilarMaterial, SimilarMaterialWarning, SwitchToAddStock } from "./similar-material-warning";
+import type { ChemicalPurchaseRef } from "@/lib/inventory/chemical-report-contract";
 
 export type ChemicalPurchaseInitialValues = {
   purchaseId: string;
@@ -50,7 +52,7 @@ export type ChemicalPurchaseInitialValues = {
 };
 
 type Props = {
-  onSuccess: () => void;
+  onSuccess: (purchase?: ChemicalPurchaseRef) => void;
   warehouses: Awaited<ReturnType<typeof getInventoryFn>>;
   preselectedWarehouse: string | undefined;
   preselectedSupplierId?: string;
@@ -74,10 +76,10 @@ export const AddRawMaterialForm = ({
 
   const editMutate = useMutation({
     mutationFn: updatePurchaseRecordFn,
-    onSuccess: () => {
+    onSuccess: async () => {
+      await invalidateStockQueries(queryClient);
       toast.success("Purchase record updated successfully");
       queryClient.invalidateQueries({ queryKey: ["supplier"] });
-      queryClient.invalidateQueries({ queryKey: ["inventory"] });
       queryClient.invalidateQueries({ queryKey: ["wallets"] });
       queryClient.invalidateQueries({ queryKey: ["expenses"] });
       onSuccess();
@@ -104,7 +106,7 @@ export const AddRawMaterialForm = ({
       packagingSize: initialValues?.packagingSize || "",
       costPerUnit: initialValues?.unitCost || "",
       unit: (initialValues?.unit || "kg") as "kg" | "liters",
-      minimumStockLevel: initialValues?.minimumStockLevel || "0",
+      minimumStockLevel: (initialValues?.minimumStockLevel || "0") as string | number,
       supplierId: initialValues?.supplierId || preselectedSupplierId || "",
       notes: initialValues?.notes || "",
       invoiceNumber: initialValues?.invoiceNumber || "",
@@ -142,8 +144,8 @@ export const AddRawMaterialForm = ({
             return;
           }
         }
-        await addMutate.mutateAsync({ data: { ...value, confirmSimilarName: confirmedNew.current } as any });
-        onSuccess();
+        const result = await addMutate.mutateAsync({ data: { ...value, confirmSimilarName: confirmedNew.current } as any });
+        onSuccess(result.purchase ?? undefined);
       }
     },
   });

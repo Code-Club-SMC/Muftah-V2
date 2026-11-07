@@ -20,7 +20,7 @@ type CreateLabReportFormProps = {
     onOpenChange: (open: boolean) => void;
     chemicalId: string;
     chemicalName: string;
-    editData?: {
+} & ({ purchaseId: string; editData?: null } | { purchaseId?: string; editData: {
         id: string;
         productName: string;
         stockNumber: string | null;
@@ -31,23 +31,22 @@ type CreateLabReportFormProps = {
         reportDate: string | Date;
         standardReference: string | null;
         notes: string | null;
-    } | null;
-};
+    } });
 
 type AnalysisItem = {
     item: string;
     requirement: string;
     result: string;
-    passed: boolean;
+    passed: boolean | null;
 };
 
 const DEFAULT_ANALYSIS_ITEMS: AnalysisItem[] = [
-    { item: "Appearance", requirement: "", result: "", passed: true },
-    { item: "Color", requirement: "", result: "", passed: true },
-    { item: "Odor", requirement: "", result: "", passed: true },
-    { item: "pH", requirement: "", result: "", passed: true },
-    { item: "Viscosity @ 25°C", requirement: "", result: "", passed: true },
-    { item: "Specific Gravity", requirement: "", result: "", passed: true },
+    { item: "Appearance", requirement: "", result: "", passed: null },
+    { item: "Color", requirement: "", result: "", passed: null },
+    { item: "Odor", requirement: "", result: "", passed: null },
+    { item: "pH", requirement: "", result: "", passed: null },
+    { item: "Viscosity @ 25°C", requirement: "", result: "", passed: null },
+    { item: "Specific Gravity", requirement: "", result: "", passed: null },
 ];
 
 export const CreateLabReportForm = ({
@@ -55,6 +54,7 @@ export const CreateLabReportForm = ({
     onOpenChange,
     chemicalId,
     chemicalName,
+    purchaseId,
     editData,
 }: CreateLabReportFormProps) => {
     const createReport = useCreateLabReport();
@@ -71,7 +71,7 @@ export const CreateLabReportForm = ({
             ? new Date(editData.reportDate).toISOString().split("T")[0]
             : new Date().toISOString().split("T")[0],
     );
-    const [standardReference, setStandardReference] = useState(editData?.standardReference || "ISO 9001:2015");
+    const [standardReference, setStandardReference] = useState(editData?.standardReference || "");
     const [notes, setNotes] = useState(editData?.notes || "");
     const [analysisItems, setAnalysisItems] = useState<AnalysisItem[]>(
         editData?.analysisItems || DEFAULT_ANALYSIS_ITEMS,
@@ -86,7 +86,7 @@ export const CreateLabReportForm = ({
             setCertifiedBy(editData.certifiedBy);
             setCertifierTitle(editData.certifierTitle || "");
             setReportDate(new Date(editData.reportDate).toISOString().split("T")[0]);
-            setStandardReference(editData.standardReference || "ISO 9001:2015");
+            setStandardReference(editData.standardReference || "");
             setNotes(editData.notes || "");
             setAnalysisItems(editData.analysisItems);
         } else {
@@ -96,16 +96,16 @@ export const CreateLabReportForm = ({
             setCertifiedBy("");
             setCertifierTitle("");
             setReportDate(new Date().toISOString().split("T")[0]);
-            setStandardReference("ISO 9001:2015");
+            setStandardReference("");
             setNotes("");
             setAnalysisItems(DEFAULT_ANALYSIS_ITEMS);
         }
-    }, [editData, chemicalName]);
+    }, [editData, chemicalName, chemicalId, purchaseId, open]);
 
     const addItem = () => {
         setAnalysisItems([
             ...analysisItems,
-            { item: "", requirement: "", result: "", passed: true },
+            { item: "", requirement: "", result: "", passed: null },
         ]);
     };
 
@@ -124,11 +124,12 @@ export const CreateLabReportForm = ({
     };
 
     const isFormValid = () => {
+        if (!isEditMode && !purchaseId) return false;
         if (!productName.trim() || !certifiedBy.trim() || !reportDate) return false;
         if (analysisItems.length === 0) return false;
         return analysisItems.every(
             (item) =>
-                item.item.trim() && item.requirement.trim() && item.result.trim(),
+                item.item.trim() && item.requirement.trim() && item.result.trim() && typeof item.passed === "boolean",
         );
     };
 
@@ -139,7 +140,7 @@ export const CreateLabReportForm = ({
             productName: productName.trim(),
             stockNumber: stockNumber.trim() || undefined,
             lotNumber: lotNumber.trim() || undefined,
-            analysisItems,
+            analysisItems: analysisItems.map(item => ({ ...item, passed: item.passed === true })),
             certifiedBy: certifiedBy.trim(),
             certifierTitle: certifierTitle.trim() || undefined,
             reportDate,
@@ -166,6 +167,7 @@ export const CreateLabReportForm = ({
                 {
                     data: {
                         chemicalId,
+                        purchaseId: purchaseId!,
                         ...formData,
                     },
                 },
@@ -199,6 +201,8 @@ export const CreateLabReportForm = ({
             className="min-w-[720px]"
         >
             <div className="space-y-6 py-4">
+                {purchaseId && <p className="text-sm text-muted-foreground">Purchase reference: {purchaseId}</p>}
+                {(isEditMode ? updateReport.isError : createReport.isError) && <p role="alert">Unable to save the certificate. Your purchase is still saved. Retry or cancel to add the report later.</p>}
                 {/* Product Details */}
                 <div>
                     <h4 className="text-xs font-black uppercase  text-muted-foreground mb-3">
@@ -311,7 +315,7 @@ export const CreateLabReportForm = ({
                                             }`}
                                         onClick={() => updateItem(index, "passed", !item.passed)}
                                     >
-                                        {item.passed ? (
+                                        {item.passed === null ? "Set result" : item.passed ? (
                                             <>
                                                 <CheckCircle2 className="size-3 mr-1" />
                                                 Pass
@@ -330,6 +334,7 @@ export const CreateLabReportForm = ({
                                     size="icon"
                                     className="size-7 text-muted-foreground hover:text-destructive"
                                     onClick={() => removeItem(index)}
+                                    aria-label={`Remove analysis item ${index + 1}`}
                                     disabled={analysisItems.length <= 1}
                                 >
                                     <Trash2 className="size-3" />
@@ -411,7 +416,7 @@ export const CreateLabReportForm = ({
                         </span>{" "}
                         •{" "}
                         <span className="text-red-600 font-bold">
-                            {analysisItems.filter((i) => !i.passed).length} failed
+                            {analysisItems.filter((i) => i.passed === false).length} failed
                         </span>
                     </span>
                 </div>

@@ -18,6 +18,7 @@ import { requireInventoryManageMiddleware } from "@/lib/middlewares";
 import { addChemicalSchema } from "@/lib/validators/validators";
 import { createId } from "@paralleldrive/cuid2";
 import { expenseCategories } from "@/db/schemas/finance-schema";
+import type { ChemicalPurchaseRef } from "@/lib/inventory/chemical-report-contract";
 
 type FinanceWriter = Pick<typeof db, "query" | "select" | "insert" | "update">;
 
@@ -109,6 +110,7 @@ export const addRawMaterialFn = createServerFn()
         .returning();
 
       const materialId = finalMaterial.id;
+      let reportPurchase: ChemicalPurchaseRef | null = null;
 
       // 2. Initialize or Update stock
       if (parseFloat(data.quantity || "0") > 0) {
@@ -148,6 +150,7 @@ export const addRawMaterialFn = createServerFn()
           })
           .returning();
 
+        reportPurchase = { purchaseId: purchase.id, chemicalId: materialId, chemicalName: finalMaterial.name };
         await moveLotStock(tx, { ref, lotId: lot.id, warehouseId: targetWarehouseId, delta: data.quantity, sourceType: "purchase", sourceId: purchase.id });
 
         if (amountToRecord > 0) {
@@ -275,6 +278,6 @@ export const addRawMaterialFn = createServerFn()
         },
       });
 
-      return finalMaterial;
+      return { ...finalMaterial, purchase: reportPurchase };
     });
   });

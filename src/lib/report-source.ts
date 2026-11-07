@@ -10,6 +10,6 @@ export function parseReportSource(value: unknown): ReportSource {
 
 export function reportSourceLabel(source: ReportSource) {
   if (source === "online") return "Online invoices";
-  if (source === "offline_import") return "Offline Excel invoices";
+  if (source === "offline_import") return "Offline invoices";
   return "All invoices";
 }

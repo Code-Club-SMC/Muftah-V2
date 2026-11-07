@@ -8,7 +8,7 @@ vi.mock("sonner", () => ({ toast: { success: vi.fn() } }));
 import { AdjustOutsidePacksDialog } from "@/components/inventory/adjust-outside-packs-dialog";
 
 function mount() {
-  const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+  const client = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity }, mutations: { retry: false } } });
   const onClose = vi.fn();
   render(<QueryClientProvider client={client}><AdjustOutsidePacksDialog stockId="stock-1" name="Rs.300 pack" currentCount={100} onClose={onClose} /></QueryClientProvider>);
   return { client, onClose };
@@ -19,6 +19,7 @@ describe("outside pack corrections", () => {
   it("requires a changed whole count and a reason, then sends the expected previous count", async () => {
     const { onClose, client } = mount();
     client.setQueryData(["factory-floor"], { old: true });
+    client.setQueryData(["low-stock-alerts"], []);
     const save = screen.getByRole("button", { name: "Save correction" }) as HTMLButtonElement;
     expect(save.disabled).toBe(true);
     fireEvent.change(screen.getByLabelText("Actual loose packs counted"), { target: { value: "95" } });
@@ -28,6 +29,7 @@ describe("outside pack corrections", () => {
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
     expect(mocks.update).toHaveBeenCalledWith(expect.objectContaining({ data: { stockId: "stock-1", adjustmentType: "set", quantity: 95, expectedCurrent: 100, reason: "Recount found five damaged packs" } }), expect.anything());
     expect(client.getQueryState(["factory-floor"])?.isInvalidated).toBe(true);
+    expect(client.getQueryState(["low-stock-alerts"])?.isInvalidated).toBe(true);
   });
   it("retains the entered count and reason when stock changed concurrently", async () => {
     mocks.update.mockRejectedValue(new Error("Stock changed. Reload the current count."));

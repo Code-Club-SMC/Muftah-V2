@@ -13,6 +13,7 @@ import { Switch } from "../ui/switch";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
@@ -28,6 +29,8 @@ import { getSuppliersFn } from "@/server-functions/suppliers/get-suppliers-fn";
 import { Textarea } from "../ui/textarea";
 import { updatePurchaseRecordFn } from "@/server-functions/suppliers/update-purchase-record-fn";
 import { toast } from "sonner";
+import { invalidateStockQueries } from "@/lib/inventory/invalidate-stock";
+import { PACKAGING_KINDS, PACKAGING_KIND_LABELS, type PackagingKind } from "@/lib/inventory/packaging-kind";
 import { findSimilarMaterialsFn } from "@/server-functions/inventory/find-similar-materials-fn";
 import { SimilarMaterial, SimilarMaterialWarning, SwitchToAddStock } from "./similar-material-warning";
 
@@ -39,6 +42,7 @@ export type PackagingPurchaseInitialValues = {
   paidAmount: string;
   minimumStockLevel: number;
   type: "primary" | "master" | "sticker" | "extra";
+  packagingKind?: PackagingKind | null;
   capacity?: string;
   capacityUnit?: string;
   notes?: string;
@@ -76,10 +80,10 @@ export const AddPackagingMaterialForm = ({
 
   const editMutate = useMutation({
     mutationFn: updatePurchaseRecordFn,
-    onSuccess: () => {
+    onSuccess: async () => {
+      await invalidateStockQueries(queryClient);
       toast.success("Purchase record updated successfully");
       queryClient.invalidateQueries({ queryKey: ["supplier"] });
-      queryClient.invalidateQueries({ queryKey: ["inventory"] });
       queryClient.invalidateQueries({ queryKey: ["wallets"] });
       queryClient.invalidateQueries({ queryKey: ["expenses"] });
       onSuccess();
@@ -108,8 +112,9 @@ export const AddPackagingMaterialForm = ({
       warehouseId: initialValues?.warehouseId || preselectedWarehouse || availableWarehouses[0]?.id || "",
       quantity: initialValues?.quantity || "",
       costPerUnit: initialValues?.unitCost || "",
-      minimumStockLevel: initialValues?.minimumStockLevel ?? 0,
+      minimumStockLevel: (initialValues?.minimumStockLevel ?? 0) as string | number,
       type: (initialValues?.type || "primary") as "primary" | "master" | "sticker" | "extra",
+      packagingKind: (initialValues?.packagingKind ?? null) as PackagingKind | null,
       capacity: initialValues?.capacity || "",
       capacityUnit: initialValues?.capacityUnit || "",
       weightPerPack: "",
@@ -127,7 +132,7 @@ export const AddPackagingMaterialForm = ({
       transactionId: initialValues?.transactionId || "",
       bankName: initialValues?.bankName || "",
     },
-    validators: isEditMode ? undefined : { onSubmit: addPackagingMaterialSchema },
+    validators: isEditMode ? undefined : { onSubmit: addPackagingMaterialSchema.extend({ packagingKind: addPackagingMaterialSchema.shape.packagingKind.nonoptional() }) },
     onSubmit: async ({ value }) => {
       if (isEditMode) {
         const totalCost = (parseFloat(value.costPerUnit) * parseFloat(value.quantity)).toFixed(2);
@@ -142,6 +147,7 @@ export const AddPackagingMaterialForm = ({
             materialName: value.name,
             capacity: value.capacity,
             capacityUnit: value.capacityUnit,
+            packagingKind: value.packagingKind,
             minStock: value.minimumStockLevel?.toString(),
             paymentStatus: value.paymentStatus,
             walletId: (value.paymentMethod !== "pay_later" && value.paymentMethod) ? value.paymentMethod : undefined,
@@ -241,6 +247,24 @@ export const AddPackagingMaterialForm = ({
         )}
 
         <FieldGroup>
+          <form.Field name="packagingKind">
+            {(field) => (
+              <Field>
+                <FieldLabel htmlFor="purchase-packaging-kind">Packaging kind</FieldLabel>
+                <Select value={field.state.value ?? "unspecified"} onValueChange={(value) => field.handleChange(value === "unspecified" ? null : value as PackagingKind)}>
+                  <SelectTrigger id="purchase-packaging-kind" className="w-full"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value="unspecified">Unspecified</SelectItem>
+                      {PACKAGING_KINDS.map(kind => <SelectItem key={kind} value={kind}>{PACKAGING_KIND_LABELS[kind]}</SelectItem>)}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+                <FieldDescription>Descriptive only. Does not change the production role or stock unit.</FieldDescription>
+                <FieldError errors={field.state.meta.errors} />
+              </Field>
+            )}
+          </form.Field>
           {availableWarehouses.length === 0 && (
             <div className="p-3 rounded-lg bg-destructive/10 text-red-600 text-xs flex items-center gap-2">
               <Info className="size-4" />
@@ -456,7 +480,7 @@ export const AddPackagingMaterialForm = ({
             {(field) => (
               <Field>
                 <FieldLabel>Min. Stock Alert</FieldLabel>
-                <Input type="number" value={field.state.value} onChange={(e) => field.handleChange(Number(e.target.value))} placeholder="100" step="1" />
+                <Input type="number" value={Number.isNaN(field.state.value) ? "" : field.state.value} onChange={(e) => field.handleChange(e.target.value === "" ? NaN : Number(e.target.value))} placeholder="100" step="1" />
                 <FieldDescription>Notify when stock falls below this level.</FieldDescription>
                 <FieldError errors={field.state.meta.errors} />
               </Field>

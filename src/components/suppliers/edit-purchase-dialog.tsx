@@ -3,6 +3,7 @@ import { ResponsiveDialog } from "@/components/custom/responsive-dialog";
 import { useForm } from "@tanstack/react-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { invalidateStockQueries } from "@/lib/inventory/invalidate-stock";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -64,12 +65,11 @@ export const EditPurchaseDialog = ({ open, onOpenChange, purchase }: Props) => {
 
   const mutate = useMutation({
     mutationFn: updatePurchaseRecordFn,
-    onSuccess: () => {
+    onSuccess: async () => {
+      await invalidateStockQueries(queryClient);
       toast.success("Purchase record updated successfully");
       queryClient.invalidateQueries({ queryKey: ["supplier"] });
-      queryClient.invalidateQueries({ queryKey: ["inventory"] });
-      queryClient.invalidateQueries({ queryKey: ["material-lots"] });
-      queryClient.invalidateQueries({ queryKey: ["purchase-edit-state"] });
+      queryClient.invalidateQueries({ queryKey: ["suppliers"] });
       queryClient.invalidateQueries({ queryKey: ["wallets"] });
       queryClient.invalidateQueries({ queryKey: ["expenses"] });
       onOpenChange(false);

@@ -14,6 +14,7 @@ import {
 import { getInvoiceDetailFn } from "@/server-functions/sales/invoice-detail-fn";
 import { CreateInvoiceInput, UpdateInvoiceInput } from "@/db/zod_schemas";
 import { toast } from "sonner";
+import { invalidateStockQueries } from "@/lib/inventory/invalidate-stock";
 
 export const invoicesKeys = {
   all: ["invoices"] as const,
@@ -76,12 +77,12 @@ export const useCreateInvoice = () => {
 
   return useMutation({
     mutationFn: (data: CreateInvoiceInput) => createInvoiceFn({ data }),
-    onSuccess: () => {
+    onSuccess: async () => {
+      await invalidateStockQueries(queryClient);
       toast.success("Invoice created successfully");
       queryClient.invalidateQueries({ queryKey: invoicesKeys.all });
       queryClient.invalidateQueries({ queryKey: ["orders"] });
       queryClient.invalidateQueries({ queryKey: ["customers"] });
-      queryClient.invalidateQueries({ queryKey: ["inventory"] });
     },
     onError: (error: any) => {
       toast.error(error.message || "Failed to create invoice");
@@ -94,11 +95,11 @@ export const useDeleteInvoice = () => {
 
   return useMutation({
     mutationFn: (id: string) => deleteInvoiceFn({ data: { id } }),
-    onSuccess: () => {
+    onSuccess: async () => {
+      await invalidateStockQueries(queryClient);
       toast.success("Invoice deleted successfully");
       queryClient.invalidateQueries({ queryKey: invoicesKeys.all });
       queryClient.invalidateQueries({ queryKey: ["customers"] });
-      queryClient.invalidateQueries({ queryKey: ["inventory"] });
     },
     onError: (error: any) => {
       toast.error(error.message || "Failed to delete invoice");
@@ -111,12 +112,12 @@ export const useUpdateInvoice = () => {
 
   return useMutation({
     mutationFn: (data: UpdateInvoiceInput) => updateInvoiceFn({ data }),
-    onSuccess: (_, variables) => {
+    onSuccess: async (_, variables) => {
+      await invalidateStockQueries(queryClient);
       toast.success("Invoice updated successfully");
       queryClient.invalidateQueries({ queryKey: invoicesKeys.all });
       queryClient.invalidateQueries({ queryKey: invoicesKeys.detail(variables.id) });
       queryClient.invalidateQueries({ queryKey: ["customers"] });
-      queryClient.invalidateQueries({ queryKey: ["inventory"] });
     },
     onError: (error: any) => {
       toast.error(error.message || "Failed to update invoice");

@@ -1,16 +1,18 @@
-import { and, eq, gte, inArray, isNull, lte, or } from "drizzle-orm";
+import { and, eq, gte, inArray, isNotNull, isNull, lte, ne, or } from "drizzle-orm";
 import { db } from "@/db";
 import { customers, invoices } from "@/db/schemas/sales-schema";
 import {
   discountRules,
   entityRecipeRates,
   orders,
+  salesmen,
 } from "@/db/schemas/sales-erp-schema";
 import {
   finishedGoodsStock,
   recipes,
   warehouses,
 } from "@/db/schemas/inventory-schema";
+import { GENERAL_RECIPE_RATE_ENTITY_ID } from "@/lib/sales/entity-recipe-rate-config";
 import type { OfflineSalesReferenceSnapshot } from "./contracts";
 
 type SalesTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -46,6 +48,9 @@ export async function buildOfflineSalesReferenceSnapshot(
           outstandingAmount: true,
           creditLimit: true,
           creditHold: true,
+          address: true,
+          city: true,
+          mobileNumber: true,
         },
       });
   const recipeRows = await database.query.recipes.findMany({
@@ -70,6 +75,29 @@ export async function buildOfflineSalesReferenceSnapshot(
       });
   const rateRows = await database.query.entityRecipeRates.findMany({
         where: eq(entityRecipeRates.entityType, "distributor"),
+      });
+  const generalRateRows = await database.query.entityRecipeRates.findMany({
+        where: and(
+          eq(entityRecipeRates.entityType, "general"),
+          eq(entityRecipeRates.entityId, GENERAL_RECIPE_RATE_ENTITY_ID),
+        ),
+      });
+  const salesmanRows = await database.query.salesmen.findMany({
+        where: and(eq(salesmen.status, "active"), isNotNull(salesmen.employeeId)),
+        columns: { employeeId: true, name: true },
+      });
+  const retailerRows = await database.query.customers.findMany({
+        where: ne(customers.customerType, "distributor"),
+        columns: {
+          id: true,
+          sNo: true,
+          name: true,
+          customerType: true,
+          mobileNumber: true,
+          city: true,
+          address: true,
+          outstandingAmount: true,
+        },
       });
   const ruleRows = await database.query.discountRules.findMany({
         where: and(
@@ -104,6 +132,9 @@ export async function buildOfflineSalesReferenceSnapshot(
   const defaultPrices = new Map(
     defaultPriceRows.map((row) => [row.recipeId, row]),
   );
+  const generalRates = new Map(
+    generalRateRows.map((row) => [row.recipeId, row]),
+  );
   const packsPerCartonByRecipe = new Map(
     recipeRows.map((recipe) => [
       recipe.id,
@@ -128,6 +159,9 @@ export async function buildOfflineSalesReferenceSnapshot(
         outstandingAmount: money(customer.outstandingAmount),
         creditLimit: money(customer.creditLimit),
         creditHold: Boolean(customer.creditHold),
+        address: customer.address,
+        city: customer.city,
+        mobile: customer.mobileNumber,
       }))
       .sort((a, b) => a.code.localeCompare(b.code)),
     products: recipeRows
@@ -151,6 +185,11 @@ export async function buildOfflineSalesReferenceSnapshot(
             }))
             .sort((a, b) => a.customerId.localeCompare(b.customerId)),
           retailPricePerPack: money(defaultPrice?.retailPricePerPack),
+          // Same rule as an online retailer invoice: the general carton rate if
+          // one is configured, otherwise the default price per pack x pack count.
+          generalCartonPrice: generalRates.has(recipe.id)
+            ? money(generalRates.get(recipe.id)?.pricePerCarton)
+            : money(Number(defaultPrice?.invoicePricePerPack ?? 0) * packsPerCarton),
           wacPerPack: money(stock?.weightedAverageCostPerPack, 4),
           stockUnits:
             Number(stock?.quantityCartons ?? 0) * packsPerCarton +
@@ -159,6 +198,21 @@ export async function buildOfflineSalesReferenceSnapshot(
       })
       .filter((product) => product.packsPerCarton > 0)
       .sort((a, b) => a.name.localeCompare(b.name) || a.code.localeCompare(b.code)),
+    salesmen: salesmanRows
+      .flatMap((row) => (row.employeeId ? [{ employeeId: row.employeeId, name: row.name }] : []))
+      .sort((a, b) => a.name.localeCompare(b.name) || a.employeeId.localeCompare(b.employeeId)),
+    retailers: retailerRows
+      .map((customer) => ({
+        id: customer.id,
+        code: `C-${customer.sNo}`,
+        name: customer.name,
+        customerType: customer.customerType,
+        mobile: customer.mobileNumber,
+        city: customer.city,
+        address: customer.address,
+        outstandingAmount: money(customer.outstandingAmount),
+      }))
+      .sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true })),
     discountRules: ruleRows
       .filter((rule) => rule.recipeId != null)
       .map((rule) => ({

@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { createLabReportFn } from "@/server-functions/inventory/lab-reports/create-lab-report-fn";
 import {
@@ -7,14 +7,26 @@ import {
 } from "@/server-functions/inventory/lab-reports/get-lab-reports-fn";
 import { deleteLabReportFn } from "@/server-functions/inventory/lab-reports/delete-lab-report-fn";
 import { updateLabReportFn } from "@/server-functions/inventory/lab-reports/update-lab-report-fn";
+import { getChemicalReportPurchasesFn } from "@/server-functions/inventory/lab-reports/get-chemical-report-purchases-fn";
 
-export const useLabReports = (chemicalId: string) => {
+export const useLabReports = (chemicalId: string, purchaseId?: string) => {
     return useQuery({
-        queryKey: ["lab-reports", chemicalId],
-        queryFn: () => getLabReportsFn({ data: { chemicalId } }),
+        queryKey: ["lab-reports", chemicalId, purchaseId ?? "all"],
+        queryFn: () => getLabReportsFn({ data: { chemicalId, purchaseId } }),
         enabled: !!chemicalId,
     });
 };
+
+export const useChemicalReportPurchases = (chemicalId: string) => useQuery({
+    queryKey: ["chemical-report-purchases", chemicalId],
+    queryFn: () => getChemicalReportPurchasesFn({ data: { chemicalId } }),
+    enabled: !!chemicalId,
+});
+
+async function invalidateReports(queryClient: QueryClient) {
+    await Promise.all(["lab-reports", "lab-report", "chemical-report-purchases", "factory-floor", "inventory", "item-detail"]
+        .map(prefix => queryClient.invalidateQueries({ queryKey: [prefix] })));
+}
 
 export const useLabReport = (reportId: string) => {
     return useQuery({
@@ -29,11 +41,9 @@ export const useCreateLabReport = () => {
 
     return useMutation({
         mutationFn: createLabReportFn,
-        onSuccess: (_data, variables) => {
+        onSuccess: async () => {
+            await invalidateReports(queryClient);
             toast.success("Lab report created successfully");
-            queryClient.invalidateQueries({
-                queryKey: ["lab-reports", variables.data.chemicalId],
-            });
         },
         onError: (error) => {
             toast.error(error.message || "Failed to create lab report");
@@ -46,9 +56,9 @@ export const useUpdateLabReport = () => {
 
     return useMutation({
         mutationFn: updateLabReportFn,
-        onSuccess: () => {
+        onSuccess: async () => {
+            await invalidateReports(queryClient);
             toast.success("Lab report updated successfully");
-            queryClient.invalidateQueries({ queryKey: ["lab-reports"] });
         },
         onError: (error) => {
             toast.error(error.message || "Failed to update lab report");
@@ -61,9 +71,10 @@ export const useDeleteLabReport = () => {
 
     return useMutation({
         mutationFn: deleteLabReportFn,
-        onSuccess: () => {
+        onSuccess: async (_data, variables) => {
+            queryClient.removeQueries({ queryKey: ["lab-report", variables.data.reportId], exact: true });
+            await invalidateReports(queryClient);
             toast.success("Lab report deleted successfully");
-            queryClient.invalidateQueries({ queryKey: ["lab-reports"] });
         },
         onError: (error) => {
             toast.error(error.message || "Failed to delete lab report");

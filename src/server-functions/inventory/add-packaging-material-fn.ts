@@ -12,6 +12,7 @@ import {
 } from "@/db";
 import { eq, sql } from "drizzle-orm";
 import { isSimilarMaterialName, lotPrice } from "@/lib/inventory/material-lots";
+import { packagingUnit } from "@/lib/inventory/material-units";
 import { findOrCreateLot, lockMaterialStock, moveLotStock } from "@/lib/inventory/material-lots.server";
 import { requireInventoryManageMiddleware } from "@/lib/middlewares";
 import { addPackagingMaterialSchema } from "@/lib/validators/validators";
@@ -110,6 +111,7 @@ export const addPackagingMaterialFn = createServerFn()
           costPerUnit: lotPrice(unitPrice),
           minimumStockLevel: data.minimumStockLevel,
           type: data.type,
+          packagingKind: data.packagingKind,
           capacity: data.capacity === "" ? null : data.capacity,
           capacityUnit: data.capacityUnit === "" ? null : data.capacityUnit,
           weightPerPack: data.weightPerPack
@@ -252,7 +254,7 @@ export const addPackagingMaterialFn = createServerFn()
       const supplierName = supplier?.supplierName ?? "Unknown Supplier";
 
       const qty = parseFloat(data.quantity || "0");
-      const unitStr = data.measuredInKg ? "kg" : data.capacityUnit || "units";
+      const unitStr = packagingUnit(data);
       const unitPriceNum = parseFloat(unitPrice || "0");
       const totalCostNum = qty * unitPriceNum;
       const totalCostFormatted = `PKR ${totalCostNum.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;

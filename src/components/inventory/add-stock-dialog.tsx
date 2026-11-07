@@ -2,6 +2,9 @@ import { getInventoryFn } from "@/server-functions/inventory/get-inventory-fn";
 import { ResponsiveSheet } from "../custom/responsive-sheet";
 import { AddStockForm } from "./add-stock-dialog-form";
 import { PackagePlus } from "lucide-react";
+import { useState } from "react";
+import type { ChemicalPurchaseRef } from "@/lib/inventory/chemical-report-contract";
+import { PurchaseReportPrompt } from "./lab-reports/purchase-report-prompt";
 
 import { PurchaseRecord } from "@/components/suppliers/purchase-history-table";
 
@@ -22,7 +25,9 @@ export const AddStockDialog = ({
   itemToRestock,
   preselectedSupplierId,
 }: Props) => {
+  const [reportPurchase, setReportPurchase] = useState<ChemicalPurchaseRef | null>(null);
   return (
+    <>
     <ResponsiveSheet
       title={itemToRestock ? "Restock Material" : "Add Stock"}
       description={
@@ -38,11 +43,16 @@ export const AddStockDialog = ({
       <AddStockForm
         onOpenChange={onOpenChange}
         warehouses={warehouses}
-        onSuccess={() => onOpenChange(false)}
+        onSuccess={(purchase) => {
+          onOpenChange(false);
+          if (purchase) setReportPurchase(purchase);
+        }}
         preselectedWarehouse={preselectedWarehouse}
         itemToRestock={itemToRestock}
         preselectedSupplierId={preselectedSupplierId}
       />
     </ResponsiveSheet>
+    <PurchaseReportPrompt purchase={reportPurchase} onClose={() => setReportPurchase(null)} />
+    </>
   );
 };

@@ -5,8 +5,9 @@ import { purchaseRecords } from "@/db/schemas/supplier-schema";
 import { suppliers } from "@/db/schemas/core-suppliers";
 import { warehouses, chemicals, packagingMaterials } from "@/db/schemas/inventory-schema";
 import { z } from "zod";
-import { and, eq, gte, lte, desc } from "drizzle-orm";
+import { and, eq, gte, lte, desc, isNull } from "drizzle-orm";
 import { reportDateBounds } from "@/lib/report-dates";
+import { packagingUnitSql } from "@/lib/inventory/material-units.server";
 
 export const getPurchasesReportFn = createServerFn()
   .middleware([requireReportsViewMiddleware])
@@ -18,7 +19,7 @@ export const getPurchasesReportFn = createServerFn()
   )
   .handler(async ({ data }) => {
     const { fromDate, toDate } = reportDateBounds(data);
-    const conditions = [];
+    const conditions = [isNull(purchaseRecords.voidedAt)];
 
     if (fromDate) {
       conditions.push(gte(purchaseRecords.purchaseDate, fromDate));
@@ -45,7 +46,7 @@ export const getPurchasesReportFn = createServerFn()
         paymentMethod: purchaseRecords.paymentMethod,
         notes: purchaseRecords.notes,
         chemicalUnit: chemicals.unit,
-        packagingUnit: packagingMaterials.capacityUnit,
+        packagingUnit: packagingUnitSql(packagingMaterials.measuredInKg),
       })
       .from(purchaseRecords)
       .innerJoin(suppliers, eq(purchaseRecords.supplierId, suppliers.id))

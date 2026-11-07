@@ -61,11 +61,14 @@ export const PERMISSION_KEYS = [
   "inventory.view",
   "inventory.manage",
   "inventory.stock-reconciliation.manage",
+  "inventory.returns.receive",
   "suppliers.view",
   "suppliers.manage",
   "sales.view",
   "sales.manage",
   "sales.returns.override-price",
+  "sales.returns.create",
+  "sales.returns.approve",
   "sales.people.view",
   "sales.people.manage",
   "sales.config.view",
@@ -391,25 +394,46 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
     kind: "action",
   },
   {
+    key: "sales.returns.create",
+    moduleKey: "sales",
+    label: "Request sales returns",
+    description: "Record a customer's request to send goods back against an invoice.",
+    kind: "action",
+  },
+  {
+    key: "sales.returns.approve",
+    moduleKey: "sales",
+    label: "Approve sales returns",
+    description: "Approve, reject, cancel and void sales returns.",
+    kind: "action",
+  },
+  {
+    key: "inventory.returns.receive",
+    moduleKey: "inventory",
+    label: "Receive returned goods",
+    description: "Count and inspect returned goods and complete the return.",
+    kind: "action",
+  },
+  {
     key: "sales.offline.view",
     moduleKey: "sales",
     label: "View offline sales",
-    description: "Open offline workbook and import history.",
+    description: "Open the offline invoices page and batch history.",
     kind: "route",
     routePattern: "/sales/offline",
   },
   {
     key: "sales.offline.workbooks.manage",
     moduleKey: "sales",
-    label: "Manage offline sales workbooks",
-    description: "Issue, replace, close, or force-retire official workbooks.",
+    label: "Manage offline invoice numbers",
+    description: "Issue, replace, or retire the reserved offline invoice numbers.",
     kind: "action",
   },
   {
     key: "sales.offline.upload",
     moduleKey: "sales",
     label: "Upload offline sales",
-    description: "Upload and stage an official offline sales workbook.",
+    description: "Use the offline desk and send offline invoices to the office.",
     kind: "action",
   },
   {
@@ -709,6 +733,17 @@ export const PERMISSION_DEFINITION_MAP = Object.fromEntries(
   PERMISSION_DEFINITIONS.map((permission) => [permission.key, permission]),
 ) as Record<PermissionKey, PermissionDefinition>;
 
+/**
+ * When one of these permissions is created for the first time, every role that already holds
+ * the mapped permission gets it too, so nobody loses access on the day it ships. It runs once:
+ * removing the permission from a role later is respected.
+ */
+export const PERMISSION_BACKFILLS: Partial<Record<PermissionKey, PermissionKey>> = {
+  "sales.returns.create": "sales.manage",
+  "sales.returns.approve": "sales.manage",
+  "inventory.returns.receive": "inventory.manage",
+};
+
 export type AppRoleSeed = {
   slug: SystemRoleSlug;
   name: string;
@@ -752,10 +787,13 @@ export const SYSTEM_ROLE_SEEDS: AppRoleSeed[] = [
       "inventory.view",
       "inventory.manage",
       "inventory.stock-reconciliation.manage",
+      "inventory.returns.receive",
       "suppliers.view",
       "suppliers.manage",
       "sales.view",
       "sales.manage",
+      "sales.returns.create",
+      "sales.returns.approve",
       "sales.people.view",
       "sales.people.manage",
       "sales.config.view",
@@ -805,6 +843,8 @@ export const SYSTEM_ROLE_SEEDS: AppRoleSeed[] = [
     permissionKeys: [
       "sales.view",
       "sales.manage",
+      "sales.returns.create",
+      "sales.returns.approve",
       "sales.people.view",
       "sales.people.manage",
       "sales.config.view",

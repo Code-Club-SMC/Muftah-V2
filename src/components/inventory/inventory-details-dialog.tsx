@@ -31,6 +31,7 @@ import { LabReportsList } from "./lab-reports/lab-reports-list";
 import { Separator } from "@/components/ui/separator";
 import { calculateTotalUnits } from "@/lib/wac";
 import { packagingUnit } from "@/lib/inventory/material-units";
+import { stockStatus } from "@/lib/inventory/stock-status";
 
 type DetailsProps = {
   open: boolean;
@@ -64,7 +65,8 @@ export const InventoryDetailsDialog = ({
   const minLevel = isFinished
     ? 0
     : parseFloat(material.minimumStockLevel?.toString() || "0");
-  const isLow = !isFinished && currentQty < minLevel;
+  const status = stockStatus(currentQty, minLevel);
+  const isLow = !isFinished && status !== "healthy";
 
   const materialId = isFinished
     ? item.recipe?.id

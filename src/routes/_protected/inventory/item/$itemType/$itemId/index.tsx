@@ -21,6 +21,8 @@ import { LabReportsList } from "@/components/inventory/lab-reports/lab-reports-l
 import { getItemDetailPaginatedFn } from "@/server-functions/inventory/stock/get-item-detail-paginated-fn";
 import { GenericLoader } from "@/components/custom/generic-loader";
 import type { ColumnDef } from "@tanstack/react-table";
+import { packagingKindLabel } from "@/lib/inventory/packaging-kind";
+import { stockStatus } from "@/lib/inventory/stock-status";
 
 // ── Search schema ────────────────────────────────────────────────────────────
 
@@ -218,7 +220,7 @@ function ItemDetailPage() {
     : parseFloat(String(item?.totalStock ?? 0));
 
   const isLow =
-    !isFinished && minLevel !== null && totalStock !== null && totalStock < minLevel;
+    !isFinished && totalStock !== null && stockStatus(totalStock, minLevel) !== "healthy";
 
   const warehouses = (
     item?.stockByWarehouse as Array<{
@@ -277,6 +279,12 @@ function ItemDetailPage() {
               >
                 {itemType.replace("_", " ")} Details
               </Badge>
+              {itemType === "packaging" && (
+                <>
+                  <Badge variant="outline">{packagingKindLabel({ type: item.type, packagingKind: item.packagingKind })}</Badge>
+                  <span className="text-xs text-muted-foreground">Production role: {item.type}</span>
+                </>
+              )}
               {isLow && (
                 <Badge
                   variant="destructive"

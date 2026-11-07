@@ -58,7 +58,7 @@ export type PostInvoiceInput = CreateInvoiceInput & {
   creditPolicy: "block" | "warn";
   pricingPolicy: "live" | "signed_snapshot";
   offlineSalesSlotId?: string;
-  offlineSaleType?: "direct_distributor" | "booked_order";
+  offlineSaleType?: "direct_distributor" | "direct_retailer" | "booked_order";
   commissionPolicy?: "normal" | "suppress";
   signedLineSnapshots?: Array<{
     stagedItemId: string;
@@ -579,7 +579,6 @@ export async function postInvoice(
   const customerDefaultMargin = customerRecord?.defaultMargin
     ? Number(customerRecord.defaultMargin)
     : null;
-  const isRetailerInvoice = customerRecord?.customerType === "retailer";
   const pricingMode = getInvoicePricingMode(customerRecord?.customerType);
   const factoryFloorWarehouse = await resolveInvoiceStockWarehouse(tx, input);
   const stockWarehouseId = factoryFloorWarehouse.id;
@@ -938,9 +937,7 @@ export async function postInvoice(
     lineResolutions.push(lineResolution);
   }
 
-  const invoiceDiscount = isRetailerInvoice
-    ? roundMoney(Number(data.invoiceDiscount ?? 0))
-    : 0;
+  const invoiceDiscount = roundMoney(Number(data.invoiceDiscount ?? 0));
   if (invoiceDiscount > totalAmount) {
     throw new Error(
       `Discount (${invoiceDiscount.toFixed(2)}) cannot exceed items total (${totalAmount.toFixed(2)}).`,
@@ -1020,9 +1017,7 @@ export async function postInvoice(
       expenses: (data.expenses ?? 0).toString(),
       expensesDescription: data.expensesDescription,
       invoiceDiscount: invoiceDiscount.toString(),
-      invoiceDiscountDescription: isRetailerInvoice
-        ? data.invoiceDiscountDescription
-        : null,
+      invoiceDiscountDescription: data.invoiceDiscountDescription ?? null,
       amount: netInvoiceAmount.toString(),
       totalPrice: totalPayable.toString(),
       remarks: data.remarks,

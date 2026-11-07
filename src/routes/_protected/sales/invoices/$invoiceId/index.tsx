@@ -250,13 +250,13 @@ function InvoiceDetailContent({ invoiceId }: { invoiceId: string }) {
                 <span className="text-muted-foreground">Invoice Expense</span>
                 <span className="font-medium text-amber-600">{Number(invoice.expenses) > 0 ? PKR(Number(invoice.expenses)) : "—"}</span>
               </div>
-              {isRetailerInvoice && (
+              {(isRetailerInvoice || invoiceDiscount > 0) && (
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground">Discount</span>
                   <span className="font-medium text-rose-600">{invoiceDiscount > 0 ? `- ${PKR(invoiceDiscount)}` : "—"}</span>
                 </div>
               )}
-              {isRetailerInvoice && invoice.invoiceDiscountDescription && (
+              {invoice.invoiceDiscountDescription && (
                 <div className="rounded-md bg-rose-50 border border-rose-100 px-3 py-2 text-xs text-rose-900">
                   {invoice.invoiceDiscountDescription}
                 </div>

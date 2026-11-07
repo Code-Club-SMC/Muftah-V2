@@ -19,6 +19,7 @@ vi.mock("@/components/custom/data-table", () => ({ DataTable: ({ columns, data }
 vi.mock("@tanstack/react-query", () => ({ useQuery: () => ({ data: [] }) }));
 vi.mock("@/server-functions/inventory/stock/get-transfer-history-fn", () => ({ getTransferHistoryFn: vi.fn() }));
 vi.mock("@/components/inventory/lab-reports/lab-reports-list", () => ({ LabReportsList: () => null }));
+vi.mock("@/lib/inventory/finished-stock-availability.server", () => ({ finishedAvailableUnits: async () => new Map([["recipe", 6]]) }));
 
 import { getInventoryFn } from "@/server-functions/inventory/get-inventory-fn";
 import { getFactoryFloorStockFn } from "@/server-functions/inventory/factory-floor/get-factory-floor-stocks-fn";
@@ -36,7 +37,7 @@ const stock = {
 };
 const floor = { id: "floor", name: "Floor", materialStock: [], finishedGoodsStock: [stock] };
 function query(result: unknown[]) {
-  const builder: any = { from: () => builder, innerJoin: () => builder, where: () => builder, groupBy: () => builder,
+  const builder: any = { from: () => builder, innerJoin: () => builder, leftJoin: () => builder, where: () => builder, groupBy: () => builder,
     then: (resolve: any, reject: any) => Promise.resolve(result).then(resolve, reject) };
   return builder;
 }
@@ -47,7 +48,7 @@ describe("finished inventory pack totals", () => {
     mocks.warehouses.mockReset().mockResolvedValue([floor]);
     mocks.floor.mockReset().mockResolvedValue(floor);
     mocks.stock.mockReset().mockResolvedValue([stock]);
-    mocks.select.mockReset().mockImplementation(() => query([stats]));
+    mocks.select.mockReset().mockImplementation((projection: Record<string, unknown>) => query("materialId" in projection ? [] : "minimumStockLevel" in projection ? [stock.recipe] : [stats]));
   });
   it("keeps canonical full and loose quantities in the warehouse inventory read", async () => {
     const result = await getInventoryFn();

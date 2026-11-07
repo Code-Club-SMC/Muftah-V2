@@ -1,6 +1,7 @@
 import { toast } from "sonner";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { cartonKeys } from "../api/carton.query-keys";
+import { invalidateStockQueries } from "@/lib/inventory/invalidate-stock";
 
 import {
   topUpCartonFn,
@@ -45,7 +46,8 @@ export function useTopUpCarton(cartonId: string, batchId: string) {
   return useMutation({
     mutationFn: (payload: { delta: number; reason?: string }) =>
       topUpCartonFn({ data: { ...payload, cartonId } }),
-    onSuccess: () => {
+    onSuccess: async () => {
+      await invalidateStockQueries(queryClient);
       queryClient.invalidateQueries({ queryKey: cartonKeys.detail(cartonId) });
       queryClient.invalidateQueries({ queryKey: cartonKeys.byBatch(batchId) });
       queryClient.invalidateQueries({ queryKey: cartonKeys.batchKpis(batchId) });
@@ -65,7 +67,8 @@ export function useRemovePacks(cartonId: string, batchId: string) {
   return useMutation({
     mutationFn: (payload: { delta: number; reason: "QC_FAIL" | "DAMAGED" | "TRANSFER" | "OTHER"; notes?: string }) =>
       removePacksFromCartonFn({ data: { ...payload, cartonId } }),
-    onSuccess: () => {
+    onSuccess: async () => {
+      await invalidateStockQueries(queryClient);
       queryClient.invalidateQueries({ queryKey: cartonKeys.detail(cartonId) });
       queryClient.invalidateQueries({ queryKey: cartonKeys.byBatch(batchId) });
       queryClient.invalidateQueries({ queryKey: cartonKeys.batchKpis(batchId) });
@@ -85,7 +88,8 @@ export function useSetCartonCount(cartonId: string, batchId: string) {
   return useMutation({
     mutationFn: (payload: { newCount: number; reason: string }) =>
       setCartonCountFn({ data: { ...payload, cartonId } }),
-    onSuccess: () => {
+    onSuccess: async () => {
+      await invalidateStockQueries(queryClient);
       queryClient.invalidateQueries({ queryKey: cartonKeys.detail(cartonId) });
       queryClient.invalidateQueries({ queryKey: cartonKeys.byBatch(batchId) });
       queryClient.invalidateQueries({ queryKey: cartonKeys.batchKpis(batchId) });
@@ -105,7 +109,8 @@ export function useBulkAdjust() {
   return useMutation({
     mutationFn: (payload: { cartonIds: string[]; delta: number; strategy: "SKIP" | "CAP"; reason: string }) =>
       bulkAdjustCartonsFn({ data: payload }),
-    onSuccess: () => {
+    onSuccess: async () => {
+      await invalidateStockQueries(queryClient);
       queryClient.invalidateQueries({ queryKey: cartonKeys.all() });
       toast.success("Bulk adjust completed.");
     },
@@ -123,7 +128,8 @@ export function useMergeCartons(batchId: string) {
   return useMutation({
     mutationFn: (payload: { sourceCartonIds: string[]; destinationCartonId: string }) =>
       mergeCartonsFn({ data: payload }),
-    onSuccess: () => {
+    onSuccess: async () => {
+      await invalidateStockQueries(queryClient);
       queryClient.invalidateQueries({ queryKey: cartonKeys.byBatch(batchId) });
       queryClient.invalidateQueries({ queryKey: cartonKeys.batchKpis(batchId) });
       toast.success("Cartons merged successfully.");
@@ -142,7 +148,8 @@ export function useRepackCarton(cartonId: string, batchId: string) {
   return useMutation({
     mutationFn: (payload: { newCapacity: number; justification: string }) =>
       repackCartonFn({ data: { ...payload, cartonId } }),
-    onSuccess: () => {
+    onSuccess: async () => {
+      await invalidateStockQueries(queryClient);
       queryClient.invalidateQueries({ queryKey: cartonKeys.detail(cartonId) });
       queryClient.invalidateQueries({ queryKey: cartonKeys.byBatch(batchId) });
       toast.success("Carton repacked successfully.");
@@ -161,7 +168,8 @@ export function useRetireCarton(cartonId: string, batchId: string) {
   return useMutation({
     mutationFn: (payload: { reason: "LOST" | "DESTROYED" | "CONDEMNED" | "OTHER"; notes?: string }) =>
       retireCartonFn({ data: { ...payload, cartonId } }),
-    onSuccess: () => {
+    onSuccess: async () => {
+      await invalidateStockQueries(queryClient);
       queryClient.invalidateQueries({ queryKey: cartonKeys.detail(cartonId) });
       queryClient.invalidateQueries({ queryKey: cartonKeys.byBatch(batchId) });
       queryClient.invalidateQueries({ queryKey: cartonKeys.batchKpis(batchId) });
@@ -181,7 +189,8 @@ export function useCloseBatch() {
   return useMutation({
     mutationFn: (payload: { productionRunId: string; acknowledgeShortfall?: boolean }) =>
       closeBatchFn({ data: payload }),
-    onSuccess: () => {
+    onSuccess: async () => {
+      await invalidateStockQueries(queryClient);
       queryClient.invalidateQueries({ queryKey: cartonKeys.all() });
       queryClient.invalidateQueries({ queryKey: ["production-runs"] });
       toast.success("Batch closed successfully.");
@@ -219,7 +228,8 @@ export function useAddCartons() {
   return useMutation({
     mutationFn: (payload: { productionRunId: string; count: number; zone?: string }) =>
       addCartonsFn({ data: payload }),
-    onSuccess: (_data, variables) => {
+    onSuccess: async (_data, variables) => {
+      await invalidateStockQueries(queryClient);
       queryClient.invalidateQueries({ queryKey: cartonKeys.byBatch(variables.productionRunId) });
       queryClient.invalidateQueries({ queryKey: cartonKeys.batchKpis(variables.productionRunId) });
       toast.success("Cartons added to batch.");
@@ -238,7 +248,8 @@ export function useTransferPacks(batchId: string) {
   return useMutation({
     mutationFn: (payload: { sourceCartonId: string; destinationCartonId: string; packCount: number }) =>
       transferPacksFn({ data: payload }),
-    onSuccess: () => {
+    onSuccess: async () => {
+      await invalidateStockQueries(queryClient);
       queryClient.invalidateQueries({ queryKey: cartonKeys.byBatch(batchId) });
       queryClient.invalidateQueries({ queryKey: cartonKeys.batchKpis(batchId) });
       toast.success("Packs transferred successfully.");
@@ -257,7 +268,8 @@ export function useDispatch() {
   return useMutation({
     mutationFn: (payload: { lines: Array<{ cartonId: string; packsToDispatch: number }>; dispatchedBy: string; orderId?: string }) =>
       dispatchCartonsFn({ data: payload }),
-    onSuccess: () => {
+    onSuccess: async () => {
+      await invalidateStockQueries(queryClient);
       queryClient.invalidateQueries({ queryKey: cartonKeys.all() });
       toast.success("Cartons dispatched.");
     },
@@ -275,7 +287,8 @@ export function useProcessReturn() {
   return useMutation({
     mutationFn: (payload: { dispatchOrderId: string; lines: Array<{ cartonId: string; packsReturned: number; condition: "GOOD" | "DAMAGED"; destinationCartonId?: string }>; notes?: string }) =>
       processReturnFn({ data: payload }),
-    onSuccess: () => {
+    onSuccess: async () => {
+      await invalidateStockQueries(queryClient);
       queryClient.invalidateQueries({ queryKey: cartonKeys.all() });
       toast.success("Return processed successfully.");
     },
@@ -293,7 +306,8 @@ export function useApplyQcHold(cartonId: string, batchId: string) {
   return useMutation({
     mutationFn: (payload: { reason: string; expiresAt?: string }) =>
       applyQcHoldFn({ data: { ...payload, cartonId } }),
-    onSuccess: () => {
+    onSuccess: async () => {
+      await invalidateStockQueries(queryClient);
       queryClient.invalidateQueries({ queryKey: cartonKeys.detail(cartonId) });
       queryClient.invalidateQueries({ queryKey: cartonKeys.byBatch(batchId) });
       toast.success("QC hold applied.");
@@ -309,7 +323,8 @@ export function useReleaseQcHold(cartonId: string, batchId: string) {
   return useMutation({
     mutationFn: (payload: { outcome: "CLEARED" | "CONDEMNED"; notes?: string }) =>
       releaseQcHoldFn({ data: { ...payload, cartonId } }),
-    onSuccess: () => {
+    onSuccess: async () => {
+      await invalidateStockQueries(queryClient);
       queryClient.invalidateQueries({ queryKey: cartonKeys.detail(cartonId) });
       queryClient.invalidateQueries({ queryKey: cartonKeys.byBatch(batchId) });
       toast.success("QC hold released.");
@@ -388,7 +403,8 @@ export function useApproveStockCount() {
   return useMutation({
     mutationFn: (payload: { sessionId: string; approvedLines: Array<{ lineId: string; approved: boolean }> }) =>
       approveStockCountFn({ data: payload }),
-    onSuccess: () => {
+    onSuccess: async () => {
+      await invalidateStockQueries(queryClient);
       queryClient.invalidateQueries({ queryKey: cartonKeys.stockSessions() });
       toast.success("Stock count approved.");
     },
@@ -510,7 +526,8 @@ export function useBulkCartonOperation(productionRunId?: string) {
       cartonIds: string[];
       payload?: any;
     }) => executeBulkCartonOperationFn({ data }),
-    onSuccess: () => {
+    onSuccess: async () => {
+      await invalidateStockQueries(queryClient);
       toast.success("Bulk operation executed successfully.");
       if (productionRunId) {
         queryClient.invalidateQueries({ queryKey: cartonKeys.byBatch(productionRunId) });
@@ -518,7 +535,6 @@ export function useBulkCartonOperation(productionRunId?: string) {
       } else {
         queryClient.invalidateQueries({ queryKey: cartonKeys.all() });
       }
-      queryClient.invalidateQueries({ queryKey: ["inventory"] });
     },
     onError: (error: any) => {
       toast.error(error.message || "Failed to execute bulk operation.");

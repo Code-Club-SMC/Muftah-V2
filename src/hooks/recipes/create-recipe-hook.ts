@@ -7,7 +7,8 @@ export const useCreateRecipe = () => {
 
   const createMutation = useMutation({
     mutationFn: createRecipeFn,
-    onSuccess: () => {
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["low-stock-alerts"] });
       toast.success("Packaging Format created successfully");
       queryClient.invalidateQueries({ queryKey: ["recipes"] });
       queryClient.invalidateQueries({ queryKey: ["batch-packing"] });

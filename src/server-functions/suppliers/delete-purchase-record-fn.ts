@@ -3,7 +3,6 @@ import { createId } from "@paralleldrive/cuid2";
 import {
   db,
   purchaseRecords,
-  supplierPayments,
   wallets,
   expenses,
   transactions,
@@ -18,32 +17,35 @@ import { lockMaterialStock, moveLotStock, purchaseIsUntouched } from "@/lib/inve
 import { planPurchaseRefund } from "@/lib/suppliers/purchase-refund";
 import { loadPurchasePayments } from "@/lib/suppliers/purchase-refund.server";
 import { z } from "zod";
+import { packagingUnit } from "@/lib/inventory/material-units";
 
 const deletePurchaseSchema = z.object({
   id: z.string(),
+  reason: z.string().trim().min(1, "A void reason is required").max(1000),
   // Where the money goes back, and how much. Left out means everything that was paid, to the wallet that paid.
   refundWalletId: z.string().optional(),
   refundAmount: z.string().optional(),
 });
 
-export const deletePurchaseRecordFn = createServerFn()
+export const deletePurchaseRecordFn = createServerFn({ method: "POST" })
   .middleware([requireSuppliersManageMiddleware])
   .inputValidator(deletePurchaseSchema)
   .handler(async ({ data, context }) => {
     const userId = context.session.user.id;
 
-    await db.transaction(async (tx) => {
-      // Read inside the transaction so the check and the delete see the same row
+    const audit = await db.transaction(async (tx) => {
+      // All purchase writers take this lock before checking state or changing stock/money.
       const [locked] = await tx.select({ id: purchaseRecords.id }).from(purchaseRecords)
         .where(eq(purchaseRecords.id, data.id)).for("update");
       const purchase = locked && await tx.query.purchaseRecords.findFirst({
         where: eq(purchaseRecords.id, data.id),
-        with: { chemical: true, packagingMaterial: true },
+        with: { chemical: true, packagingMaterial: true, supplier: true },
       });
 
       if (!purchase) {
         throw new Error("Purchase record not found");
       }
+      if (purchase.voidedAt) throw new Error("Purchase is already voided");
 
       const ref = purchase.materialType === "chemical"
         ? { materialType: "chemical" as const, materialId: purchase.chemicalId! }
@@ -51,7 +53,9 @@ export const deletePurchaseRecordFn = createServerFn()
       await lockMaterialStock(tx, [purchase.warehouseId], [ref]);
       if (!(await purchaseIsUntouched(tx, purchase))) throw new Error(PURCHASE_LOCKED_MESSAGE);
 
-      const materialName = purchase.chemical?.name ?? purchase.packagingMaterial?.name ?? "material";
+      const material = purchase.materialType === "chemical" ? purchase.chemical : purchase.packagingMaterial;
+      if (!material) throw new Error("Purchase material not found");
+      const materialName = material.name;
       const { payments, walletIds } = await loadPurchasePayments(tx, purchase.id, data.refundWalletId ? [data.refundWalletId] : []);
       const plan = planPurchaseRefund({
         payments,
@@ -59,6 +63,7 @@ export const deletePurchaseRecordFn = createServerFn()
         refundWalletId: data.refundWalletId,
         refundAmount: data.refundAmount,
       });
+      if (plan.refund.gt(purchase.paidAmount)) throw new Error("Refund cannot be more than the purchase paid amount");
 
       // 1. The purchase never happened, so its expenses are voided. They stay visible, marked voided,
       //    and the original wallet debits stay in the wallet history.
@@ -83,7 +88,7 @@ export const deletePurchaseRecordFn = createServerFn()
         voidedIds.push(expense.id);
         await tx
           .update(expenses)
-          .set({ voidedAt: new Date(), voidedById: userId, voidReason: "Purchase record deleted" })
+          .set({ voidedAt: new Date(), voidedById: userId, voidReason: `Void purchase: ${data.reason}` })
           .where(eq(expenses.id, expense.id));
       }
 
@@ -101,7 +106,7 @@ export const deletePurchaseRecordFn = createServerFn()
           amount,
           source: "Supplier Refund",
           referenceId: purchase.id,
-          description: `Refund for deleted purchase of ${materialName}`,
+          description: `Refund for voided purchase of ${materialName}`,
           performedById: userId,
         });
       }
@@ -124,29 +129,34 @@ export const deletePurchaseRecordFn = createServerFn()
         });
       }
 
-      // 4. Delete associated payment rows
-      await tx
-        .delete(supplierPayments)
-        .where(eq(supplierPayments.purchaseId, data.id));
-
-      // 5. Revert stock
+      // Keep original purchase/payment rows; the stock movement and snapshot record the reversal.
       await moveLotStock(tx, { ref, lotId: purchase.lotId!, warehouseId: purchase.warehouseId, delta: `-${new Big(purchase.quantity).toFixed(3)}`, sourceType: "purchase_delete", sourceId: purchase.id });
 
-      // 6. Delete the purchase record
-      await tx.delete(purchaseRecords).where(eq(purchaseRecords.id, data.id));
+      await tx.update(purchaseRecords).set({
+        voidedAt: new Date(),
+        voidedById: userId,
+        voidReason: data.reason,
+        voidRefundAmount: plan.refund.toFixed(2),
+        voidRefundWalletId: plan.refund.gt(0) ? plan.refundWalletId : null,
+        voidSnapshot: {
+          materialName,
+          unit: purchase.materialType === "chemical" ? purchase.chemical!.unit : packagingUnit(purchase.packagingMaterial),
+          supplierName: purchase.supplier.supplierName,
+        },
+      }).where(eq(purchaseRecords.id, purchase.id));
+      return { materialName, paid: plan.paid.toFixed(2), refund: plan.refund.toFixed(2) };
+    });
 
-      void logActivityQuiet({
-        module: "suppliers",
-        action: "deleted",
-        entityType: "purchase",
-        entityLabel: materialName,
-        actorId: userId,
-        actorName: context.session.user.name,
-        description: plan.paid.gt(0)
-          ? `Deleted purchase of ${materialName}; refunded ${plan.refund.toFixed(2)} of ${plan.paid.toFixed(2)} paid`
-          : `Deleted purchase of ${materialName}`,
-        severity: "info",
-      });
+    void logActivityQuiet({
+      module: "suppliers",
+      action: "voided",
+      entityType: "purchase",
+      entityId: data.id,
+      entityLabel: audit.materialName,
+      actorId: userId,
+      actorName: context.session.user.name,
+      description: `Voided purchase of ${audit.materialName}; refunded ${audit.refund} of ${audit.paid} paid. Reason: ${data.reason}`,
+      severity: "info",
     });
 
     return { success: true };

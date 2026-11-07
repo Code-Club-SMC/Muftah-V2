@@ -1,282 +1,279 @@
 import { useState } from "react";
 import { format } from "date-fns";
-import { Button } from "../../ui/button";
-import { Badge } from "../../ui/badge";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
-    FlaskConical,
-    Plus,
-    Eye,
-    Trash2,
-    Pencil,
-    FileText,
-    CheckCircle2,
-    XCircle,
-} from "lucide-react";
-import {
-    useLabReports,
-    useDeleteLabReport,
+  useChemicalReportPurchases,
+  useLabReports,
+  useDeleteLabReport,
 } from "@/hooks/inventory/use-lab-reports";
+import { useViewerAccess } from "@/hooks/use-viewer-access";
+import { hasPermission } from "@/lib/rbac";
 import {
-    AlertDialog,
-    AlertDialogAction,
-    AlertDialogCancel,
-    AlertDialogContent,
-    AlertDialogDescription,
-    AlertDialogFooter,
-    AlertDialogHeader,
-    AlertDialogTitle,
-} from "../../ui/alert-dialog";
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { CreateLabReportForm } from "./create-lab-report-form";
 import { CertificateView } from "./certificate-view";
-import { Card, CardContent } from "../../ui/card";
 
-type LabReportsListProps = {
-    chemicalId: string;
-    chemicalName: string;
-};
+type Report = NonNullable<ReturnType<typeof useLabReports>["data"]>[number];
+type Props = { chemicalId: string; chemicalName: string; purchaseId?: string };
 
-export const LabReportsList = ({
-    chemicalId,
-    chemicalName,
-}: LabReportsListProps) => {
-    const { data: reports, isLoading } = useLabReports(chemicalId);
-    const deleteReport = useDeleteLabReport();
-    const [createOpen, setCreateOpen] = useState(false);
-    const [editReport, setEditReport] = useState<any | null>(null);
-    const [viewReport, setViewReport] = useState<any | null>(null);
-    const [deleteReportId, setDeleteReportId] = useState<string | null>(null);
+export function LabReportsList(props: Props) {
+  return (
+    <PurchaseReports
+      key={`${props.chemicalId}:${props.purchaseId ?? "all"}`}
+      {...props}
+    />
+  );
+}
 
-    if (isLoading) {
-        return (
-            <div className="flex items-center justify-center py-12 text-sm text-muted-foreground">
-                Loading lab reports...
-            </div>
-        );
-    }
+function PurchaseReports({ chemicalId, chemicalName, purchaseId }: Props) {
+  const { data: viewer } = useViewerAccess();
+  const canView = hasPermission(viewer?.permissions ?? [], "inventory.view");
+  const canManage =
+    canView && hasPermission(viewer?.permissions ?? [], "inventory.manage");
+  const reports = useLabReports(canView ? chemicalId : "", purchaseId);
+  const purchases = useChemicalReportPurchases(canView ? chemicalId : "");
+  const deletion = useDeleteLabReport();
+  const [creatingFor, setCreatingFor] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [viewing, setViewing] = useState<Report | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const editing = reports.data?.find((report) => report.id === editingId);
+  const deletionTarget = reports.data?.find((report) => report.id === deleting);
 
+  if (!canView)
     return (
-        <div className="space-y-4">
-            {/* Header */}
-            <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                    <FlaskConical className="size-4 text-primary" />
-                    <h4 className="text-sm font-bold">Lab Reports (COA)</h4>
-                    {reports && reports.length > 0 && (
-                        <Badge variant="secondary" className="text-[10px] font-bold">
-                            {reports.length}
-                        </Badge>
-                    )}
-                </div>
-                <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-7 text-xs font-bold"
-                    onClick={() => {
-                        setEditReport(null);
-                        setCreateOpen(true);
-                    }}
-                >
-                    <Plus className="size-3 mr-1" />
-                    New Report
-                </Button>
-            </div>
-
-            {/* Reports List */}
-            {!reports || reports.length === 0 ? (
-                <Card className="border-dashed">
-                    <CardContent className="flex flex-col items-center justify-center py-8 text-center">
-                        <FileText className="size-10 text-muted-foreground/30 mb-3" />
-                        <p className="text-sm font-medium text-muted-foreground">
-                            No lab reports yet
-                        </p>
-                        <p className="text-xs text-muted-foreground/70 mt-1">
-                            Create a Certificate of Analysis for {chemicalName}
-                        </p>
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            className="mt-4 h-8 text-xs"
-                            onClick={() => {
-                                setEditReport(null);
-                                setCreateOpen(true);
-                            }}
-                        >
-                            <Plus className="size-3 mr-1" />
-                            Create First Report
-                        </Button>
-                    </CardContent>
-                </Card>
-            ) : (
-                <div className="space-y-2">
-                    {reports.map((report) => {
-                        const allPassed = (
-                            report.analysisItems as Array<{
-                                item: string;
-                                requirement: string;
-                                result: string;
-                                passed: boolean;
-                            }>
-                        ).every((i) => i.passed);
-                        const itemCount = (report.analysisItems as Array<any>).length;
-                        const passCount = (
-                            report.analysisItems as Array<{ passed: boolean }>
-                        ).filter((i) => i.passed).length;
-
-                        return (
-                            <div
-                                key={report.id}
-                                className="group flex items-center justify-between p-3 rounded-lg border bg-background hover:bg-muted/30 transition-colors"
-                            >
-                                <div className="flex items-center gap-3 min-w-0">
-                                    <div
-                                        className={`size-9 rounded-lg flex items-center justify-center shrink-0 ${allPassed
-                                            ? "bg-emerald-100 text-emerald-600"
-                                            : "bg-red-100 text-red-600"
-                                            }`}
-                                    >
-                                        {allPassed ? (
-                                            <CheckCircle2 className="size-4" />
-                                        ) : (
-                                            <XCircle className="size-4" />
-                                        )}
-                                    </div>
-                                    <div className="min-w-0">
-                                        <div className="flex items-center gap-2">
-                                            <span className="text-sm font-bold truncate">
-                                                {report.productName}
-                                            </span>
-                                            {report.lotNumber && (
-                                                <Badge
-                                                    variant="outline"
-                                                    className="text-[9px] font-mono shrink-0"
-                                                >
-                                                    LOT: {report.lotNumber}
-                                                </Badge>
-                                            )}
-                                        </div>
-                                        <div className="flex items-center gap-2 mt-0.5 text-[10px] text-muted-foreground">
-                                            <span>
-                                                {format(new Date(report.reportDate), "MMM d, yyyy")}
-                                            </span>
-                                            <span>•</span>
-                                            <span>
-                                                {passCount}/{itemCount} passed
-                                            </span>
-                                            <span>•</span>
-                                            <span>By {report.certifiedBy}</span>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        className="size-7 text-primary hover:bg-primary/10"
-                                        onClick={() => setViewReport(report)}
-                                        title="View Certificate"
-                                    >
-                                        <Eye className="size-3.5" />
-                                    </Button>
-                                    <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        className="size-7 text-slate-500 hover:bg-slate-100 hover:"
-                                        onClick={() => {
-                                            setEditReport(report);
-                                            setCreateOpen(true);
-                                        }}
-                                        title="Edit Report"
-                                    >
-                                        <Pencil className="size-3.5" />
-                                    </Button>
-                                    <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        className="size-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                                        onClick={() => setDeleteReportId(report.id)}
-                                        title="Delete Report"
-                                    >
-                                        <Trash2 className="size-3.5" />
-                                    </Button>
-                                </div>
-                            </div>
-                        );
-                    })}
-                </div>
-            )}
-
-            {/* Create/Edit Form */}
-            <CreateLabReportForm
-                open={createOpen}
-                onOpenChange={(open) => {
-                    setCreateOpen(open);
-                    if (!open) setEditReport(null);
-                }}
-                chemicalId={chemicalId}
-                chemicalName={chemicalName}
-                editData={editReport ? {
-                    id: editReport.id,
-                    productName: editReport.productName,
-                    stockNumber: editReport.stockNumber,
-                    lotNumber: editReport.lotNumber,
-                    analysisItems: editReport.analysisItems as Array<{
-                        item: string;
-                        requirement: string;
-                        result: string;
-                        passed: boolean;
-                    }>,
-                    certifiedBy: editReport.certifiedBy,
-                    certifierTitle: editReport.certifierTitle,
-                    reportDate: editReport.reportDate,
-                    standardReference: editReport.standardReference,
-                    notes: editReport.notes,
-                } : null}
-            />
-
-            {/* Certificate View */}
-            {viewReport && (
-                <CertificateView
-                    open={!!viewReport}
-                    onOpenChange={(open) => !open && setViewReport(null)}
-                    report={viewReport}
-                />
-            )}
-
-            {/* Delete Confirmation */}
-            <AlertDialog
-                open={!!deleteReportId}
-                onOpenChange={(open) => !open && setDeleteReportId(null)}
-            >
-                <AlertDialogContent>
-                    <AlertDialogHeader>
-                        <AlertDialogTitle className="flex items-center gap-2">
-                            <Trash2 className="size-5 text-destructive" />
-                            Delete Lab Report?
-                        </AlertDialogTitle>
-                        <AlertDialogDescription>
-                            This will permanently delete this Certificate of Analysis. This
-                            action cannot be undone.
-                        </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                        <AlertDialogAction
-                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                            disabled={deleteReport.isPending}
-                            onClick={() => {
-                                if (!deleteReportId) return;
-                                deleteReport.mutate(
-                                    { data: { reportId: deleteReportId } },
-                                    { onSuccess: () => setDeleteReportId(null) },
-                                );
-                            }}
-                        >
-                            {deleteReport.isPending ? "Deleting..." : "Delete Report"}
-                        </AlertDialogAction>
-                    </AlertDialogFooter>
-                </AlertDialogContent>
-            </AlertDialog>
-        </div>
+      <p className="text-sm text-muted-foreground">
+        Inventory view permission is required to open certificates.
+      </p>
     );
-};
+  const rows =
+    purchases.data?.filter((p) => !purchaseId || p.purchaseId === purchaseId) ??
+    [];
+  const groups = new Map<string, Report[]>();
+  for (const report of reports.data ?? []) {
+    const key = report.purchaseId ?? "legacy";
+    groups.set(key, [...(groups.get(key) ?? []), report]);
+  }
+  return (
+    <div className="flex flex-col gap-4">
+      <h4 className="text-sm font-bold">
+        Lab reports, certificates of analysis
+      </h4>
+      {(reports.isLoading || purchases.isPending) && (
+        <p role="status">Loading lab reports...</p>
+      )}
+      {(reports.isError || purchases.isError) && (
+        <Alert variant="destructive">
+          <AlertDescription>
+            Unable to load lab reports or purchase coverage.
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                void reports.refetch();
+                void purchases.refetch();
+              }}
+            >
+              Retry
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
+      {rows.map((p) => (
+        <section
+          key={p.purchaseId}
+          className="flex flex-col gap-2 rounded-lg border p-3"
+          aria-label={`Purchase ${p.purchaseId}`}
+        >
+          <div className="flex items-center justify-between gap-3">
+            <Badge
+              variant={
+                p.voidedAt
+                  ? "secondary"
+                  : p.reportCount === 0
+                    ? "destructive"
+                    : "outline"
+              }
+            >
+              {p.voidedAt
+                ? "Voided, reports read-only"
+                : p.reportCount === 0
+                  ? "Report missing"
+                  : `${p.reportCount} certificate${p.reportCount === 1 ? "" : "s"}`}
+            </Badge>
+            {canManage && !p.voidedAt && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCreatingFor(p.purchaseId)}
+              >
+                {p.reportCount === 0 ? "Create report" : "Add certificate"}
+              </Button>
+            )}
+          </div>
+          <p className="text-sm">
+            {p.supplierName} · {format(new Date(p.purchaseDate), "MMM d, yyyy")}{" "}
+            · {p.quantity} {p.unit}
+          </p>
+          <p className="text-xs text-muted-foreground break-all">
+            Purchase reference: {p.purchaseId}
+          </p>
+        </section>
+      ))}
+      {reports.isSuccess && !reports.data?.length && (
+        <p className="text-sm text-muted-foreground">
+          {rows.some((p) => !p.voidedAt && p.reportCount === 0)
+            ? "No certificates saved for these purchases. Reports remain pending until saved."
+            : "No lab reports"}
+        </p>
+      )}
+      {[...groups].map(([key, saved]) => (
+        <section key={key} className="flex flex-col gap-2">
+          <h5 className="text-sm font-medium">
+            {key === "legacy"
+              ? "Legacy / purchase unassigned"
+              : `Certificates for purchase ${key}`}
+          </h5>
+          {saved.map((report) => (
+            <div
+              key={report.id}
+              className="flex items-center justify-between gap-3 rounded-lg border p-3"
+            >
+              <div className="flex flex-col gap-1">
+                <p className="text-sm font-semibold">{report.productName}</p>
+                <p className="text-xs text-muted-foreground">
+                  {format(new Date(report.reportDate), "MMM d, yyyy")} · By{" "}
+                  {report.certifiedBy}
+                </p>
+                {report.purchase && (
+                  <p className="text-xs text-muted-foreground">
+                    {report.purchase.supplier.supplierName} ·{" "}
+                    {report.purchase.quantity} {report.chemical.unit}
+                  </p>
+                )}
+                <Badge variant="outline">
+                  {report.analysisItems.filter((i) => i.passed).length}/
+                  {report.analysisItems.length} passed
+                </Badge>
+                {report.purchase?.voidedAt && (
+                  <Badge variant="secondary">Voided, read-only</Badge>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-1">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setViewing(report)}
+                >
+                  View certificate
+                </Button>
+                {canManage && !report.purchase?.voidedAt && (
+                  <>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setEditingId(report.id)}
+                    >
+                      Edit report
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setDeleting(report.id)}
+                    >
+                      Delete report
+                    </Button>
+                  </>
+                )}
+              </div>
+            </div>
+          ))}
+        </section>
+      ))}
+      {canManage &&
+        creatingFor &&
+        rows.some((p) => p.purchaseId === creatingFor && !p.voidedAt) && (
+          <CreateLabReportForm
+            key={creatingFor}
+            open
+            onOpenChange={(open) => {
+              if (!open) setCreatingFor(null);
+            }}
+            chemicalId={chemicalId}
+            chemicalName={chemicalName}
+            purchaseId={creatingFor}
+          />
+        )}
+      {canManage && editing && !editing.purchase?.voidedAt && (
+        <CreateLabReportForm
+          key={editing.id}
+          open
+          onOpenChange={(open) => {
+            if (!open) setEditingId(null);
+          }}
+          chemicalId={chemicalId}
+          chemicalName={chemicalName}
+          purchaseId={editing.purchaseId ?? undefined}
+          editData={editing}
+        />
+      )}
+      {viewing && (
+        <CertificateView
+          open
+          onOpenChange={(open) => {
+            if (!open) setViewing(null);
+          }}
+          report={viewing}
+        />
+      )}
+      <AlertDialog
+        open={
+          canManage && !!deletionTarget && !deletionTarget.purchase?.voidedAt
+        }
+        onOpenChange={(open) => {
+          if (!open) setDeleting(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete lab report?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This deletes only the certificate. Its purchase stays saved and
+              may become report missing again.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deletion.isPending}
+              onClick={() => {
+                if (
+                  deleting &&
+                  canManage &&
+                  deletionTarget &&
+                  !deletionTarget.purchase?.voidedAt
+                )
+                  deletion.mutate(
+                    { data: { reportId: deleting } },
+                    { onSuccess: () => setDeleting(null) },
+                  );
+              }}
+            >
+              Delete report
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+}

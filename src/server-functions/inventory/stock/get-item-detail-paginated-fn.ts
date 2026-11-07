@@ -89,6 +89,7 @@ export const getItemDetailPaginatedFn = createServerFn()
         id: result.id,
         name: result.name,
         type: result.type,
+        packagingKind: result.packagingKind,
         capacity: result.capacity,
         capacityUnit: result.capacityUnit,
         unit: packagingUnit(result),

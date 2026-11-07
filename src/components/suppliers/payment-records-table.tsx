@@ -8,6 +8,7 @@ import { useState } from "react";
 import { PaymentDetailsDialog } from "./payment-details-dialog";
 import { useQuery } from "@tanstack/react-query";
 import { getWalletsListFn } from "@/server-functions/finance-fn";
+import type { PurchaseVoidMetadata } from "./purchase-void-audit";
 
 // Resolve a walletId or legacy method value to a human-readable label
 function resolveMethodLabel(walletId: string | null | undefined, method: string | null | undefined, wallets: { id: string; name: string }[]): string {
@@ -25,7 +26,7 @@ function resolveMethodLabel(walletId: string | null | undefined, method: string 
   return wallet ? wallet.name : "Finance Account";
 }
 
-type SupplierPayment = {
+export type SupplierPayment = {
   id: string;
   createdAt: string | Date;
   paymentDate?: string | Date;
@@ -36,9 +37,10 @@ type SupplierPayment = {
   bankName?: string | null;
   paidBy?: string | null;
   notes: string | null;
-  purchase: {
+  purchase: PurchaseVoidMetadata & {
     id: string; // Ensure ID is present
     materialType: string;
+    paidAmount: string;
     chemical: { name: string } | null;
     packagingMaterial: { name: string } | null;
   } | null;
@@ -85,7 +87,8 @@ export const PaymentRecordsTable = ({ data, ...rest }: Props) => {
             : purchase.packagingMaterial?.name;
         return (
           <span className="font-medium whitespace-normal break-words min-w-[180px] block">
-            {name || "-"}
+            {name || purchase.voidSnapshot?.materialName || "-"}
+            {purchase.voidedAt && <Badge variant="secondary">Voided</Badge>}
           </span>
         );
       },
@@ -134,6 +137,7 @@ export const PaymentRecordsTable = ({ data, ...rest }: Props) => {
         <div className="flex justify-end">
           <Button
             variant="ghost"
+            aria-label="View payment details"
             size="icon"
             className="size-7 text-indigo-500 hover:bg-indigo-50 hover:text-indigo-600 rounded-md transition-colors"
             onClick={() => {

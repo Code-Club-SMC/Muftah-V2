@@ -1,16 +1,15 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { transferStockFn } from "@/server-functions/inventory/stock/transfer-stock-fn";
+import { invalidateStockQueries } from "@/lib/inventory/invalidate-stock";
 
 export const useTransferStock = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: transferStockFn,
-    onSuccess: () => {
+    onSuccess: async () => {
+      await invalidateStockQueries(queryClient);
       toast.success("Stock transferred successfully");
-      queryClient.invalidateQueries({ queryKey: ["inventory"] });
-      queryClient.invalidateQueries({ queryKey: ["factory-floor"] });
-      queryClient.invalidateQueries({ queryKey: ["material-lots"] });
     },
     onError: (error) => {
       toast.error(error.message || "Failed to transfer stock");

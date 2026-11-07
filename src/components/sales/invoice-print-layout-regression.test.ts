@@ -18,7 +18,7 @@ describe("invoice print layout preservation", () => {
 
   it("preserves the retailer invoice and existing signatures exactly", () => {
     expect(sha256("src/components/sales/retailer-invoice.tsx")).toBe(
-      "48c4dce31af76481ba0b8a252130e04e9002d18fd36bba54739db55b33957e01",
+      "bbae4fc85390a973023579d39ba54b3db07ad2a8dde575a6b9d576110a630805",
     );
   });
 });

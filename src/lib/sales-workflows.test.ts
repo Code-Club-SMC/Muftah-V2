@@ -66,11 +66,10 @@ describe("sales workflow regressions", () => {
       "utf8",
     );
 
-    expect(source).toContain("getReturnedUnitsByInvoiceItem");
-    expect(source).toContain("[\"pending\", \"approved\"]");
-    expect(source).toContain("[\"approved\"]");
+    expect(source).toContain("getReservedUnitsByInvoiceItem");
+    expect(source).toContain("reservedReturnUnits(");
     expect(source).toContain("remaining returnable quantity");
-    expect(source).toContain("Invoice totals are intentionally NOT mutated here.");
+    expect(source).not.toContain("processSalesReturnFn");
     expect(source).not.toContain("status: deriveInvoiceStatus(currentInvoiceCash, nextInvoiceCredit)");
   });
 
@@ -127,14 +126,14 @@ describe("sales workflow regressions", () => {
     );
 
     expect(invoiceSource).toContain('customerType: true');
-    expect(invoiceSource).toContain('const isRetailerInvoice = customerRecord?.customerType === "retailer"');
+    expect(invoiceSource).not.toContain("isRetailerInvoice");
     expect(invoiceSource).toContain("if (invoiceDiscount > totalAmount)");
     expect(invoiceSource).toContain("const totalPayable = roundMoney(");
     expect(invoiceSource).toContain("netInvoiceAmount + Number(data.expenses ?? 0)");
     expect(invoiceSource).toContain("const settlementPreview = calculateSettlement(");
     expect(invoiceSource).toContain("assertSettlementDueDate(settlementPreview, data.paymentDueDate)");
     expect(invoiceSource).toContain("invoiceDiscount: invoiceDiscount.toString()");
-    expect(invoiceSource).toContain("invoiceDiscountDescription: isRetailerInvoice");
+    expect(invoiceSource).toContain("invoiceDiscountDescription: data.invoiceDiscountDescription ?? null");
     expect(invoiceSource).toContain("amount: netInvoiceAmount.toString()");
   });
 
@@ -285,27 +284,27 @@ describe("sales workflow regressions", () => {
   });
 
   it("routes approved returns into sellable or segregated inventory based on condition", () => {
-    const returnsSource = readFileSync(
-      resolve(SALES_FN_DIR, "sales-returns-fn.ts"),
+    const stockSource = readFileSync(
+      resolve(process.cwd(), "src/lib/sales/returns/return-stock.server.ts"),
       "utf8",
     );
 
-    expect(returnsSource).toContain("finishedGoodsStock");
-    expect(returnsSource).toContain("returnedFinishedGoodsStock");
-    expect(returnsSource).toContain('if (salesReturn.condition === "good")');
-    expect(returnsSource).toContain("moved to ${salesReturn.condition} returned stock");
+    expect(stockSource).toContain("finishedGoodsStock");
+    expect(stockSource).toContain("returnedFinishedGoodsStock");
+    expect(stockSource).toContain('if (input.condition === "good")');
+    expect(stockSource).toContain('destination: input.condition === "good" ? "sellable" : input.condition');
   });
 
   it("records a stock trace row for each approved return item", () => {
-    const returnsSource = readFileSync(
-      resolve(SALES_FN_DIR, "sales-returns-fn.ts"),
+    const stockSource = readFileSync(
+      resolve(process.cwd(), "src/lib/sales/returns/return-stock.server.ts"),
       "utf8",
     );
 
-    expect(returnsSource).toContain("salesReturnStockTraces");
-    expect(returnsSource).toContain("destination =");
-    expect(returnsSource).toContain("await tx.insert(salesReturnStockTraces).values({");
-    expect(returnsSource).toContain("totalUnitsMoved");
+    expect(stockSource).toContain("salesReturnStockTraces");
+    expect(stockSource).toContain("await tx.insert(salesReturnStockTraces).values({");
+    expect(stockSource).toContain('kind: "receive"');
+    expect(stockSource).toContain("totalUnitsMoved");
   });
 
   it("keeps invoice browser-facing server functions free of top-level db imports", () => {
@@ -453,5 +452,16 @@ describe("sales workflow regressions", () => {
     expect(dialog).not.toContain("item.retailPrice");
     expect(invoicePage).toContain("invoiceDiscount={invoice.invoiceDiscount}");
     expect(invoicePage).toContain("ret.priceOverride");
+  });
+
+  it("keeps stock and money still until a return is received", () => {
+    const source = readFileSync(resolve(SALES_FN_DIR, "sales-returns-fn.ts"), "utf8");
+    const decide = source.slice(source.indexOf("export const decideSalesReturnFn"), source.indexOf("export const cancelSalesReturnFn"));
+    expect(decide).toContain('assertReturnAction(salesReturn, data.action)');
+    expect(decide).not.toContain("recalculateInvoiceSettlement");
+    expect(decide).not.toContain("finishedGoodsStock");
+    expect(source).toContain(".middleware([requireSalesReturnsCreateMiddleware])");
+    expect(source).toContain(".middleware([requireSalesReturnsApproveMiddleware])");
+    expect(source).toContain('"sales.returns.approve"');
   });
 });

@@ -16,7 +16,7 @@ vi.mock("@tanstack/react-start", () => ({ createServerFn: () => {
   const builder = {
     middleware: () => builder,
     inputValidator: (schema: typeof validator) => { validator = schema; return builder; },
-    handler: (handler: (input: unknown) => unknown) => (input: { data: unknown; context: unknown }) =>
+    handler: (handler: (input: unknown) => unknown) => async (input: { data: unknown; context: unknown }) =>
       handler({ ...input, data: validator.parse(input.data) }),
   };
   return builder;
@@ -41,7 +41,7 @@ async function fixture() {
     return records.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime()).at(-1)!;
   };
   const edit = (id: string, fields: Record<string, string>) => updatePurchaseRecordFn({ data: { id, ...fields }, context } as never);
-  const remove = (id: string) => deletePurchaseRecordFn({ data: { id }, context } as never);
+  const remove = (id: string) => deletePurchaseRecordFn({ data: { id, reason: "Duplicate supplier entry" }, context } as never);
   const locked = async (id: string) => ((await getPurchaseEditStateFn({ data: { id }, context } as never)) as { stockLocked: boolean }).stockLocked;
   const record = async (id: string) => (await db.select().from(purchaseRecords).where(eq(purchaseRecords.id, id)))[0];
   const lotAt = async (price: string) => {
@@ -86,7 +86,10 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("purchase edits and deletes with
       expect(await locked(p2.id)).toBe(false);
       await remove(p2.id);
       expect((await lotAt("112.00")).quantity).toBe("30.000");
-      expect(await record(p2.id)).toBeUndefined();
+      expect(await record(p2.id)).toMatchObject({ quantity: "50.000", voidReason: "Duplicate supplier entry", voidRefundAmount: "0.00" });
+      expect((await record(p2.id)).voidedAt).not.toBeNull();
+      await expect(remove(p2.id)).rejects.toThrow("already voided");
+      await expect(edit(p2.id, { cost: "6000" })).rejects.toThrow("voided");
     } finally {
       // Switched off so suites running in parallel still find their own single active floor.
       await db.update(warehouses).set({ isActive: false }).where(eq(warehouses.id, floor.id));

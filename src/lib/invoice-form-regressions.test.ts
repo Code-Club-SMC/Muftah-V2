@@ -496,7 +496,7 @@ describe("invoice create/edit regressions", () => {
     expect(source).toContain("Pending Verification");
     expect(source).toContain("Outstanding Amount");
     expect(source).toContain("FieldLabel>Discount<");
-    expect(source).toContain("General-invoice discount.");
+    expect(source).toContain("Taken off the items total.");
     expect(source).toContain("const roundedTotalProfit = Math.round(totalProfit);");
     expect(source).toContain("{PKR(roundedTotalProfit)}");
     expect(source).not.toContain("automaticRoundOff");

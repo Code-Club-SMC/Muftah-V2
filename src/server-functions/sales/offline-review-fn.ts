@@ -16,7 +16,7 @@ import {
   recipes,
   wallets,
 } from "@/db";
-import { classifyOfflineSalesInvoice } from "@/lib/sales/offline/classification.server";
+import { classifyOfflineSalesInvoice, isCustomerUsable, printedTotalDiffers } from "@/lib/sales/offline/classification.server";
 import type {
   OfflineSalesBatchDetail,
   OfflineSalesReferenceSnapshot,
@@ -92,12 +92,19 @@ async function recomputeBatchCounts(tx: Transaction, batchId: string) {
     .where(eq(offlineSalesImportBatches.id, batchId));
 }
 
+const ISSUE_MESSAGES: Record<string, string> = {
+  printed_total_changed:
+    "The total on the printed invoice is different from the system's total. Check before billing the customer.",
+  price_override:
+    "A price was changed from the price list at the desk. Check the new price.",
+};
+
 function issueDetails(codes: string[]) {
   return codes.map((code) => ({
     code,
-    message: code
-      .replaceAll("_", " ")
-      .replace(/^./, (value) => value.toUpperCase()),
+    message:
+      ISSUE_MESSAGES[code] ??
+      code.replaceAll("_", " ").replace(/^./, (value) => value.toUpperCase()),
   }));
 }
 
@@ -234,12 +241,16 @@ const refreshOfflineSalesPreviewImpl = async (
         parseIssueCodes: [],
         identityState: "new",
         workbookStatus: workbook.status,
-        distributorUsable:
-          invoice.saleType !== "direct_distributor" || Boolean(liveCustomer),
+        distributorUsable: isCustomerUsable({
+          saleType: invoice.saleType,
+          hasSignedCustomer: Boolean(invoice.customerId),
+          liveCustomer,
+        }),
         productsUsable: invoiceItems.every((item) =>
           Boolean(item.recipeId && recipesById.get(item.recipeId)?.isActive),
         ),
         walletsUsable: invoicePayments.every((payment) => {
+          if (payment.method === "expense_offset") return true;
           const wallet = payment.walletId
             ? walletsById.get(payment.walletId)
             : null;
@@ -259,6 +270,10 @@ const refreshOfflineSalesPreviewImpl = async (
                   !resolution.startsWith("second_physical_dispatch:")
                 ? "already_invoiced"
                 : "usable",
+        hasPriceOverride: invoiceItems.some((item) => item.isPriceOverride),
+        extraWarningCodes: printedTotalDiffers(invoice.printedTotal, invoice.invoiceAmount)
+          ? ["printed_total_changed"]
+          : [],
         hasStockShortage: invoiceItems.some((item) => {
           const product = item.recipeId
             ? productByRecipe.get(item.recipeId)
@@ -384,9 +399,12 @@ const getOfflineSalesBatchDetailImpl = async (
       status: invoice.status,
       worksheetRowNumber: invoice.worksheetRowNumber,
       saleType: invoice.saleType,
+      customerDetails: invoice.customerDetails,
+      invoiceDiscount: invoice.invoiceDiscount,
+      expenses: invoice.expenses,
       businessDate: invoice.businessDate,
       distributorCode: invoice.distributorCode,
-      customerName,
+      customerName: customerName ?? invoice.customerDetails?.name ?? null,
       orderBookerCode: invoice.orderBookerCode,
       billNumber: invoice.billNumber,
       paymentDueDate: invoice.paymentDueDate,
@@ -411,6 +429,10 @@ const getOfflineSalesBatchDetailImpl = async (
           looseUnitQuantity: item.looseUnitQuantity,
           packsPerCarton: item.packsPerCarton,
           freeCartons: item.freeCartons,
+          manualFreeCartons: item.manualFreeCartons,
+          isPriceOverride: item.isPriceOverride,
+          listedCartonPrice: item.listedCartonPrice,
+          baseCartonPrice: item.baseCartonPrice,
           dispatchedUnits: item.dispatchedUnits,
           lineAmount: item.lineAmount,
           stockUnitsSnapshot: item.stockUnitsSnapshot,
@@ -428,6 +450,8 @@ const getOfflineSalesBatchDetailImpl = async (
           walletId: payment.walletId,
           walletName,
           walletType,
+          notes: payment.notes,
+          instantVerify: payment.instantVerify,
           reference: payment.reference,
           chequeNumber: payment.chequeNumber,
           chequeBank: payment.chequeBank,

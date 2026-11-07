@@ -33,6 +33,8 @@ export type RetailerInvoiceData = {
     cgstRate: number;
     /** SGST rate in %, e.g. 9 for 9% */
     sgstRate: number;
+    /** Invoice-level discount, taken off the total and shown as its own row when above zero. */
+    invoiceDiscount?: number;
     totalProfit?: number;
     /** Optional: booked order number this invoice was generated from */
     bookedOrderNo?: string | number;
@@ -116,7 +118,8 @@ export const RetailerInvoiceView = ({
     const grossTotal = invoice.items.reduce((s, it) => s + it.grossAmount, 0);
     const cgstAmt = grossTotal * invoice.cgstRate / 100;
     const sgstAmt = grossTotal * invoice.sgstRate / 100;
-    const grandTotal = grossTotal + cgstAmt + sgstAmt;
+    const discountAmt = invoice.invoiceDiscount ?? 0;
+    const grandTotal = grossTotal + cgstAmt + sgstAmt - discountAmt;
     const amtWords = numberToWords(Math.round(grandTotal));
     const MIN_ROWS = 10;
     const blankRows = Math.max(0, MIN_ROWS - invoice.items.length);
@@ -288,6 +291,7 @@ td{padding:3px 6px;font-size:11px;border:1px solid #ccc;vertical-align:middle;}
       </thead>
       <tbody>
         <tr><td class="lbl">Gross Amount</td><td>${grossTotal > 0 ? fmtD(grossTotal) : "0"}</td></tr>
+        ${discountAmt > 0 ? `<tr><td class="lbl">Discount</td><td>- ${fmtD(discountAmt)}</td></tr>` : ""}
         <tr><td class="lbl">CGST</td><td>${cgstAmt > 0 ? fmtD(cgstAmt) : "0"}</td></tr>
         <tr><td class="lbl">SGST</td><td>${sgstAmt > 0 ? fmtD(sgstAmt) : "0"}</td></tr>
         <tr><td class="lbl" style="font-weight:800">Grand Total</td><td style="font-weight:800">${grandTotal > 0 ? fmtD(grandTotal) : "0"}</td></tr>
@@ -514,6 +518,12 @@ td{padding:3px 6px;font-size:11px;border:1px solid #ccc;vertical-align:middle;}
                                 <td style={{ ...tdBase, fontWeight: 600 }}>Gross Amount</td>
                                 <td style={tdR}>{grossTotal > 0 ? fmtD(grossTotal) : "0"}</td>
                             </tr>
+                            {discountAmt > 0 && (
+                                <tr>
+                                    <td style={{ ...tdBase, fontWeight: 600 }}>Discount</td>
+                                    <td style={tdR}>- {fmtD(discountAmt)}</td>
+                                </tr>
+                            )}
                             <tr>
                                 <td style={{ ...tdBase, fontWeight: 600 }}>CGST</td>
                                 <td style={tdR}>{cgstAmt > 0 ? fmtD(cgstAmt) : "0"}</td>

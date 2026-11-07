@@ -1,15 +1,15 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { addPackagingMaterialFn } from "@/server-functions/inventory/add-packaging-material-fn";
 import { toast } from "sonner";
+import { invalidateStockQueries } from "@/lib/inventory/invalidate-stock";
 
 export const useAddPackagingMaterial = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: addPackagingMaterialFn,
-    onSuccess: () => {
+    onSuccess: async () => {
+      await invalidateStockQueries(queryClient);
       toast.success("Packaging material added successfully");
-      queryClient.invalidateQueries({ queryKey: ["inventory"] });
-      queryClient.invalidateQueries({ queryKey: ["low-stock-alerts"] });
       queryClient.invalidateQueries({ queryKey: ["supplier"] });
       queryClient.invalidateQueries({ queryKey: ["suppliers"] });
       queryClient.invalidateQueries({ queryKey: ["wallets"] });

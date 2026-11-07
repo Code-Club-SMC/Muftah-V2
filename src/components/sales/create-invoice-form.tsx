@@ -316,8 +316,7 @@ export const CreateInvoiceForm = ({ onSuccess, onCancel, onDirtyChange, initialD
                 recipePriceMapWithEntityRates,
             );
             const expenses = roundMoney(Number(value.expenses) || 0);
-            const isRetailerInvoice = value.customerType === "retailer";
-            const invoiceDiscount = isRetailerInvoice ? roundMoney(Number(value.invoiceDiscount) || 0) : 0;
+            const invoiceDiscount = roundMoney(Number(value.invoiceDiscount) || 0);
             if (invoiceDiscount > totalAmount) {
                 toast.error(`Discount (${PKR(invoiceDiscount)}) cannot exceed items total (${PKR(totalAmount)}).`);
                 return;
@@ -458,7 +457,7 @@ export const CreateInvoiceForm = ({ onSuccess, onCancel, onDirtyChange, initialD
                     expenses,
                     expensesDescription: value.expensesDescription || undefined,
                     invoiceDiscount,
-                    invoiceDiscountDescription: isRetailerInvoice ? (value.invoiceDiscountDescription || undefined) : undefined,
+                    invoiceDiscountDescription: value.invoiceDiscountDescription || undefined,
                     remarks: value.remarks || undefined,
                     items: normalizedItems,
                 };
@@ -848,10 +847,9 @@ export const CreateInvoiceForm = ({ onSuccess, onCancel, onDirtyChange, initialD
                     {(values) => {
                         const items: ItemFormValue[] = values.items || [];
                         const expenses = roundMoney(Number(values.expenses) || 0);
-                        const isRetailerInvoice = values.customerType === "retailer";
                         const isDistributorInvoice = values.customerType === "distributor";
                         const pricingMode = isDistributorInvoice ? "distributor" : "retailer";
-                        const invoiceDiscount = isRetailerInvoice ? roundMoney(Number(values.invoiceDiscount) || 0) : 0;
+                        const invoiceDiscount = roundMoney(Number(values.invoiceDiscount) || 0);
                         const paymentRows = (values.payments || []) as PaymentInput[];
                         const totalAmount = computeTotal(
                             items,
@@ -990,7 +988,6 @@ export const CreateInvoiceForm = ({ onSuccess, onCancel, onDirtyChange, initialD
                                     totalAmount={totalAmount}
                                     totalProfit={totalProfit}
                                     expenses={expenses}
-                                    isRetailerInvoice={isRetailerInvoice}
                                     invoiceDiscount={appliedDiscount}
                                     totalPayable={totalPayable}
                                     payments={paymentRows}

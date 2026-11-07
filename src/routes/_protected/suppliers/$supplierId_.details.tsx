@@ -22,6 +22,10 @@ import { getInventoryFn } from "@/server-functions/inventory/get-inventory-fn";
 import { AddRawMaterialDialog } from "@/components/inventory/add-raw-material-sheet";
 import { AddPackagingMaterialSheet } from "@/components/inventory/add-packaging-material-sheet";
 import { datePickerKey } from "@/lib/report-dates";
+import { useViewerAccess } from "@/hooks/use-viewer-access";
+import { hasPermission } from "@/lib/rbac";
+import type { ChemicalPurchaseRef } from "@/lib/inventory/chemical-report-contract";
+import { CreateLabReportForm } from "@/components/inventory/lab-reports/create-lab-report-form";
 
 // 100 materials per page, each with all its purchases; Next/Previous fetch the next 100 from the server.
 const PAGE_SIZE = 100;
@@ -100,6 +104,9 @@ export const Route = createFileRoute(
 });
 
 function DetailsPage() {
+  const { data: viewer } = useViewerAccess();
+  const canCreateReport = hasPermission(viewer?.permissions ?? [], "inventory.view") && hasPermission(viewer?.permissions ?? [], "inventory.manage");
+  const [reportPurchase, setReportPurchase] = useState<ChemicalPurchaseRef | null>(null);
   const { supplierId } = Route.useParams();
   const searchParams = Route.useSearch();
   const navigate = useNavigate();
@@ -331,6 +338,7 @@ function DetailsPage() {
                 setEditDialogOpen={setEditDialogOpen}
                 setDeleteDialogOpen={setDeleteDialogOpen}
                 onRecordPayment={handleRecordPayment}
+                onCreateReport={canCreateReport ? record => { if (record.chemical) setReportPurchase({ purchaseId: record.id, chemicalId: record.chemical.id, chemicalName: record.chemical.name }); } : undefined}
                 onRestock={(record) => {
                   setSelectedItem(record);
                   setRestockOpen(true);
@@ -359,6 +367,8 @@ function DetailsPage() {
         defaultAmount={paymentDefaults.amount}
         defaultNotes={paymentDefaults.notes}
       />
+      {canCreateReport && reportPurchase && <CreateLabReportForm key={reportPurchase.purchaseId} open
+        onOpenChange={open => { if (!open) setReportPurchase(null); }} {...reportPurchase} />}
       <PurchaseDetailsDialog
         open={detailsOpen}
         onOpenChange={setDetailsOpen}
@@ -419,6 +429,7 @@ function DetailsPage() {
             type: (selectedItem.packagingMaterial?.type || "primary") as "primary" | "master" | "sticker" | "extra",
             capacity: selectedItem.packagingMaterial?.capacity || "",
             capacityUnit: selectedItem.packagingMaterial?.capacityUnit || "",
+            packagingKind: selectedItem.packagingMaterial?.packagingKind,
             notes: selectedItem.notes || "",
             invoiceNumber: selectedItem.invoiceNumber || "",
             transactionId: selectedItem.transactionId || "",

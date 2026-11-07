@@ -48,7 +48,8 @@ export async function purchasesPageByMaterial(where: SQL | undefined, page: numb
   const records = pageKeys.length
     ? await db.query.purchaseRecords.findMany({
         where: and(where, inArray(groupKey, pageKeys.map((row) => row.key))),
-        with: { warehouse: true, chemical: true, packagingMaterial: true },
+        with: { warehouse: true, chemical: true, packagingMaterial: true,
+          voidedBy: { columns: { name: true } }, voidRefundWallet: { columns: { name: true } } },
         orderBy: purchaseOrder,
       })
     : [];
@@ -69,6 +70,7 @@ type PurchaseRow = {
   quantity: string;
   chemicalId: string | null;
   packagingMaterialId: string | null;
+  voidedAt?: Date | string | null;
 };
 
 const materialKey = (r: { chemicalId: string | null; packagingMaterialId: string | null }) =>
@@ -94,7 +96,7 @@ function materialFilter(
  * claim. It is used from the oldest purchase first, so the newest keeps it.
  */
 async function legacyStockLeft(records: PurchaseRow[]) {
-  const legacy = records.filter((r) => !r.lotId && materialKey(r));
+  const legacy = records.filter((r) => !r.voidedAt && !r.lotId && materialKey(r));
   if (!legacy.length) return new Map<string, number>();
   const chemicalIds = [...new Set(legacy.flatMap((r) => (r.chemicalId ? [r.chemicalId] : [])))];
   const packagingIds = [
@@ -128,7 +130,7 @@ async function legacyStockLeft(records: PurchaseRow[]) {
         quantity: sql<string>`coalesce(sum(${purchaseRecords.quantity}), 0)`,
       })
       .from(purchaseRecords)
-      .where(and(isNotNull(purchaseRecords.lotId), materialFilter(purchaseRecords, chemicalIds, packagingIds)))
+      .where(and(isNull(purchaseRecords.voidedAt), isNotNull(purchaseRecords.lotId), materialFilter(purchaseRecords, chemicalIds, packagingIds)))
       .groupBy(purchaseRecords.lotId),
     db
       .select({
@@ -140,7 +142,7 @@ async function legacyStockLeft(records: PurchaseRow[]) {
         ), 0)`,
       })
       .from(purchaseRecords)
-      .where(and(isNull(purchaseRecords.lotId), materialFilter(purchaseRecords, chemicalIds, packagingIds))),
+      .where(and(isNull(purchaseRecords.voidedAt), isNull(purchaseRecords.lotId), materialFilter(purchaseRecords, chemicalIds, packagingIds))),
   ]);
 
   // Free stock per material: total stock, less what each lot's purchases still hold.
@@ -203,7 +205,7 @@ export async function withStockLeft<T extends PurchaseRow>(records: T[]) {
             ), 0)`,
           })
           .from(purchaseRecords)
-          .where(inArray(purchaseRecords.lotId, lotIds))
+          .where(and(isNull(purchaseRecords.voidedAt), inArray(purchaseRecords.lotId, lotIds)))
       : [],
     purchaseIds.length
       ? db.query.supplierPayments.findMany({
@@ -218,7 +220,7 @@ export async function withStockLeft<T extends PurchaseRow>(records: T[]) {
   const newer = new Map(newerInLot.map((p) => [p.id, parseFloat(p.newer)]));
 
   return records.map((r) => {
-    const stockLeft = r.lotId
+    const stockLeft = r.voidedAt ? 0 : r.lotId
       ? Math.min(
           parseFloat(r.quantity),
           Math.max(0, (lotTotal.get(r.lotId) ?? 0) - (newer.get(r.id) ?? 0)),

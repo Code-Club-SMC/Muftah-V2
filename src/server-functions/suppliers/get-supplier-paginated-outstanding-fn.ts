@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSuppliersViewMiddleware } from "@/lib/middlewares";
 import { z } from "zod";
-import { and, eq, gte, lte, sql } from "drizzle-orm";
+import { and, eq, gte, lte, sql, isNull } from "drizzle-orm";
 import { purchaseRecords } from "@/db/schemas/supplier-schema";
 import {
   purchaseDateBounds,
@@ -27,6 +27,7 @@ export const getSupplierPaginatedOutstandingFn = createServerFn()
     // Outstanding means cost > paidAmount
     const conditions = [
       eq(purchaseRecords.supplierId, supplierId),
+      isNull(purchaseRecords.voidedAt),
       sql`${purchaseRecords.cost} > ${purchaseRecords.paidAmount}`,
     ];
     if (fromDate) conditions.push(gte(purchaseRecords.purchaseDate, fromDate));

@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { chemicalLabReports } from "@/db/schemas/inventory-schema";
 import { requireInventoryManageMiddleware } from "@/lib/middlewares";
 import { z } from "zod";
+import { lockChemicalReportPurchase } from "@/lib/inventory/lab-report-ownership.server";
 
 const analysisItemSchema = z.object({
     item: z.string().min(1, "Analysis item name is required"),
@@ -13,6 +14,7 @@ const analysisItemSchema = z.object({
 
 const createLabReportSchema = z.object({
     chemicalId: z.string().min(1),
+    purchaseId: z.string().min(1, "A purchase is required"),
     productName: z.string().min(1, "Product name is required"),
     stockNumber: z.string().optional(),
     lotNumber: z.string().optional(),
@@ -26,14 +28,17 @@ const createLabReportSchema = z.object({
     notes: z.string().optional(),
 });
 
-export const createLabReportFn = createServerFn()
+export const createLabReportFn = createServerFn({ method: "POST" })
     .middleware([requireInventoryManageMiddleware])
     .inputValidator(createLabReportSchema)
     .handler(async ({ data, context }) => {
-        const [report] = await db
+      return db.transaction(async tx => {
+        await lockChemicalReportPurchase(tx, data.purchaseId, data.chemicalId);
+        const [report] = await tx
             .insert(chemicalLabReports)
             .values({
                 chemicalId: data.chemicalId,
+                purchaseId: data.purchaseId,
                 productName: data.productName,
                 stockNumber: data.stockNumber || null,
                 lotNumber: data.lotNumber || null,
@@ -48,4 +53,5 @@ export const createLabReportFn = createServerFn()
             .returning();
 
         return report;
+      });
     });

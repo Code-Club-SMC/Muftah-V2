@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { AlertSquareIcon, Database01Icon } from "@hugeicons/core-free-icons";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Database01Icon } from "@hugeicons/core-free-icons";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -29,12 +28,7 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
-import {
-  Field,
-  FieldDescription,
-  FieldGroup,
-  FieldLabel,
-} from "@/components/ui/field";
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -55,26 +49,19 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
   useResolveStockReconciliationIssue,
   useStockReconciliationIssues,
 } from "@/hooks/sales/use-offline-sales";
 import type { listStockReconciliationIssuesFn } from "@/server-functions/sales/offline-stock-reconciliation-fn";
+import { dateTime } from "./format";
 
 type StockIssue = Awaited<
   ReturnType<typeof listStockReconciliationIssuesFn>
 >["issues"][number];
 type Filter = "open" | "resolved" | "all";
 type ResolutionType = "counted_adjustment" | "missing_record";
-
-function dateTime(value: Date | string | null) {
-  if (!value) return "—";
-  return new Intl.DateTimeFormat("en-PK", {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: "Asia/Karachi",
-  }).format(new Date(value));
-}
 
 function age(value: Date | string) {
   const days = Math.max(
@@ -93,6 +80,7 @@ export function StockReconciliationPanel() {
   const [reason, setReason] = useState("");
   const issues = useStockReconciliationIssues(filter);
   const resolve = useResolveStockReconciliationIssue();
+  const rows = issues.data?.issues ?? [];
 
   const close = () => {
     setSelected(null);
@@ -104,58 +92,45 @@ export function StockReconciliationPanel() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Stock issues from offline dispatch</CardTitle>
+        <CardTitle>Stock issues</CardTitle>
         <CardDescription>
-          An offline invoice can be posted when physical goods already left the
-          factory, even if web stock is lower. These rows keep that difference
-          visible until stock staff link the real correction record.
+          Goods left the factory when web stock was short. Fix the real stock
+          record first, then enter its ID here. Marking resolved never changes
+          stock.
         </CardDescription>
         <CardAction>
-          <Select
+          <ToggleGroup
+            type="single"
+            variant="outline"
+            size="sm"
             value={filter}
-            onValueChange={(value) => setFilter(value as Filter)}
+            onValueChange={(value) => value && setFilter(value as Filter)}
           >
-            <SelectTrigger className="w-40">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectGroup>
-                <SelectItem value="open">Open issues</SelectItem>
-                <SelectItem value="resolved">Resolved issues</SelectItem>
-                <SelectItem value="all">All issues</SelectItem>
-              </SelectGroup>
-            </SelectContent>
-          </Select>
+            <ToggleGroupItem value="open">Open</ToggleGroupItem>
+            <ToggleGroupItem value="resolved">Resolved</ToggleGroupItem>
+            <ToggleGroupItem value="all">All</ToggleGroupItem>
+          </ToggleGroup>
         </CardAction>
       </CardHeader>
-      <CardContent className="flex flex-col gap-5">
-        <Alert>
-          <HugeiconsIcon icon={AlertSquareIcon} strokeWidth={2} />
-          <AlertTitle>Resolution does not edit the invoice</AlertTitle>
-          <AlertDescription>
-            First complete the real stock count, production entry, or transfer
-            entry. Then enter that record’s reference here. This screen never
-            invents stock.
-          </AlertDescription>
-        </Alert>
-
+      <CardContent>
         {issues.isLoading ? (
           <div className="flex flex-col gap-3">
             <Skeleton className="h-12 w-full" />
             <Skeleton className="h-12 w-full" />
           </div>
-        ) : (issues.data?.issues ?? []).length === 0 ? (
+        ) : rows.length === 0 ? (
           <Empty>
             <EmptyHeader>
               <EmptyMedia variant="icon">
                 <HugeiconsIcon icon={Database01Icon} strokeWidth={2} />
               </EmptyMedia>
               <EmptyTitle>
-                No {filter === "all" ? "" : filter} stock issues
+                {filter === "all"
+                  ? "No stock issues"
+                  : `No ${filter} stock issues`}
               </EmptyTitle>
               <EmptyDescription>
-                Offline dispatch differences will appear here after invoice
-                posting.
+                Shortages show up here after offline invoices are posted.
               </EmptyDescription>
             </EmptyHeader>
           </Empty>
@@ -165,42 +140,32 @@ export function StockReconciliationPanel() {
               <TableRow>
                 <TableHead>Invoice</TableHead>
                 <TableHead>Product</TableHead>
-                <TableHead>Outage sale date</TableHead>
-                <TableHead className="text-right">Dispatched</TableHead>
-                <TableHead className="text-right">Available</TableHead>
-                <TableHead className="text-right">Deficit</TableHead>
-                <TableHead>Age</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Action</TableHead>
+                <TableHead className="text-right">Short by</TableHead>
+                <TableHead>Waiting</TableHead>
+                <TableHead className="text-right" />
               </TableRow>
             </TableHeader>
             <TableBody>
-              {(issues.data?.issues ?? []).map((issue) => (
+              {rows.map((issue) => (
                 <TableRow key={issue.id}>
-                  <TableCell className="font-mono">
-                    {issue.invoiceNumber}
+                  <TableCell>
+                    <span className="block font-mono">
+                      {issue.invoiceNumber}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      {dateTime(issue.invoiceDate)}
+                    </span>
                   </TableCell>
                   <TableCell>{issue.productName}</TableCell>
-                  <TableCell>{dateTime(issue.invoiceDate)}</TableCell>
                   <TableCell className="text-right tabular-nums">
-                    {issue.requestedUnits}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {issue.availableUnits}
-                  </TableCell>
-                  <TableCell className="text-right font-semibold tabular-nums">
-                    {issue.deficitUnits}
+                    <span className="block font-semibold">
+                      {issue.deficitUnits} units
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      sent {issue.requestedUnits}, had {issue.availableUnits}
+                    </span>
                   </TableCell>
                   <TableCell>{age(issue.createdAt)}</TableCell>
-                  <TableCell>
-                    <Badge
-                      variant={
-                        issue.status === "open" ? "destructive" : "default"
-                      }
-                    >
-                      {issue.status}
-                    </Badge>
-                  </TableCell>
                   <TableCell className="text-right">
                     {issue.status === "open" ? (
                       <Button
@@ -211,9 +176,12 @@ export function StockReconciliationPanel() {
                         Resolve
                       </Button>
                     ) : (
-                      <span className="text-xs text-muted-foreground">
-                        {issue.resolutionReference}
-                      </span>
+                      <div className="flex flex-col items-end gap-0.5">
+                        <Badge>Resolved</Badge>
+                        <span className="text-xs text-muted-foreground">
+                          {issue.resolutionReference}
+                        </span>
+                      </div>
                     )}
                   </TableCell>
                 </TableRow>
@@ -229,15 +197,15 @@ export function StockReconciliationPanel() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Resolve stock issue?</AlertDialogTitle>
+            <AlertDialogTitle>Resolve stock issue</AlertDialogTitle>
             <AlertDialogDescription>
               {selected?.invoiceNumber} · {selected?.productName} ·{" "}
-              {selected?.deficitUnits} units missing from web stock
+              {selected?.deficitUnits} units short
             </AlertDialogDescription>
           </AlertDialogHeader>
           <FieldGroup>
             <Field>
-              <FieldLabel>How was it corrected?</FieldLabel>
+              <FieldLabel>How was it fixed?</FieldLabel>
               <Select
                 value={resolutionType}
                 onValueChange={(value) =>
@@ -259,11 +227,9 @@ export function StockReconciliationPanel() {
                 </SelectContent>
               </Select>
             </Field>
-            <Field
-              data-invalid={reference.length > 0 && reference.trim().length < 1}
-            >
+            <Field>
               <FieldLabel htmlFor="stock-resolution-reference">
-                Related record/reference
+                Record ID
               </FieldLabel>
               <Input
                 id="stock-resolution-reference"
@@ -275,19 +241,14 @@ export function StockReconciliationPanel() {
                 }
                 onChange={(event) => setReference(event.target.value)}
               />
-              <FieldDescription>
-                Complete the real stock record first, then copy its ID here.
-              </FieldDescription>
             </Field>
             <Field data-invalid={reason.length > 0 && reason.trim().length < 5}>
-              <FieldLabel htmlFor="stock-resolution-reason">
-                What was checked?
-              </FieldLabel>
+              <FieldLabel htmlFor="stock-resolution-reason">Note</FieldLabel>
               <Textarea
                 id="stock-resolution-reason"
                 value={reason}
                 aria-invalid={reason.length > 0 && reason.trim().length < 5}
-                placeholder="Explain why this record fixes the deficit"
+                placeholder="What did you check?"
                 onChange={(event) => setReason(event.target.value)}
               />
             </Field>

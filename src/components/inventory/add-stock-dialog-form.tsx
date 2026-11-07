@@ -30,6 +30,7 @@ import Big from "big.js";
 import { useMaterialLots } from "@/hooks/stock/use-material-lots";
 import { packagingUnit } from "@/lib/inventory/material-units";
 import { lotLabel, lotPrice } from "@/lib/inventory/material-lots";
+import type { ChemicalPurchaseRef } from "@/lib/inventory/chemical-report-contract";
 
 // Tells the person whether this purchase joins an existing price lot or starts a new one.
 const LotPreview = ({
@@ -98,7 +99,7 @@ const CostCalculatorEffect = ({
 
 type Props = {
   onOpenChange: (open: boolean) => void;
-  onSuccess: () => void;
+  onSuccess: (purchase?: ChemicalPurchaseRef) => void;
   preselectedWarehouse: string | undefined;
   warehouses: Awaited<ReturnType<typeof getInventoryFn>>;
   itemToRestock?: PurchaseRecord | null;
@@ -156,8 +157,8 @@ export const AddStockForm = ({
       await mutate.mutateAsync(
         { data: value },
         {
-          onSuccess: () => {
-            onSuccess();
+          onSuccess: (result) => {
+            onSuccess(result.purchase ?? undefined);
             form.reset();
           },
         },

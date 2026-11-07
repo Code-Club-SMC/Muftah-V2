@@ -1,5 +1,5 @@
 import { Buffer } from "node:buffer";
-import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, hkdfSync, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import type { OfflineSalesManifest, OfflineSalesReferenceSnapshot } from "./contracts";
 import { isOfflineSalesEnabled } from "./feature-flag.server";
@@ -25,9 +25,7 @@ export function canonicalJson(value: unknown): string {
     .join(",")}}`;
 }
 
-function parseKeyring() {
-  const raw = process.env.OFFLINE_SALES_SIGNING_KEYS;
-  if (!raw) throw new Error("OFFLINE_SALES_SIGNING_KEYS is required");
+function parseKeyring(raw: string) {
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
@@ -37,8 +35,33 @@ function parseKeyring() {
   return keyringSchema.parse(parsed);
 }
 
+/**
+ * With no settings at all, the key is derived from the app's own auth secret,
+ * which every deployment already has. Each signing version gets its own key.
+ */
+function derivedKey(version: number) {
+  const deployed =
+    process.env.NODE_ENV === "production" || process.env.NODE_ENV === "staging";
+  const secret =
+    process.env.BETTER_AUTH_SECRET ||
+    (deployed ? "" : "titan-development-offline-sales-secret");
+  if (!secret) throw new Error("BETTER_AUTH_SECRET is required");
+  return Buffer.from(
+    hkdfSync(
+      "sha256",
+      secret,
+      "titan-offline-sales-salt-v1",
+      `titan-offline-sales-signing-v${version}`,
+      32,
+    ),
+  );
+}
+
 function signingKey(version: number) {
-  const encoded = parseKeyring()[String(version)];
+  const raw = process.env.OFFLINE_SALES_SIGNING_KEYS;
+  // Optional override, for pinning or rotating keys by hand.
+  if (!raw) return derivedKey(version);
+  const encoded = parseKeyring(raw)[String(version)];
   if (!encoded) throw new Error("Offline sales signing version is unavailable");
   const key = Buffer.from(encoded, "base64");
   if (key.length !== 32 || key.toString("base64") !== encoded) {
@@ -64,7 +87,8 @@ function safeEqual(actual: string, expected: string) {
 
 export function getActiveOfflineSalesSigningVersion(): number | null {
   if (!isOfflineSalesEnabled()) return null;
-  const version = Number(process.env.OFFLINE_SALES_ACTIVE_SIGNING_VERSION);
+  const configured = process.env.OFFLINE_SALES_ACTIVE_SIGNING_VERSION;
+  const version = configured ? Number(configured) : 1;
   if (!Number.isSafeInteger(version) || version < 1) {
     throw new Error(
       "OFFLINE_SALES_ACTIVE_SIGNING_VERSION must be a positive integer",

@@ -1,7 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Big from "big.js";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Field, FieldLabel } from "@/components/ui/field";
 import { PaymentMethodSelect } from "@/components/suppliers/payment-method-select";
 import { ResponsiveDialog } from "@/components/custom/responsive-dialog";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -10,6 +12,7 @@ import { Loader2, AlertTriangle, Trash2 } from "lucide-react";
 import { deletePurchaseRecordFn } from "@/server-functions/suppliers/delete-purchase-record-fn";
 import { getPurchaseEditStateFn } from "@/server-functions/suppliers/get-purchase-edit-state-fn";
 import { PURCHASE_LOCKED_MESSAGE } from "@/lib/inventory/material-lots";
+import { invalidateStockQueries } from "@/lib/inventory/invalidate-stock";
 
 type Props = {
   open: boolean;
@@ -40,6 +43,12 @@ export const DeletePurchaseDialog = ({
   const hasPaid = new Big(paid).gt(0);
   const [pickedWalletId, setPickedWalletId] = useState<string | null>(null);
   const [typedAmount, setTypedAmount] = useState<string | null>(null);
+  const [reason, setReason] = useState("");
+  useEffect(() => {
+    setPickedWalletId(null);
+    setTypedAmount(null);
+    setReason("");
+  }, [open, purchase?.id]);
   const refundWalletId = pickedWalletId ?? editState.data?.refund.walletId ?? "";
   const refundAmount = typedAmount ?? paid;
   const amountOk = /^\d+(\.\d{1,2})?$/.test(refundAmount) && new Big(refundAmount).lte(paid);
@@ -48,24 +57,24 @@ export const DeletePurchaseDialog = ({
 
   const mutate = useMutation({
     mutationFn: deletePurchaseRecordFn,
-    onSuccess: () => {
-      toast.success("Purchase record deleted successfully");
+    onSuccess: async () => {
+      await invalidateStockQueries(queryClient);
+      toast.success("Purchase voided successfully");
       queryClient.invalidateQueries({ queryKey: ["supplier"] });
-      queryClient.invalidateQueries({ queryKey: ["inventory"] });
-      queryClient.invalidateQueries({ queryKey: ["material-lots"] });
-      queryClient.invalidateQueries({ queryKey: ["purchase-edit-state"] });
+      queryClient.invalidateQueries({ queryKey: ["suppliers"] });
       queryClient.invalidateQueries({ queryKey: ["wallets"] });
       queryClient.invalidateQueries({ queryKey: ["expenses"] });
-      onOpenChange(false);
+      close(false);
     },
     onError: (err) =>
-      toast.error(err.message || "Failed to delete purchase record"),
+      toast.error(err.message || "Failed to void purchase"),
   });
 
   const close = (next: boolean) => {
     if (!next) {
       setPickedWalletId(null);
       setTypedAmount(null);
+      setReason("");
     }
     onOpenChange(next);
   };
@@ -76,18 +85,26 @@ export const DeletePurchaseDialog = ({
     <ResponsiveDialog
       open={open}
       onOpenChange={close}
-      title="Delete Purchase Record"
-      description="Are you sure you want to delete this purchase record? This will affect the supplier balance."
+      title="Void purchase"
+      description="Reverse this purchase's stock and selected refund. Original purchase and payment records will be retained."
       icon={Trash2}
     >
       <div className="flex flex-col gap-4">
         <div className="flex items-center gap-3 p-4 bg-destructive/10 text-red-700 rounded-lg border">
           <AlertTriangle className="size-5 shrink-0" />
           <p className="text-sm">
-            This action cannot be undone. This will permanently remove the
-            record of buying <strong>{purchase.quantity}</strong> units.
+            This action cannot be undone. Stock from buying <strong>{purchase.quantity}</strong> units
+            will be reversed. The original records will remain in history.
           </p>
         </div>
+
+        <Field>
+          <FieldLabel htmlFor="void-reason">Reason</FieldLabel>
+          <Textarea id="void-reason" value={reason} maxLength={1000} required
+            onChange={event => setReason(event.target.value)} />
+        </Field>
+
+        {editState.isError ? <p role="alert">Unable to load purchase state. Reopen the dialog to try again.</p> : null}
 
         {stockLocked ? (
           <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
@@ -140,16 +157,16 @@ export const DeletePurchaseDialog = ({
             onClick={() =>
               mutate.mutate({
                 data: hasPaid
-                  ? { id: purchase.id, refundWalletId: refundWalletId || undefined, refundAmount }
-                  : { id: purchase.id },
+                  ? { id: purchase.id, reason: reason.trim(), refundWalletId: refundWalletId || undefined, refundAmount }
+                  : { id: purchase.id, reason: reason.trim() },
               })
             }
-            disabled={mutate.isPending || stockLocked || editState.isLoading || refundBlocked}
+            disabled={mutate.isPending || stockLocked || !editState.isSuccess || refundBlocked || !reason.trim() || reason.trim().length > 1000}
           >
             {mutate.isPending && (
               <Loader2 className="mr-2 size-4 animate-spin" />
             )}
-            Delete Record
+            Void purchase
           </Button>
         </div>
       </div>

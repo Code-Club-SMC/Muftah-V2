@@ -362,7 +362,7 @@ const InvoiceDetailContent = ({
             <p className="text-sm font-medium">{invoiceSaleSummary}</p>
           </div>
         </div>
-        {isRetailerInvoice && (
+        {(isRetailerInvoice || invoiceDiscount > 0) && (
           <div className="flex items-center gap-2">
             <DollarSign className="size-4 text-muted-foreground" aria-hidden="true" />
             <div>
@@ -472,7 +472,7 @@ const InvoiceDetailContent = ({
           <p className="text-sm">{invoice.remarks}</p>
         </div>
       )}
-      {isRetailerInvoice && invoice.invoiceDiscountDescription && (
+      {invoice.invoiceDiscountDescription && (
         <div className="p-3 bg-rose-50 rounded-lg border border-rose-100">
           <p className="text-[10px] text-rose-700 uppercase mb-1">Discount Note</p>
           <p className="text-sm text-rose-900">{invoice.invoiceDiscountDescription}</p>

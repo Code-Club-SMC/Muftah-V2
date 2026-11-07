@@ -1,8 +1,22 @@
 import { z } from "zod";
 import Big from "big.js";
 import { PACKAGING_USAGE_BASIS } from "@/lib/recipe-packaging";
+import { PACKAGING_KINDS } from "@/lib/inventory/packaging-kind";
 import { lotPickSchema } from "@/lib/inventory/material-lots";
 import { calculatePackingLine } from "@/lib/production/batch-packing";
+
+export const packagingKindSchema = z.enum(PACKAGING_KINDS).nullable().optional();
+
+export const chemicalStockThresholdSchema = z.union([z.string(), z.number().finite()])
+  .refine(value => /^\d+(?:\.\d{1,2})?$/.test(String(value)) && new Big(value).lte("99999999.99"),
+    "Minimum stock must be nonnegative, at most 99999999.99, with at most two decimal places")
+  .transform(value => String(value));
+
+// The packaging threshold column is integer, including packaging stocked in KG.
+export const packagingStockThresholdSchema = z.union([z.string(), z.number().finite()])
+  .refine(value => /^\d+$/.test(String(value)) && new Big(value).lte("2147483647"),
+    "Minimum stock must be a whole number from 0 to 2147483647")
+  .transform(value => Number(value));
 
 export const createRecipeSchema = z.object({
   productId: z.string().min(1, "Product is required"),
@@ -99,7 +113,7 @@ export const addChemicalSchema = z.object({
   name: z.string().min(1, "Material name is required"),
   unit: z.enum(["kg", "liters"]),
   costPerUnit: z.string().min(1, "Cost per unit is required"),
-  minimumStockLevel: z.string().min(1, "Minimum stock level is required"),
+  minimumStockLevel: chemicalStockThresholdSchema,
   warehouseId: z.string().min(1, "Warehouse is required"),
   quantity: z.string().min(1, "Quantity is required"),
   supplierId: z.string().min(1, "Supplier is required"),
@@ -122,8 +136,9 @@ export const addPackagingMaterialSchema = z.object({
   warehouseId: z.string().min(1, "Warehouse is required"),
   quantity: z.string().min(1, "Quantity is required"),
   costPerUnit: z.string().min(1, "Cost per unit is required"),
-  minimumStockLevel: z.number().int().min(0),
+  minimumStockLevel: packagingStockThresholdSchema,
   type: z.enum(["primary", "master", "sticker", "extra"]),
+  packagingKind: packagingKindSchema,
   capacity: z.string(),
   capacityUnit: z.string(),
   // New Fields

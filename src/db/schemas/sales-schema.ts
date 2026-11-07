@@ -1,6 +1,7 @@
 import { createId } from "@paralleldrive/cuid2";
 import { relations, sql } from "drizzle-orm";
 import {
+  type AnyPgColumn,
   check,
   decimal,
   pgTable,
@@ -15,6 +16,7 @@ import {
 import { recipes, warehouses } from "./inventory-schema";
 import { user } from "./auth-schema";
 import { salesmen, discountRules, orderBookers, orders } from "./sales-erp-schema";
+import { offlineSalesInvoiceSlots } from "./offline-sales-schema";
 
 const timestamps = {
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -153,10 +155,12 @@ export const invoices = pgTable(
     orderId: text("order_id").references(() => orders.id),
     // Denormalized order booker for fast portal queries (recoveries).
     orderBookerId: text("order_booker_id").references(() => orderBookers.id),
-    // The database migration owns this FK. Keeping the Drizzle column as plain
-    // text avoids a sales-schema <-> offline-sales-schema module cycle that
-    // corrupts relational query inference across the application.
-    offlineSalesSlotId: text("offline_sales_slot_id"),
+    // Explicit callback typing breaks circular schema inference while retaining
+    // the foreign key in generated migrations.
+    offlineSalesSlotId: text("offline_sales_slot_id").references(
+      (): AnyPgColumn => offlineSalesInvoiceSlots.id,
+      { onDelete: "restrict" },
+    ),
     ...timestamps,
   },
   (table) => ({

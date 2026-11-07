@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { updateOutsidePackStockFn } from "@/server-functions/inventory/stock/update-stock-fn";
+import { invalidateStockQueries } from "@/lib/inventory/invalidate-stock";
 import {
   Dialog,
   DialogContent,
@@ -39,14 +40,12 @@ export function AdjustOutsidePacksDialog({
     mutationFn: updateOutsidePackStockFn,
     retry: false,
     onSuccess: async () => {
+      await invalidateStockQueries(client);
       await Promise.all(
         [
-          "factory-floor",
-          "inventory",
           "warehouses",
           "cartons",
           "carton-availability",
-          "item-detail",
           "consumption-history",
         ].map((key) => client.invalidateQueries({ queryKey: [key] })),
       );

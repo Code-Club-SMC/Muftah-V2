@@ -5,6 +5,7 @@ export const useLowStockAlerts = () => {
   return useQuery({
     queryKey: ["low-stock-alerts"],
     queryFn: getLowStockAlertsFn,
+    retry: 1,
     refetchInterval: 60000, // Refetch every minute
   });
 };

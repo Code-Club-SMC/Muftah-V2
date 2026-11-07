@@ -4,6 +4,7 @@ import {
   processSalesReturnFn,
 } from "@/server-functions/sales/sales-returns-fn";
 import { toast } from "sonner";
+import { invalidateStockQueries } from "@/lib/inventory/invalidate-stock";
 
 export const salesReturnKeys = {
   all: ["sales-returns"] as const,
@@ -47,13 +48,13 @@ export function useProcessSalesReturn() {
       notes?: string;
       invoiceId: string;
     }) => processSalesReturnFn({ data }),
-    onSuccess: (_result, variables) => {
+    onSuccess: async (_result, variables) => {
+      if (variables.action === "approve") await invalidateStockQueries(qc);
       toast.success(`Return ${variables.action === "approve" ? "approved" : "rejected"}`);
       qc.invalidateQueries({ queryKey: salesReturnKeys.all });
       qc.invalidateQueries({ queryKey: ["invoice-detail", variables.invoiceId] });
       qc.invalidateQueries({ queryKey: ["credit-recovery"] });
       qc.invalidateQueries({ queryKey: ["slip-lookup"] });
-      qc.invalidateQueries({ queryKey: ["inventory"] });
       qc.invalidateQueries({ queryKey: ["carton-availability"] });
     },
     onError: (err: any) => toast.error(err.message || "Failed to process return"),

@@ -1,21 +1,17 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { addStockFn } from "@/server-functions/inventory/stock/add-stock-fn";
+import { invalidateStockQueries } from "@/lib/inventory/invalidate-stock";
 
 export const useAddStock = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: addStockFn,
-    onSuccess: () => {
+    onSuccess: async () => {
+      await invalidateStockQueries(queryClient);
       toast.success("Stock added successfully");
-      // Invalidate all related queries
-      queryClient.invalidateQueries({ queryKey: ["inventory"] });
-      queryClient.invalidateQueries({ queryKey: ["factory-floor"] });
-      queryClient.invalidateQueries({ queryKey: ["materials"] });
-      queryClient.invalidateQueries({ queryKey: ["packaging-materials"] });
       queryClient.invalidateQueries({ queryKey: ["suppliers"] });
       queryClient.invalidateQueries({ queryKey: ["supplier"] });
-      queryClient.invalidateQueries({ queryKey: ["material-lots"] });
     },
     onError: (error) => {
       toast.error(error.message || "Failed to add stock");

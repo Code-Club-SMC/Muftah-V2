@@ -86,6 +86,58 @@ describe("groupByMaterial", () => {
     expect(groups[0]?.materialName).toBe("MC-001N"); // Nov 2
     expect(groups[1]?.materialName).toBe("500ml Bottle"); // Oct 25
   });
+
+  it("resolves packaging unit to pcs regardless of container capacityUnit", () => {
+    const recordsWithLiterBottle: PurchaseRecord[] = [
+      {
+        id: "p-liter-1",
+        createdAt: "2026-11-05T10:00:00Z",
+        purchaseDate: "2026-11-05T10:00:00Z",
+        quantity: "5000",
+        cost: "150000",
+        paidAmount: "150000",
+        unitCost: "30",
+        materialType: "packaging",
+        stockLeft: 5000,
+        packagingMaterial: {
+          id: "pkg-liter-bottle",
+          name: "1L Bottle",
+          type: "primary",
+          capacity: "1",
+          capacityUnit: "L",
+          minimumStockLevel: 500,
+          measuredInKg: false,
+        },
+      },
+      {
+        id: "p-shopper-1",
+        createdAt: "2026-11-04T10:00:00Z",
+        purchaseDate: "2026-11-04T10:00:00Z",
+        quantity: "250",
+        cost: "130000",
+        paidAmount: "130000",
+        unitCost: "520",
+        materialType: "packaging",
+        stockLeft: 250,
+        packagingMaterial: {
+          id: "pkg-shopper-kg",
+          name: "100g Shopper Bag",
+          type: "primary",
+          capacity: null,
+          capacityUnit: null,
+          minimumStockLevel: 50,
+          measuredInKg: true,
+        },
+      },
+    ];
+
+    const groups = groupByMaterial(recordsWithLiterBottle);
+    const bottleGroup = groups.find((g) => g.materialName === "1L Bottle");
+    const shopperGroup = groups.find((g) => g.materialName === "100g Shopper Bag");
+
+    expect(bottleGroup?.unit).toBe("pcs");
+    expect(shopperGroup?.unit).toBe("kg");
+  });
 });
 
 describe("PurchaseHistoryTable UI", () => {

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { getInventoryFn } from "@/server-functions/inventory/get-inventory-fn";
 import { AddStockDialog } from "./add-stock-dialog";
 import { restockRecord, SwitchToAddStock } from "./similar-material-warning";
@@ -8,6 +8,8 @@ import {
 } from "./add-raw-material-form";
 import { ResponsiveSheet } from "../custom/responsive-sheet";
 import { FlaskConical } from "lucide-react";
+import type { ChemicalPurchaseRef } from "@/lib/inventory/chemical-report-contract";
+import { PurchaseReportPrompt } from "./lab-reports/purchase-report-prompt";
 
 type Props = {
   open: boolean;
@@ -28,6 +30,8 @@ export const AddRawMaterialDialog = ({
 }: Props) => {
   // "Add stock instead" from the similar-name warning swaps this form for the Add stock form.
   const [restock, setRestock] = useState<SwitchToAddStock | null>(null);
+  const [reportPurchase, setReportPurchase] = useState<ChemicalPurchaseRef | null>(null);
+  useEffect(() => { if (open) setRestock(null); }, [open]);
   const handleOpenChange = (next: boolean) => {
     if (!next) setRestock(null);
     onOpenChange(next);
@@ -48,7 +52,10 @@ export const AddRawMaterialDialog = ({
         icon={FlaskConical}
       >
         <AddRawMaterialForm
-          onSuccess={() => onOpenChange(false)}
+          onSuccess={(purchase) => {
+            onOpenChange(false);
+            if (!isEditMode && purchase) setReportPurchase(purchase);
+          }}
           onSwitchToAddStock={setRestock}
           warehouses={warehouses}
           preselectedWarehouse={preselectedWarehouse}
@@ -60,7 +67,7 @@ export const AddRawMaterialDialog = ({
         <AddStockDialog
           key={restock.materialId}
           open={open}
-          onOpenChange={handleOpenChange}
+          onOpenChange={onOpenChange}
           warehouses={warehouses}
           preselectedWarehouse={restock.warehouseId || preselectedWarehouse}
           itemToRestock={restockRecord(restock)}
@@ -69,6 +76,7 @@ export const AddRawMaterialDialog = ({
           }
         />
       )}
+      <PurchaseReportPrompt purchase={reportPurchase} onClose={() => setReportPurchase(null)} />
     </>
   );
 };

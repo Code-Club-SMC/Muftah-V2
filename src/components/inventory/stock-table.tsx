@@ -15,6 +15,9 @@ import { GenericEmpty } from "../custom/empty";
 import { InventoryEmptyIllustration } from "@/components/illustrations/InventoryEmptyIllustration";
 import { useState, useMemo } from "react";
 import { packagingUnit } from "@/lib/inventory/material-units";
+import { packagingKindLabel, type PackagingKind } from "@/lib/inventory/packaging-kind";
+import type { ChemicalReportCoverage } from "@/lib/inventory/chemical-report-contract";
+import { stockStatus } from "@/lib/inventory/stock-status";
 import { AddRawMaterialDialog } from "./add-raw-material-sheet";
 import { AddPackagingMaterialDialog } from "./add-packaging-material-dialog";
 import { getInventoryFn } from "@/server-functions/inventory/get-inventory-fn";
@@ -56,6 +59,7 @@ type StockItem = {
     unit: string;
     minimumStockLevel: string | number | null;
     costPerUnit: string | number | null;
+    reportCoverage?: ChemicalReportCoverage;
     createdAt: string | Date;
     updatedAt: string | Date;
     lastSupplier?: {
@@ -69,6 +73,7 @@ type StockItem = {
     id: string;
     name: string;
     type: string;
+    packagingKind?: PackagingKind | null;
     capacity: string | null;
     capacityUnit: string | null;
     measuredInKg?: boolean | null;
@@ -116,6 +121,14 @@ export const StockTable = ({
 
   const deleteMutation = useDeleteMaterial();
   const [labReportItem, setLabReportItem] = useState<StockItem | null>(null);
+  const [missingOnly, setMissingOnly] = useState(false);
+  const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 5 });
+  const missingReport = (row: StockItem) => {
+    const coverage = row.chemical?.reportCoverage;
+    return !!coverage && (coverage.missingPurchaseCount > 0 || coverage.reportCount === 0);
+  };
+  const missingCount = data.filter(missingReport).length;
+  const visibleData = useMemo(() => missingOnly ? data.filter(missingReport) : data, [data, missingOnly]);
 
   const isChemical = type === "chemical";
 
@@ -246,14 +259,9 @@ export const StockTable = ({
             ? row.original.chemical
             : row.original.packagingMaterial;
           if (!material) return null;
-          const currentQty = parseFloat(row.original.quantity);
-          const minLevel =
-            typeof material.minimumStockLevel === "string"
-              ? parseFloat(material.minimumStockLevel)
-              : material.minimumStockLevel || 0;
-          const isLow = currentQty <= minLevel && minLevel > 0;
+          const status = stockStatus(row.original.quantity, material.minimumStockLevel);
 
-          if (currentQty <= 0) {
+          if (status === "out") {
             return (
               <Badge
                 variant="destructive"
@@ -264,7 +272,7 @@ export const StockTable = ({
             );
           }
 
-          return isLow ? (
+          return status === "low" ? (
             <Badge
               variant="destructive"
               className="h-5 text-[10px] uppercase tracking-tighter"
@@ -296,6 +304,28 @@ export const StockTable = ({
         ),
       },
     ];
+
+    if (!isChemical) baseColumns.splice(1, 0, {
+      id: "packagingKind",
+      header: "PACKAGING KIND",
+      cell: ({ row }) => row.original.packagingMaterial
+        ? <Badge variant="outline">{packagingKindLabel(row.original.packagingMaterial)}</Badge>
+        : null,
+    });
+
+    if (isChemical) baseColumns.push({
+      id: "reports",
+      header: "LAB REPORTS",
+      cell: ({ row }) => {
+        const coverage = row.original.chemical?.reportCoverage;
+        if (!coverage) return <span className="text-xs text-muted-foreground">Report status unavailable</span>;
+        const label = coverage.missingPurchaseCount > 0 ? `Report missing (${coverage.missingPurchaseCount})`
+          : coverage.reportCount === 0 ? "No lab reports" : `${coverage.reportCount} certificate${coverage.reportCount === 1 ? "" : "s"}`;
+        return <Button variant="ghost" size="sm" onClick={() => setLabReportItem(row.original)} aria-label={`${label} for ${row.original.chemical?.name}`}>
+          <Badge variant={coverage.missingPurchaseCount > 0 ? "destructive" : "outline"}>{label}</Badge>
+        </Button>;
+      },
+    });
 
     if (!hideActions) {
       baseColumns.push({
@@ -430,16 +460,15 @@ export const StockTable = ({
   const isAddAllowed =
     !selectedWarehouse || selectedWarehouse.type === "factory_floor";
 
-  if (data.length === 0) {
-    const description = selectedWarehouse
+  const description = selectedWarehouse
       ? selectedWarehouse.type === "storage"
         ? `${selectedWarehouse.name} is a storage facility and cannot store raw materials (chemicals/packaging).`
         : `${selectedWarehouse.name} warehouse has no ${isChemical ? "Chemicals" : "packaging materials"}.`
       : `No ${isChemical ? "Chemicals" : "packaging material"} stock available.`;
 
-    return (
-      <>
-        <GenericEmpty
+  return (
+    <div className="space-y-4">
+      {data.length === 0 ? <GenericEmpty
           icon={InventoryEmptyIllustration}
           title={
             selectedWarehouse?.type === "storage"
@@ -455,30 +484,7 @@ export const StockTable = ({
           onAddChange={
             isAddAllowed && !hideAddButton ? setCreateDialogOpen : undefined
           }
-        />
-
-        {isAddAllowed &&
-          (isChemical ? (
-            <AddRawMaterialDialog
-              open={createDialogOpen}
-              onOpenChange={setCreateDialogOpen}
-              warehouses={warehouses}
-              preselectedWarehouse={preselectedWarehouse}
-            />
-          ) : (
-            <AddPackagingMaterialDialog
-              open={createDialogOpen}
-              onOpenChange={setCreateDialogOpen}
-              warehouses={warehouses}
-              preselectedWarehouse={preselectedWarehouse}
-            />
-          ))}
-      </>
-    );
-  }
-
-  return (
-    <div className="space-y-4">
+        /> : <>
       <div className="flex justify-between items-center mb-6">
         <div>
           <h3 className="text-xl font-bold tracking-tight">
@@ -502,11 +508,19 @@ export const StockTable = ({
 
       <DataTable
         pageSize={5}
+        autoResetPageIndex={false}
         columns={columns}
-        data={data}
+        data={visibleData}
+        pagination={pagination}
+        onPaginationChange={setPagination}
+        actions={isChemical && <Button variant={missingOnly ? "secondary" : "outline"} size="sm" aria-pressed={missingOnly}
+          onClick={() => { setMissingOnly(value => !value); setPagination(value => ({ ...value, pageIndex: 0 })); }}>
+          Missing reports ({missingCount})
+        </Button>}
         searchKey="name"
         searchPlaceholder={`Filter ${isChemical ? "chemicals" : "packaging"}...`}
       />
+      </>}
 
       {/* Edit Dialog */}
       {selectedItem && (
