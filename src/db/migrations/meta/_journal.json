@@ -183,6 +183,13 @@
       "when": 1793433903493,
       "tag": "0025_rapid_ozymandias",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1794059141656,
+      "tag": "0026_rainy_magma",
+      "breakpoints": true
     }
   ]
 }
