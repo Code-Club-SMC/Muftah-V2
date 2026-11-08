@@ -316,6 +316,19 @@ export function CreateReturnDialog({
                           <p className="text-xs text-emerald-700">
                             Returnable: {Math.floor(remainingUnits / unitsPerCarton)} carton(s), {remainingUnits % unitsPerCarton} loose
                           </p>
+                          {remainingUnits === 0 && (selectedCartons > 0 || Number(lines[idx].quantityReturned) > 0) && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              aria-label={`Clear ${item.pack} quantities`}
+                              onClick={() => setLines(current => current.map((line, index) => index === idx
+                                ? { ...line, cartonsReturned: "0", quantityReturned: "0" }
+                                : line))}
+                            >
+                              Clear quantities
+                            </Button>
+                          )}
                         </div>
                         <div className="sm:col-span-2 space-y-1">
                           <Label htmlFor={`return-cartons-${item.id}`} className="text-xs">Cartons</Label>

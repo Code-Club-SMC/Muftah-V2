@@ -120,6 +120,51 @@ describe("request return on the existing screen", () => {
     expect((screen.getByRole("button", { name: "Submit request" }) as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByText("All invoice packs are already reserved or received.")).toBeTruthy();
   });
+  it("clears a fully reserved selected line for a retained-data retry without closing", async () => {
+    mocks.create.mockRejectedValueOnce(new Error("Reservation changed"));
+    const { rerender } = mount(<CreateReturnDialog invoiceId="invoice" invoiceDiscount="0" items={[item, second]} returns={[]} />);
+    await openRequest(); await chooseReason();
+    fireEvent.change(screen.getByLabelText("Reason note"), { target: { value: "Keep reason details" } });
+    fireEvent.change(screen.getByLabelText("Notes"), { target: { value: "Keep internal notes" } });
+    fireEvent.change(screen.getByRole("spinbutton", { name: "Bottle cartons" }), { target: { value: "1" } });
+    fireEvent.change(screen.getByRole("spinbutton", { name: "Bottle loose packs" }), { target: { value: "2" } });
+    fireEvent.change(screen.getByRole("spinbutton", { name: "Can cartons" }), { target: { value: "1" } });
+    fireEvent.change(screen.getByRole("spinbutton", { name: "Can loose packs" }), { target: { value: "3" } });
+    fireEvent.click(screen.getAllByRole("button", { name: "Change price" })[0]);
+    fireEvent.click(screen.getByRole("button", { name: "Change price" }));
+    fireEvent.change(screen.getByRole("spinbutton", { name: "Bottle refund per pack" }), { target: { value: "12" } });
+    fireEvent.change(screen.getByRole("spinbutton", { name: "Can refund per pack" }), { target: { value: "11" } });
+    fireEvent.change(screen.getByLabelText("Why refund above the invoice price?"), { target: { value: "Keep override details" } });
+    fireEvent.click(screen.getByRole("button", { name: "Submit request" }));
+    expect(await screen.findByRole("alert")).toHaveProperty("textContent", "Reservation changed");
+
+    rerender(<QueryClientProvider client={client}><CreateReturnDialog invoiceId="invoice" invoiceDiscount="0" items={[item, second]} returns={[{ status: "requested", items: [{ ...returnLine, cartonsRequested: 2 }] }]} /></QueryClientProvider>);
+    const value = (name: string) => (screen.getByRole("spinbutton", { name }) as HTMLInputElement).value;
+    expect(value("Bottle cartons")).toBe("1");
+    expect(value("Bottle loose packs")).toBe("2");
+    expect((screen.getByRole("button", { name: "Submit request" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Clear Bottle quantities" }));
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    expect(value("Bottle cartons")).toBe("0");
+    expect(value("Bottle loose packs")).toBe("0");
+    expect(value("Bottle refund per pack")).toBe("12");
+    expect(value("Can cartons")).toBe("1");
+    expect(value("Can loose packs")).toBe("3");
+    expect(value("Can refund per pack")).toBe("11");
+    expect(screen.getByRole("combobox", { name: "Reason" }).textContent).toContain("Other");
+    expect((screen.getByLabelText("Reason note") as HTMLTextAreaElement).value).toBe("Keep reason details");
+    expect((screen.getByLabelText("Notes") as HTMLTextAreaElement).value).toBe("Keep internal notes");
+    expect((screen.getByLabelText("Why refund above the invoice price?") as HTMLTextAreaElement).value).toBe("Keep override details");
+
+    fireEvent.change(screen.getByRole("spinbutton", { name: "Can loose packs" }), { target: { value: "21" } });
+    fireEvent.submit(screen.getByRole("button", { name: "Submit request" }).closest("form")!);
+    expect(mocks.create).toHaveBeenCalledTimes(1);
+    fireEvent.change(screen.getByRole("spinbutton", { name: "Can loose packs" }), { target: { value: "3" } });
+    fireEvent.click(screen.getByRole("button", { name: "Submit request" }));
+    await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(2));
+    expect(mocks.create).toHaveBeenLastCalledWith({ data: { invoiceId: "invoice", reasonId: "other", reasonNote: "Keep reason details", notes: "Keep internal notes", priceOverrideReason: "Keep override details", items: [{ invoiceItemId: "item2", cartonsReturned: 1, quantityReturned: 3, refundPerUnit: 11 }] } });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
   it("renders loading without preselecting a reason and does not seed after closing", async () => {
     let resolve!: (rows: unknown[]) => void;
     mocks.reasons.mockImplementation(() => new Promise(yes => { resolve = yes; }));
