@@ -17,11 +17,14 @@ import {
   Select,
   SelectContent,
   SelectItem,
+  SelectGroup,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { useCreateSalesReturn } from "@/hooks/sales/use-sales-returns";
+import { useCreateSalesReturn, useReturnReasons } from "@/hooks/sales/use-sales-returns";
+import { reservedReturnUnits, type ReturnLineQuantities } from "@/lib/sales/returns/return-lifecycle";
+import { Field, FieldGroup } from "@/components/ui/field";
 import { useViewerAccess } from "@/hooks/use-viewer-access";
 import { hasPermission } from "@/lib/rbac";
 import {
@@ -46,11 +49,7 @@ interface ReturnableItem {
 
 interface ExistingReturn {
   status: string;
-  items: Array<{
-    invoiceItem: { id: string } | null;
-    cartonsReturned: number;
-    quantityReturned: number;
-  }>;
+  items: Array<ReturnLineQuantities & { invoiceItem: { id: string } | null }>;
 }
 
 interface CreateReturnDialogProps {
@@ -73,10 +72,17 @@ export function CreateReturnDialog({
   trigger,
 }: CreateReturnDialogProps) {
   const [open, setOpen] = React.useState(false);
-  const [reason, setReason] = React.useState("");
-  const [condition, setCondition] = React.useState<"good" | "damaged" | "expired">("good");
+  const [reasonId, setReasonId] = React.useState("");
+  const [reasonNote, setReasonNote] = React.useState("");
   const [notes, setNotes] = React.useState("");
   const { data: viewerAccess } = useViewerAccess();
+  const canRequest = !!viewerAccess &&
+    hasPermission(viewerAccess.permissions, "sales.view") &&
+    hasPermission(viewerAccess.permissions, "sales.returns.create");
+  const reasonsQuery = useReturnReasons(open && canRequest);
+  const reasons = (reasonsQuery.data ?? []).filter(reason => reason.isActive);
+  const selectedReason = reasons.find(reason => reason.id === reasonId);
+  const submitting = React.useRef(false);
   const canOverridePrice =
     !!viewerAccess && hasPermission(viewerAccess.permissions, "sales.returns.override-price");
   const maxRefundByItem = React.useMemo(() => {
@@ -97,13 +103,14 @@ export function CreateReturnDialog({
   const [lines, setLines] = React.useState(emptyLines);
 
   const effectiveRefund = (line: (typeof lines)[number]) =>
-    line.editingPrice && line.refundPerUnit !== ""
+    canOverridePrice && line.editingPrice && line.refundPerUnit !== "" && Number.isFinite(Number(line.refundPerUnit)) && Number(line.refundPerUnit) >= 0
       ? line.refundPerUnit
       : maxRefundByItem.get(line.invoiceItemId) ?? "0.00";
 
   const isAboveInvoicePrice = (line: (typeof lines)[number]) =>
     line.editingPrice &&
     line.refundPerUnit !== "" &&
+    Number.isFinite(Number(line.refundPerUnit)) &&
     new Big(line.refundPerUnit).gt(maxRefundByItem.get(line.invoiceItemId) ?? "0");
 
   const needsOverrideReason = lines.some(
@@ -118,16 +125,12 @@ export function CreateReturnDialog({
     const totals = new Map<string, number>();
 
     for (const salesReturn of returns) {
-      if (!['pending', 'approved'].includes(salesReturn.status)) continue;
-
       for (const returnItem of salesReturn.items) {
         const invoiceItemId = returnItem.invoiceItem?.id;
         const sourceItem = items.find((item) => item.id === invoiceItemId);
         if (!invoiceItemId || !sourceItem) continue;
 
-        const totalUnits =
-          (returnItem.cartonsReturned || 0) * getUnitsPerCarton(sourceItem) +
-          (returnItem.quantityReturned || 0);
+        const totalUnits = reservedReturnUnits(salesReturn.status, returnItem, getUnitsPerCarton(sourceItem));
 
         totals.set(invoiceItemId, (totals.get(invoiceItemId) ?? 0) + totalUnits);
       }
@@ -139,31 +142,46 @@ export function CreateReturnDialog({
   const hasAnyQuantity = lines.some(
     (line) => Number(line.cartonsReturned) > 0 || Number(line.quantityReturned) > 0,
   );
+  const validLines = lines.every(line => {
+    const item = items.find(item => item.id === line.invoiceItemId);
+    if (!item) return false;
+    const cartons = Number(line.cartonsReturned);
+    const loose = Number(line.quantityReturned);
+    const size = getUnitsPerCarton(item);
+    const remaining = item.numberOfCartons * size + item.quantity - (returnedUnitsByItem.get(item.id) ?? 0);
+    return [cartons, loose].every(value => Number.isInteger(value) && value >= 0) &&
+      cartons * size + loose <= Math.max(0, remaining) &&
+      (!line.editingPrice || line.refundPerUnit === "" || (Number.isFinite(Number(line.refundPerUnit)) && Number(line.refundPerUnit) >= 0));
+  });
+  const canSubmit = canRequest && !createReturn.isPending && !reasonsQuery.isFetching && !reasonsQuery.isError &&
+    !!selectedReason && (!selectedReason.requiresNote || !!reasonNote.trim()) && reasonNote.trim().length <= 500 &&
+    hasAnyQuantity && validLines && (!needsOverrideReason || (!!priceOverrideReason.trim() && priceOverrideReason.trim().length <= 500));
 
   const totalRefund = React.useMemo(() => {
     return sumMoney(
       lines.map((line) => {
         const sourceItem = items.find((item) => item.id === line.invoiceItemId);
         const unitsPerCarton = sourceItem ? getUnitsPerCarton(sourceItem) : 1;
-        const units =
+        const rawUnits =
           (Number(line.cartonsReturned) || 0) * unitsPerCarton + (Number(line.quantityReturned) || 0);
+        const units = Number.isFinite(rawUnits) && rawUnits >= 0 ? rawUnits : 0;
         return calculateReturnLineRefund(units, effectiveRefund(line) || "0");
       }),
     );
-  }, [items, lines, maxRefundByItem]);
+  }, [items, lines, maxRefundByItem, canOverridePrice]);
 
   function resetForm() {
-    setReason("");
+    setReasonId("");
+    setReasonNote("");
     setNotes("");
-    setCondition("good");
     setLines(emptyLines());
     setPriceOverrideReason("");
   }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!reason.trim() || !hasAnyQuantity) return;
-    if (needsOverrideReason && !priceOverrideReason.trim()) return;
+    if (!canSubmit || submitting.current) return;
+    submitting.current = true;
 
     const returnItems = lines
       .map((line) => ({
@@ -171,15 +189,15 @@ export function CreateReturnDialog({
         cartonsReturned: Number(line.cartonsReturned) || 0,
         quantityReturned: Number(line.quantityReturned) || 0,
         refundPerUnit:
-          line.editingPrice && line.refundPerUnit !== "" ? Number(line.refundPerUnit) : undefined,
+          canOverridePrice && line.editingPrice && line.refundPerUnit !== "" ? Number(line.refundPerUnit) : undefined,
       }))
       .filter((line) => line.cartonsReturned > 0 || line.quantityReturned > 0);
 
     createReturn.mutate(
       {
         invoiceId,
-        reason: reason.trim(),
-        condition,
+        reasonId,
+        reasonNote: reasonNote.trim() || undefined,
         notes: notes.trim() || undefined,
         priceOverrideReason: needsOverrideReason ? priceOverrideReason.trim() : undefined,
         items: returnItems,
@@ -189,6 +207,7 @@ export function CreateReturnDialog({
           setOpen(false);
           resetForm();
         },
+        onSettled: () => { submitting.current = false; },
       },
     );
   }
@@ -200,58 +219,58 @@ export function CreateReturnDialog({
     return totalInvoicedUnits - alreadyReservedUnits > 0;
   });
 
+  if (!canRequest) return null;
+
   return (
     <Dialog
       open={open}
       onOpenChange={(nextOpen) => {
+        if (submitting.current) return;
         setOpen(nextOpen);
-        if (!nextOpen) resetForm();
+        if (!nextOpen) { resetForm(); createReturn.reset(); }
       }}
     >
       <DialogTrigger asChild>
         {trigger ?? (
           <Button variant="outline" size="sm" disabled={!hasReturnableItems}>
             <RotateCcw className="size-4 mr-1.5" />
-            Record Return
+            Request return
           </Button>
         )}
       </DialogTrigger>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto" showCloseButton={!createReturn.isPending}>
         <form onSubmit={handleSubmit}>
           <DialogHeader>
-            <DialogTitle>Record Sales Return</DialogTitle>
+            <DialogTitle>Request sales return</DialogTitle>
             <DialogDescription>
-              Create a return / credit note against this invoice. Returns remain pending until
-              approved.
+              Request and approval reserve the requested packs. Only inspected receipt changes stock
+              and credits the invoice. A short receipt closes the request and releases the shortfall.
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-5 py-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-2">
+          <fieldset disabled={createReturn.isPending} className="flex flex-col gap-5 py-4">
+            <FieldGroup>
+              <Field>
                 <Label htmlFor="return-reason">Reason</Label>
-                <Input
-                  id="return-reason"
-                  value={reason}
-                  onChange={(e) => setReason(e.target.value)}
-                  placeholder="e.g. Damaged in transit"
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Condition</Label>
-                <Select value={condition} onValueChange={(v) => setCondition(v as any)}>
-                  <SelectTrigger>
-                    <SelectValue />
+                <Select value={reasonId} onValueChange={setReasonId} disabled={reasonsQuery.isFetching || reasonsQuery.isError || !reasons.length}>
+                  <SelectTrigger id="return-reason">
+                    <SelectValue placeholder="Pick a reason" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="good">Good</SelectItem>
-                    <SelectItem value="damaged">Damaged</SelectItem>
-                    <SelectItem value="expired">Expired</SelectItem>
+                    <SelectGroup>
+                      {reasons.map(reason => <SelectItem key={reason.id} value={reason.id}>{reason.name}</SelectItem>)}
+                    </SelectGroup>
                   </SelectContent>
                 </Select>
-              </div>
-            </div>
+                {reasonsQuery.isFetching && <p role="status">Loading return reasons...</p>}
+                {reasonsQuery.isError && <><p role="alert">{reasonsQuery.error.message}</p><Button type="button" variant="outline" onClick={() => void reasonsQuery.refetch()}>Retry reasons</Button></>}
+                {reasonsQuery.isSuccess && !reasons.length && <p>No active return reasons. Ask a sales configuration manager.</p>}
+              </Field>
+              <Field>
+                <Label htmlFor="return-reason-note">Reason note</Label>
+                <Textarea id="return-reason-note" value={reasonNote} onChange={e => setReasonNote(e.target.value)} maxLength={500} required={selectedReason?.requiresNote} placeholder={selectedReason?.requiresNote ? "Required for this reason" : "Optional reason details"} />
+              </Field>
+            </FieldGroup>
 
             <div className="space-y-2">
               <Label htmlFor="return-notes">Notes</Label>
@@ -268,9 +287,9 @@ export function CreateReturnDialog({
 
             <div className="space-y-3">
               <Label>Return Items</Label>
-              {!hasReturnableItems ? (
-                <p className="text-sm text-muted-foreground">All invoice items have already been fully returned.</p>
-              ) : (
+              {!hasReturnableItems && (
+                <p className="text-sm text-muted-foreground">All invoice packs are already reserved or received.</p>
+              )}
                 <div className="space-y-3">
                   {items.map((item, idx) => {
                     const unitsPerCarton = getUnitsPerCarton(item);
@@ -299,47 +318,41 @@ export function CreateReturnDialog({
                           </p>
                         </div>
                         <div className="sm:col-span-2 space-y-1">
-                          <Label className="text-xs">Cartons</Label>
+                          <Label htmlFor={`return-cartons-${item.id}`} className="text-xs">Cartons</Label>
                           <Input
+                            id={`return-cartons-${item.id}`}
+                            aria-label={`${item.pack} cartons`}
                             type="number"
+                            step={1}
                             min={0}
                             max={maxCartons}
                             value={lines[idx].cartonsReturned}
-                            onChange={(e) => {
-                              const next = [...lines];
-                              const clampedCartons = Math.min(Number(e.target.value) || 0, maxCartons);
-                              next[idx].cartonsReturned = String(clampedCartons);
-                              const nextMaxLooseUnits = Math.max(0, remainingUnits - (clampedCartons * unitsPerCarton));
-                              const currentLooseUnits = Number(next[idx].quantityReturned) || 0;
-                              if (currentLooseUnits > nextMaxLooseUnits) {
-                                next[idx].quantityReturned = String(nextMaxLooseUnits);
-                              }
-                              setLines(next);
-                            }}
+                            onChange={e => setLines(current => current.map((line, index) => index === idx ? { ...line, cartonsReturned: e.target.value } : line))}
                             placeholder="0"
                             disabled={remainingUnits === 0}
                           />
                         </div>
                         <div className="sm:col-span-2 space-y-1">
-                          <Label className="text-xs">Loose Units</Label>
+                          <Label htmlFor={`return-loose-${item.id}`} className="text-xs">Loose packs</Label>
                           <Input
+                            id={`return-loose-${item.id}`}
+                            aria-label={`${item.pack} loose packs`}
                             type="number"
+                            step={1}
                             min={0}
                             max={maxLooseUnits}
                             value={lines[idx].quantityReturned}
-                            onChange={(e) => {
-                              const next = [...lines];
-                              next[idx].quantityReturned = String(Math.min(Number(e.target.value) || 0, maxLooseUnits));
-                              setLines(next);
-                            }}
+                            onChange={e => setLines(current => current.map((line, index) => index === idx ? { ...line, quantityReturned: e.target.value } : line))}
                             placeholder="0"
                             disabled={remainingUnits === 0}
                           />
                         </div>
                         <div className="sm:col-span-4 space-y-1">
-                          <Label className="text-xs">Refund per unit</Label>
+                          <Label htmlFor={`return-price-${item.id}`} className="text-xs">Refund per pack</Label>
                           {lines[idx].editingPrice ? (
                             <Input
+                              id={`return-price-${item.id}`}
+                              aria-label={`${item.pack} refund per pack`}
                               type="number"
                               min={0}
                               step="0.01"
@@ -381,7 +394,6 @@ export function CreateReturnDialog({
                     );
                   })}
                 </div>
-              )}
             </div>
 
             {needsOverrideReason && (
@@ -394,6 +406,7 @@ export function CreateReturnDialog({
                   placeholder="Required. Shown to the approver."
                   rows={2}
                   required
+                  maxLength={500}
                 />
               </div>
             )}
@@ -404,20 +417,18 @@ export function CreateReturnDialog({
                 PKR {Number(totalRefund).toLocaleString("en-PK", { minimumFractionDigits: 2 })}
               </span>
             </div>
-          </div>
+            {!validLines && <p role="alert">Use nonnegative whole packs within the returnable quantity and a valid refund price.</p>}
+            {createReturn.isError && <p role="alert">{createReturn.error.message}</p>}
+          </fieldset>
 
           <DialogFooter>
             <DialogClose asChild>
-              <Button type="button" variant="ghost" size="sm">
+              <Button type="button" variant="ghost" size="sm" disabled={createReturn.isPending}>
                 Cancel
               </Button>
             </DialogClose>
-            <Button type="submit" size="sm" disabled={
-                createReturn.isPending ||
-                !hasAnyQuantity ||
-                (needsOverrideReason && !priceOverrideReason.trim())
-              }>
-              {createReturn.isPending ? "Saving..." : "Create Return"}
+            <Button type="submit" size="sm" disabled={!canSubmit}>
+              {createReturn.isPending ? "Saving..." : "Submit request"}
             </Button>
           </DialogFooter>
         </form>

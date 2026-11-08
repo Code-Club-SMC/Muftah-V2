@@ -466,4 +466,22 @@ describe("sales workflow regressions", () => {
     expect(source).toContain(".middleware([requireSalesReturnsApproveMiddleware])");
     expect(source).toContain('"sales.returns.approve"');
   });
+
+  it("binds explicit return lifecycle actions without reviving the removed process alias or relaxing invoice reads", () => {
+    const hooks = readFileSync(resolve(process.cwd(), "src/hooks/sales/use-sales-returns.ts"), "utf8");
+    const invoicePage = readFileSync(resolve(process.cwd(), "src/routes/_protected/sales/invoices/$invoiceId/index.tsx"), "utf8");
+    const dialog = readFileSync(resolve(SALES_COMPONENTS_DIR, "create-return-dialog.tsx"), "utf8");
+    const actions = readFileSync(resolve(SALES_COMPONENTS_DIR, "return-lifecycle-actions.tsx"), "utf8");
+    const detail = readFileSync(resolve(SALES_FN_DIR, "invoice-detail-fn.ts"), "utf8");
+    expect(hooks).not.toContain("processSalesReturnFn");
+    expect(invoicePage).not.toContain("useProcessSalesReturn");
+    for (const name of ["decideSalesReturnFn", "completeSalesReturnFn", "cancelSalesReturnFn", "voidSalesReturnFn"]) expect(hooks).toContain(name);
+    expect(actions).toContain("availableReturnActions(");
+    expect(actions).toContain('"sales.returns.approve"');
+    expect(actions).toContain('"inventory.returns.receive"');
+    expect(actions).toContain('"sales.view"');
+    expect(dialog).toContain("reservedReturnUnits(");
+    expect(dialog).toContain("open && canRequest");
+    expect(detail).toContain(".middleware([requireSalesViewMiddleware])");
+  });
 });

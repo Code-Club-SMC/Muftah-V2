@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useCreateInvoice, useUpdateInvoice, useDeleteInvoice } from "@/hooks/sales/use-invoices";
-import { useProcessSalesReturn } from "@/hooks/sales/use-sales-returns";
+import { useDecideSalesReturn, useCompleteSalesReturn, useVoidSalesReturn } from "@/hooks/sales/use-sales-returns";
 import { useApplyQcHold, useReleaseQcHold, useDispatch, useProcessReturn, useCloseBatch } from "@/features/manufacturing/cartons/hooks/use-carton-mutations";
 import { createInvoiceSchema, updateInvoiceSchema } from "@/db/zod_schemas";
 import { usePostOfflineSalesBatch } from "@/hooks/sales/use-offline-sales";
@@ -19,7 +19,8 @@ vi.mock("@/server-functions/inventory/add-warehouse.fn", () => ({ addWarehouseFn
 vi.mock("@/server-functions/inventory/update-warehouse-fn", () => ({ updateWarehouseFn: mocks.warehouse }));
 vi.mock("@/server-functions/sales/invoices-fn", () => ({ createInvoiceFn: mocks.create, updateInvoiceFn: mocks.update, deleteInvoiceFn: mocks.remove, getInvoicesFn: vi.fn(), getInvoiceStatsFn: vi.fn() }));
 vi.mock("@/server-functions/sales/invoice-detail-fn", () => ({ getInvoiceDetailFn: vi.fn() }));
-vi.mock("@/server-functions/sales/sales-returns-fn", () => ({ createSalesReturnFn: vi.fn(), processSalesReturnFn: mocks.process }));
+vi.mock("@/server-functions/sales/sales-returns-fn", () => ({ createSalesReturnFn: vi.fn(), decideSalesReturnFn: mocks.process, completeSalesReturnFn: mocks.process, cancelSalesReturnFn: vi.fn(), voidSalesReturnFn: mocks.process }));
+vi.mock("@/server-functions/sales/return-reasons-fn", () => ({ getReturnReasonsFn: vi.fn() }));
 vi.mock("@/server-functions/manufacturing/cartons", () => ({ applyQcHoldFn: async () => ({}), releaseQcHoldFn: async () => ({}), dispatchCartonsFn: async () => ({}), processReturnFn: async () => ({}), closeBatchFn: async () => ({}) }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 let client: QueryClient;
@@ -72,14 +73,17 @@ describe("finished stock cache caller audit", () => {
     await act(async () => { await result.current.mutateAsync("invoice"); });
     refreshed();
   });
-  it("invalidates after sales return approval", async () => {
-    const { result } = renderHook(useProcessSalesReturn, { wrapper });
-    await act(async () => { await result.current.mutateAsync({ returnId: "return", invoiceId: "invoice", action: "approve" }); });
+  it.each(["receive", "void"])("invalidates after sales return %s moves stock", async action => {
+    const { result } = renderHook(() => ({ receive: useCompleteSalesReturn("invoice"), void: useVoidSalesReturn("invoice") }), { wrapper });
+    await act(async () => {
+      if (action === "receive") await result.current.receive.mutateAsync({ returnId: "return", lines: [{ returnItemId: "line", goodUnits: 1, damagedUnits: 0, expiredUnits: 0 }] });
+      else await result.current.void.mutateAsync({ returnId: "return", reason: "Incorrect receipt" });
+    });
     refreshed();
   });
-  it("does not refresh stock after a rejected return", async () => {
-    const { result } = renderHook(useProcessSalesReturn, { wrapper });
-    await act(async () => { await result.current.mutateAsync({ returnId: "return", invoiceId: "invoice", action: "reject" }); });
+  it.each(["approve", "reject"] as const)("does not refresh stock after return %s", async action => {
+    const { result } = renderHook(() => useDecideSalesReturn("invoice"), { wrapper });
+    await act(async () => { await result.current.mutateAsync({ returnId: "return", action, reason: action === "reject" ? "Wrong item" : undefined }); });
     for (const key of keys) expect(client.getQueryState(key)?.isInvalidated).toBe(false);
   });
   it("does not refresh after a failed invoice mutation", async () => {
