@@ -72,6 +72,7 @@ import {
   GENERAL_RECIPE_RATE_ENTITY_ID,
   type EntityRecipeRateEntityType,
 } from "@/lib/sales/entity-recipe-rate-config";
+import { ReturnReasonsSettings } from "@/components/sales/returns/return-reasons-settings";
 
 const PKR = (v: number) =>
   `PKR ${v.toLocaleString("en-PK", { minimumFractionDigits: 2 })}`;
@@ -115,6 +116,7 @@ function ConfigurationsContent() {
         <TabsTrigger value="tada">TADA Rate</TabsTrigger>
         <TabsTrigger value="commissions">Commission Tiers</TabsTrigger>
         <TabsTrigger value="rates">Recipe Rates</TabsTrigger>
+        <TabsTrigger value="return-reasons">Return Reasons</TabsTrigger>
       </TabsList>
 
       <TabsContent value="discount">
@@ -131,6 +133,10 @@ function ConfigurationsContent() {
 
       <TabsContent value="rates">
         <RecipeRatesTab />
+      </TabsContent>
+
+      <TabsContent value="return-reasons">
+        <ReturnReasonsSettings />
       </TabsContent>
     </Tabs>
   );
