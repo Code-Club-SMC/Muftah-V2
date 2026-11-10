@@ -146,6 +146,21 @@ function SalesReturnDetailPage() {
 
       <ReturnProgress status={data.status} />
 
+      {data.status === "approved" && (
+        <div
+          role="status"
+          className="flex items-start gap-2.5 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-900 dark:text-amber-200"
+        >
+          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400" />
+          <div>
+            <p className="font-medium">Approved, awaiting receipt. Not confirmed yet.</p>
+            <p className="text-xs text-amber-800/90 dark:text-amber-200/80">
+              Stock and customer balance do not change until goods arrive and you confirm receipt.
+            </p>
+          </div>
+        </div>
+      )}
+
       <div className="grid gap-6 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <CardHeader>

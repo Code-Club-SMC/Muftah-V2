@@ -19,7 +19,7 @@ import { fixture, record, seed, type Tx } from "./batch-packing-fixture";
 
 const stockWhere = (f: Awaited<ReturnType<typeof seed>>, recipeId = f.formats[0].id) => and(eq(finishedGoodsStock.warehouseId, f.warehouse.id), eq(finishedGoodsStock.recipeId, recipeId));
 
-describe("batch packing isolated PostgreSQL", () => {
+describe.skipIf(!process.env.TEST_DATABASE_URL)("batch packing isolated PostgreSQL", () => {
   it("posts the whole 500kg receipt atomically and replays without duplicate stock", async () => fixture(async (tx, f) => {
     const result = await record(tx, f.input, f.actor);
     expect(await record(tx, f.input, f.actor)).toEqual(result);

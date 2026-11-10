@@ -11,10 +11,14 @@ const STATUS_STYLES: Record<string, string> = {
   voided: "border-muted-foreground/30 text-muted-foreground line-through",
 };
 
+const BADGE_LABELS: Record<string, string> = {
+  approved: "Approved · Awaiting receipt",
+};
+
 export function ReturnStatusBadge({ status }: { status: string }) {
   return (
     <Badge variant="outline" className={cn("text-[10px]", STATUS_STYLES[status])}>
-      {returnStatusLabel(status)}
+      {BADGE_LABELS[status] ?? returnStatusLabel(status)}
     </Badge>
   );
 }

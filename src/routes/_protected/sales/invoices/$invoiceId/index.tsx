@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useParams } from "@tanstack/react-router";
-import { Suspense } from "react";
+import { Suspense, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { format, formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -79,6 +79,10 @@ function InvoiceDetailPage() {
 }
 
 function InvoiceDetailContent({ invoiceId }: { invoiceId: string }) {
+  const [unconfirmedFastPath, setUnconfirmedFastPath] = useState<{
+    id: string;
+    returnNumber?: number;
+  } | null>(null);
   const { data } = useQuery<InvoiceDetailData>({
     queryKey: ["invoice-detail", invoiceId],
     queryFn: () => getInvoiceDetailFn({ data: { invoiceId } }),
@@ -86,6 +90,11 @@ function InvoiceDetailContent({ invoiceId }: { invoiceId: string }) {
 
   if (!data) return null;
   const { invoice, payments, slip, returns, timeline } = data;
+  const unconfirmedMatch = unconfirmedFastPath
+    ? returns.find((ret: any) => ret.id === unconfirmedFastPath.id)
+    : undefined;
+  const showUnconfirmedBanner =
+    !!unconfirmedFastPath && (!unconfirmedMatch || unconfirmedMatch.status === "approved");
 
   const paidAmount = Number(invoice.paidAmount);
   const outstandingAmount = Number(invoice.outstandingAmount);
@@ -276,18 +285,52 @@ function InvoiceDetailContent({ invoiceId }: { invoiceId: string }) {
               </CardTitle>
               <CreateReturnDialog
                 invoiceId={invoice.id}
+                customerName={invoice.customer?.name}
                 invoiceDiscount={invoice.invoiceDiscount}
                 items={invoice.items}
                 returns={returns}
+                onFastPathApproved={() => setUnconfirmedFastPath(null)}
+                onFastPathUnconfirmed={(created) => setUnconfirmedFastPath(created)}
+                onFastPathConfirmed={() => setUnconfirmedFastPath(null)}
               />
             </CardHeader>
             <CardContent>
+              {showUnconfirmedBanner && (
+                <div
+                  role="status"
+                  className="mb-3 flex items-start justify-between gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2.5 text-xs text-amber-900 dark:text-amber-200"
+                >
+                  <div className="space-y-0.5">
+                    <p className="font-medium">
+                      Receipt not confirmed{unconfirmedFastPath.returnNumber ? ` for Return #${unconfirmedFastPath.returnNumber}` : ""}.
+                    </p>
+                    <p className="text-amber-800/90 dark:text-amber-200/80">
+                      This return is saved as approved only. Stock and customer balance have not changed. Click Receive on the return to finish inspection.
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 shrink-0 px-2 text-xs"
+                    onClick={() => setUnconfirmedFastPath(null)}
+                  >
+                    Dismiss
+                  </Button>
+                </div>
+              )}
               {!returns.length ? (
                 <p className="text-sm text-muted-foreground">No returns recorded.</p>
               ) : (
                 <div className="space-y-3">
                   {returns.map((ret: any) => (
-                    <div key={ret.id} className="rounded-lg border p-3 space-y-2">
+                    <div
+                      key={ret.id}
+                      className={cn(
+                        "rounded-lg border p-3 space-y-2",
+                        ret.status === "approved" && unconfirmedFastPath?.id === ret.id && "border-amber-500/50",
+                      )}
+                    >
                       <div className="flex items-center justify-between">
                         <Link
                           to="/sales/returns/$returnId"
@@ -341,7 +384,7 @@ function InvoiceDetailContent({ invoiceId }: { invoiceId: string }) {
                           ))}
                         </div>
                       )}
-                      <ReturnLifecycleActions invoiceId={invoice.id} returnId={ret.id} status={ret.status} items={ret.items.map((line: any) => {
+                      <ReturnLifecycleActions invoiceId={invoice.id} returnId={ret.id} returnNumber={ret.returnNumber} status={ret.status} items={ret.items.map((line: any) => {
                         const source = invoice.items.find((item: any) => item.id === line.invoiceItem?.id);
                         return { id: line.id, label: line.invoiceItem?.pack ?? "Item", approvedUnits: requestedUnits(line, source ? getReturnUnitsPerCarton(source) : 1) };
                       })} />

@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { toast } from "sonner";
 import { CreateReturnDialog } from "@/components/sales/create-return-dialog";
 import { Route } from "@/routes/_protected/sales/invoices/$invoiceId/index";
 
@@ -9,7 +10,7 @@ vi.mock("@/server-functions/sales/sales-returns-fn", () => ({ createSalesReturnF
 vi.mock("@/server-functions/sales/return-reasons-fn", () => ({ getReturnReasonsFn: mocks.reasons, saveReturnReasonFn: mocks.saveReason }));
 vi.mock("@/server-functions/sales/invoice-detail-fn", () => ({ getInvoiceDetailFn: mocks.detail }));
 vi.mock("@/hooks/use-viewer-access", () => ({ useViewerAccess: () => ({ data: { permissions: mocks.permissions } }) }));
-vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn() } }));
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => (options: unknown) => ({ options }),
   useParams: () => ({ invoiceId: "invoice" }),
@@ -199,6 +200,102 @@ describe("request return on the existing screen", () => {
     fireEvent.change(screen.getByLabelText("Why refund above the invoice price?"), { target: { value: "Approved goodwill" } });
     fireEvent.click(screen.getByRole("button", { name: "Submit request" }));
     await waitFor(() => expect(mocks.create).toHaveBeenCalledWith({ data: { invoiceId: "invoice", reasonId: "damaged", reasonNote: undefined, notes: undefined, priceOverrideReason: "Approved goodwill", items: [{ invoiceItemId: "item", cartonsReturned: 0, quantityReturned: 1, refundPerUnit: 12 }] } }));
+  });
+  it.each([
+    [["sales.view", "sales.returns.create"]],
+    [["sales.view", "sales.returns.create", "sales.returns.approve"]],
+    [["sales.view", "sales.returns.create", "inventory.returns.receive"]],
+  ])("hides Approve and receive now unless user holds create, approve, and receive: %j", async (permissions) => {
+    mocks.permissions = permissions;
+    request();
+    await openRequest();
+    expect(screen.getByRole("button", { name: "Submit request" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Approve and receive now" })).toBeNull();
+  });
+  it("shows customer balance impact and runs the Approve and receive now fast path straight into inspection", async () => {
+    mocks.permissions = ["sales.view", "sales.returns.create", "sales.returns.approve", "inventory.returns.receive"];
+    mocks.create.mockResolvedValueOnce({
+      id: "fast-ret",
+      returnNumber: 99,
+      status: "approved",
+      items: [{ id: "fast-line", invoiceItemId: "item", cartonsRequested: 0, quantityRequested: 2 }],
+    });
+    mount(<CreateReturnDialog invoiceId="invoice" customerName="Ahmed Traders" invoiceDiscount="0" items={[item]} returns={[]} />);
+    await openRequest();
+    await chooseReason("Damaged");
+    fireEvent.change(screen.getByRole("spinbutton", { name: "Bottle loose packs" }), { target: { value: "2" } });
+    expect(screen.getByText(/If completed, Ahmed Traders's balance drops by PKR 20\.00/)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Approve and receive now" }));
+    await waitFor(() => expect(mocks.create).toHaveBeenCalledWith({
+      data: {
+        invoiceId: "invoice",
+        reasonId: "damaged",
+        reasonNote: undefined,
+        notes: undefined,
+        priceOverrideReason: undefined,
+        approveNow: true,
+        items: [{ invoiceItemId: "item", cartonsReturned: 0, quantityReturned: 2 }],
+      },
+    }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Receive" });
+    expect(within(dialog).getByText("Bottle: requested 2 packs")).toBeTruthy();
+    expect(within(dialog).getByText("Receipt is not confirmed yet. Stock and customer balance will not change until you click Confirm receipt.")).toBeTruthy();
+    const confirm = within(dialog).getByRole("button", { name: "Confirm receipt" }) as HTMLButtonElement;
+    expect(confirm.disabled).toBe(true);
+
+    fireEvent.change(within(dialog).getByLabelText("Bottle good packs"), { target: { value: "2" } });
+    fireEvent.click(confirm);
+    await waitFor(() => expect(mocks.complete).toHaveBeenCalledWith({
+      data: {
+        returnId: "fast-ret",
+        notes: undefined,
+        lines: [{ returnItemId: "fast-line", goodUnits: 2, damagedUnits: 0, expiredUnits: 0 }],
+      },
+    }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(toast.warning).not.toHaveBeenCalled();
+  });
+  it("shows a standalone unconfirmed notice when fast-path Receive is closed before confirming", async () => {
+    mocks.create.mockResolvedValueOnce({
+      id: "fast-ret",
+      returnNumber: 77,
+      status: "approved",
+      items: [{ id: "fast-line", invoiceItemId: "item", cartonsRequested: 0, quantityRequested: 2 }],
+    });
+    request();
+    await openRequest();
+    await chooseReason("Damaged");
+    fireEvent.change(screen.getByRole("spinbutton", { name: "Bottle loose packs" }), { target: { value: "2" } });
+    fireEvent.click(screen.getByRole("button", { name: "Approve and receive now" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Receive" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Close without confirming" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(screen.getByRole("status").textContent).toContain("Return #77 approved, receipt not confirmed. Stock and balance have not changed.");
+  });
+  it("shows clear unconfirmed indicators on the invoice page when fast-path inspection is closed before confirming", async () => {
+    mocks.create.mockResolvedValueOnce({
+      id: "fast-ret",
+      returnNumber: 99,
+      status: "approved",
+      items: [{ id: "fast-line", invoiceItemId: "item", cartonsRequested: 0, quantityRequested: 2 }],
+    });
+    mountPage(salesReturn("completed"));
+    await openRequest();
+    await chooseReason("Damaged");
+    fireEvent.change(screen.getByRole("spinbutton", { name: "Bottle loose packs" }), { target: { value: "2" } });
+    fireEvent.click(screen.getByRole("button", { name: "Approve and receive now" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Receive" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Close without confirming" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+    expect(mocks.complete).not.toHaveBeenCalled();
+    expect(toast.warning).toHaveBeenCalledWith(expect.stringContaining("Receipt not confirmed for Return #99"));
+    expect(screen.getByText("Receipt not confirmed for Return #99.")).toBeTruthy();
+    expect(screen.getByText("This return is saved as approved only. Stock and customer balance have not changed. Click Receive on the return to finish inspection.")).toBeTruthy();
   });
 });
 

@@ -32,6 +32,7 @@ export function ReturnActions({
 }: {
   salesReturn: {
     id: string;
+    returnNumber?: number;
     invoiceId: string;
     status: string;
     items?: ReturnActionSourceItem[];
@@ -41,6 +42,7 @@ export function ReturnActions({
     <ReturnLifecycleActions
       invoiceId={salesReturn.invoiceId}
       returnId={salesReturn.id}
+      returnNumber={salesReturn.returnNumber}
       status={salesReturn.status}
       items={salesReturn.items ? toReturnLifecycleItems(salesReturn.items) : undefined}
     />
