@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field, FieldGroup } from "@/components/ui/field";
@@ -31,11 +32,26 @@ const labels: Record<ReturnAction, string> = {
   approve: "Approve", reject: "Reject", receive: "Receive", cancel: "Cancel return", void: "Void receipt",
 };
 
-export function ReturnLifecycleActions({ invoiceId, returnId, status, items }: {
+export function ReturnLifecycleActions({
+  invoiceId,
+  returnId,
+  returnNumber,
+  status,
+  items,
+  defaultOpenReceive = false,
+  hideButtons = false,
+  onReceiveCompleted,
+  onReceiveClosedWithoutConfirm,
+}: {
   invoiceId: string;
   returnId: string;
+  returnNumber?: number;
   status: string;
   items?: ReturnLifecycleItem[];
+  defaultOpenReceive?: boolean;
+  hideButtons?: boolean;
+  onReceiveCompleted?: () => void;
+  onReceiveClosedWithoutConfirm?: () => void;
 }) {
   const { data: viewer } = useViewerAccess();
   const canRead = !!viewer && hasPermission(viewer.permissions, "sales.view");
@@ -51,7 +67,9 @@ export function ReturnLifecycleActions({ invoiceId, returnId, status, items }: {
   const voidReceipt = useVoidSalesReturn(invoiceId);
   const pending = decide.isPending || complete.isPending || cancel.isPending || voidReceipt.isPending;
   const submitting = useRef(false);
-  const [action, setAction] = useState<ReturnAction | null>(null);
+  const [action, setAction] = useState<ReturnAction | null>(() =>
+    defaultOpenReceive && actions.includes("receive") ? "receive" : null,
+  );
   const [reason, setReason] = useState("");
   const [notes, setNotes] = useState("");
   const [error, setError] = useState("");
@@ -122,6 +140,7 @@ export function ReturnLifecycleActions({ invoiceId, returnId, status, items }: {
         await voidReceipt.mutateAsync({ returnId, reason: reason.trim() });
       }
       setAction(null);
+      if (nextAction === "receive") onReceiveCompleted?.();
     } catch (error) {
       setError(error instanceof Error ? error.message : "Return action failed. Your entries have been kept.");
     } finally {
@@ -129,13 +148,27 @@ export function ReturnLifecycleActions({ invoiceId, returnId, status, items }: {
     }
   }
 
+  function dismissDialog() {
+    if (submitting.current) return;
+    const closingReceive = action === "receive";
+    setAction(null);
+    if (closingReceive) {
+      toast.warning?.(
+        `Receipt not confirmed${returnNumber ? ` for Return #${returnNumber}` : ""}. Return stays approved with no stock or balance change.`,
+      );
+      onReceiveClosedWithoutConfirm?.();
+    }
+  }
+
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex flex-wrap items-center gap-2">
-        {actions.map(action => <Button key={action} size="sm" variant={action === "approve" || action === "receive" ? "default" : "outline"} disabled={pending} onClick={() => action === "approve" ? void submit(action) : open(action)}>{labels[action]}</Button>)}
-      </div>
+      {!hideButtons && (
+        <div className="flex flex-wrap items-center gap-2">
+          {actions.map(action => <Button key={action} size="sm" variant={action === "approve" || action === "receive" ? "default" : "outline"} disabled={pending} onClick={() => action === "approve" ? void submit(action) : open(action)}>{labels[action]}</Button>)}
+        </div>
+      )}
       {!action && error && <p role="alert">{error}</p>}
-      <Dialog open={!!action} onOpenChange={open => { if (!open && !submitting.current) setAction(null); }}>
+      <Dialog open={!!action} onOpenChange={nextOpen => { if (!nextOpen) dismissDialog(); }}>
         <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto" showCloseButton={!pending}>
           <form onSubmit={event => { event.preventDefault(); if (action) void submit(action); }} className="flex flex-col gap-4">
             <DialogHeader>
@@ -146,6 +179,14 @@ export function ReturnLifecycleActions({ invoiceId, returnId, status, items }: {
                   : "Give a reason. This releases the request without moving stock or invoice credit."}
               </DialogDescription>
             </DialogHeader>
+            {action === "receive" && (
+              <div
+                role="status"
+                className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-900 dark:text-amber-200"
+              >
+                Receipt is not confirmed yet. Stock and customer balance will not change until you click Confirm receipt.
+              </div>
+            )}
             <fieldset disabled={pending}>
               <FieldGroup>
                 {action === "receive" ? (
@@ -192,7 +233,9 @@ export function ReturnLifecycleActions({ invoiceId, returnId, status, items }: {
             {action && !effectiveActions.includes(action) && !waitingForDetail && <p role="alert">This action is no longer available. Invoice details have refreshed; your entries are kept.</p>}
             {error && <p role="alert">{error}</p>}
             <DialogFooter>
-              <Button type="button" variant="ghost" disabled={pending} onClick={() => setAction(null)}>Close</Button>
+              <Button type="button" variant="ghost" disabled={pending} onClick={dismissDialog}>
+                {action === "receive" ? "Close without confirming" : "Close"}
+              </Button>
               <Button type="submit" disabled={pending || !valid}>{pending ? "Saving..." : action === "receive" ? "Confirm receipt" : action ? labels[action] : "Confirm"}</Button>
             </DialogFooter>
           </form>

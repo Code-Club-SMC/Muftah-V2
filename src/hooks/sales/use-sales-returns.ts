@@ -113,7 +113,11 @@ export function useCreateSalesReturn() {
     mutationFn: (data: CreateSalesReturnInput) => createSalesReturnFn({ data }),
     retry: false,
     onSuccess: async (_result, variables) => {
-      toast.success("Return request created. Nothing moves until receipt.");
+      toast.success(
+        variables.approveNow
+          ? "Return approved, awaiting receipt. Confirm inspection to update stock and balance."
+          : "Return request created. Nothing moves until receipt.",
+      );
       await refreshReturn(qc, variables.invoiceId);
     },
     onError: async (error, variables) => {

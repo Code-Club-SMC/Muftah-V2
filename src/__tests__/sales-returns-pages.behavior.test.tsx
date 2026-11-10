@@ -44,7 +44,7 @@ vi.mock("@/hooks/use-viewer-access", () => ({
   }),
 }));
 
-vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn() } }));
 
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => (options: unknown) => ({ options }),
@@ -344,6 +344,7 @@ describe("SalesReturnsPage work queue", () => {
     );
 
     mount(<ListPage />);
+    await screen.findByText("Approved · Awaiting receipt");
     const receiveBtn = await screen.findByRole("button", { name: "Receive" });
     expect(mocks.detail).not.toHaveBeenCalled();
 
@@ -450,6 +451,7 @@ describe("SalesReturnDetailPage and timeline", () => {
 
     mount(<DetailPage />);
     await screen.findByText("Return #42");
+    expect(screen.getByText("Approved, awaiting receipt. Not confirmed yet.")).toBeTruthy();
     expect(screen.getByRole("list", { name: "Return progress" })).toBeTruthy();
     expect(screen.getByText("If everything arrives")).toBeTruthy();
     expect(screen.getAllByText("Rs 1,200").length).toBe(2);

@@ -57,7 +57,7 @@ function invoke(fn: unknown, data: unknown, actorId: string) {
   });
 }
 
-describe("mixing creation stock checks against PostgreSQL", () => {
+describe.skipIf(!process.env.TEST_DATABASE_URL)("mixing creation stock checks against PostgreSQL", () => {
   it("rejects all shortages without creating or consuming, then rechecks stock at start", async () => {
     if (
       !process.env.TEST_DATABASE_URL ||

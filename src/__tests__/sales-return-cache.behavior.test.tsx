@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from "vitest";
+import { toast } from "sonner";
 import {
   salesReturnKeys,
   useCreateSalesReturn,
@@ -16,7 +17,7 @@ import {
 const mocks = vi.hoisted(() => ({ create: vi.fn(), decide: vi.fn(), complete: vi.fn(), cancel: vi.fn(), void: vi.fn(), reasons: vi.fn(), saveReason: vi.fn(), list: vi.fn(), detail: vi.fn() }));
 vi.mock("@/server-functions/sales/sales-returns-fn", () => ({ createSalesReturnFn: mocks.create, decideSalesReturnFn: mocks.decide, completeSalesReturnFn: mocks.complete, cancelSalesReturnFn: mocks.cancel, voidSalesReturnFn: mocks.void, listSalesReturnsFn: mocks.list, getSalesReturnDetailFn: mocks.detail }));
 vi.mock("@/server-functions/sales/return-reasons-fn", () => ({ getReturnReasonsFn: mocks.reasons, saveReturnReasonFn: mocks.saveReason }));
-vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn() } }));
 let client: QueryClient;
 const local = [
   ["sales-returns", "invoice", "invoice"],
@@ -104,5 +105,13 @@ describe("return lifecycle cache and contracts", () => {
     expect(mocks.saveReason).toHaveBeenCalledWith({ data: { name: "Late delivery", requiresNote: false, isActive: true } });
     invalid([["return-reasons"], ["return-reasons", "all"]], true);
     invalid(untouched, false);
+  });
+  it("fast-path approveNow refreshes local reads with awaiting-receipt copy and without moving stock or balances", async () => {
+    const { result } = renderHook(useActions, { wrapper });
+    await act(async () => {
+      await result.current.create.mutateAsync({ ...createInput, approveNow: true });
+    });
+    invalid(local, true); invalid(physical, false); invalid(untouched, false);
+    expect(toast.success).toHaveBeenCalledWith(expect.stringContaining("awaiting receipt"));
   });
 });
