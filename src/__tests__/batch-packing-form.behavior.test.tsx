@@ -40,6 +40,7 @@ vi.mock("@/hooks/use-viewer-access", () => ({
 }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn() } }));
 import { BatchPackingForm } from "@/components/packaging/batch-packing-form";
+import { formatPKRPrecise } from "@/lib/currency-format";
 
 const format = (
   id: string,
@@ -131,6 +132,45 @@ describe("batch packing operator form", () => {
     mocks.lots.mockReturnValue(oneLotEach());
   });
   afterEach(cleanup);
+
+  it("shows saved receipt totals and each format's per-pack cost", async () => {
+    mocks.context.mockResolvedValue({
+      ...context(),
+      receipts: [{
+        id: "receipt-1", requestId: "saved-1", recordedAt: "2026-11-07T08:00:00Z",
+        totalPacks: 576, bulkConsumed: "28.800", lossBulk: "0.000",
+        costs: { chemicalCost: "2880.00", packagingCost: "600.00", totalCost: "3480.00" },
+        lines: [{ name: "S-wash 50g Pack", fullCartons: 24, partialPacks: 0, loosePacks: 0,
+          actualBulk: "28.800", costs: { chemicalCost: "2880.00", packagingCost: "600.00", totalCost: "3480.00", costPerPack: "6.0417" } }],
+      }],
+    });
+    mount();
+    const recorded = await screen.findByRole("region", { name: "Recorded packing" });
+    expect(within(recorded).getByText("Packing costs")).toBeTruthy();
+    expect(within(recorded).getByText("Chemical cost")).toBeTruthy();
+    expect(within(recorded).getByText(formatPKRPrecise("2880.00").replace(/\s/g, " "))).toBeTruthy();
+    expect(within(recorded).getByText("Packaging cost")).toBeTruthy();
+    expect(within(recorded).getByText(formatPKRPrecise("600.00").replace(/\s/g, " "))).toBeTruthy();
+    expect(within(recorded).getByText("Total packing cost")).toBeTruthy();
+    expect(within(recorded).getByText(formatPKRPrecise("3480.00").replace(/\s/g, " "))).toBeTruthy();
+    expect(within(recorded).getByText(`${formatPKRPrecise("6.0417", 4)} / pack`.replace(/\s/g, " "))).toBeTruthy();
+  });
+
+  it("does not show cost labels or amounts for operator receipts", async () => {
+    mocks.context.mockResolvedValue({
+      ...context(),
+      receipts: [{
+        id: "receipt-1", requestId: "saved-1", recordedAt: "2026-11-07T08:00:00Z",
+        totalPacks: 576, bulkConsumed: "28.800", lossBulk: "0.000", costs: null,
+        lines: [{ name: "S-wash 50g Pack", fullCartons: 24, partialPacks: 0, loosePacks: 0,
+          actualBulk: "28.800", costs: null }],
+      }],
+    });
+    mount();
+    const recorded = await screen.findByRole("region", { name: "Recorded packing" });
+    expect(within(recorded).queryByText("Packing costs")).toBeNull();
+    expect(recorded.textContent).not.toContain("PKR");
+  });
 
   it("records the complete 500kg split in one confirmation and clears the draft", async () => {
     mount();
