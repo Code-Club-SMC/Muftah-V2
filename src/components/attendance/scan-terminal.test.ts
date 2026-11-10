@@ -11,13 +11,19 @@ const routeSource = readFileSync(
 );
 const navigationSource = readFileSync("src/lib/constants.ts", "utf8");
 
-describe("scan terminal UI source", () => {
-  it("mounts the scanner outside the protected layout and keeps it out of the sidebar", () => {
+describe("retired scan terminal route and legacy UI", () => {
+  it("keeps the old URL authenticated, directs HR to attendance, and never mounts the retired scanner", () => {
     expect(routeSource).toContain('createFileRoute("/attendance/scan")');
     expect(routeSource).toContain("beforeLoad");
     expect(routeSource).toContain("getViewerAccessFn");
     expect(routeSource).toContain("hasPermission");
-    expect(routeSource).toContain("component: ScanTerminal");
+    expect(routeSource).toContain('throw redirect({ to: "/login", search: { redirect: location.href } })');
+    expect(routeSource).toContain('hasPermission(viewerAccess.permissions, "hr.view")');
+    expect(routeSource).toContain('throw redirect({ to: "/hr/attendance" })');
+    expect(routeSource).toContain("component: RetiredAttendanceTerminal");
+    expect(routeSource).toContain("Attendance recording has moved");
+    expect(routeSource).toContain("HR now uploads the device punch report");
+    expect(routeSource).not.toContain("component: ScanTerminal");
     expect(navigationSource).not.toContain('title: "Attendance Terminal"');
     expect(navigationSource).not.toContain('url: "/attendance/scan"');
   });

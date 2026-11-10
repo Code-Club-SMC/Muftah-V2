@@ -28,7 +28,7 @@ describe("order-booker trip attendance phase 4 semantics", () => {
   it("fetches punch timelines only for standard punch-driven employees", () => {
     expect(dailyAttendanceSource).toContain("const punchDrivenEmployeeIds");
     expect(dailyAttendanceSource).toContain(
-      ".filter((employee) => !employee.isOrderBooker && !employee.isSalesman)",
+      ".filter((employee) => !employee.isOrderBooker && !employee.isSalesman && !employee.isDriver)",
     );
     expect(dailyAttendanceSource).toContain(
       "inArray(attendancePunches.employeeId, punchDrivenEmployeeIds)",

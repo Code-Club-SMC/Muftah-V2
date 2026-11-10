@@ -105,6 +105,11 @@ function renderForm() {
   );
 }
 
+function overtimeInputs() {
+  const [hours, minutes] = screen.getAllByRole("spinbutton") as HTMLInputElement[];
+  return { hours, minutes };
+}
+
 describe("edit attendance form overtime behavior", () => {
   beforeEach(() => {
     mutateAsync.mockReset();
@@ -116,19 +121,32 @@ describe("edit attendance form overtime behavior", () => {
 
     await waitFor(() => {
       expect(screen.getByText("Suggested OT")).toBeTruthy();
-      expect(screen.getByDisplayValue("2.00")).toBeTruthy();
+      expect(overtimeInputs().hours.value).toBe("2");
+      expect(overtimeInputs().minutes.value).toBe("");
+      expect(screen.getByText("2.00 hrs")).toBeTruthy();
     });
 
-    const overtimeInput = screen.getByRole("spinbutton");
-    fireEvent.change(overtimeInput, { target: { value: "1.50" } });
+    fireEvent.change(overtimeInputs().hours, { target: { value: "1" } });
+    fireEvent.change(overtimeInputs().minutes, { target: { value: "30" } });
 
     fireEvent.click(screen.getByRole("button", { name: "Emit 11h Summary" }));
 
     await waitFor(() => {
       expect(screen.getByText("3.00h")).toBeTruthy();
-      expect(
-        (screen.getByRole("spinbutton") as HTMLInputElement).value,
-      ).toBe("1.50");
+      expect(overtimeInputs().hours.value).toBe("1");
+      expect(overtimeInputs().minutes.value).toBe("30");
+      expect(screen.getByText("1.50 hrs")).toBeTruthy();
+    });
+
+    fireEvent.change(screen.getByPlaceholderText("Describe why overtime was necessary..."), {
+      target: { value: "Urgent dispatch load" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save Attendance Record" }));
+    await waitFor(() => {
+      expect(mutateAsync).toHaveBeenCalledWith(
+        { data: expect.objectContaining({ overtimeHours: "1.50", overtimeRemarks: "Urgent dispatch load" }) },
+        expect.any(Object),
+      );
     });
   });
 
@@ -137,7 +155,7 @@ describe("edit attendance form overtime behavior", () => {
     fireEvent.click(screen.getByRole("button", { name: "Emit 10h Summary" }));
 
     await waitFor(() => {
-      expect(screen.getByDisplayValue("2.00")).toBeTruthy();
+      expect(overtimeInputs().hours.value).toBe("2");
     });
 
     fireEvent.click(
@@ -158,7 +176,7 @@ describe("edit attendance form overtime behavior", () => {
     );
     fireEvent.change(remarks, { target: { value: "Urgent dispatch load" } });
 
-    const overtimeInput = screen.getByRole("spinbutton");
+    const overtimeInput = overtimeInputs().hours;
     fireEvent.change(overtimeInput, { target: { value: "0" } });
 
     await waitFor(() => {
@@ -185,7 +203,7 @@ describe("edit attendance form overtime behavior", () => {
     fireEvent.click(screen.getByRole("button", { name: "Emit 10h Summary" }));
 
     await waitFor(() => {
-      expect(screen.getByDisplayValue("2.00")).toBeTruthy();
+      expect(overtimeInputs().hours.value).toBe("2");
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Emit 9h Summary" }));
@@ -201,8 +219,10 @@ describe("edit attendance form overtime behavior", () => {
           screen.getByRole("button", {
             name: "Fix Requested OT Before Saving",
           }) as HTMLButtonElement
-        ).disabled,
+      ).disabled,
       ).toBe(true);
     });
+    fireEvent.click(screen.getByRole("button", { name: "Fix Requested OT Before Saving" }));
+    expect(mutateAsync).not.toHaveBeenCalled();
   });
 });
