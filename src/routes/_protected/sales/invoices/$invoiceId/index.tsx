@@ -58,7 +58,7 @@ type InvoiceDetailData = Awaited<ReturnType<typeof getInvoiceDetailFn>>;
 
 export const Route = createFileRoute("/_protected/sales/invoices/$invoiceId/")({
   loader: async ({ context, params }) => {
-    void context.queryClient.prefetchQuery({
+    await context.queryClient.prefetchQuery({
       queryKey: ["invoice-detail", params.invoiceId],
       queryFn: () => getInvoiceDetailFn({ data: { invoiceId: params.invoiceId } }),
     });
