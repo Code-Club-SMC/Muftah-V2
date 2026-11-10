@@ -9,10 +9,12 @@ describe("shopper stock is shown in KG", () => {
     "src/server-functions/inventory/find-similar-materials-fn.ts",
     "src/server-functions/inventory/stock/get-low-stocks-alert-fn.ts",
     "src/server-functions/inventory/factory-floor/get-consumption-history-fn.ts",
+    "src/server-functions/reports/purchases-report-fn.ts",
   ])("%s reads the packaging unit from the KG switch", (path) => {
     const source = read(path);
     expect(source).toContain("packagingUnitSql(packagingMaterials.measuredInKg)");
     expect(source).not.toContain("sql<string>`'pcs'`");
+    expect(source).not.toContain("packagingMaterials.capacityUnit");
   });
 
   it.each([

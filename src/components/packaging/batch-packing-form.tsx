@@ -41,6 +41,7 @@ import { packagingUnit } from "@/lib/inventory/material-units";
 import { POWDER_LOSS_REASONS, checkReason, type PACKING_REASONS } from "@/lib/production/material-use";
 import { MaterialUseRow, materialUseErrors, usedFor, type MaterialUseDraft } from "./material-use-row";
 import { PackingFormatRow } from "./packing-format-row";
+import { formatPKRPrecise } from "@/lib/currency-format";
 import {
   emptyPackingLine,
   newPackingDraft,
@@ -999,24 +1000,62 @@ export function BatchPackingEditor({
                   · Pakistan time
                 </CardDescription>
               </CardHeader>
-              <CardContent>
+              <CardContent className="flex flex-col gap-4">
                 <ul className="flex flex-col gap-3">
                   {receipt.lines.map((line, index) => (
                     <li
                       key={index}
-                      className="flex flex-wrap justify-between gap-2 text-sm"
+                      className="flex flex-col gap-2 text-sm"
                     >
-                      <span>{line.name}</span>
-                      <span className="tabular-nums">
-                        {line.fullCartons} full cartons
-                        {line.partialPacks
-                          ? ` + 1 partial (${line.partialPacks} packs)`
-                          : ""}{" "}
-                        · {line.loosePacks} loose · {amount(line.actualBulk)}
-                      </span>
+                      <div className="flex flex-wrap justify-between gap-2">
+                        <span>{line.name}</span>
+                        <span className="tabular-nums">
+                          {line.fullCartons} full cartons
+                          {line.partialPacks
+                            ? ` + 1 partial (${line.partialPacks} packs)`
+                            : ""}{" "}
+                          · {line.loosePacks} loose · {amount(line.actualBulk)}
+                        </span>
+                      </div>
+                      {line.costs && (
+                        <div className="flex flex-wrap justify-between gap-2 text-muted-foreground">
+                          <span>
+                            Packaging {formatPKRPrecise(line.costs.packagingCost)} · Total {formatPKRPrecise(line.costs.totalCost)}
+                          </span>
+                          <span className="tabular-nums">
+                            {formatPKRPrecise(line.costs.costPerPack, 4)} / pack
+                          </span>
+                        </div>
+                      )}
                     </li>
                   ))}
                 </ul>
+                {receipt.costs && (
+                  <div className="flex flex-col gap-3">
+                    <Separator />
+                    <h4 className="font-medium">Packing costs</h4>
+                    <dl className="grid gap-4 sm:grid-cols-3">
+                      <div>
+                        <dt className="text-sm text-muted-foreground">Chemical cost</dt>
+                        <dd className="mt-1 font-medium tabular-nums">
+                          {formatPKRPrecise(receipt.costs.chemicalCost)}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-sm text-muted-foreground">Packaging cost</dt>
+                        <dd className="mt-1 font-medium tabular-nums">
+                          {formatPKRPrecise(receipt.costs.packagingCost)}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-sm text-muted-foreground">Total packing cost</dt>
+                        <dd className="mt-1 font-semibold tabular-nums">
+                          {formatPKRPrecise(receipt.costs.totalCost)}
+                        </dd>
+                      </div>
+                    </dl>
+                  </div>
+                )}
               </CardContent>
               <CardFooter>
                 <p className="text-sm text-muted-foreground">

@@ -86,9 +86,10 @@ describe("two phase production regression guards", () => {
 
   it("requires a single formula selection for packaging recipes", () => {
     const form = read("src/components/recipes/create-recipe-from.tsx");
-    expect(form.match(/<form.Field name="formulaId">/g)).toHaveLength(1);
+    expect(form.match(/<SetupField\s+id="formulaId"/g)).toHaveLength(1);
+    expect(form).toContain('...control("formulaId")');
     expect(form).not.toContain('title="Chemical Formulation"');
-    expect(form).toContain("usageBasis: tempPkgUnit");
+    expect(form).toContain("usageBasis: row.usageBasis");
   });
 
   it("routes current manufacturing navigation to existing two phase pages", () => {

@@ -17,6 +17,7 @@ import { useViewerAccess } from "@/hooks/use-viewer-access";
 import { hasPermission } from "@/lib/rbac";
 import { Link } from "@tanstack/react-router";
 import { StartMixingDialog } from "./start-mixing-dialog";
+import { formatPKRPrecise } from "@/lib/currency-format";
 
 export function MixingRunDetailsContainer({ runId }: { runId: string }) {
   const { data: run } = useSuspenseQuery({
@@ -105,6 +106,45 @@ export function MixingRunDetailsContainer({ runId }: { runId: string }) {
           </div>
         )}
       </Card>
+
+      {run.costSummary && (
+        <Card aria-label="Batch costs to date">
+          <CardHeader>
+            <CardTitle>Batch costs to date</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4">
+            <dl className="grid gap-4 sm:grid-cols-3">
+              <div>
+                <dt className="text-sm text-muted-foreground">Chemical cost</dt>
+                <dd className="mt-1 text-xl font-semibold tabular-nums">
+                  {run.costSummary.chemicalCost === null
+                    ? "Not recorded"
+                    : formatPKRPrecise(run.costSummary.chemicalCost)}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-sm text-muted-foreground">Recorded packaging cost</dt>
+                <dd className="mt-1 text-xl font-semibold tabular-nums">
+                  {formatPKRPrecise(run.costSummary.packagingCost)}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-sm text-muted-foreground">Total batch cost to date</dt>
+                <dd className="mt-1 text-xl font-semibold tabular-nums">
+                  {run.costSummary.totalCost === null
+                    ? "Not recorded"
+                    : formatPKRPrecise(run.costSummary.totalCost)}
+                </dd>
+              </div>
+            </dl>
+            <p className="text-sm text-muted-foreground">
+              Full mixing chemical cost plus completed packing material costs.
+              Unpacked bulk is included in the chemical cost. Future packing,
+              labour and overhead are not included.
+            </p>
+          </CardContent>
+        </Card>
+      )}
 
       <Tabs defaultValue="packaging">
         <TabsList className="h-auto flex-wrap">

@@ -120,6 +120,12 @@ export function DataTable<TData, TValue>({
   const totalPages = table.getPageCount();
   const showToolbar = showSearch || showViewOptions;
 
+  React.useEffect(() => {
+    if (manualPagination || autoResetPageIndex) return;
+    const last = Math.max(0, totalPages - 1);
+    if (currentPage > last) table.setPageIndex(last);
+  }, [manualPagination, autoResetPageIndex, currentPage, totalPages, table]);
+
   return (
     <div
       className={cn(
@@ -250,12 +256,9 @@ export function DataTable<TData, TValue>({
                   colSpan={columns.length}
                   className="h-32 text-center p-0"
                 >
-                  {/* {emptyState ?? (
-                    <div className="flex flex-col items-center justify-center gap-1 py-10">
-                      <p className="text-[13px] font-medium text-muted-foreground">No data available.</p>
-                    </div>
-                  )} */}
-                  {isLoading ? loadingStateComponent : emptyState}
+                  {isLoading
+                    ? (loadingStateComponent ?? "Loading records...")
+                    : (emptyState ?? "No matching records.")}
                 </TableCell>
               </TableRow>
             )}

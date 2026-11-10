@@ -27,6 +27,12 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("two phase clean schema", () => 
         "mixing_materials_used", "packaging_allocations", "packaging_progress_logs", "packaging_materials_used_in_allocation",
       ]));
       const foreignKeys = await pool.query("SELECT conrelid::regclass::text AS table_name, pg_get_constraintdef(oid) AS definition FROM pg_constraint WHERE contype = 'f' AND connamespace = 'public'::regnamespace");
+      expect(foreignKeys.rows).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          table_name: "invoices",
+          definition: "FOREIGN KEY (offline_sales_slot_id) REFERENCES offline_sales_invoice_slots(id) ON DELETE RESTRICT",
+        }),
+      ]));
       for (const table of ["cartons", "adjustment_log", "wac_history"]) {
         expect(foreignKeys.rows).toEqual(expect.arrayContaining([
           expect.objectContaining({ table_name: table, definition: expect.stringContaining("REFERENCES packaging_allocations(id)") }),

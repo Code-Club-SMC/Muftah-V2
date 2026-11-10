@@ -23,6 +23,7 @@ function buildEmployeeInput() {
     basicSalary: "25000",
     isOrderBooker: false,
     isSalesman: false,
+    isDriver: false,
     restDays: [0],
     allowanceConfig: [],
     annualLeaveAllowance: 14,
@@ -63,12 +64,14 @@ describe("employee validator shift timing support", () => {
   });
 
   it("rejects malformed shift time values", () => {
-    expect(() =>
-      createEmployeeSchema.parse({
-        ...buildEmployeeInput(),
-        shifts: [{ start: "8am", end: "17:00" }],
-      }),
-    ).toThrow();
+    const result = createEmployeeSchema.safeParse({
+      ...buildEmployeeInput(),
+      shifts: [{ start: "8am", end: "17:00" }],
+    });
+    expect(result.success).toBe(false);
+    expect(result.error?.issues).toEqual([
+      expect.objectContaining({ path: ["shifts", 0, "start"] }),
+    ]);
   });
 
   it("keeps shifts on employee updates", () => {

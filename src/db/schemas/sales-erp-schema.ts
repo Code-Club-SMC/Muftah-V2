@@ -704,6 +704,19 @@ export const commissionRecordsRelations = relations(commissionRecords, ({ one })
 }));
 
 // ── SALES RETURNS / CREDIT NOTES ───────────────────────────────────────────
+export const salesReturnReasons = pgTable("sales_return_reasons", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => createId()),
+  name: text("name").notNull(),
+  requiresNote: boolean("requires_note").notNull().default(false),
+  isActive: boolean("is_active").notNull().default(true),
+  sortOrder: integer("sort_order").notNull().default(0),
+  ...timestamps,
+}, (table) => ({
+  nameUnique: uniqueIndex("uq_sales_return_reasons_name").on(table.name),
+}));
+
 export const salesReturns = pgTable("sales_returns", {
   id: text("id")
     .primaryKey()
@@ -717,20 +730,33 @@ export const salesReturns = pgTable("sales_returns", {
     .references(() => customers.id),
   returnDate: timestamp("return_date").notNull().defaultNow(),
   reason: text("reason").notNull(),
+  // Retain the legacy header condition for existing returns and migration safety.
   condition: text("condition").notNull().default("good"), // "good" | "damaged" | "expired"
   totalAmount: decimal("total_amount", { precision: 12, scale: 2 }).notNull().default("0"),
-  status: text("status").notNull().default("pending"), // "pending" | "approved" | "rejected" | "completed"
+  status: text("status").notNull().default("requested"), // requested | approved | completed | rejected | cancelled | voided
   approvedById: text("approved_by_id").references(() => user.id),
   approvedAt: timestamp("approved_at"),
   completedAt: timestamp("completed_at"),
   notes: text("notes"),
   priceOverride: boolean("price_override").notNull().default(false),
   priceOverrideReason: text("price_override_reason"),
+  reasonId: text("reason_id").references(() => salesReturnReasons.id),
+  reasonNote: text("reason_note"),
+  createdById: text("created_by_id").references(() => user.id),
+  rejectReason: text("reject_reason"),
+  receivedById: text("received_by_id").references(() => user.id),
+  cancelledById: text("cancelled_by_id").references(() => user.id),
+  cancelledAt: timestamp("cancelled_at"),
+  cancelReason: text("cancel_reason"),
+  voidedById: text("voided_by_id").references(() => user.id),
+  voidedAt: timestamp("voided_at"),
+  voidReason: text("void_reason"),
   ...timestamps,
 }, (table) => ({
   invoiceIdx: index("idx_sales_returns_invoice").on(table.invoiceId),
   customerIdx: index("idx_sales_returns_customer").on(table.customerId),
   statusIdx: index("idx_sales_returns_status").on(table.status),
+  reasonIdx: index("idx_sales_returns_reason").on(table.reasonId),
 }));
 
 export const salesReturnItems = pgTable("sales_return_items", {
@@ -746,6 +772,11 @@ export const salesReturnItems = pgTable("sales_return_items", {
   recipeId: text("recipe_id").references(() => recipes.id),
   cartonsReturned: integer("cartons_returned").notNull().default(0),
   quantityReturned: integer("quantity_returned").notNull().default(0),
+  cartonsRequested: integer("cartons_requested").notNull().default(0),
+  quantityRequested: integer("quantity_requested").notNull().default(0),
+  goodUnits: integer("good_units").notNull().default(0),
+  damagedUnits: integer("damaged_units").notNull().default(0),
+  expiredUnits: integer("expired_units").notNull().default(0),
   refundPerUnit: decimal("refund_per_unit", { precision: 12, scale: 2 }).notNull().default("0"),
   totalRefund: decimal("total_refund", { precision: 12, scale: 2 }).notNull().default("0"),
   ...timestamps,
@@ -778,6 +809,7 @@ export const salesReturnStockTraces = pgTable("sales_return_stock_traces", {
     .references(() => recipes.id),
   destination: text("destination").notNull(), // "sellable" | "damaged" | "expired"
   condition: text("condition").notNull(),
+  kind: text("kind").notNull().default("receive"), // receive | void (void rows are negative)
   cartonsMoved: integer("cartons_moved").notNull().default(0),
   quantityMoved: integer("quantity_moved").notNull().default(0),
   totalUnitsMoved: integer("total_units_moved").notNull().default(0),
@@ -866,6 +898,26 @@ export const salesReturnsRelations = relations(salesReturns, ({ one, many }) => 
   approvedBy: one(user, {
     fields: [salesReturns.approvedById],
     references: [user.id],
+  }),
+  createdBy: one(user, {
+    fields: [salesReturns.createdById],
+    references: [user.id],
+  }),
+  receivedBy: one(user, {
+    fields: [salesReturns.receivedById],
+    references: [user.id],
+  }),
+  cancelledBy: one(user, {
+    fields: [salesReturns.cancelledById],
+    references: [user.id],
+  }),
+  voidedBy: one(user, {
+    fields: [salesReturns.voidedById],
+    references: [user.id],
+  }),
+  reasonRef: one(salesReturnReasons, {
+    fields: [salesReturns.reasonId],
+    references: [salesReturnReasons.id],
   }),
   items: many(salesReturnItems),
   stockTraces: many(salesReturnStockTraces),

@@ -1,8 +1,6 @@
-import { createHash } from "node:crypto";
 import { createId } from "@paralleldrive/cuid2";
-import { createServerFn, createServerOnlyFn } from "@tanstack/react-start";
+import { createServerOnlyFn } from "@tanstack/react-start";
 import { and, eq, inArray } from "drizzle-orm";
-import { z } from "zod";
 import {
   customers,
   db,
@@ -20,29 +18,20 @@ import {
 } from "@/db";
 import {
   classifyOfflineSalesInvoice,
+  isCustomerUsable,
+  printedTotalDiffers,
   type OfflineClassificationResult,
 } from "@/lib/sales/offline/classification.server";
-import { OFFLINE_SALES_MAX_BYTES } from "@/lib/sales/offline/constants";
 import type {
   OfflineSalesUploadResult,
   ParsedOfflineSalesInvoice,
   ParsedOfflineSalesWorkbook,
 } from "@/lib/sales/offline/contracts";
-import { requireOfflineSalesEnabled } from "@/lib/sales/offline/feature-flag.server";
 import { hashOfflineSalesSnapshot } from "@/lib/sales/offline/signing.server";
-import { parseOfflineSalesWorkbook } from "@/lib/sales/offline/workbook-parser.server";
-import { requireOfflineSalesUploadMiddleware } from "@/lib/middlewares";
 
 type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
-const MIN_XLSX_BYTES = 1024 * 1024;
 const STALE_SNAPSHOT_MS = 30 * 24 * 60 * 60 * 1_000;
-
-const uploadSchema = z.object({
-  outageStartedAt: z.string().datetime({ offset: true }),
-  outageEndedAt: z.string().datetime({ offset: true }),
-  outageReason: z.string().trim().min(5).max(500),
-});
 
 type UploadMetadata = {
   filename: string;
@@ -74,39 +63,6 @@ function resultFromBatch(
   };
 }
 
-function readForm(form: FormData) {
-  const file = form.get("file");
-  if (!(file instanceof File))
-    throw new Error("Upload must include an XLSX file.");
-  if (
-    !file.name.toLowerCase().endsWith(".xlsx") ||
-    (file.type &&
-      file.type !==
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-  )
-    throw new Error("Upload must be an .xlsx workbook.");
-  if (file.size < MIN_XLSX_BYTES || file.size > OFFLINE_SALES_MAX_BYTES) {
-    throw new Error("Workbook file size is not allowed.");
-  }
-  const parsed = uploadSchema.parse({
-    outageStartedAt: form.get("outageStartedAt"),
-    outageEndedAt: form.get("outageEndedAt"),
-    outageReason: form.get("outageReason"),
-  });
-  const outageStartedAt = new Date(parsed.outageStartedAt);
-  const outageEndedAt = new Date(parsed.outageEndedAt);
-  if (outageStartedAt >= outageEndedAt)
-    throw new Error("Outage start must be before outage end.");
-  if (outageEndedAt > new Date())
-    throw new Error("Outage end cannot be in the future.");
-  return {
-    file,
-    outageStartedAt,
-    outageEndedAt,
-    outageReason: parsed.outageReason,
-  };
-}
-
 async function existingFile(
   fileSha256: string,
   database: typeof db | Transaction = db,
@@ -120,32 +76,6 @@ async function existingFile(
   )[0];
 }
 
-async function storeRejectedUpload(
-  metadata: UploadMetadata,
-  fileSha256: string,
-): Promise<OfflineSalesUploadResult> {
-  const existing = await existingFile(fileSha256);
-  if (existing) return resultFromBatch(existing);
-  const [batch] = await db
-    .insert(offlineSalesImportBatches)
-    .values({
-      workbookId: null,
-      originalFilename: metadata.filename,
-      fileSha256,
-      byteSize: metadata.byteSize,
-      outageStartedAt: metadata.outageStartedAt,
-      outageEndedAt: metadata.outageEndedAt,
-      outageReason: metadata.outageReason,
-      uploadedByUserId: metadata.uploadedByUserId,
-      status: "rejected",
-      lastError: "unsafe_workbook",
-    })
-    .returning();
-  if (!batch)
-    throw new Error("Could not record rejected offline sales upload.");
-  return resultFromBatch(batch);
-}
-
 function issueMessage(code: string) {
   const messages: Record<string, string> = {
     stock_shortage: "Live system stock is lower than the offline dispatch.",
@@ -153,10 +83,14 @@ function issueMessage(code: string) {
       "This invoice would exceed the current outstanding amount limit.",
     credit_hold_active:
       "The distributor currently has an outstanding amount hold.",
+    price_override:
+      "A price was changed from the price list at the desk. Check the new price.",
+    printed_total_changed:
+      "The total on the printed invoice is different from the system's total. Check before billing the customer.",
     stale_snapshot_context:
-      "The workbook reference snapshot is more than 30 days old.",
+      "The price list on the offline computer is more than 30 days old.",
     force_retired_workbook:
-      "This workbook was force-retired and requires review.",
+      "These invoice numbers were retired and require review.",
     distributor_unavailable: "The signed distributor is no longer available.",
     product_unavailable: "A signed product is no longer active or available.",
     wallet_unavailable:
@@ -186,9 +120,15 @@ async function buildLiveContext(
   tx: Transaction,
   parsed: ParsedOfflineSalesWorkbook,
 ) {
-  const distributorByCode = new Map(
-    parsed.snapshot.distributors.map((value) => [value.code, value]),
-  );
+  // Distributors and existing retailers share one code space (D-n and C-n).
+  const distributorByCode = new Map<string, { id: string; code: string }>([
+    ...parsed.snapshot.distributors.map(
+      (value) => [value.code, value] as [string, { id: string; code: string }],
+    ),
+    ...(parsed.snapshot.retailers ?? []).map(
+      (value) => [value.code, value] as [string, { id: string; code: string }],
+    ),
+  ]);
   const productByCode = new Map(
     parsed.snapshot.products.map((value) => [value.code, value]),
   );
@@ -363,6 +303,7 @@ function classifyWithLiveContext(input: {
     return Boolean(signed && context.recipes.get(signed.recipeId)?.isActive);
   });
   const walletsUsable = invoice.payments.every((payment) => {
+    if (payment.method === "expense_offset") return true;
     const signed = context.walletByCode.get(payment.walletCode);
     const live = signed ? context.wallets.get(signed.id) : null;
     return Boolean(
@@ -384,8 +325,11 @@ function classifyWithLiveContext(input: {
     parseIssueCodes: additionalIssues.map((value) => value.code),
     identityState: "new",
     workbookStatus: input.workbookStatus,
-    distributorUsable:
-      invoice.saleType !== "direct_distributor" || Boolean(liveCustomer),
+    distributorUsable: isCustomerUsable({
+      saleType: invoice.saleType,
+      hasSignedCustomer: Boolean(signedDistributor),
+      liveCustomer,
+    }),
     productsUsable,
     walletsUsable,
     orderState:
@@ -397,6 +341,10 @@ function classifyWithLiveContext(input: {
             ? "already_invoiced"
             : "usable",
     hasStockShortage,
+    hasPriceOverride: invoice.items.some((item) => item.isPriceOverride),
+    extraWarningCodes: printedTotalDiffers(invoice.printedTotal, invoice.invoiceAmount)
+      ? ["printed_total_changed"]
+      : [],
     creditHoldActive: Boolean(liveCustomer?.creditHold),
     creditLimitExceeded: Boolean(
       liveCustomer &&
@@ -442,7 +390,7 @@ const stageOfflineSalesUploadImpl = async (input: {
         workbook.snapshotSha256
     )
       throw new Error(
-        "Workbook does not match an issued offline sales workbook.",
+        "These invoices do not match issued offline invoice numbers.",
       );
 
     const [batch] = await tx
@@ -476,13 +424,14 @@ const stageOfflineSalesUploadImpl = async (input: {
       duplicate: 0,
       invalid: 0,
       needsReview: 0,
+      excluded: 0,
     };
 
     for (const invoice of input.parsed.invoices) {
       const slot = slotsByToken.get(invoice.recordToken);
       if (!slot)
         throw new Error(
-          "Workbook contains a slot that was not issued by the system.",
+          "An invoice uses a number that was not issued by the system.",
         );
       if (slot.stagedContentHash) {
         if (slot.stagedContentHash === invoice.contentHash)
@@ -496,15 +445,20 @@ const stageOfflineSalesUploadImpl = async (input: {
         }
         continue;
       }
-      const classification = classifyWithLiveContext({
-        invoice,
-        parsed: input.parsed,
-        workbookStatus: workbook.status,
-        context,
-        outageStartedAt: input.metadata.outageStartedAt,
-        outageEndedAt: input.metadata.outageEndedAt,
-      });
-      if (classification.status === "ready") counts.ready += 1;
+      const cancelled = Boolean(invoice.cancelledReason);
+      const classification: OfflineClassificationResult = cancelled
+        ? { status: "ready", issueCodes: [] }
+        : classifyWithLiveContext({
+            invoice,
+            parsed: input.parsed,
+            workbookStatus: workbook.status,
+            context,
+            outageStartedAt: input.metadata.outageStartedAt,
+            outageEndedAt: input.metadata.outageEndedAt,
+          });
+      // A cancelled invoice keeps its number and its record, but never posts.
+      if (cancelled) counts.excluded += 1;
+      else if (classification.status === "ready") counts.ready += 1;
       else if (classification.status === "warning") counts.warning += 1;
       else if (classification.status === "invalid") counts.invalid += 1;
       else if (classification.status === "needs_review")
@@ -544,12 +498,22 @@ const stageOfflineSalesUploadImpl = async (input: {
             ? new Date(`${invoice.paymentDueDate}T00:00:00+05:00`)
             : null,
           remarks: invoice.remarks,
+          customerDetails: invoice.customerDetails ?? null,
+          invoiceDiscount: (invoice.invoiceDiscount ?? 0).toFixed(2),
+          invoiceDiscountDescription: invoice.invoiceDiscountDescription ?? null,
+          expenses: (invoice.expenses ?? 0).toFixed(2),
+          expensesDescription: invoice.expensesDescription ?? null,
           invoiceAmount: invoice.invoiceAmount.toFixed(2),
+          printedTotal:
+            invoice.printedTotal != null ? invoice.printedTotal.toFixed(2) : null,
           paidAmount: invoice.paidAmount.toFixed(2),
           pendingAmount: invoice.pendingAmount.toFixed(2),
           outstandingAmount: invoice.outstandingAmount.toFixed(2),
-          status: classification.status,
+          status: cancelled ? "excluded" : classification.status,
           issueCodes: classification.issueCodes,
+          reviewResolution: cancelled
+            ? `Cancelled at the desk: ${invoice.cancelledReason}`
+            : null,
           issueDetails: [
             ...invoice.parseIssues,
             ...classification.issueCodes
@@ -577,6 +541,12 @@ const stageOfflineSalesUploadImpl = async (input: {
               packsPerCarton: item.packsPerCarton,
               baseCartonPrice: item.baseCartonPrice.toFixed(2),
               freeCartons: item.freeCartons,
+              manualFreeCartons: item.manualFreeCartons ?? 0,
+              isPriceOverride: Boolean(item.isPriceOverride),
+              listedCartonPrice:
+                item.listedCartonPrice !== undefined
+                  ? item.listedCartonPrice.toFixed(2)
+                  : null,
               chargedUnits: item.chargedUnits,
               dispatchedUnits: item.dispatchedUnits,
               lineAmount: item.lineAmount.toFixed(2),
@@ -599,10 +569,16 @@ const stageOfflineSalesUploadImpl = async (input: {
               amount: payment.amount.toFixed(2),
               walletCode: payment.walletCode,
               walletId:
-                signedWallet && context.wallets.has(signedWallet.id)
+                payment.method !== "expense_offset" &&
+                signedWallet &&
+                context.wallets.has(signedWallet.id)
                   ? signedWallet.id
                   : null,
+              expenseType: payment.expenseType ?? null,
+              expenseEmployeeId: payment.expenseEmployeeId ?? null,
               reference: payment.reference,
+              notes: payment.notes ?? null,
+              instantVerify: Boolean(payment.instantVerify),
               chequeNumber: payment.chequeNumber,
               chequeBank: payment.chequeBank,
               chequeDate: payment.chequeDate
@@ -639,6 +615,7 @@ const stageOfflineSalesUploadImpl = async (input: {
         duplicateInvoices: counts.duplicate,
         invalidInvoices: counts.invalid,
         needsReviewInvoices: counts.needsReview,
+        excludedInvoices: counts.excluded,
         updatedAt: new Date(),
       })
       .where(eq(offlineSalesImportBatches.id, batch.id))
@@ -651,33 +628,3 @@ const stageOfflineSalesUploadImpl = async (input: {
 export const stageOfflineSalesUpload = createServerOnlyFn(
   stageOfflineSalesUploadImpl,
 );
-
-export const uploadOfflineSalesWorkbookFn = createServerFn({ method: "POST" })
-  .middleware([requireOfflineSalesUploadMiddleware])
-  .inputValidator((value: unknown) => {
-    if (!(value instanceof FormData)) throw new Error("Expected FormData");
-    return value;
-  })
-  .handler(async ({ data, context }): Promise<OfflineSalesUploadResult> => {
-    requireOfflineSalesEnabled();
-    const upload = readForm(data);
-    let bytes = new Uint8Array(await upload.file.arrayBuffer());
-    const fileSha256 = createHash("sha256").update(bytes).digest("hex");
-    const metadata: UploadMetadata = {
-      filename: upload.file.name,
-      byteSize: bytes.byteLength,
-      outageStartedAt: upload.outageStartedAt,
-      outageEndedAt: upload.outageEndedAt,
-      outageReason: upload.outageReason,
-      uploadedByUserId: context.session.user.id,
-    };
-    let parsed: ParsedOfflineSalesWorkbook;
-    try {
-      parsed = await parseOfflineSalesWorkbook(bytes);
-    } catch {
-      bytes = new Uint8Array();
-      return await storeRejectedUpload(metadata, fileSha256);
-    }
-    bytes = new Uint8Array();
-    return await stageOfflineSalesUpload({ parsed, metadata });
-  });

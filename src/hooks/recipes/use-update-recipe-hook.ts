@@ -7,7 +7,8 @@ export const useUpdateRecipe = () => {
 
   const updateMutation = useMutation({
     mutationFn: updateRecipeFn,
-    onSuccess: () => {
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["low-stock-alerts"] });
       toast.success("Packaging Format updated successfully");
       queryClient.invalidateQueries({ queryKey: ["recipes"] });
       queryClient.invalidateQueries({ queryKey: ["batch-packing"] });

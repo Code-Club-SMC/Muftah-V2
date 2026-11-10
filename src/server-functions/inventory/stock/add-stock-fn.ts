@@ -17,11 +17,13 @@ import {
 	warehouses,
 } from "@/db";
 import { expenseCategories } from "@/db/schemas/finance-schema";
+import { packagingUnit } from "@/lib/inventory/material-units";
 import { findOrCreateLot, lockMaterialStock, moveLotStock } from "@/lib/inventory/material-lots.server";
 import { requireInventoryManageMiddleware } from "@/lib/middlewares";
 import { addStockSchema } from "@/lib/validators/validators";
 import { z } from "zod";
 import Big from "big.js";
+import type { ChemicalPurchaseRef } from "@/lib/inventory/chemical-report-contract";
 
 type FinanceWriter = Pick<typeof db, "query" | "select" | "insert" | "update">;
 
@@ -286,7 +288,7 @@ export const addStockFn = createServerFn()
 					.where(eq(packagingMaterials.id, data.materialId));
 				if (pkg) {
 					loggedMaterialName = pkg.name;
-					materialUnit = pkg.measuredInKg ? "kg" : pkg.capacityUnit || "units";
+					materialUnit = packagingUnit(pkg);
 				}
 			}
 
@@ -333,6 +335,8 @@ export const addStockFn = createServerFn()
 			});
 
 			const [result] = await tx.select().from(materialStock).where(and(eq(materialStock.warehouseId, targetWarehouseId), eq(data.materialType === "chemical" ? materialStock.chemicalId : materialStock.packagingMaterialId, data.materialId)));
-			return result;
+			const reportPurchase: ChemicalPurchaseRef | null = data.materialType === "chemical"
+				? { purchaseId: purchase.id, chemicalId: data.materialId, chemicalName: loggedMaterialName } : null;
+			return { ...result, purchase: reportPurchase };
 		});
 	});

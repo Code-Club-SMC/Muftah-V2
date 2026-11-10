@@ -8,8 +8,9 @@ import { createId } from "@paralleldrive/cuid2";
 import { lotPrice, lotQuantity, PURCHASE_LOCKED_MESSAGE } from "@/lib/inventory/material-lots";
 import { findOrCreateLot, lockMaterialStock, moveLotStock, purchaseIsUntouched } from "@/lib/inventory/material-lots.server";
 
-import { packagingMaterials } from "@/db/schemas/inventory-schema";
+import { chemicals, packagingMaterials } from "@/db/schemas/inventory-schema";
 import { expenseCategories } from "@/db/schemas/finance-schema";
+import { chemicalStockThresholdSchema, packagingStockThresholdSchema, packagingKindSchema } from "@/lib/validators/validators";
 
 type FinanceWriter = Pick<typeof db, "query" | "select" | "insert" | "update">;
 
@@ -72,7 +73,8 @@ const updatePurchaseSchema = z.object({
   materialName: z.string().optional(),
   capacity: z.string().optional(),
   capacityUnit: z.string().optional(),
-  minStock: z.string().optional(),
+  packagingKind: packagingKindSchema,
+  minStock: z.union([chemicalStockThresholdSchema, packagingStockThresholdSchema]).optional(),
   unit: z.string().optional(),
   // Payment fields
   walletId: z.string().optional(),
@@ -81,7 +83,7 @@ const updatePurchaseSchema = z.object({
   supplierName: z.string().optional(),
 });
 
-export const updatePurchaseRecordFn = createServerFn()
+export const updatePurchaseRecordFn = createServerFn({ method: "POST" })
   .middleware([requireSuppliersManageMiddleware])
   .inputValidator(updatePurchaseSchema)
   .handler(async ({ data, context }) => {
@@ -93,6 +95,9 @@ export const updatePurchaseRecordFn = createServerFn()
       if (!existingRecord) {
         throw new Error("Purchase record not found");
       }
+      if (existingRecord.voidedAt) throw new Error("Purchase is already voided");
+      const minimumStock = data.minStock === undefined ? undefined
+        : (existingRecord.materialType === "chemical" ? chemicalStockThresholdSchema : packagingStockThresholdSchema).parse(data.minStock);
 
       // 2. Move lot stock if quantity or price changed. Only allowed while the purchase is untouched.
       const ref = existingRecord.materialType === "chemical"
@@ -118,7 +123,12 @@ export const updatePurchaseRecordFn = createServerFn()
         // Not untouched and only the price changed: the bill changes, the lot price does not.
       }
 
-      // 3. Update Material if applicable (Packaging only as per user request)
+      if (existingRecord.materialType === "chemical" && existingRecord.chemicalId && minimumStock !== undefined) {
+        await tx.update(chemicals).set({ minimumStockLevel: String(minimumStock), updatedAt: new Date() })
+          .where(eq(chemicals.id, existingRecord.chemicalId));
+      }
+
+      // 3. Update explicitly supplied material fields.
       if (
         existingRecord.materialType === "packaging" &&
         existingRecord.packagingMaterialId
@@ -129,9 +139,8 @@ export const updatePurchaseRecordFn = createServerFn()
             name: data.materialName || undefined,
             capacity: data.capacity || undefined,
             capacityUnit: data.capacityUnit || undefined,
-            minimumStockLevel: data.minStock
-              ? parseInt(data.minStock)
-              : undefined,
+            packagingKind: data.packagingKind,
+            minimumStockLevel: minimumStock === undefined ? undefined : Number(minimumStock),
             updatedAt: new Date(),
           })
           .where(eq(packagingMaterials.id, existingRecord.packagingMaterialId));

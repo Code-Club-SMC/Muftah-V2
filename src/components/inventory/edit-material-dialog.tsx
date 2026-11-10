@@ -8,6 +8,7 @@ import { useUpdateMaterial } from "@/hooks/inventory/use-material-actions";
 import { useMaterialLots } from "@/hooks/stock/use-material-lots";
 import { lotLabel } from "@/lib/inventory/material-lots";
 import { packagingUnit } from "@/lib/inventory/material-units";
+import { PACKAGING_KINDS, PACKAGING_KIND_LABELS, type PackagingKind } from "@/lib/inventory/packaging-kind";
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "../ui/field";
 import { Input } from "../ui/input";
 import { Switch } from "../ui/switch";
@@ -15,6 +16,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../ui/dialog";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
@@ -69,6 +71,7 @@ export const EditMaterialDialog = ({
       capacity: material?.capacity || "",
       capacityUnit: material?.capacityUnit || "",
       measuredInKg: !!material?.measuredInKg,
+      packagingKind: (material?.packagingKind ?? null) as PackagingKind | null,
       weightPerPack: material?.weightPerPack || "",
     },
     onSubmit: async ({ value }) => {
@@ -87,7 +90,7 @@ export const EditMaterialDialog = ({
               capacity: value.capacity,
               capacityUnit: value.capacityUnit,
               ...(type === "packaging"
-                ? { measuredInKg: value.measuredInKg, weightPerPack: value.weightPerPack || undefined }
+                ? { packagingKind: value.packagingKind, measuredInKg: value.measuredInKg, weightPerPack: value.weightPerPack || undefined }
                 : {}),
             },
             stock: changed
@@ -126,6 +129,25 @@ export const EditMaterialDialog = ({
           }}
         >
           <FieldGroup>
+            {type === "packaging" && (
+              <form.Field name="packagingKind">
+                {(field) => (
+                  <Field>
+                    <FieldLabel htmlFor="edit-packaging-kind">Packaging kind</FieldLabel>
+                    <Select value={field.state.value ?? "unspecified"} onValueChange={(value) => field.handleChange(value === "unspecified" ? null : value as PackagingKind)}>
+                      <SelectTrigger id="edit-packaging-kind" className="w-full"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectGroup>
+                          <SelectItem value="unspecified">Unspecified</SelectItem>
+                          {PACKAGING_KINDS.map(kind => <SelectItem key={kind} value={kind}>{PACKAGING_KIND_LABELS[kind]}</SelectItem>)}
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                    <FieldDescription>Descriptive only. Does not change the production role or stock unit.</FieldDescription>
+                  </Field>
+                )}
+              </form.Field>
+            )}
             {type === "packaging" && (
               <form.Field name="materialType">
                 {(field) => (

@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { db } from "@/db";
 import { requireInventoryViewMiddleware } from "@/lib/middlewares";
+import { chemicalReportCoverage } from "@/lib/inventory/chemical-report-coverage.server";
 
 
 export const getInventoryFn = createServerFn()
@@ -60,8 +61,12 @@ export const getInventoryFn = createServerFn()
     });
 
     // Enrich the result with accurate counts
-    return warehouseData.map((w) => ({
+    return Promise.all(warehouseData.map(async (w) => {
+      const reportCoverage = await chemicalReportCoverage(w.materialStock.flatMap(row => row.chemical ? [row.chemical.id] : []), w.id);
+      return {
       ...w,
+      materialStock: w.materialStock.map(row => ({ ...row, chemical: row.chemical
+        ? { ...row.chemical, reportCoverage: reportCoverage[row.chemical.id] } : null })),
       finishedGoodsStock: w.finishedGoodsStock.map((fg) => {
         const stats = statsMap.get(`${w.id}-${fg.recipeId}`) || {
           total: 0,
@@ -74,5 +79,6 @@ export const getInventoryFn = createServerFn()
           cartonStats: { ...stats, totalPacks: stats.totalPacks + (fg.quantityOutsidePacks ?? 0), outsidePacks: fg.quantityOutsidePacks }, // Provide rich breakdown
         };
       }),
+    };
     }));
   });

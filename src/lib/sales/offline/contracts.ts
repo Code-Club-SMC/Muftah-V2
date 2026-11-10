@@ -1,12 +1,16 @@
 import type {
+  OfflineNewCustomer,
   OfflineSalesBatchStatus,
   OfflineSalesInvoiceStatus,
   OfflineSalesWorkbookStatus,
 } from "@/db/schemas/offline-sales-schema";
 
 export const OFFLINE_SALES_WORKBOOK_FORMAT = "titan-offline-sales" as const;
-export const OFFLINE_SALES_XLSX_CONTENT_TYPE =
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" as const;
+
+export type OfflineSalesSaleType =
+  | "direct_distributor"
+  | "direct_retailer"
+  | "booked_order";
 
 export type OfflineSalesManifest = {
   format: typeof OFFLINE_SALES_WORKBOOK_FORMAT;
@@ -32,6 +36,10 @@ export type OfflineSalesReferenceSnapshot = {
     outstandingAmount: string;
     creditLimit: string;
     creditHold: boolean;
+    /** Printed on the invoice. */
+    address: string | null;
+    city: string | null;
+    mobile: string | null;
   }>;
   products: Array<{
     recipeId: string;
@@ -42,8 +50,23 @@ export type OfflineSalesReferenceSnapshot = {
     distributorCartonPrice: string;
     distributorPrices: Array<{ customerId: string; cartonPrice: string }>;
     retailPricePerPack: string;
+    /** Carton price for retailers and walk-in sales (general rate). */
+    generalCartonPrice: string;
     wacPerPack: string;
     stockUnits: number;
+  }>;
+  /** Salesmen whose salary a distributor may pay on an invoice. */
+  salesmen: Array<{ employeeId: string; name: string }>;
+  /** Existing non-distributor customers. */
+  retailers: Array<{
+    id: string;
+    code: string;
+    name: string;
+    customerType: string;
+    mobile: string | null;
+    city: string | null;
+    address: string | null;
+    outstandingAmount: string;
   }>;
   discountRules: Array<{
     id: string;
@@ -79,22 +102,6 @@ export type OfflineSalesReferenceSnapshot = {
   }>;
 };
 
-export type OfflineSalesSlotTemplate = {
-  id: string;
-  slotNumber: number;
-  reservedSerial: number;
-  recordToken: string;
-};
-
-export type OfflineSalesWorkbookTemplateInput = {
-  manifest: OfflineSalesManifest;
-  manifestSignature: string;
-  snapshot: OfflineSalesReferenceSnapshot;
-  snapshotSignature: string;
-  operatorName: string;
-  slots: OfflineSalesSlotTemplate[];
-};
-
 export type ParsedOfflineSalesItem = {
   worksheetRowNumber: number;
   invoiceNumber: string;
@@ -110,16 +117,25 @@ export type ParsedOfflineSalesItem = {
   wacPerPack: number;
   stockUnitsSnapshot: number;
   physicalStockConfirmed: boolean;
+  /** Cartons given free by hand, and a price changed from the list. */
+  manualFreeCartons?: number;
+  isPriceOverride?: boolean;
+  listedCartonPrice?: number;
   sourceColumns: Record<string, string>;
 };
 
 export type ParsedOfflineSalesPayment = {
   worksheetRowNumber: number;
   invoiceNumber: string;
-  method: "cash" | "bank_transfer" | "cheque";
+  method: "cash" | "bank_transfer" | "cheque" | "expense_offset";
+  expenseType?: string | null;
+  expenseEmployeeId?: string | null;
   amount: number;
   walletCode: string;
   reference: string | null;
+  /** Bank and digital-account details, in the same wording the online form saves. */
+  notes?: string | null;
+  instantVerify?: boolean;
   chequeNumber: string | null;
   chequeBank: string | null;
   chequeDate: string | null;
@@ -133,12 +149,22 @@ export type ParsedOfflineSalesInvoice = {
   invoiceNumber: string;
   saleDate: string;
   saleTime: string;
-  saleType: "direct_distributor" | "booked_order";
+  saleType: OfflineSalesSaleType;
   distributorCode: string | null;
   orderBookerCode: string | null;
   billNumber: number | null;
   paymentDueDate: string | null;
   remarks: string | null;
+  /** Walk-in customer, discount, freight and cancellation, set by the offline desk. */
+  customerDetails?: OfflineNewCustomer | null;
+  invoiceDiscount?: number;
+  invoiceDiscountDescription?: string | null;
+  expenses?: number;
+  expensesDescription?: string | null;
+  /** Set when the operator cancelled a printed invoice at the desk. */
+  cancelledReason?: string | null;
+  /** The total on the paper copy, so the office can see if the system's total differs. */
+  printedTotal?: number | null;
   invoiceAmount: number;
   paidAmount: number;
   pendingAmount: number;
@@ -194,7 +220,10 @@ export type OfflineSalesBatchDetail = {
     invoiceNumber: string;
     status: OfflineSalesInvoiceStatus;
     worksheetRowNumber: number;
-    saleType: "direct_distributor" | "booked_order";
+    saleType: OfflineSalesSaleType;
+    customerDetails: OfflineNewCustomer | null;
+    invoiceDiscount: string;
+    expenses: string;
     businessDate: Date;
     distributorCode: string | null;
     customerName: string | null;
@@ -225,6 +254,10 @@ export type OfflineSalesBatchDetail = {
       looseUnitQuantity: number;
       packsPerCarton: number;
       freeCartons: number;
+      manualFreeCartons: number;
+      isPriceOverride: boolean;
+      listedCartonPrice: string | null;
+      baseCartonPrice: string;
       dispatchedUnits: number;
       lineAmount: string;
       stockUnitsSnapshot: number;
@@ -234,12 +267,14 @@ export type OfflineSalesBatchDetail = {
     payments: Array<{
       id: string;
       worksheetRowNumber: number;
-      method: "cash" | "bank_transfer" | "cheque";
+      method: "cash" | "bank_transfer" | "cheque" | "expense_offset";
       amount: string;
       walletCode: string;
       walletId: string | null;
       walletName: string | null;
       walletType: string | null;
+      notes: string | null;
+      instantVerify: boolean;
       reference: string | null;
       chequeNumber: string | null;
       chequeBank: string | null;
@@ -278,26 +313,3 @@ export type OfflineSalesWorkbookSummary = {
   replacementWorkbookId: string | null;
   forceRetiredReason: string | null;
 };
-
-function safeFilenamePart(value: string) {
-  return (
-    value
-      .trim()
-      .replace(/[^a-zA-Z0-9._-]+/g, "-")
-      .replace(/-+/g, "-")
-      .replace(/^[.-]+|[.-]+$/g, "")
-      .slice(0, 80) || "unknown"
-  );
-}
-
-export function offlineSalesDownloadHeaders(input: {
-  workbookId: string;
-}) {
-  const filename = `offline-sales-F01-${safeFilenamePart(input.workbookId)}.xlsx`;
-  return {
-    "Content-Type": OFFLINE_SALES_XLSX_CONTENT_TYPE,
-    "Content-Disposition": `attachment; filename="${filename}"`,
-    "Cache-Control": "no-store",
-    "X-Content-Type-Options": "nosniff",
-  } as const;
-}

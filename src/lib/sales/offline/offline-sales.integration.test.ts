@@ -1,12 +1,5 @@
 import { randomInt } from "node:crypto";
 import { createId } from "@paralleldrive/cuid2";
-import {
-  TextReader,
-  Uint8ArrayReader,
-  Uint8ArrayWriter,
-  ZipReader,
-  ZipWriter,
-} from "@zip.js/zip.js";
 import { eq, sql } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import type {
@@ -20,49 +13,9 @@ import {
   signOfflineSalesManifest,
   signOfflineSalesSnapshot,
 } from "./signing.server";
-import { parseOfflineSalesWorkbook } from "./workbook-parser.server";
-import { buildOfflineSalesWorkbook } from "./workbook-template.server";
+import { buildParsedWorkbookFromEntries } from "./entry-processor.server";
 
 const integrationEnabled = process.env.OFFLINE_SALES_RUN_DB_TESTS === "true";
-
-async function rewrite(
-  bytes: Uint8Array,
-  mutate: (parts: Map<string, string>) => void,
-) {
-  const reader = new ZipReader(new Uint8ArrayReader(bytes));
-  const parts = new Map<string, string>();
-  try {
-    for (const entry of await reader.getEntries()) {
-      if (entry.directory) continue;
-      parts.set(
-        entry.filename,
-        new TextDecoder().decode(await entry.getData(new Uint8ArrayWriter())),
-      );
-    }
-  } finally {
-    await reader.close().catch(() => undefined);
-  }
-  mutate(parts);
-  const writer = new ZipWriter(new Uint8ArrayWriter());
-  for (const [name, content] of parts) {
-    await writer.add(name, new TextReader(content));
-  }
-  return await writer.close();
-}
-
-function replaceCell(xml: string, ref: string, replacement: string) {
-  const pattern = new RegExp(`<c r="${ref}"[^>]*/>|<c r="${ref}"[^>]*>.*?</c>`);
-  if (!pattern.test(xml)) throw new Error(`Missing ${ref}`);
-  return xml.replace(pattern, replacement);
-}
-
-function textCell(ref: string, style: number, value: string) {
-  return `<c r="${ref}" s="${style}" t="inlineStr"><is><t>${value}</t></is></c>`;
-}
-
-function numberCell(ref: string, style: number, value: number) {
-  return `<c r="${ref}" s="${style}"><v>${value}</v></c>`;
-}
 
 describe.runIf(integrationEnabled)(
   "offline sales PostgreSQL integration",
@@ -200,8 +153,13 @@ describe.runIf(integrationEnabled)(
             outstandingAmount: "0.00",
             creditLimit: "100000.00",
             creditHold: false,
+            address: null,
+            city: null,
+            mobile: null,
           },
         ],
+        retailers: [],
+        salesmen: [],
         products: [
           {
             recipeId,
@@ -210,6 +168,7 @@ describe.runIf(integrationEnabled)(
             name: "Test Cleaner — Test Cleaner 1L",
             packsPerCarton: 12,
             distributorCartonPrice: "1200.00",
+            generalCartonPrice: "1200.00",
             distributorPrices: [{ customerId, cartonPrice: "1100.00" }],
             retailPricePerPack: "120.00",
             wacPerPack: "50.0000",
@@ -292,115 +251,58 @@ describe.runIf(integrationEnabled)(
         .values(slots.map((slot) => ({ ...slot, workbookId })));
 
       const invoiceNumber = `OFF-F01-20260810-${reservedSerial}`;
-      const official = await buildOfflineSalesWorkbook({
+      const parsed = buildParsedWorkbookFromEntries({
         manifest,
         manifestSignature,
         snapshot,
         snapshotSignature,
-        operatorName: "Offline Integration Operator",
         slots,
+        entries: [
+          {
+            slotNumber: slots[0].slotNumber,
+            recordToken: slots[0].recordToken,
+            saleDate: "2026-08-10",
+            saleTime: "12:30",
+            saleType: "direct_distributor",
+            distributorCode: `D-${customer.sNo}`,
+            orderBookerCode: null,
+            billNumber: null,
+            paymentDueDate: "2026-08-20",
+            remarks: null,
+            items: [
+              {
+                productCode: recipeId,
+                cartonQuantity: 2,
+                looseUnitQuantity: 0,
+                physicalStockConfirmed: true,
+              },
+            ],
+            payments: [
+              {
+                method: "cash",
+                amount: 100,
+                walletCode: cashWalletId,
+                reference: null,
+                chequeBank: null,
+                chequeNumber: null,
+                chequeDate: null,
+                paymentDate: "2026-08-10",
+              },
+              {
+                method: "bank_transfer",
+                amount: 200,
+                walletCode: bankWalletId,
+                reference: "BANK-IT-1",
+                chequeBank: null,
+                chequeNumber: null,
+                chequeDate: null,
+                paymentDate: "2026-08-10",
+                bank: { senderBankName: "Test Bank", senderAccountNumber: "PK00-0001" },
+              },
+            ],
+          },
+        ],
       });
-      const completed = await rewrite(official, (parts) => {
-        let invoiceSheet = parts.get("xl/worksheets/sheet1.xml") ?? "";
-        invoiceSheet = replaceCell(
-          invoiceSheet,
-          "E2",
-          textCell("E2", 2, "2026-08-10"),
-        );
-        invoiceSheet = replaceCell(
-          invoiceSheet,
-          "F2",
-          textCell("F2", 3, "12:30"),
-        );
-        invoiceSheet = replaceCell(
-          invoiceSheet,
-          "G2",
-          textCell("G2", 1, "direct_distributor"),
-        );
-        invoiceSheet = replaceCell(
-          invoiceSheet,
-          "H2",
-          textCell("H2", 1, `D-${customer.sNo}`),
-        );
-        invoiceSheet = replaceCell(
-          invoiceSheet,
-          "K2",
-          textCell("K2", 2, "2026-08-20"),
-        );
-        parts.set("xl/worksheets/sheet1.xml", invoiceSheet);
-
-        let itemSheet = parts.get("xl/worksheets/sheet2.xml") ?? "";
-        itemSheet = replaceCell(
-          itemSheet,
-          "A2",
-          textCell("A2", 1, invoiceNumber),
-        );
-        itemSheet = replaceCell(itemSheet, "B2", textCell("B2", 1, recipeId));
-        itemSheet = replaceCell(itemSheet, "C2", numberCell("C2", 7, 2));
-        itemSheet = replaceCell(itemSheet, "D2", numberCell("D2", 7, 0));
-        itemSheet = replaceCell(itemSheet, "E2", textCell("E2", 1, "YES"));
-        parts.set("xl/worksheets/sheet2.xml", itemSheet);
-
-        let paymentSheet = parts.get("xl/worksheets/sheet3.xml") ?? "";
-        paymentSheet = replaceCell(
-          paymentSheet,
-          "A2",
-          textCell("A2", 1, invoiceNumber),
-        );
-        paymentSheet = replaceCell(
-          paymentSheet,
-          "B2",
-          textCell("B2", 1, "cash"),
-        );
-        paymentSheet = replaceCell(
-          paymentSheet,
-          "C2",
-          numberCell("C2", 7, 100),
-        );
-        paymentSheet = replaceCell(
-          paymentSheet,
-          "D2",
-          textCell("D2", 1, cashWalletId),
-        );
-        paymentSheet = replaceCell(
-          paymentSheet,
-          "I2",
-          textCell("I2", 2, "2026-08-10"),
-        );
-        paymentSheet = replaceCell(
-          paymentSheet,
-          "A3",
-          textCell("A3", 1, invoiceNumber),
-        );
-        paymentSheet = replaceCell(
-          paymentSheet,
-          "B3",
-          textCell("B3", 1, "bank_transfer"),
-        );
-        paymentSheet = replaceCell(
-          paymentSheet,
-          "C3",
-          numberCell("C3", 7, 200),
-        );
-        paymentSheet = replaceCell(
-          paymentSheet,
-          "D3",
-          textCell("D3", 1, bankWalletId),
-        );
-        paymentSheet = replaceCell(
-          paymentSheet,
-          "E3",
-          textCell("E3", 1, "BANK-IT-1"),
-        );
-        paymentSheet = replaceCell(
-          paymentSheet,
-          "I3",
-          textCell("I3", 2, "2026-08-10"),
-        );
-        parts.set("xl/worksheets/sheet3.xml", paymentSheet);
-      });
-
-      const parsed = await parseOfflineSalesWorkbook(completed);
       expect(parsed.invoices).toHaveLength(1);
       expect(parsed.invoices[0]).toMatchObject({
         invoiceNumber,
@@ -412,8 +314,8 @@ describe.runIf(integrationEnabled)(
       const staged = await stageOfflineSalesUpload({
         parsed,
         metadata: {
-          filename: `${workbookId}.xlsx`,
-          byteSize: completed.byteLength,
+          filename: `offline-desk-${workbookId}.entries`,
+          byteSize: 1024,
           outageStartedAt: new Date("2026-08-09T19:00:00.000Z"),
           outageEndedAt: new Date("2026-08-10T18:59:59.000Z"),
           outageReason: "Integration test internet outage",

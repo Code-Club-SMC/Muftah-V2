@@ -7,6 +7,7 @@ import { packagingMaterialsUsed } from "@/db/schemas/production-schema";
 import { lockMaterialStock, moveLotStock, type Tx } from "@/lib/inventory/material-lots.server";
 import { requireInventoryManageMiddleware } from "@/lib/middlewares";
 import { z } from "zod";
+import { chemicalStockThresholdSchema, packagingStockThresholdSchema, packagingKindSchema } from "@/lib/validators/validators";
 
 const updateMaterialSchema = z.object({
   id: z.string(),
@@ -17,6 +18,7 @@ const updateMaterialSchema = z.object({
     costPerUnit: z.string().min(1),
     minimumStockLevel: z.union([z.string(), z.number()]),
     materialType: z.string().optional(), // Maps to 'type' in packaging_materials
+    packagingKind: packagingKindSchema,
     capacity: z.string().optional(),
     capacityUnit: z.string().optional(),
     measuredInKg: z.boolean().optional(),
@@ -28,6 +30,9 @@ const updateMaterialSchema = z.object({
     quantity: z.string().min(1),
     lotId: z.string().optional(),
   }).optional(),
+}).superRefine((value, ctx) => {
+  const result = (value.type === "chemical" ? chemicalStockThresholdSchema : packagingStockThresholdSchema).safeParse(value.data.minimumStockLevel);
+  if (!result.success) for (const issue of result.error.issues) ctx.addIssue({ code: "custom", path: ["data", "minimumStockLevel"], message: issue.message });
 });
 
 // Old quantities must never change meaning, so the unit is fixed once stock or history exists.
@@ -112,6 +117,7 @@ export const updateMaterialFn = createServerFn()
               costPerUnit: fields.costPerUnit,
               minimumStockLevel: Number(fields.minimumStockLevel),
               type: fields.materialType,
+              packagingKind: fields.packagingKind,
               capacity: fields.capacity || null,
               capacityUnit: fields.capacityUnit || null,
               measuredInKg,

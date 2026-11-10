@@ -6,6 +6,8 @@ import { batchPackingReceipts, formulas, mixingRuns, packagingAllocations } from
 import { packagingMaterials, recipePackaging, recipes } from "@/db/schemas/inventory-schema";
 import { requireAuthMiddleware } from "@/lib/middlewares";
 import { authorizePacking, packingAvailability } from "./batch-packing-core.server";
+import { hasPermission } from "@/lib/rbac";
+import { summarizePackingCosts } from "@/lib/production/cost-summary";
 
 export const getBatchPackingContextFn = createServerFn()
   .middleware([requireAuthMiddleware])
@@ -16,6 +18,7 @@ export const getBatchPackingContextFn = createServerFn()
     if (!run) throw new Error("Mixing batch not found");
     const actor = { id: context.session.user.id, permissions: context.authContext.permissions };
     authorizePacking(actor, run.operatorId, true);
+    const seesCosts = hasPermission(actor.permissions, "manufacturing.run.manage") || hasPermission(actor.permissions, "manufacturing.run.read") || hasPermission(actor.permissions, "manufacturing.view");
     let canRecord = run.status === "completed";
     try { authorizePacking(actor, run.operatorId); } catch { canRecord = false; }
     const [formula] = await tx.select().from(formulas).where(eq(formulas.id, run.formulaId));
@@ -31,7 +34,24 @@ export const getBatchPackingContextFn = createServerFn()
       materials,
       batch: { id: run.id, batchId: run.batchId, formulaName: formula.name, bulkUnit: run.bulkUnit, producedBulk: run.actualBulkProduced ?? "0.000", availableBulk: (await packingAvailability(tx, run)).toFixed(3), canRecord },
       formats: formats.map(format => ({ id: format.id, name: format.name, fillAmount: format.fillAmount ?? "0", fillUnit: format.fillUnit ?? "", containersPerCarton: format.containersPerCarton ?? 0, usesCartons: !!format.cartonPackagingId && (format.containersPerCarton ?? 0) > 0 })),
-      receipts: receipts.map(receipt => ({ id: receipt.id, requestId: receipt.requestId, recordedAt: receipt.recordedAt, totalPacks: receipt.totalPacks, bulkConsumed: receipt.bulkConsumed, lossBulk: receipt.lossBulk, lines: allocations.filter(allocation => allocation.packingReceiptId === receipt.id).map(allocation => ({ name: (allocation.formatSnapshot as { name: string }).name, fullCartons: allocation.fullCartonsRecorded ?? 0, partialPacks: allocation.partialPacksRecorded ?? 0, loosePacks: allocation.outsidePacksRecorded ?? 0, totalPacks: allocation.actualPacksProduced ?? 0, nominalBulk: allocation.nominalBulkRecorded ?? "0.000", actualBulk: allocation.actualBulkConsumed ?? "0.000" })) })),
+      receipts: receipts.map(receipt => {
+        const receiptAllocations = allocations.filter(allocation => allocation.packingReceiptId === receipt.id);
+        return {
+          id: receipt.id, requestId: receipt.requestId, recordedAt: receipt.recordedAt,
+          totalPacks: receipt.totalPacks, bulkConsumed: receipt.bulkConsumed, lossBulk: receipt.lossBulk,
+          costs: seesCosts ? summarizePackingCosts(receiptAllocations) : null,
+          lines: receiptAllocations.map(allocation => ({
+            name: (allocation.formatSnapshot as { name: string }).name,
+            fullCartons: allocation.fullCartonsRecorded ?? 0, partialPacks: allocation.partialPacksRecorded ?? 0,
+            loosePacks: allocation.outsidePacksRecorded ?? 0, totalPacks: allocation.actualPacksProduced ?? 0,
+            nominalBulk: allocation.nominalBulkRecorded ?? "0.000", actualBulk: allocation.actualBulkConsumed ?? "0.000",
+            costs: seesCosts ? {
+              chemicalCost: allocation.allocatedChemicalCost, packagingCost: allocation.totalPackagingCost ?? "0.00",
+              totalCost: allocation.totalProductionCost ?? "0.00", costPerPack: allocation.actualCostPerPack ?? "0.0000",
+            } : null,
+          })),
+        };
+      }),
       legacyOpenJobs: allocations.filter(allocation => !allocation.packingReceiptId && ["allocated", "in_progress"].includes(allocation.status)).length,
     };
   }));

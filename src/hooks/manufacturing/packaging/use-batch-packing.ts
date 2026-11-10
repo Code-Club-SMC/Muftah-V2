@@ -2,6 +2,7 @@ import { useCallback } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { getBatchPackingContextFn } from "@/server-functions/manufacturing/packaging/get-batch-packing-context-fn";
 import { recordBatchPackingFn } from "@/server-functions/manufacturing/packaging/record-batch-packing-fn";
+import { invalidateStockQueries } from "@/lib/inventory/invalidate-stock";
 
 export function useBatchPacking(mixingRunId: string) {
   return useQuery({
@@ -14,13 +15,12 @@ export function useRefreshBatchPacking() {
   const client = useQueryClient();
   return useCallback(
     async (mixingRunId: string) => {
-      await Promise.all(
-        [
+      await Promise.all([
+        invalidateStockQueries(client),
+        ...[
           ["batch-packing", mixingRunId],
           ["mixing-run", mixingRunId],
           ["operator-mixing-run", mixingRunId],
-          ["factory-floor"],
-          ["inventory"],
           ["warehouses"],
           ["cartons"],
           ["carton-availability"],
@@ -29,12 +29,9 @@ export function useRefreshBatchPacking() {
           ["operator-mixing-runs"],
           ["operator-packaging"],
           ["production-runs"],
-          ["item-detail"],
           ["consumption-history"],
-          ["low-stock-alerts"],
-          ["material-lots"],
         ].map((queryKey) => client.invalidateQueries({ queryKey })),
-      );
+      ]);
     },
     [client],
   );

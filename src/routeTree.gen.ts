@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as OfflineDeskRouteImport } from './routes/offline-desk'
 import { Route as ProtectedRouteRouteImport } from './routes/_protected/route'
 import { Route as AuthLayoutRouteRouteImport } from './routes/_authLayout/route'
 import { Route as IndexRouteImport } from './routes/index'
@@ -32,6 +33,7 @@ import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ProtectedSuppliersSupplierIdRouteImport } from './routes/_protected/suppliers/$supplierId'
 import { Route as ProtectedSalesOfflineRouteImport } from './routes/_protected/sales/offline'
 import { Route as ProtectedFinancePaymentVerificationRouteImport } from './routes/_protected/finance/payment-verification'
+import { Route as ProtectedSalesReturnsIndexRouteImport } from './routes/_protected/sales/returns/index'
 import { Route as ProtectedSalesRecoveryIndexRouteImport } from './routes/_protected/sales/recovery/index'
 import { Route as ProtectedSalesReconciliationIndexRouteImport } from './routes/_protected/sales/reconciliation/index'
 import { Route as ProtectedSalesPeopleIndexRouteImport } from './routes/_protected/sales/people/index'
@@ -69,6 +71,7 @@ import { Route as ProtectedFinanceExpensesIndexRouteImport } from './routes/_pro
 import { Route as ProtectedFinanceAccountsIndexRouteImport } from './routes/_protected/finance/accounts/index'
 import { Route as ProtectedDashboardActivityTimelineIndexRouteImport } from './routes/_protected/dashboard/activity-timeline/index'
 import { Route as ProtectedSuppliersSupplierIdDetailsRouteImport } from './routes/_protected/suppliers/$supplierId_.details'
+import { Route as ProtectedSalesReturnsReturnIdRouteImport } from './routes/_protected/sales/returns/$returnId'
 import { Route as ProtectedOperatorPackagingAllocationIdRouteImport } from './routes/_protected/operator/packaging/$allocationId'
 import { Route as ProtectedOperatorMixingRunIdRouteImport } from './routes/_protected/operator/mixing/$runId'
 import { Route as ProtectedManufacturingRecipesRecipeIdRouteImport } from './routes/_protected/manufacturing/recipes/$recipeId'
@@ -100,6 +103,11 @@ import { Route as ProtectedSalesPeopleSalesmenSalesmanIdLedgerRouteImport } from
 import { Route as ProtectedSalesPeopleDistributorsCustomerIdLedgerRouteImport } from './routes/_protected/sales/people/distributors/$customerId/ledger'
 import { Route as ProtectedSalesPeopleSalesmenSalesmanIdShopsCustomerIdRouteImport } from './routes/_protected/sales/people/salesmen/$salesmanId/shops/$customerId'
 
+const OfflineDeskRoute = OfflineDeskRouteImport.update({
+  id: '/offline-desk',
+  path: '/offline-desk',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ProtectedRouteRoute = ProtectedRouteRouteImport.update({
   id: '/_protected',
   getParentRoute: () => rootRouteImport,
@@ -218,6 +226,12 @@ const ProtectedFinancePaymentVerificationRoute =
   ProtectedFinancePaymentVerificationRouteImport.update({
     id: '/finance/payment-verification',
     path: '/finance/payment-verification',
+    getParentRoute: () => ProtectedRouteRoute,
+  } as any)
+const ProtectedSalesReturnsIndexRoute =
+  ProtectedSalesReturnsIndexRouteImport.update({
+    id: '/sales/returns/',
+    path: '/sales/returns/',
     getParentRoute: () => ProtectedRouteRoute,
   } as any)
 const ProtectedSalesRecoveryIndexRoute =
@@ -441,6 +455,12 @@ const ProtectedSuppliersSupplierIdDetailsRoute =
     path: '/suppliers/$supplierId/details',
     getParentRoute: () => ProtectedRouteRoute,
   } as any)
+const ProtectedSalesReturnsReturnIdRoute =
+  ProtectedSalesReturnsReturnIdRouteImport.update({
+    id: '/sales/returns/$returnId',
+    path: '/sales/returns/$returnId',
+    getParentRoute: () => ProtectedRouteRoute,
+  } as any)
 const ProtectedOperatorPackagingAllocationIdRoute =
   ProtectedOperatorPackagingAllocationIdRouteImport.update({
     id: '/operator/packaging/$allocationId',
@@ -624,6 +644,7 @@ const ProtectedSalesPeopleSalesmenSalesmanIdShopsCustomerIdRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/offline-desk': typeof OfflineDeskRoute
   '/reports': typeof ProtectedReportsRouteRouteWithChildren
   '/api/health': typeof ApiHealthRoute
   '/attendance/scan': typeof AttendanceScanRoute
@@ -653,6 +674,7 @@ export interface FileRoutesByFullPath {
   '/manufacturing/recipes/$recipeId': typeof ProtectedManufacturingRecipesRecipeIdRoute
   '/operator/mixing/$runId': typeof ProtectedOperatorMixingRunIdRoute
   '/operator/packaging/$allocationId': typeof ProtectedOperatorPackagingAllocationIdRoute
+  '/sales/returns/$returnId': typeof ProtectedSalesReturnsReturnIdRoute
   '/suppliers/$supplierId/details': typeof ProtectedSuppliersSupplierIdDetailsRoute
   '/dashboard/activity-timeline/': typeof ProtectedDashboardActivityTimelineIndexRoute
   '/finance/accounts/': typeof ProtectedFinanceAccountsIndexRoute
@@ -690,6 +712,7 @@ export interface FileRoutesByFullPath {
   '/sales/people/': typeof ProtectedSalesPeopleIndexRoute
   '/sales/reconciliation/': typeof ProtectedSalesReconciliationIndexRoute
   '/sales/recovery/': typeof ProtectedSalesRecoveryIndexRoute
+  '/sales/returns/': typeof ProtectedSalesReturnsIndexRoute
   '/hr/payroll/employee/$employeeId': typeof ProtectedHrPayrollEmployeeEmployeeIdRoute
   '/inventory/factory-floor/cartons/$recipeId': typeof ProtectedInventoryFactoryFloorCartonsRecipeIdRoute
   '/manufacturing/packaging/$allocationId/cartons': typeof ProtectedManufacturingPackagingAllocationIdCartonsRoute
@@ -714,6 +737,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/offline-desk': typeof OfflineDeskRoute
   '/api/health': typeof ApiHealthRoute
   '/attendance/scan': typeof AttendanceScanRoute
   '/finance/payment-verification': typeof ProtectedFinancePaymentVerificationRoute
@@ -742,6 +766,7 @@ export interface FileRoutesByTo {
   '/manufacturing/recipes/$recipeId': typeof ProtectedManufacturingRecipesRecipeIdRoute
   '/operator/mixing/$runId': typeof ProtectedOperatorMixingRunIdRoute
   '/operator/packaging/$allocationId': typeof ProtectedOperatorPackagingAllocationIdRoute
+  '/sales/returns/$returnId': typeof ProtectedSalesReturnsReturnIdRoute
   '/suppliers/$supplierId/details': typeof ProtectedSuppliersSupplierIdDetailsRoute
   '/dashboard/activity-timeline': typeof ProtectedDashboardActivityTimelineIndexRoute
   '/finance/accounts': typeof ProtectedFinanceAccountsIndexRoute
@@ -779,6 +804,7 @@ export interface FileRoutesByTo {
   '/sales/people': typeof ProtectedSalesPeopleIndexRoute
   '/sales/reconciliation': typeof ProtectedSalesReconciliationIndexRoute
   '/sales/recovery': typeof ProtectedSalesRecoveryIndexRoute
+  '/sales/returns': typeof ProtectedSalesReturnsIndexRoute
   '/hr/payroll/employee/$employeeId': typeof ProtectedHrPayrollEmployeeEmployeeIdRoute
   '/inventory/factory-floor/cartons/$recipeId': typeof ProtectedInventoryFactoryFloorCartonsRecipeIdRoute
   '/manufacturing/packaging/$allocationId/cartons': typeof ProtectedManufacturingPackagingAllocationIdCartonsRoute
@@ -806,6 +832,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/_authLayout': typeof AuthLayoutRouteRouteWithChildren
   '/_protected': typeof ProtectedRouteRouteWithChildren
+  '/offline-desk': typeof OfflineDeskRoute
   '/_protected/reports': typeof ProtectedReportsRouteRouteWithChildren
   '/api/health': typeof ApiHealthRoute
   '/attendance/scan': typeof AttendanceScanRoute
@@ -835,6 +862,7 @@ export interface FileRoutesById {
   '/_protected/manufacturing/recipes/$recipeId': typeof ProtectedManufacturingRecipesRecipeIdRoute
   '/_protected/operator/mixing/$runId': typeof ProtectedOperatorMixingRunIdRoute
   '/_protected/operator/packaging/$allocationId': typeof ProtectedOperatorPackagingAllocationIdRoute
+  '/_protected/sales/returns/$returnId': typeof ProtectedSalesReturnsReturnIdRoute
   '/_protected/suppliers/$supplierId_/details': typeof ProtectedSuppliersSupplierIdDetailsRoute
   '/_protected/dashboard/activity-timeline/': typeof ProtectedDashboardActivityTimelineIndexRoute
   '/_protected/finance/accounts/': typeof ProtectedFinanceAccountsIndexRoute
@@ -872,6 +900,7 @@ export interface FileRoutesById {
   '/_protected/sales/people/': typeof ProtectedSalesPeopleIndexRoute
   '/_protected/sales/reconciliation/': typeof ProtectedSalesReconciliationIndexRoute
   '/_protected/sales/recovery/': typeof ProtectedSalesRecoveryIndexRoute
+  '/_protected/sales/returns/': typeof ProtectedSalesReturnsIndexRoute
   '/_protected/hr/payroll/employee/$employeeId': typeof ProtectedHrPayrollEmployeeEmployeeIdRoute
   '/_protected/inventory/factory-floor/cartons/$recipeId': typeof ProtectedInventoryFactoryFloorCartonsRecipeIdRoute
   '/_protected/manufacturing/packaging/$allocationId/cartons': typeof ProtectedManufacturingPackagingAllocationIdCartonsRoute
@@ -898,6 +927,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/offline-desk'
     | '/reports'
     | '/api/health'
     | '/attendance/scan'
@@ -927,6 +957,7 @@ export interface FileRouteTypes {
     | '/manufacturing/recipes/$recipeId'
     | '/operator/mixing/$runId'
     | '/operator/packaging/$allocationId'
+    | '/sales/returns/$returnId'
     | '/suppliers/$supplierId/details'
     | '/dashboard/activity-timeline/'
     | '/finance/accounts/'
@@ -964,6 +995,7 @@ export interface FileRouteTypes {
     | '/sales/people/'
     | '/sales/reconciliation/'
     | '/sales/recovery/'
+    | '/sales/returns/'
     | '/hr/payroll/employee/$employeeId'
     | '/inventory/factory-floor/cartons/$recipeId'
     | '/manufacturing/packaging/$allocationId/cartons'
@@ -988,6 +1020,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/offline-desk'
     | '/api/health'
     | '/attendance/scan'
     | '/finance/payment-verification'
@@ -1016,6 +1049,7 @@ export interface FileRouteTypes {
     | '/manufacturing/recipes/$recipeId'
     | '/operator/mixing/$runId'
     | '/operator/packaging/$allocationId'
+    | '/sales/returns/$returnId'
     | '/suppliers/$supplierId/details'
     | '/dashboard/activity-timeline'
     | '/finance/accounts'
@@ -1053,6 +1087,7 @@ export interface FileRouteTypes {
     | '/sales/people'
     | '/sales/reconciliation'
     | '/sales/recovery'
+    | '/sales/returns'
     | '/hr/payroll/employee/$employeeId'
     | '/inventory/factory-floor/cartons/$recipeId'
     | '/manufacturing/packaging/$allocationId/cartons'
@@ -1079,6 +1114,7 @@ export interface FileRouteTypes {
     | '/'
     | '/_authLayout'
     | '/_protected'
+    | '/offline-desk'
     | '/_protected/reports'
     | '/api/health'
     | '/attendance/scan'
@@ -1108,6 +1144,7 @@ export interface FileRouteTypes {
     | '/_protected/manufacturing/recipes/$recipeId'
     | '/_protected/operator/mixing/$runId'
     | '/_protected/operator/packaging/$allocationId'
+    | '/_protected/sales/returns/$returnId'
     | '/_protected/suppliers/$supplierId_/details'
     | '/_protected/dashboard/activity-timeline/'
     | '/_protected/finance/accounts/'
@@ -1145,6 +1182,7 @@ export interface FileRouteTypes {
     | '/_protected/sales/people/'
     | '/_protected/sales/reconciliation/'
     | '/_protected/sales/recovery/'
+    | '/_protected/sales/returns/'
     | '/_protected/hr/payroll/employee/$employeeId'
     | '/_protected/inventory/factory-floor/cartons/$recipeId'
     | '/_protected/manufacturing/packaging/$allocationId/cartons'
@@ -1172,6 +1210,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthLayoutRouteRoute: typeof AuthLayoutRouteRouteWithChildren
   ProtectedRouteRoute: typeof ProtectedRouteRouteWithChildren
+  OfflineDeskRoute: typeof OfflineDeskRoute
   ApiHealthRoute: typeof ApiHealthRoute
   AttendanceScanRoute: typeof AttendanceScanRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
@@ -1180,6 +1219,13 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/offline-desk': {
+      id: '/offline-desk'
+      path: '/offline-desk'
+      fullPath: '/offline-desk'
+      preLoaderRoute: typeof OfflineDeskRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_protected': {
       id: '/_protected'
       path: ''
@@ -1339,6 +1385,13 @@ declare module '@tanstack/react-router' {
       path: '/finance/payment-verification'
       fullPath: '/finance/payment-verification'
       preLoaderRoute: typeof ProtectedFinancePaymentVerificationRouteImport
+      parentRoute: typeof ProtectedRouteRoute
+    }
+    '/_protected/sales/returns/': {
+      id: '/_protected/sales/returns/'
+      path: '/sales/returns'
+      fullPath: '/sales/returns/'
+      preLoaderRoute: typeof ProtectedSalesReturnsIndexRouteImport
       parentRoute: typeof ProtectedRouteRoute
     }
     '/_protected/sales/recovery/': {
@@ -1598,6 +1651,13 @@ declare module '@tanstack/react-router' {
       path: '/suppliers/$supplierId/details'
       fullPath: '/suppliers/$supplierId/details'
       preLoaderRoute: typeof ProtectedSuppliersSupplierIdDetailsRouteImport
+      parentRoute: typeof ProtectedRouteRoute
+    }
+    '/_protected/sales/returns/$returnId': {
+      id: '/_protected/sales/returns/$returnId'
+      path: '/sales/returns/$returnId'
+      fullPath: '/sales/returns/$returnId'
+      preLoaderRoute: typeof ProtectedSalesReturnsReturnIdRouteImport
       parentRoute: typeof ProtectedRouteRoute
     }
     '/_protected/operator/packaging/$allocationId': {
@@ -1889,6 +1949,7 @@ interface ProtectedRouteRouteChildren {
   ProtectedManufacturingRecipesRecipeIdRoute: typeof ProtectedManufacturingRecipesRecipeIdRoute
   ProtectedOperatorMixingRunIdRoute: typeof ProtectedOperatorMixingRunIdRoute
   ProtectedOperatorPackagingAllocationIdRoute: typeof ProtectedOperatorPackagingAllocationIdRoute
+  ProtectedSalesReturnsReturnIdRoute: typeof ProtectedSalesReturnsReturnIdRoute
   ProtectedSuppliersSupplierIdDetailsRoute: typeof ProtectedSuppliersSupplierIdDetailsRoute
   ProtectedDashboardActivityTimelineIndexRoute: typeof ProtectedDashboardActivityTimelineIndexRoute
   ProtectedFinanceAccountsIndexRoute: typeof ProtectedFinanceAccountsIndexRoute
@@ -1918,6 +1979,7 @@ interface ProtectedRouteRouteChildren {
   ProtectedSalesPeopleIndexRoute: typeof ProtectedSalesPeopleIndexRoute
   ProtectedSalesReconciliationIndexRoute: typeof ProtectedSalesReconciliationIndexRoute
   ProtectedSalesRecoveryIndexRoute: typeof ProtectedSalesRecoveryIndexRoute
+  ProtectedSalesReturnsIndexRoute: typeof ProtectedSalesReturnsIndexRoute
   ProtectedHrPayrollEmployeeEmployeeIdRoute: typeof ProtectedHrPayrollEmployeeEmployeeIdRoute
   ProtectedInventoryFactoryFloorCartonsRecipeIdRoute: typeof ProtectedInventoryFactoryFloorCartonsRecipeIdRoute
   ProtectedManufacturingPackagingAllocationIdCartonsRoute: typeof ProtectedManufacturingPackagingAllocationIdCartonsRoute
@@ -1965,6 +2027,7 @@ const ProtectedRouteRouteChildren: ProtectedRouteRouteChildren = {
   ProtectedOperatorMixingRunIdRoute: ProtectedOperatorMixingRunIdRoute,
   ProtectedOperatorPackagingAllocationIdRoute:
     ProtectedOperatorPackagingAllocationIdRoute,
+  ProtectedSalesReturnsReturnIdRoute: ProtectedSalesReturnsReturnIdRoute,
   ProtectedSuppliersSupplierIdDetailsRoute:
     ProtectedSuppliersSupplierIdDetailsRoute,
   ProtectedDashboardActivityTimelineIndexRoute:
@@ -2006,6 +2069,7 @@ const ProtectedRouteRouteChildren: ProtectedRouteRouteChildren = {
   ProtectedSalesReconciliationIndexRoute:
     ProtectedSalesReconciliationIndexRoute,
   ProtectedSalesRecoveryIndexRoute: ProtectedSalesRecoveryIndexRoute,
+  ProtectedSalesReturnsIndexRoute: ProtectedSalesReturnsIndexRoute,
   ProtectedHrPayrollEmployeeEmployeeIdRoute:
     ProtectedHrPayrollEmployeeEmployeeIdRoute,
   ProtectedInventoryFactoryFloorCartonsRecipeIdRoute:
@@ -2053,6 +2117,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthLayoutRouteRoute: AuthLayoutRouteRouteWithChildren,
   ProtectedRouteRoute: ProtectedRouteRouteWithChildren,
+  OfflineDeskRoute: OfflineDeskRoute,
   ApiHealthRoute: ApiHealthRoute,
   AttendanceScanRoute: AttendanceScanRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,

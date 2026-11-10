@@ -43,6 +43,10 @@ import { AddPackagingMaterialSheet } from "@/components/inventory/add-packaging-
 import { cn } from "@/lib/utils";
 import { AddStockDialog } from "@/components/inventory/add-stock-dialog";
 import { GenericLoader } from "@/components/custom/generic-loader";
+import { useViewerAccess } from "@/hooks/use-viewer-access";
+import { hasPermission } from "@/lib/rbac";
+import type { ChemicalPurchaseRef } from "@/lib/inventory/chemical-report-contract";
+import { CreateLabReportForm } from "@/components/inventory/lab-reports/create-lab-report-form";
 
 // The overview shows 10 rows per page grouped by material; the details page holds the long history.
 const OVERVIEW_PAGE_SIZE = 10;
@@ -217,6 +221,9 @@ function ContactRow({
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 function SupplierDetailsPage() {
+  const { data: viewer } = useViewerAccess();
+  const canCreateReport = hasPermission(viewer?.permissions ?? [], "inventory.view") && hasPermission(viewer?.permissions ?? [], "inventory.manage");
+  const [reportPurchase, setReportPurchase] = useState<ChemicalPurchaseRef | null>(null);
   const { supplierId } = Route.useParams();
   const [isAddChemicalOpen, setAddChemicalOpen] = useState(false);
   const [isAddPackagingOpen, setAddPackagingOpen] = useState(false);
@@ -521,6 +528,7 @@ function SupplierDetailsPage() {
                     setDeleteDialogOpen={setDeleteDialogOpen}
                     onRecordPayment={handleRecordPayment}
                     onRestock={handleRestock}
+                    onCreateReport={canCreateReport ? record => { if (record.chemical) setReportPurchase({ purchaseId: record.id, chemicalId: record.chemical.id, chemicalName: record.chemical.name }); } : undefined}
                     {...overviewPagination(
                       purchasesQuery.data,
                       purchasesPage,
@@ -547,6 +555,8 @@ function SupplierDetailsPage() {
       </div>
 
       {/* ── Dialogs ── */}
+      {canCreateReport && reportPurchase && <CreateLabReportForm key={reportPurchase.purchaseId} open
+        onOpenChange={open => { if (!open) setReportPurchase(null); }} {...reportPurchase} />}
       <AddRawMaterialDialog
         open={isAddChemicalOpen}
         onOpenChange={setAddChemicalOpen}
@@ -639,6 +649,7 @@ function SupplierDetailsPage() {
             type: (selectedItem.packagingMaterial?.type || "primary") as "primary" | "master" | "sticker" | "extra",
             capacity: selectedItem.packagingMaterial?.capacity || "",
             capacityUnit: selectedItem.packagingMaterial?.capacityUnit || "",
+            packagingKind: selectedItem.packagingMaterial?.packagingKind,
             notes: selectedItem.notes || "",
             invoiceNumber: selectedItem.invoiceNumber || "",
             transactionId: selectedItem.transactionId || "",

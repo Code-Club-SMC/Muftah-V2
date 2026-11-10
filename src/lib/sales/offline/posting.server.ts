@@ -21,37 +21,12 @@ import {
   OFFLINE_SALES_POST_LIMIT,
 } from "./constants";
 import { postInvoice } from "@/server-functions/sales/invoice-posting-service";
+import { describePostError } from "./post-error-message";
 
 type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 function safePostError(error: unknown) {
-  const fallback =
-    "Invoice could not be posted. Refresh the preview and review current data.";
-  if (!(error instanceof Error)) return fallback;
-  const safeMessages = [
-    "Offline invoice identity is incomplete",
-    "Offline invoice is not approved for posting",
-    "Signed booked order",
-    "Approved existing dispatch invoice",
-    "Incorrect online invoice",
-    "A signed product",
-    "Signed product",
-    "Payment wallet requires review",
-    "Signed distributor",
-    "Signed offline factory warehouse",
-    "Posted total does not match",
-    "Custom pack sizes",
-    "Signed offline line",
-    "Signed offline pricing",
-    "Payment Due Date",
-    "Payment amount",
-    "Destination account",
-    "Bank reference",
-    "Cheque",
-  ];
-  return safeMessages.some((value) => error.message.startsWith(value))
-    ? error.message.slice(0, 500)
-    : fallback;
+  return describePostError(error);
 }
 
 async function claimBatch(batchId: string) {
@@ -165,9 +140,76 @@ async function resolveBookedCustomer(
   };
 }
 
-function buildPostingLines(
+/**
+ * Customer for a retailer or walk-in sale. An existing customer is used as is.
+ * A new walk-in is matched by mobile number first, so the same person typed on
+ * two invoices becomes one customer, and is created otherwise.
+ */
+async function resolveRetailCustomer(
+  tx: Transaction,
+  staged: typeof offlineSalesStagedInvoices.$inferSelect,
+) {
+  const normal = {
+    customerName: undefined,
+    customerMobile: undefined,
+    orderId: undefined,
+    commissionPolicy: "normal" as const,
+  };
+  if (staged.customerId) {
+    const [existing] = await tx
+      .select({ id: customers.id, customerType: customers.customerType })
+      .from(customers)
+      .where(eq(customers.id, staged.customerId))
+      .limit(1);
+    if (!existing || existing.customerType === "distributor") {
+      throw new Error("Signed customer is no longer available");
+    }
+    return { ...normal, customerId: existing.id };
+  }
+  const details = staged.customerDetails;
+  if (!details || details.name.trim().length < 2) {
+    throw new Error("New customer details are missing");
+  }
+  if (details.mobile?.trim()) {
+    const [byMobile] = await tx
+      .select({ id: customers.id })
+      .from(customers)
+      .where(
+        and(
+          sql`lower(${customers.mobileNumber}) = lower(${details.mobile.trim()})`,
+          ne(customers.customerType, "distributor"),
+        ),
+      )
+      .limit(1);
+    if (byMobile) return { ...normal, customerId: byMobile.id };
+  }
+  const [created] = await tx
+    .insert(customers)
+    .values({
+      name: details.name.trim(),
+      mobileNumber: details.mobile?.trim() || null,
+      city: details.city?.trim() || null,
+      address: details.address?.trim() || null,
+      customerType: "retailer",
+    })
+    .returning({ id: customers.id });
+  return { ...normal, customerId: created.id };
+}
+
+const cents = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
+
+/**
+ * Turns staged lines into the lines the shared invoice service posts.
+ *
+ * `additive` is true for a distributor: free cartons are shipped on top of the
+ * ordered cartons and only the ordered ones are billed. For everyone else the
+ * ordered cartons include the free ones, so the billed cartons are the ordered
+ * ones less the free ones. This is the same rule the desk calculator uses.
+ */
+export function buildPostingLines(
   stagedItems: Array<typeof offlineSalesStagedItems.$inferSelect>,
   recipeNames: Map<string, string>,
+  additive: boolean,
 ) {
   const items: Array<{
     pack: string;
@@ -187,19 +229,27 @@ function buildPostingLines(
   const snapshots: NonNullable<Parameters<typeof postInvoice>[1]["signedLineSnapshots"]> = [];
   for (const staged of stagedItems) {
     if (!staged.recipeId) throw new Error("Signed product is no longer available");
+    const price = Number(staged.baseCartonPrice);
+    const manual = staged.manualFreeCartons;
     const common = {
       pack: recipeNames.get(staged.recipeId) ?? staged.productCode,
       recipeId: staged.recipeId,
-      discountCartons: 0,
+      discountCartons: manual,
       packsPerCarton: staged.packsPerCarton,
       hsnCode: "",
-      perCartonPrice: Number(staged.baseCartonPrice),
-      retailPrice: Number(staged.baseCartonPrice) / staged.packsPerCarton,
-      isPriceOverride: false,
-      preserveStoredDistributorRate: true,
-      legacyBaseCartonRate: Number(staged.baseCartonPrice),
+      perCartonPrice: price,
+      retailPrice: price / staged.packsPerCarton,
+      isPriceOverride: staged.isPriceOverride,
+      preserveStoredDistributorRate: !staged.isPriceOverride,
+      legacyBaseCartonRate: price,
     };
     if (staged.cartonQuantity > 0) {
+      const chargedCartons = additive
+        ? staged.cartonQuantity
+        : staged.cartonQuantity - manual;
+      const dispatchedCartons = additive
+        ? staged.cartonQuantity + staged.freeCartons + manual
+        : staged.cartonQuantity;
       items.push({
         ...common,
         unitType: "carton",
@@ -209,12 +259,12 @@ function buildPostingLines(
       snapshots.push({
         stagedItemId: staged.id,
         recipeId: staged.recipeId,
-        baseCartonPrice: Number(staged.baseCartonPrice),
+        baseCartonPrice: price,
+        // The scheme only. Cartons given by hand travel as `discountCartons`.
         freeCartons: staged.freeCartons,
-        chargedUnits: staged.cartonQuantity * staged.packsPerCarton,
-        dispatchedUnits:
-          (staged.cartonQuantity + staged.freeCartons) * staged.packsPerCarton,
-        lineAmount: Number(staged.baseCartonPrice) * staged.cartonQuantity,
+        chargedUnits: chargedCartons * staged.packsPerCarton,
+        dispatchedUnits: dispatchedCartons * staged.packsPerCarton,
+        lineAmount: cents(chargedCartons * price),
         wacPerPack: Number(staged.wacPerPack),
         stockUnitsSnapshot: staged.stockUnitsSnapshot,
       });
@@ -222,6 +272,7 @@ function buildPostingLines(
     if (staged.looseUnitQuantity > 0) {
       items.push({
         ...common,
+        discountCartons: 0,
         unitType: "units",
         numberOfCartons: 0,
         numberOfUnits: staged.looseUnitQuantity,
@@ -229,13 +280,11 @@ function buildPostingLines(
       snapshots.push({
         stagedItemId: staged.id,
         recipeId: staged.recipeId,
-        baseCartonPrice: Number(staged.baseCartonPrice),
+        baseCartonPrice: price,
         freeCartons: 0,
         chargedUnits: staged.looseUnitQuantity,
         dispatchedUnits: staged.looseUnitQuantity,
-        lineAmount:
-          (Number(staged.baseCartonPrice) / staged.packsPerCarton) *
-          staged.looseUnitQuantity,
+        lineAmount: cents((price / staged.packsPerCarton) * staged.looseUnitQuantity),
         wacPerPack: Number(staged.wacPerPack),
         stockUnitsSnapshot: staged.stockUnitsSnapshot,
       });
@@ -316,6 +365,8 @@ async function postOne(stagedInvoiceId: string, actorId: string) {
     ) throw new Error("A signed product is no longer active");
     const recipeNames = new Map(recipeRows.map((recipe) => [recipe.id, recipe.name]));
     for (const payment of stagedPayments) {
+      // A salary paid by the distributor goes through no account.
+      if (payment.method === "expense_offset") continue;
       if (!payment.walletId) throw new Error("Payment wallet requires review");
       const [wallet] = await tx
         .select({ type: wallets.type })
@@ -328,6 +379,8 @@ async function postOne(stagedInvoiceId: string, actorId: string) {
 
     const customer = staged.saleType === "booked_order"
       ? await resolveBookedCustomer(tx, staged)
+      : staged.saleType === "direct_retailer"
+      ? await resolveRetailCustomer(tx, staged)
       : {
           customerId: staged.customerId ?? undefined,
           customerName: undefined,
@@ -338,7 +391,11 @@ async function postOne(stagedInvoiceId: string, actorId: string) {
     if (staged.saleType === "direct_distributor" && !customer.customerId) {
       throw new Error("Signed distributor is no longer available");
     }
-    const postingLines = buildPostingLines(stagedItems, recipeNames);
+    const postingLines = buildPostingLines(
+      stagedItems,
+      recipeNames,
+      staged.saleType === "direct_distributor",
+    );
     const posted = await postInvoice(tx, {
       customerId: customer.customerId,
       customerName: customer.customerName,
@@ -351,20 +408,35 @@ async function postOne(stagedInvoiceId: string, actorId: string) {
           .where(eq(offlineSalesWorkbooks.id, staged.workbookId))
           .limit(1)
       )[0]?.id ?? "",
-      payments: stagedPayments.map((payment) => ({
-        method: payment.method,
-        amount: Number(payment.amount),
-        walletId: payment.walletId!,
-        reference: payment.reference ?? undefined,
-        chequeNumber: payment.chequeNumber ?? undefined,
-        chequeBank: payment.chequeBank ?? undefined,
-        chequeDate: payment.chequeDate ?? undefined,
-        paymentDate: payment.paymentDate,
-        sourceRecordId: payment.id,
-      })),
+      payments: stagedPayments.map((payment) =>
+        payment.method === "expense_offset"
+          ? {
+              method: "expense_offset" as const,
+              amount: Number(payment.amount),
+              paymentDate: payment.paymentDate,
+              notes: payment.notes ?? undefined,
+              expenseType: payment.expenseType ?? "salesman_salary",
+              expenseEmployeeId: payment.expenseEmployeeId ?? undefined,
+            }
+          : {
+              method: payment.method,
+              amount: Number(payment.amount),
+              walletId: payment.walletId!,
+              reference: payment.reference ?? undefined,
+              notes: payment.notes ?? undefined,
+              instantVerify: payment.instantVerify,
+              chequeNumber: payment.chequeNumber ?? undefined,
+              chequeBank: payment.chequeBank ?? undefined,
+              chequeDate: payment.chequeDate ?? undefined,
+              paymentDate: payment.paymentDate,
+              sourceRecordId: payment.id,
+            },
+      ),
       paymentDueDate: staged.paymentDueDate ?? undefined,
-      expenses: 0,
-      invoiceDiscount: 0,
+      expenses: Number(staged.expenses),
+      expensesDescription: staged.expensesDescription ?? undefined,
+      invoiceDiscount: Number(staged.invoiceDiscount),
+      invoiceDiscountDescription: staged.invoiceDiscountDescription ?? undefined,
       remarks: staged.remarks ?? undefined,
       orderId: customer.orderId,
       items: postingLines.items,

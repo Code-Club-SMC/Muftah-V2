@@ -5,13 +5,14 @@ import { startPackagingAllocationFn } from "@/server-functions/manufacturing/pac
 import { logPackagingProgressFn } from "@/server-functions/manufacturing/packaging/log-packaging-progress-fn";
 import { completePackagingAllocationFn } from "@/server-functions/manufacturing/packaging/complete-packaging-allocation-fn";
 import { cancelPackagingAllocationFn } from "@/server-functions/manufacturing/packaging/cancel-packaging-allocation-fn";
+import { invalidateStockQueries } from "@/lib/inventory/invalidate-stock";
 
 export const useCreatePackagingAllocation = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: createPackagingAllocationFn,
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["factory-floor"] });
+    onSuccess: async (data) => {
+      await invalidateStockQueries(queryClient);
       toast.success("Packing job created successfully");
       queryClient.invalidateQueries({
         queryKey: ["mixing-run", data.mixingRunId],
@@ -32,8 +33,8 @@ export const useStartPackagingAllocation = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: startPackagingAllocationFn,
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["factory-floor"] });
+    onSuccess: async (data) => {
+      await invalidateStockQueries(queryClient);
       toast.success("Packing job started");
       queryClient.invalidateQueries({
         queryKey: ["mixing-run", data.mixingRunId],
@@ -54,8 +55,8 @@ export const useLogPackagingProgress = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: logPackagingProgressFn,
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["factory-floor"] });
+    onSuccess: async (data) => {
+      await invalidateStockQueries(queryClient);
       toast.success("Packaging progress logged successfully");
       queryClient.invalidateQueries({
         queryKey: ["mixing-run", data.mixingRunId],
@@ -76,8 +77,8 @@ export const useCompletePackagingAllocation = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: completePackagingAllocationFn,
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["factory-floor"] });
+    onSuccess: async (data) => {
+      await invalidateStockQueries(queryClient);
       toast.success("Packing job completed successfully");
       queryClient.invalidateQueries({
         queryKey: ["mixing-run", data.mixingRunId],
@@ -98,8 +99,8 @@ export const useCancelPackagingAllocation = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: cancelPackagingAllocationFn,
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["factory-floor"] });
+    onSuccess: async (data) => {
+      await invalidateStockQueries(queryClient);
       toast.success("Packing job cancelled");
       queryClient.invalidateQueries({
         queryKey: ["mixing-run", data.mixingRunId],

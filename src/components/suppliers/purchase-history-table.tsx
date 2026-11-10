@@ -1,6 +1,8 @@
 import { format } from "date-fns";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "../ui/button";
+import { packagingUnit } from "@/lib/inventory/material-units";
+import type { PackagingKind } from "@/lib/inventory/packaging-kind";
 import {
   EyeIcon,
   PencilIcon,
@@ -17,6 +19,7 @@ import {
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -33,8 +36,9 @@ import {
 } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import type { PurchaseVoidMetadata } from "./purchase-void-audit";
 
-export type PurchaseRecord = {
+export type PurchaseRecord = PurchaseVoidMetadata & {
   id: string;
   createdAt: string | Date;
   purchaseDate?: string | Date;
@@ -60,6 +64,8 @@ export type PurchaseRecord = {
     capacity: string | null;
     capacityUnit: string | null;
     minimumStockLevel: number | null;
+    measuredInKg?: boolean | null;
+    packagingKind?: PackagingKind | null;
   } | null;
   paidBy?: string | null;
   notes?: string | null;
@@ -103,12 +109,13 @@ export function groupByMaterial(records: PurchaseRecord[]): MaterialGroup[] {
     if (!group) {
       const unit =
         r.chemical?.unit ??
-        r.packagingMaterial?.capacityUnit ??
-        (materialType === "chemical" ? "kg" : "units");
+        (materialType === "packaging" || r.packagingMaterial
+          ? packagingUnit(r.packagingMaterial)
+          : "units");
       const materialName =
         r.chemical?.name ??
         r.packagingMaterial?.name ??
-        "Unknown Material";
+        r.voidSnapshot?.materialName ?? "Unknown Material";
 
       group = {
         key,
@@ -132,12 +139,14 @@ export function groupByMaterial(records: PurchaseRecord[]): MaterialGroup[] {
     const paid = parseFloat(r.paidAmount || "0") || 0;
     const date = new Date(r.purchaseDate ?? r.createdAt);
 
-    group.totalQty += qty;
-    group.totalCost += cost;
-    group.totalPaid += paid;
+    if (!r.voidedAt) {
+      group.totalQty += qty;
+      group.totalCost += cost;
+      group.totalPaid += paid;
+    }
 
     if (r.stockLeft !== null && r.stockLeft !== undefined) {
-      group.totalStockLeft = (group.totalStockLeft ?? 0) + Number(r.stockLeft);
+      group.totalStockLeft = (group.totalStockLeft ?? 0) + (r.voidedAt ? 0 : Number(r.stockLeft));
     }
 
     if (date > group.latestDate) {
@@ -207,6 +216,7 @@ type Props = {
   setDeleteDialogOpen: (open: boolean) => void;
   onRecordPayment: (item: PurchaseRecord) => void;
   onRestock?: (item: PurchaseRecord) => void;
+  onCreateReport?: (item: PurchaseRecord) => void;
   isLoading?: boolean;
   manualPagination?: boolean;
   pageCount?: number;
@@ -225,6 +235,7 @@ export const PurchaseHistoryTable = ({
   setDeleteDialogOpen,
   onRecordPayment,
   onRestock,
+  onCreateReport,
   isLoading = false,
   manualPagination = false,
   pageCount,
@@ -475,10 +486,10 @@ export const PurchaseHistoryTable = ({
 
                       {/* Payment Status Badge */}
                       <TableCell className="py-3">
-                        <PaymentBadge
+                        {group.records.every(r => r.voidedAt) ? <Badge variant="secondary">Voided</Badge> : <PaymentBadge
                           cost={group.totalCost}
                           paidAmount={group.totalPaid}
-                        />
+                        />}
                       </TableCell>
 
                       {/* Total Paid */}
@@ -514,15 +525,16 @@ export const PurchaseHistoryTable = ({
                           className="flex justify-end items-center gap-2"
                           onClick={(e) => e.stopPropagation()}
                         >
-                          {onRestock && (
+                          {onRestock && group.records.some(r => !r.voidedAt) && (
                             <Button
                               variant="outline"
                               size="sm"
                               className="h-8 gap-1.5 text-xs font-medium border-dashed hover:border-primary/50 hover:bg-primary/5"
                               onClick={() => {
                                 // Default to the most recent purchase of this material as template
-                                if (group.records[0]) {
-                                  onRestock(group.records[0]);
+                                const active = group.records.find(r => !r.voidedAt);
+                                if (active) {
+                                  onRestock(active);
                                 }
                               }}
                             >
@@ -539,11 +551,12 @@ export const PurchaseHistoryTable = ({
                       group.records.map((record) => {
                         const recCost = parseFloat(record.cost || "0");
                         const recPaid = parseFloat(record.paidAmount || "0");
-                        const recDue = recCost - recPaid;
+                        const recDue = record.voidedAt ? 0 : recCost - recPaid;
                         const recUnit =
                           record.chemical?.unit ||
-                          record.packagingMaterial?.capacityUnit ||
-                          group.unit;
+                          (record.materialType === "packaging" || record.packagingMaterial
+                            ? packagingUnit(record.packagingMaterial)
+                            : group.unit);
 
                         return (
                           <TableRow
@@ -609,7 +622,7 @@ export const PurchaseHistoryTable = ({
 
                             {/* Status */}
                             <TableCell className="py-2.5">
-                              <PaymentBadge cost={recCost} paidAmount={recPaid} />
+                              {record.voidedAt ? <Badge variant="secondary">Voided</Badge> : <PaymentBadge cost={recCost} paidAmount={recPaid} />}
                             </TableCell>
 
                             {/* Paid amount */}
@@ -639,7 +652,7 @@ export const PurchaseHistoryTable = ({
                             {/* Action menu for individual purchase */}
                             <TableCell className="py-2.5 pr-4 text-right">
                               <div className="flex justify-end items-center gap-1.5">
-                                {onRestock && (
+                                {onRestock && !record.voidedAt && (
                                   <Button
                                     variant="ghost"
                                     size="sm"
@@ -666,6 +679,7 @@ export const PurchaseHistoryTable = ({
                                     <DropdownMenuLabel className="text-xs">
                                       Purchase Record
                                     </DropdownMenuLabel>
+                                    <DropdownMenuGroup>
                                     <DropdownMenuItem
                                       onClick={() => {
                                         setSelectedItem(record);
@@ -676,7 +690,11 @@ export const PurchaseHistoryTable = ({
                                       View Details
                                     </DropdownMenuItem>
 
-                                    {recDue > 0 && (
+                                    {onCreateReport && !record.voidedAt && record.materialType === "chemical" && record.chemical && <DropdownMenuItem onClick={() => onCreateReport(record)}>
+                                      Create report
+                                    </DropdownMenuItem>}
+
+                                    {!record.voidedAt && recDue > 0 && (
                                       <DropdownMenuItem
                                         onClick={() => onRecordPayment(record)}
                                       >
@@ -685,6 +703,7 @@ export const PurchaseHistoryTable = ({
                                       </DropdownMenuItem>
                                     )}
 
+                                    {!record.voidedAt && <>
                                     <DropdownMenuSeparator />
 
                                     <DropdownMenuItem
@@ -705,8 +724,10 @@ export const PurchaseHistoryTable = ({
                                       }}
                                     >
                                       <Trash2Icon className="mr-2 size-3.5" />
-                                      Delete Record
+                                      Void purchase
                                     </DropdownMenuItem>
+                                    </>}
+                                    </DropdownMenuGroup>
                                   </DropdownMenuContent>
                                 </DropdownMenu>
                               </div>

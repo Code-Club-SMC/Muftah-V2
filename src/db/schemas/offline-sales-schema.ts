@@ -40,6 +40,12 @@ export type OfflineSalesInvoiceStatus =
   | "needs_review"
   | "posted"
   | "excluded";
+export type OfflineNewCustomer = {
+  name: string;
+  mobile: string | null;
+  city: string | null;
+  address: string | null;
+};
 export type StockReconciliationStatus = "open" | "resolved";
 export type StockReconciliationResolutionType =
   | "counted_adjustment"
@@ -253,7 +259,7 @@ export const offlineSalesStagedInvoices = pgTable(
     contentHash: text("content_hash").notNull(),
     worksheetRowNumber: integer("worksheet_row_number").notNull(),
     saleType: text("sale_type", {
-      enum: ["direct_distributor", "booked_order"],
+      enum: ["direct_distributor", "direct_retailer", "booked_order"],
     }).notNull(),
     businessDate: timestamp("business_date", { withTimezone: true }).notNull(),
     distributorCode: text("distributor_code"),
@@ -263,9 +269,21 @@ export const offlineSalesStagedInvoices = pgTable(
     orderId: text("order_id"),
     paymentDueDate: timestamp("payment_due_date", { withTimezone: true }),
     remarks: text("remarks"),
+    // Walk-in customer who does not exist yet; created when the invoice posts.
+    customerDetails: jsonb("customer_details").$type<OfflineNewCustomer>(),
+    invoiceDiscount: decimal("invoice_discount", { precision: 12, scale: 2 })
+      .notNull()
+      .default("0"),
+    invoiceDiscountDescription: text("invoice_discount_description"),
+    expenses: decimal("expenses", { precision: 12, scale: 2 })
+      .notNull()
+      .default("0"),
+    expensesDescription: text("expenses_description"),
     invoiceAmount: decimal("invoice_amount", { precision: 12, scale: 2 })
       .notNull()
       .default("0"),
+    // The total on the paper copy. If the system's own total differs, the office is warned.
+    printedTotal: decimal("printed_total", { precision: 12, scale: 2 }),
     paidAmount: decimal("paid_amount", { precision: 12, scale: 2 })
       .notNull()
       .default("0"),
@@ -323,6 +341,10 @@ export const offlineSalesStagedInvoices = pgTable(
       "offline_sales_staged_row_check",
       sql`${table.worksheetRowNumber} > 0`,
     ),
+    check(
+      "offline_sales_staged_extras_check",
+      sql`${table.invoiceDiscount} >= 0 and ${table.expenses} >= 0`,
+    ),
   ],
 );
 
@@ -344,6 +366,11 @@ export const offlineSalesStagedItems = pgTable(
     baseCartonPrice: decimal("base_carton_price", { precision: 12, scale: 2 })
       .notNull(),
     freeCartons: integer("free_cartons").default(0).notNull(),
+    // Cartons the operator gave free on top of any scheme. `freeCartons` stays the scheme only.
+    manualFreeCartons: integer("manual_free_cartons").default(0).notNull(),
+    isPriceOverride: boolean("is_price_override").default(false).notNull(),
+    // The price in the signed price list, kept when the operator changed the price.
+    listedCartonPrice: decimal("listed_carton_price", { precision: 12, scale: 2 }),
     chargedUnits: integer("charged_units").notNull(),
     dispatchedUnits: integer("dispatched_units").notNull(),
     lineAmount: decimal("line_amount", { precision: 12, scale: 2 }).notNull(),
@@ -357,6 +384,10 @@ export const offlineSalesStagedItems = pgTable(
     uniqueIndex("offline_sales_staged_items_invoice_row_idx").on(
       table.stagedInvoiceId,
       table.worksheetRowNumber,
+    ),
+    check(
+      "offline_sales_staged_items_manual_free_check",
+      sql`${table.manualFreeCartons} >= 0`,
     ),
     check(
       "offline_sales_staged_items_quantities_check",
@@ -373,7 +404,12 @@ export const offlineSalesStagedPayments = pgTable(
       .notNull()
       .references(() => offlineSalesStagedInvoices.id, { onDelete: "cascade" }),
     worksheetRowNumber: integer("worksheet_row_number").notNull(),
-    method: text("method", { enum: ["cash", "bank_transfer", "cheque"] }).notNull(),
+    method: text("method", {
+      enum: ["cash", "bank_transfer", "cheque", "expense_offset"],
+    }).notNull(),
+    // "Salesman salary paid by distributor": no account, settles an HR advance.
+    expenseType: text("expense_type"),
+    expenseEmployeeId: text("expense_employee_id"),
     amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
     walletCode: text("wallet_code").notNull(),
     walletId: text("wallet_id").references(() => wallets.id, { onDelete: "restrict" }),
@@ -382,6 +418,9 @@ export const offlineSalesStagedPayments = pgTable(
     chequeBank: text("cheque_bank"),
     chequeDate: timestamp("cheque_date", { withTimezone: true }),
     paymentDate: timestamp("payment_date", { withTimezone: true }).notNull(),
+    notes: text("notes"),
+    // Funds already confirmed in the company account, so no finance queue.
+    instantVerify: boolean("instant_verify").default(false).notNull(),
     sourceColumns: jsonb("source_columns").$type<Record<string, string>>().notNull(),
     ...timestamps,
   },

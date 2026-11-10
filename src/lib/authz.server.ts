@@ -18,6 +18,7 @@ import {
   getFirstAccessiblePath,
   hasPermission,
   LEGACY_ROLE_FALLBACKS,
+  PERMISSION_BACKFILLS,
   PERMISSION_DEFINITIONS,
   type PermissionKey,
   SYSTEM_ROLE_SEEDS,
@@ -85,6 +86,12 @@ export async function ensureRbacSeeded() {
   if (!seedPromise) {
     seedPromise = (async () => {
       await db.transaction(async (tx) => {
+        const existingPermissionKeys = new Set(
+          (await tx.query.appPermissions.findMany({ columns: { key: true } })).map(
+            (permission) => permission.key,
+          ),
+        );
+
         for (const permission of PERMISSION_DEFINITIONS) {
           await tx
             .insert(appPermissions)
@@ -144,6 +151,28 @@ export async function ensureRbacSeeded() {
                 missingPermissionIds.map((permissionId) => ({
                   roleId: roleRecord.id,
                   permissionId,
+                })),
+              )
+              .onConflictDoNothing();
+          }
+        }
+
+        for (const [newKey, sourceKey] of Object.entries(PERMISSION_BACKFILLS)) {
+          if (!sourceKey || existingPermissionKeys.has(newKey)) continue;
+          const newPermissionId = permissionIdByKey.get(newKey);
+          const sourcePermissionId = permissionIdByKey.get(sourceKey);
+          if (!newPermissionId || !sourcePermissionId) continue;
+          const holders = await tx.query.appRolePermissions.findMany({
+            where: eq(appRolePermissions.permissionId, sourcePermissionId),
+            columns: { roleId: true },
+          });
+          if (holders.length > 0) {
+            await tx
+              .insert(appRolePermissions)
+              .values(
+                holders.map((holder) => ({
+                  roleId: holder.roleId,
+                  permissionId: newPermissionId,
                 })),
               )
               .onConflictDoNothing();

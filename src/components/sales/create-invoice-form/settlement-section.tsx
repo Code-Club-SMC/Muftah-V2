@@ -33,7 +33,6 @@ type SettlementSectionProps = {
 	totalAmount: number;
 	totalProfit: number;
 	expenses: number;
-	isRetailerInvoice: boolean;
 	invoiceDiscount: number;
 	totalPayable: number;
 	payments: PaymentInput[];
@@ -47,7 +46,6 @@ export const SettlementSection = ({
 	totalAmount,
 	totalProfit,
 	expenses,
-	isRetailerInvoice,
 	invoiceDiscount,
 	totalPayable,
 	payments,
@@ -157,8 +155,7 @@ export const SettlementSection = ({
 							)}
 						</form.Field>
 
-						{isRetailerInvoice && (
-							<>
+						<>
 								<form.Field name="invoiceDiscount">
 									{(field: any) => (
 										<Field>
@@ -174,7 +171,7 @@ export const SettlementSection = ({
 												}
 											/>
 											<FieldDescription>
-												General-invoice discount.
+												Taken off the items total.
 											</FieldDescription>
 										</Field>
 									)}
@@ -194,7 +191,6 @@ export const SettlementSection = ({
 									)}
 								</form.Field>
 							</>
-						)}
 					</div>
 				</Section>
 			</div>
@@ -239,8 +235,7 @@ export const SettlementSection = ({
 									{expenses > 0 ? PKR(expenses) : "—"}
 								</span>
 							</div>
-							{isRetailerInvoice && (
-								<div className="flex items-center justify-between text-sm">
+															<div className="flex items-center justify-between text-sm">
 									<span className="flex items-center gap-1 text-muted-foreground">
 										<ArrowRight className="size-3" /> Discount
 									</span>
@@ -248,7 +243,6 @@ export const SettlementSection = ({
 										{invoiceDiscount > 0 ? `- ${PKR(invoiceDiscount)}` : "—"}
 									</span>
 								</div>
-							)}
 							<Separator />
 						</div>
 

@@ -14,9 +14,9 @@ const navigation = read("src/lib/constants.ts");
 
 describe("offline sales workspace source", () => {
   it("explains the outage flow in three plain steps", () => {
-    expect(page).toContain("Keep it ready");
+    expect(page).toContain("Prepare once");
     expect(page).toContain("Work during outage");
-    expect(page).toContain("Upload and check");
+    expect(page).toContain("Send and review");
     expect(page).toContain("database remains the final record");
   });
 
@@ -31,21 +31,28 @@ describe("offline sales workspace source", () => {
     expect(page).toContain("{canManageStock && (");
   });
 
-  it("requires safe workbook replacement and explicit unsafe retirement", () => {
-    expect(workbook).toMatch(
-      /every used row from the old workbook has been\s+uploaded/,
-    );
-    expect(workbook).toContain("usedRowsUploaded: true");
-    expect(workbook).toContain("Force-retire unsafe workbook?");
+  it("only offers an emergency retire, with a reason", () => {
+    expect(workbook).toContain("Retire these invoice numbers?");
+    expect(workbook).toContain("Computer lost or stolen");
     expect(workbook).toContain("reason.trim().length < 5");
     expect(workbook).toContain("remainingSlots <= 50");
+    expect(workbook).not.toContain("useReplaceOfflineSalesWorkbook");
+    expect(workbook).not.toContain("useIssueOfflineSalesWorkbook");
+    expect(workbook).not.toContain("Replace the invoice numbers?");
   });
 
-  it("sends outage metadata and retains form values after recoverable errors", () => {
-    expect(upload).toContain('form.set("file", file)');
-    expect(upload).toContain('form.set("outageStartedAt"');
-    expect(upload).toContain('form.set("outageEndedAt"');
-    expect(upload).toContain('form.set("outageReason"');
+  it("has no Excel workbook download or upload on any screen", () => {
+    const screens = [page, workbook, upload, review].join("\n");
+    expect(screens).not.toMatch(/xlsx|Excel/i);
+    expect(workbook).not.toContain("Download");
+    expect(upload).not.toContain("FormData");
+  });
+
+  it("sends a backup file with outage metadata and retains form values after recoverable errors", () => {
+    expect(upload).toContain("useUploadOfflineSalesBackup");
+    expect(upload).toContain("outageStartedAt: toPktIso(outageStartedAt)");
+    expect(upload).toContain("outageEndedAt: toPktIso(outageEndedAt)");
+    expect(upload).toContain("outageReason: outageReason.trim()");
     expect(upload).toContain("onSuccess: (result)");
     expect(upload).not.toContain("onError:");
     expect(upload).not.toContain('setOutageStartedAt("")');
@@ -77,7 +84,7 @@ describe("offline sales workspace source", () => {
     expect(stock).toContain("Missing Production/Transfer Record");
     expect(stock).toContain("resolutionReference");
     expect(stock).toContain("resolutionReason");
-    expect(stock).toMatch(/This screen never\s+invents stock/);
+    expect(stock).toMatch(/Marking resolved never changes\s+stock/);
   });
 
   it("adds the protected route and permission-aware navigation", () => {

@@ -1,23 +1,15 @@
 import { useMemo, useState } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { Calendar02Icon, FileUploadIcon } from "@hugeicons/core-free-icons";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
+import { FileUploadIcon } from "@hugeicons/core-free-icons";
 import { Button } from "@/components/ui/button";
 import {
   Card,
-  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import {
-  Field,
-  FieldDescription,
-  FieldGroup,
-  FieldLabel,
-} from "@/components/ui/field";
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -31,8 +23,9 @@ import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import {
   useOfflineSalesHistory,
-  useUploadOfflineSalesWorkbook,
+  useUploadOfflineSalesBackup,
 } from "@/hooks/sales/use-offline-sales";
+import { batchSource, batchStatusLabel, dateTime } from "./format";
 import { ReviewPanel } from "./review-panel";
 
 const PKT_OFFSET = "+05:00";
@@ -40,14 +33,6 @@ const PKT_OFFSET = "+05:00";
 function toPktIso(value: string) {
   if (!value) return value;
   return `${value.length === 16 ? `${value}:00` : value}${PKT_OFFSET}`;
-}
-
-function dateTime(value: Date | string) {
-  return new Intl.DateTimeFormat("en-PK", {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: "Asia/Karachi",
-  }).format(new Date(value));
 }
 
 export function UploadPanel({
@@ -63,12 +48,13 @@ export function UploadPanel({
   canReview: boolean;
   canPost: boolean;
 }) {
+  const [formOpen, setFormOpen] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [fileInputKey, setFileInputKey] = useState(0);
   const [outageStartedAt, setOutageStartedAt] = useState("");
   const [outageEndedAt, setOutageEndedAt] = useState("");
   const [outageReason, setOutageReason] = useState("");
-  const upload = useUploadOfflineSalesWorkbook();
+  const upload = useUploadOfflineSalesBackup();
   const history = useOfflineSalesHistory();
   const reviewableBatches = useMemo(
     () =>
@@ -77,6 +63,10 @@ export function UploadPanel({
       ),
     [history.data],
   );
+  // History is newest first, so open the latest batch until one is picked.
+  const activeBatchId = selectedBatchId ?? reviewableBatches[0]?.id ?? null;
+  const reasonTooShort =
+    outageReason.length > 0 && outageReason.trim().length < 5;
   const canSubmit =
     file != null &&
     outageStartedAt !== "" &&
@@ -87,65 +77,90 @@ export function UploadPanel({
   const submit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!canSubmit || !file) return;
-    const form = new FormData();
-    form.set("file", file);
-    form.set("outageStartedAt", toPktIso(outageStartedAt));
-    form.set("outageEndedAt", toPktIso(outageEndedAt));
-    form.set("outageReason", outageReason.trim());
-    upload.mutate(form, {
-      onSuccess: (result) => {
-        setFile(null);
-        setFileInputKey((value) => value + 1);
-        if (result.status !== "rejected") onSelectBatch(result.batchId);
+    upload.mutate(
+      {
+        file,
+        outageStartedAt: toPktIso(outageStartedAt),
+        outageEndedAt: toPktIso(outageEndedAt),
+        outageReason: outageReason.trim(),
       },
-    });
+      {
+        onSuccess: (result) => {
+          setFile(null);
+          setFileInputKey((value) => value + 1);
+          setFormOpen(false);
+          onSelectBatch(result.batchId);
+        },
+      },
+    );
   };
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-5">
+      <div className="flex flex-wrap items-end gap-3">
+        <Field className="min-w-64 flex-1">
+          <FieldLabel>Batch</FieldLabel>
+          <Select
+            value={activeBatchId ?? ""}
+            onValueChange={(value) => onSelectBatch(value)}
+            disabled={history.isLoading || reviewableBatches.length === 0}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder="No batches yet" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                {reviewableBatches.map((batch) => (
+                  <SelectItem key={batch.id} value={batch.id}>
+                    {dateTime(batch.uploadedAt)} ·{" "}
+                    {batchSource(batch.originalFilename)} ·{" "}
+                    {batchStatusLabel(batch.status)}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+        </Field>
+        {canUpload && (
+          <Button variant="outline" onClick={() => setFormOpen((open) => !open)}>
+            <HugeiconsIcon
+              icon={FileUploadIcon}
+              strokeWidth={2}
+              data-icon="inline-start"
+            />
+            {formOpen ? "Hide backup upload" : "Upload backup file"}
+          </Button>
+        )}
+      </div>
+
       {canUpload && (
-        <Card>
+        <Card hidden={!formOpen}>
           <CardHeader>
-            <CardTitle>Upload outage workbook</CardTitle>
+            <CardTitle>Upload backup file</CardTitle>
             <CardDescription>
-              Server reads signed rows, saves normalized records, then discards
-              Excel bytes. Original document is never stored.
+              Only if the offline computer lost its data. Use the .json file
+              saved by Send &amp; backup. Times are Pakistan factory time.
             </CardDescription>
-            <CardAction>
-              <Badge variant="outline">.xlsx · 1–10 MB</Badge>
-            </CardAction>
           </CardHeader>
-          <CardContent className="flex flex-col gap-5">
-            <Alert>
-              <HugeiconsIcon icon={Calendar02Icon} strokeWidth={2} />
-              <AlertTitle>Use Pakistan factory time</AlertTitle>
-              <AlertDescription>
-                Enter when internet stopped and returned. Invoice/payment times
-                inside Excel must fall within this window.
-              </AlertDescription>
-            </Alert>
+          <CardContent>
             <form onSubmit={submit} className="flex flex-col gap-5">
               <FieldGroup className="grid gap-5 md:grid-cols-2">
                 <Field className="md:col-span-2">
                   <FieldLabel htmlFor="offline-sales-file">
-                    Official workbook
+                    Backup file
                   </FieldLabel>
                   <Input
                     key={fileInputKey}
                     id="offline-sales-file"
                     type="file"
-                    accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    accept=".json,application/json"
                     aria-invalid={Boolean(
-                      file && !file.name.toLowerCase().endsWith(".xlsx"),
+                      file && !file.name.toLowerCase().endsWith(".json"),
                     )}
                     onChange={(event) =>
                       setFile(event.target.files?.[0] ?? null)
                     }
                   />
-                  <FieldDescription>
-                    Upload `.xlsx` only. Correct the same workbook and upload
-                    again if rows are invalid.
-                  </FieldDescription>
                 </Field>
                 <Field>
                   <FieldLabel htmlFor="outage-start">
@@ -169,21 +184,14 @@ export function UploadPanel({
                     onChange={(event) => setOutageEndedAt(event.target.value)}
                   />
                 </Field>
-                <Field
-                  className="md:col-span-2"
-                  data-invalid={
-                    outageReason.length > 0 && outageReason.trim().length < 5
-                  }
-                >
+                <Field className="md:col-span-2" data-invalid={reasonTooShort}>
                   <FieldLabel htmlFor="outage-reason">
                     What caused the outage?
                   </FieldLabel>
                   <Textarea
                     id="outage-reason"
                     value={outageReason}
-                    aria-invalid={
-                      outageReason.length > 0 && outageReason.trim().length < 5
-                    }
+                    aria-invalid={reasonTooShort}
                     placeholder="Example: factory internet line was unavailable"
                     onChange={(event) => setOutageReason(event.target.value)}
                   />
@@ -200,7 +208,7 @@ export function UploadPanel({
                       data-icon="inline-start"
                     />
                   )}
-                  {upload.isPending ? "Checking workbook…" : "Upload and check"}
+                  {upload.isPending ? "Checking…" : "Upload and check"}
                 </Button>
               </div>
             </form>
@@ -208,43 +216,8 @@ export function UploadPanel({
         </Card>
       )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Review a batch</CardTitle>
-          <CardDescription>
-            Choose an upload. Ready rows can post; warnings require
-            acknowledgement; invalid rows must be corrected in Excel and
-            uploaded again.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Field>
-            <FieldLabel>Uploaded workbook</FieldLabel>
-            <Select
-              value={selectedBatchId ?? ""}
-              onValueChange={(value) => onSelectBatch(value)}
-              disabled={history.isLoading}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select an uploaded workbook" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  {reviewableBatches.map((batch) => (
-                    <SelectItem key={batch.id} value={batch.id}>
-                      {batch.originalFilename} · {dateTime(batch.uploadedAt)} ·{" "}
-                      {batch.status.replaceAll("_", " ")}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          </Field>
-        </CardContent>
-      </Card>
-
       <ReviewPanel
-        batchId={selectedBatchId}
+        batchId={activeBatchId}
         canReview={canReview}
         canPost={canPost}
       />

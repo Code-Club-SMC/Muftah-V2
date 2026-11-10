@@ -11,9 +11,12 @@ import {
   text,
   timestamp,
   uniqueIndex,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { user } from "./auth-schema";
+import { PACKAGING_KINDS, type PackagingKind } from "@/lib/inventory/packaging-kind";
 import { suppliers } from "./core-suppliers";
+import { purchaseRecords } from "./supplier-schema";
 import { formulas, mixingRuns, mixingMaterialsUsed, packagingAllocations } from "./production-schema";
 
 const timestamps = {
@@ -68,8 +71,9 @@ export const packagingMaterials = pgTable("packaging_materials", {
     .primaryKey()
     .$defaultFn(() => createId()),
   name: text("name").notNull(),
-  // Type: Primary (Bottle/Sachet) or Master (Carton) or Extra (Cap/Label)
+  // Production role, independent of the descriptive packaging kind.
   type: text("type").notNull().default("primary"),
+  packagingKind: text("packaging_kind").$type<PackagingKind>(),
 
   // Capacity:
   // For Primary: Max fill amount (e.g. 500 for 500ml)
@@ -100,7 +104,9 @@ export const packagingMaterials = pgTable("packaging_materials", {
   minimumStockLevel: integer("minimum_stock_level").default(0),
   lastSupplierId: text("last_supplier_id").references(() => suppliers.id),
   ...timestamps,
-});
+}, (t) => [
+  check("packaging_materials_kind_check", sql`${t.packagingKind} IS NULL OR ${t.packagingKind} IN (${sql.join(PACKAGING_KINDS.map(kind => sql.raw(`'${kind}'`)), sql`, `)})`),
+]);
 
 // --- MATERIAL STOCK ---
 export const materialStock = pgTable(
@@ -710,6 +716,8 @@ export const chemicalLabReports = pgTable(
     chemicalId: text("chemical_id")
       .notNull()
       .references(() => chemicals.id, { onDelete: "cascade" }),
+    // Null only for certificates saved before purchase ownership was introduced.
+    purchaseId: text("purchase_id").references((): AnyPgColumn => purchaseRecords.id, { onDelete: "restrict" }),
 
     // Certificate Details
     productName: text("product_name").notNull(),
@@ -746,6 +754,7 @@ export const chemicalLabReports = pgTable(
   },
   (t) => ({
     chemicalIdx: index("lab_report_chemical_idx").on(t.chemicalId),
+    purchaseIdx: index("lab_report_purchase_idx").on(t.purchaseId),
     dateIdx: index("lab_report_date_idx").on(t.reportDate),
   }),
 );
@@ -825,6 +834,10 @@ export const chemicalsRelations = relations(chemicals, ({ many, one }) => ({
 export const chemicalLabReportsRelations = relations(
   chemicalLabReports,
   ({ one }) => ({
+    purchase: one(purchaseRecords, {
+      fields: [chemicalLabReports.purchaseId],
+      references: [purchaseRecords.id],
+    }),
     chemical: one(chemicals, {
       fields: [chemicalLabReports.chemicalId],
       references: [chemicals.id],

@@ -6,6 +6,7 @@ import { eq, sql } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
 import { expenseCategories } from "@/db/schemas/finance-schema";
 import { logActivityQuiet } from "@/lib/activity-logger.server";
+import Big from "big.js";
 
 type FinanceWriter = Pick<typeof db, "query" | "select" | "insert" | "update">;
 
@@ -43,7 +44,8 @@ async function ensureSupplierPurchaseCategory(tx: FinanceWriter) {
 const addPaymentSchema = z.object({
   supplierId: z.string(),
   purchaseId: z.string().optional(),
-  amount: z.string().min(1, "Amount is required"),
+  amount: z.string().regex(/^\d+(\.\d{1,2})?$/, "Enter a valid payment amount")
+    .refine(value => new Big(value).gt(0) && new Big(value).lte("9999999999.99"), "Payment amount must be positive and within range"),
   paymentDate: z.date().default(() => new Date()),
   walletId: z.string(),
   supplierName: z.string().optional(),
@@ -51,7 +53,7 @@ const addPaymentSchema = z.object({
   notes: z.string().optional(),
 });
 
-export const addPaymentFn = createServerFn()
+export const addPaymentFn = createServerFn({ method: "POST" })
   .middleware([requireSuppliersManageMiddleware])
   .inputValidator(addPaymentSchema)
   .handler(async ({ data, context }) => {
@@ -62,6 +64,36 @@ export const addPaymentFn = createServerFn()
     const resolvedSupplierName = supplier?.supplierName || data.supplierName || data.supplierId;
 
     const result = await db.transaction(async (tx) => {
+      if (data.purchaseId) {
+        // Share the void/edit lock; validate ownership and remaining balance before writing a payment.
+        const [purchase] = await tx
+          .select()
+          .from(purchaseRecords)
+          .where(eq(purchaseRecords.id, data.purchaseId)).for("update");
+
+        if (!purchase) throw new Error("Purchase record not found");
+        if (purchase.supplierId !== data.supplierId) throw new Error("Purchase does not belong to this supplier");
+        if (purchase.voidedAt) throw new Error("Purchase is already voided");
+
+        const totalCost = new Big(purchase.cost);
+        const alreadyPaid = new Big(purchase.paidAmount);
+        const incomingAmount = new Big(data.amount);
+        const remaining = totalCost.minus(alreadyPaid);
+
+        if (incomingAmount.gt(remaining)) {
+          throw new Error(
+            `Payment of PKR ${incomingAmount.toFixed(2)} exceeds the outstanding balance of PKR ${remaining.toFixed(2)} (Total: PKR ${totalCost.toFixed(2)}, Already paid: PKR ${alreadyPaid.toFixed(2)})`,
+          );
+        }
+
+        await tx
+          .update(purchaseRecords)
+          .set({
+            paidAmount: sql`${purchaseRecords.paidAmount} + ${data.amount}`,
+            updatedAt: new Date(),
+          })
+          .where(eq(purchaseRecords.id, data.purchaseId));
+      }
 
       const [payment] = await tx
         .insert(supplierPayments)
@@ -75,39 +107,6 @@ export const addPaymentFn = createServerFn()
           notes: data.notes,
         })
         .returning();
-
-      if (data.purchaseId) {
-        // Overpayment guard — fetch current state inside the transaction
-        const [purchase] = await tx
-          .select({ cost: purchaseRecords.cost, paidAmount: purchaseRecords.paidAmount })
-          .from(purchaseRecords)
-          .where(eq(purchaseRecords.id, data.purchaseId));
-
-        if (!purchase) throw new Error("Purchase record not found");
-
-        const totalCost = parseFloat(purchase.cost ?? "0");
-        const alreadyPaid = parseFloat(purchase.paidAmount ?? "0");
-        const incomingAmount = parseFloat(data.amount);
-        const remaining = totalCost - alreadyPaid;
-
-        if (incomingAmount <= 0) {
-          throw new Error("Payment amount must be greater than zero");
-        }
-
-        if (incomingAmount > remaining) {
-          throw new Error(
-            `Payment of PKR ${incomingAmount.toLocaleString()} exceeds the outstanding balance of PKR ${remaining.toLocaleString()} (Total: PKR ${totalCost.toLocaleString()}, Already paid: PKR ${alreadyPaid.toLocaleString()})`,
-          );
-        }
-
-        await tx
-          .update(purchaseRecords)
-          .set({
-            paidAmount: sql`${purchaseRecords.paidAmount} + ${data.amount}`,
-            updatedAt: new Date(),
-          })
-          .where(eq(purchaseRecords.id, data.purchaseId));
-      }
 
       if (data.walletId !== "pay_later") {
         const [wallet] = await tx

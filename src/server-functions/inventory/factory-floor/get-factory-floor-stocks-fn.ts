@@ -1,9 +1,10 @@
 import { createServerFn } from "@tanstack/react-start";
-import { eq, and, gt, desc } from "drizzle-orm";
+import { eq, and, gt, desc, asc } from "drizzle-orm";
 import Big from "big.js";
 import { db, warehouses } from "@/db";
 import { mixingRuns } from "@/db/schemas/production-schema";
 import { requireFactoryFloorViewMiddleware } from "@/lib/middlewares";
+import { chemicalReportCoverage } from "@/lib/inventory/chemical-report-coverage.server";
 
 export const getFactoryFloorStockFn = createServerFn()
   .middleware([requireFactoryFloorViewMiddleware])
@@ -14,6 +15,7 @@ export const getFactoryFloorStockFn = createServerFn()
         eq(warehouses.type, "factory_floor"),
         eq(warehouses.isActive, true),
       ),
+      orderBy: [asc(warehouses.createdAt), asc(warehouses.id)],
       with: {
         materialStock: {
           with: {
@@ -123,8 +125,12 @@ export const getFactoryFloorStockFn = createServerFn()
       statsMap.set(stat.recipeId, stat);
     });
 
+    const materialRows = factoryFloor.materialStock;
+    const reportCoverage = await chemicalReportCoverage(materialRows.flatMap(row => row.chemical ? [row.chemical.id] : []), factoryFloor.id);
     return {
       ...factoryFloor,
+      materialStock: materialRows.map(row => ({ ...row, chemical: row.chemical
+        ? { ...row.chemical, reportCoverage: reportCoverage[row.chemical.id] } : null })),
       mixedBulk,
       finishedGoodsStock: factoryFloor.finishedGoodsStock.map((fg) => {
         const stats = statsMap.get(fg.recipeId) || {

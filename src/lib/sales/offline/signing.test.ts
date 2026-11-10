@@ -58,10 +58,54 @@ describe("offline sales signing", () => {
     expect(getActiveOfflineSalesSigningVersion()).toBeNull();
   });
 
-  it("requires a valid 32-byte active key while enabled", () => {
+  it("works with no settings, using a key derived from the auth secret", () => {
     delete process.env.OFFLINE_SALES_SIGNING_KEYS;
-    expect(() => getActiveOfflineSalesSigningVersion()).toThrow(
-      "OFFLINE_SALES_SIGNING_KEYS is required",
-    );
+    delete process.env.OFFLINE_SALES_ACTIVE_SIGNING_VERSION;
+    delete process.env.OFFLINE_SALES_IMPORT_ENABLED;
+    process.env.BETTER_AUTH_SECRET = "a".repeat(64);
+    const input = {
+      workbookId: "workbook-1",
+      operatorUserId: "operator-1",
+      templateVersion: 1,
+      signingVersion: 1,
+      slotNumber: 5,
+      reservedSerial: 99,
+    };
+    expect(getActiveOfflineSalesSigningVersion()).toBe(1);
+    const token = createOfflineSalesSlotToken(input);
+    expect(verifyOfflineSalesSlotToken({ ...input, token })).toBe(true);
+    // A different auth secret cannot forge or verify the same token.
+    process.env.BETTER_AUTH_SECRET = "b".repeat(64);
+    expect(verifyOfflineSalesSlotToken({ ...input, token })).toBe(false);
+    // Each signing version has its own key.
+    process.env.BETTER_AUTH_SECRET = "a".repeat(64);
+    expect(createOfflineSalesSlotToken({ ...input, signingVersion: 2 })).not.toBe(token);
+  });
+
+  it("needs the auth secret when deployed and no keys are set", () => {
+    delete process.env.OFFLINE_SALES_SIGNING_KEYS;
+    delete process.env.BETTER_AUTH_SECRET;
+    (process.env as Record<string, string>).NODE_ENV = "production";
+    expect(() => getActiveOfflineSalesSigningVersion()).toThrow("BETTER_AUTH_SECRET is required");
+  });
+
+  it("lets explicit keys override the derived key", () => {
+    process.env.BETTER_AUTH_SECRET = "a".repeat(64);
+    const input = {
+      workbookId: "w",
+      operatorUserId: "o",
+      templateVersion: 1,
+      signingVersion: 1,
+      slotNumber: 1,
+      reservedSerial: 1,
+    };
+    const explicit = createOfflineSalesSlotToken(input);
+    delete process.env.OFFLINE_SALES_SIGNING_KEYS;
+    expect(createOfflineSalesSlotToken(input)).not.toBe(explicit);
+  });
+
+  it("rejects an explicit key that is not 32 bytes", () => {
+    process.env.OFFLINE_SALES_SIGNING_KEYS = JSON.stringify({ "1": "short" });
+    expect(() => getActiveOfflineSalesSigningVersion()).toThrow("32 bytes");
   });
 });

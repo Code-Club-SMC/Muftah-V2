@@ -1059,8 +1059,6 @@ export const updateInvoiceFn = createServerFn()
       const customerDefaultMarginUpdate = customerRecordUpdate?.defaultMargin
         ? Number(customerRecordUpdate.defaultMargin)
         : null;
-      const isRetailerInvoice =
-        customerRecordUpdate?.customerType === "retailer";
       const pricingMode = getInvoicePricingMode(
         customerRecordUpdate?.customerType,
       );
@@ -1257,9 +1255,7 @@ export const updateInvoiceFn = createServerFn()
         lineResolutions.push(lineResolution);
       }
 
-      const invoiceDiscount = isRetailerInvoice
-        ? roundMoney(Number(data.invoiceDiscount ?? 0))
-        : 0;
+      const invoiceDiscount = roundMoney(Number(data.invoiceDiscount ?? 0));
       if (invoiceDiscount > totalAmount) {
         throw new Error(
           `Discount (${invoiceDiscount.toFixed(2)}) cannot exceed items total (${totalAmount.toFixed(2)}).`,
@@ -1381,16 +1377,12 @@ export const updateInvoiceFn = createServerFn()
 
       if (
         normalizeText(existing.invoiceDiscountDescription) !==
-        normalizeText(
-          isRetailerInvoice ? data.invoiceDiscountDescription : undefined,
-        )
+        normalizeText(data.invoiceDiscountDescription)
       ) {
         updateChanges.push("Discount Note updated");
         updateChangeMetadata.invoiceDiscountDescription = {
           old: existing.invoiceDiscountDescription ?? null,
-          new: isRetailerInvoice
-            ? (data.invoiceDiscountDescription ?? null)
-            : null,
+          new: data.invoiceDiscountDescription ?? null,
         };
       }
 
@@ -1466,9 +1458,7 @@ export const updateInvoiceFn = createServerFn()
           expenses: (data.expenses ?? 0).toString(),
           expensesDescription: data.expensesDescription,
           invoiceDiscount: invoiceDiscount.toString(),
-          invoiceDiscountDescription: isRetailerInvoice
-            ? data.invoiceDiscountDescription
-            : null,
+          invoiceDiscountDescription: data.invoiceDiscountDescription ?? null,
           amount: netInvoiceAmount.toString(),
           remarks: data.remarks,
           warehouseId: data.warehouseId,

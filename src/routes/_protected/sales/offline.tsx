@@ -13,7 +13,6 @@ export const Route = createFileRoute("/_protected/sales/offline")({
 
     if (hasPermission(permissions, "sales.offline.workbooks.manage")) {
       void context.queryClient.prefetchQuery(offlineSalesQueries.workbooks());
-      void context.queryClient.prefetchQuery(offlineSalesQueries.operators());
     }
 
     if (hasPermission(permissions, "sales.offline.review")) {
@@ -26,10 +25,16 @@ export const Route = createFileRoute("/_protected/sales/offline")({
       );
     }
   },
+  // The offline desk links here with ?batch=<id> to open the batch it just sent.
+  validateSearch: (search: Record<string, unknown>): { batch?: string } => ({
+    batch:
+      typeof search.batch === "string" && search.batch ? search.batch : undefined,
+  }),
   component: OfflineSalesRoute,
 });
 
 function OfflineSalesRoute() {
+  const { batch } = Route.useSearch();
   return (
     <Suspense
       fallback={
@@ -39,7 +44,7 @@ function OfflineSalesRoute() {
         />
       }
     >
-      <OfflineSalesPage />
+      <OfflineSalesPage initialBatchId={batch} />
     </Suspense>
   );
 }

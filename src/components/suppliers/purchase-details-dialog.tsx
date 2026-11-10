@@ -6,6 +6,8 @@ import { Separator } from "@/components/ui/separator";
 import { Info } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { getWalletsListFn } from "@/server-functions/finance-fn";
+import { packagingUnit } from "@/lib/inventory/material-units";
+import { PurchaseVoidAudit, type PurchaseVoidMetadata } from "./purchase-void-audit";
 
 function resolveMethodLabel(method: string | null | undefined, wallets: { id: string; name: string }[]): string {
   if (!method) return "N/A";
@@ -23,7 +25,7 @@ function resolveMethodLabel(method: string | null | undefined, wallets: { id: st
 type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  purchase: {
+  purchase: PurchaseVoidMetadata & {
     id: string;
     createdAt: string | Date;
     cost: string;
@@ -45,6 +47,7 @@ type Props = {
       capacity: string | null;
       capacityUnit: string | null;
       minimumStockLevel: number | null;
+      measuredInKg?: boolean | null;
     } | null;
     paymentMethod?: string | null;
     transactionId?: string | null;
@@ -77,8 +80,9 @@ export const PurchaseDetailsDialog = ({
     "Unknown Item";
   const unit =
     purchase.chemical?.unit ||
-    purchase.packagingMaterial?.capacityUnit ||
-    "units";
+    (purchase.packagingMaterial
+      ? packagingUnit(purchase.packagingMaterial)
+      : "units");
 
   // Determine specific material details
   let materialDetails = null;
@@ -117,6 +121,7 @@ export const PurchaseDetailsDialog = ({
       icon={Info}
     >
       <div className="space-y-4 py-2">
+        <PurchaseVoidAudit purchase={purchase} />
         <div className="flex justify-between items-center">
           <span className="text-sm text-muted-foreground">Date</span>
           <span className="font-medium">
@@ -166,7 +171,7 @@ export const PurchaseDetailsDialog = ({
             </span>
           </div>
 
-          {balance > 0 && (
+          {!purchase.voidedAt && balance > 0 && (
             <div className="flex justify-between items-center bg-red-50 p-2 rounded">
               <span className="text-sm text-red-600 font-medium">
                 Remaining Balance

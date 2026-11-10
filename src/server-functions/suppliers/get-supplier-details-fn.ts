@@ -3,7 +3,7 @@ import { db } from "@/db";
 import { requireSuppliersViewMiddleware } from "@/lib/middlewares";
 import { z } from "zod";
 import { notFound } from "@tanstack/react-router";
-import { sql, eq } from "drizzle-orm";
+import { sql, eq, and, isNull } from "drizzle-orm";
 import { purchaseRecords } from "@/db/schemas/supplier-schema";
 
 export const getSupplierDetailsFn = createServerFn()
@@ -22,13 +22,13 @@ export const getSupplierDetailsFn = createServerFn()
     const purchasesResult = await db
       .select({ totalPurchases: sql<number>`COALESCE(SUM(cost), 0)` })
       .from(purchaseRecords)
-      .where(eq(purchaseRecords.supplierId, data.id));
+      .where(and(eq(purchaseRecords.supplierId, data.id), isNull(purchaseRecords.voidedAt)));
 
     // 2. Calculate Total Paid using paidAmount from purchaseRecords
     const paidResult = await db
       .select({ totalPaid: sql<number>`COALESCE(SUM(paid_amount), 0)` })
       .from(purchaseRecords)
-      .where(eq(purchaseRecords.supplierId, data.id));
+      .where(and(eq(purchaseRecords.supplierId, data.id), isNull(purchaseRecords.voidedAt)));
 
     const totalPurchasesNum = parseFloat(String(purchasesResult[0].totalPurchases));
     const totalPaidNum = parseFloat(String(paidResult[0].totalPaid));

@@ -1,8 +1,10 @@
 import { createId } from "@paralleldrive/cuid2";
-import { relations } from "drizzle-orm";
-import { decimal, index, pgTable, text, timestamp } from "drizzle-orm/pg-core";
-import { warehouses, chemicals, materialLots, packagingMaterials } from "./inventory-schema";
+import { isNull, relations, sql } from "drizzle-orm";
+import { check, decimal, index, jsonb, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { warehouses, chemicals, materialLots, packagingMaterials, chemicalLabReports } from "./inventory-schema";
 import { suppliers } from "./core-suppliers";
+import { user } from "./auth-schema";
+import { wallets } from "./finance-schema";
 
 const timestamps = {
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -75,12 +77,34 @@ export const purchaseRecords = pgTable(
     transactionId: text("transaction_id"),
     paidBy: text("paid_by"),
     notes: text("notes"),
+    voidedAt: timestamp("voided_at", { withTimezone: true }),
+    voidedById: text("voided_by_id").references(() => user.id),
+    voidReason: text("void_reason"),
+    voidRefundAmount: decimal("void_refund_amount", { precision: 12, scale: 2 }),
+    voidRefundWalletId: text("void_refund_wallet_id").references(() => wallets.id),
+    voidSnapshot: jsonb("void_snapshot").$type<{
+      materialName: string;
+      unit: string;
+      supplierName: string;
+    }>(),
     ...timestamps,
   },
   (t) => ({
     supplierIdx: index("purchase_supplier_idx").on(t.supplierId),
     warehouseIdx: index("purchase_warehouse_idx").on(t.warehouseId),
     dateIdx: index("purchase_date_idx").on(t.purchaseDate),
+    activeSupplierIdx: index("purchase_active_supplier_idx").on(t.supplierId, t.purchaseDate).where(isNull(t.voidedAt)),
+    voidRefundBounds: check("purchase_void_refund_bounds", sql`${t.voidRefundAmount} >= 0 AND ${t.voidRefundAmount} <= ${t.paidAmount}`),
+    voidMetadata: check("purchase_void_metadata", sql`(
+      (${t.voidedAt} IS NULL AND ${t.voidedById} IS NULL AND ${t.voidReason} IS NULL
+        AND ${t.voidRefundAmount} IS NULL AND ${t.voidRefundWalletId} IS NULL AND ${t.voidSnapshot} IS NULL)
+      OR
+      (${t.voidedAt} IS NOT NULL AND ${t.voidedById} IS NOT NULL AND ${t.voidReason} IS NOT NULL
+        AND length(btrim(${t.voidReason})) BETWEEN 1 AND 1000
+        AND ${t.voidRefundAmount} IS NOT NULL AND ${t.voidSnapshot} IS NOT NULL
+        AND ((${t.voidRefundAmount} = 0 AND ${t.voidRefundWalletId} IS NULL)
+          OR (${t.voidRefundAmount} > 0 AND ${t.voidRefundWalletId} IS NOT NULL)))
+    )`),
   }),
 );
 
@@ -112,6 +136,17 @@ export const purchaseRecordsRelations = relations(
       references: [suppliers.id],
     }),
     payments: many(supplierPayments),
+    labReports: many(chemicalLabReports),
+    voidedBy: one(user, {
+      fields: [purchaseRecords.voidedById],
+      references: [user.id],
+      relationName: "purchaseVoidedBy",
+    }),
+    voidRefundWallet: one(wallets, {
+      fields: [purchaseRecords.voidRefundWalletId],
+      references: [wallets.id],
+      relationName: "purchaseVoidRefundWallet",
+    }),
     warehouse: one(warehouses, {
       fields: [purchaseRecords.warehouseId],
       references: [warehouses.id],

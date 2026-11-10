@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { db } from "@/db";
 import { requireProductionWorkReadMiddleware } from "@/lib/middlewares";
 import { hasPermission } from "@/lib/rbac";
+import { summarizeBatchCosts } from "@/lib/production/cost-summary";
 import { z } from "zod";
 
 const getMixingRunSchema = z.object({
@@ -67,7 +68,7 @@ export const getMixingRunFn = createServerFn()
     if (!seesCosts) {
       const noChemicalCost = <T extends { costPerUnit: string | null }>(chemical: T) => ({ ...chemical, costPerUnit: "0" });
       return {
-        ...mixingRun, totalChemicalCost: null, chemicalCostPerUnit: null,
+        ...mixingRun, costSummary: null, totalChemicalCost: null, chemicalCostPerUnit: null,
         formula: { ...mixingRun.formula, estimatedIngredientsCost: null, ingredients: mixingRun.formula.ingredients.map((row) => ({ ...row, chemical: noChemicalCost(row.chemical) })) },
         materialsUsed: mixingRun.materialsUsed.map((row) => ({ ...row, costPerUnit: "0", totalCost: "0", chemical: noChemicalCost(row.chemical) })),
         packagingAllocations: mixingRun.packagingAllocations.map((row) => ({
@@ -77,5 +78,8 @@ export const getMixingRunFn = createServerFn()
       };
     }
 
-    return mixingRun;
+    return {
+      ...mixingRun,
+      costSummary: summarizeBatchCosts(mixingRun.totalChemicalCost, mixingRun.packagingAllocations),
+    };
   });

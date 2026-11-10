@@ -22,7 +22,8 @@ import { logPackagingProgressFn } from "@/server-functions/manufacturing/packagi
 import { cancelPackagingAllocationFn } from "@/server-functions/manufacturing/packaging/cancel-packaging-allocation-fn";
 import { postInvoice } from "@/server-functions/sales/invoice-posting-service";
 import { createInvoiceSchema } from "@/db/zod_schemas";
-import { createSalesReturnFn, processSalesReturnFn } from "@/server-functions/sales/sales-returns-fn";
+import { completeSalesReturnFn, createSalesReturnFn, decideSalesReturnFn } from "@/server-functions/sales/sales-returns-fn";
+import { salesReturnReasons } from "@/db/schemas/sales-erp-schema";
 import { recoverFailedProductionChemicalFn } from "@/server-functions/inventory/stock/recover-failed-production-chemical-fn";
 import { createRecipeFn } from "@/server-functions/inventory/recipes/create-recipe-fn";
 import { updateRecipeFn } from "@/server-functions/inventory/recipes/update-recipe-fn";
@@ -60,6 +61,7 @@ vi.mock("@/lib/middlewares", () => ({
   requireProductionQCReadMiddleware: {},
   requireProductionQCManageMiddleware: {},
   requireDashboardViewMiddleware: {}, requireReportsViewMiddleware: {},
+  requireSalesReturnsCreateMiddleware: {}, requireSalesReturnsApproveMiddleware: {}, requireReturnsReceiveMiddleware: {},
 }));
 vi.mock("@/lib/activity-logger.server", () => ({ logActivityQuiet: vi.fn() }));
 
@@ -501,6 +503,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("two phase production database r
   it("makes manual dispatch and return approval wait on their shared order before finished stock on separate connections", async () => {
     if (!process.env.TEST_DATABASE_URL || process.env.DATABASE_URL !== process.env.TEST_DATABASE_URL) throw new Error("Isolated audit database required");
     const f = await db.transaction(seed);
+    const [reason] = await db.insert(salesReturnReasons).values({ name: randomUUID() }).returning();
     try {
       const [allocation] = await db.insert(packagingAllocations).values({
         mixingRunId: f.run.id, recipeId: f.recipe.id, warehouseId: f.warehouse.id, operatorId: f.actor.id,
@@ -517,12 +520,13 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("two phase production database r
         stockPolicy: "strict", creditPolicy: "block", pricingPolicy: "live",
       }));
       const item = await db.query.invoiceItems.findFirst({ where: (item, { eq }) => eq(item.invoiceId, invoice.id) });
-      const returned = await invoke(createSalesReturnFn, { invoiceId: invoice.id, reason: "Good returned pack", condition: "good",
-        items: [{ invoiceItemId: item!.id, quantityReturned: 1, refundPerUnit: 20 }] }, f.actor.id) as { id: string };
+      const returned = await invoke(createSalesReturnFn, { invoiceId: invoice.id, reasonId: reason.id,
+        items: [{ invoiceItemId: item!.id, quantityReturned: 1, refundPerUnit: 20 }] }, f.actor.id) as { id: string; items: Array<{ id: string }> };
+      await invoke(decideSalesReturnFn, { returnId: returned.id, action: "approve" }, f.actor.id);
       const [carton] = await db.select().from(cartons).where(eq(cartons.packagingAllocationId, allocation.id));
       const operations = await assertAdvisorySerialization(
         ["carton_return", invoice.id], () => dispatchCartons([{ cartonId: carton.id, packsToDispatch: 1 }], invoice.id, f.actor.id),
-        () => invoke(processSalesReturnFn, { returnId: returned.id, action: "approve" }, f.actor.id),
+        () => invoke(completeSalesReturnFn, { returnId: returned.id, lines: [{ returnItemId: returned.items[0].id, goodUnits: 1 }] }, f.actor.id),
         [f.warehouse.id, f.recipe.id],
       );
       expect(operations.map(result => result.status)).toEqual(["fulfilled", "fulfilled"]);
@@ -537,9 +541,10 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("two phase production database r
       expect(ledger.find(row => row.type === "RETURN_GOOD")).toMatchObject({
         dispatchOrderId: invoice.id, packagingAllocationId: allocation.id, batchId: null, delta: 1,
       });
-      expect((await db.query.salesReturns.findFirst({ where: eq(salesReturns.id, returned.id) }))?.status).toBe("approved");
+      expect((await db.query.salesReturns.findFirst({ where: eq(salesReturns.id, returned.id) }))?.status).toBe("completed");
     } finally {
       await cleanupCommittedFixture(f);
+      await db.delete(salesReturnReasons).where(eq(salesReturnReasons.id, reason.id));
     }
   });
 
@@ -885,9 +890,11 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("two phase production database r
       );
       try {
         const item = await tx.query.invoiceItems.findFirst({ where: (item, { eq }) => eq(item.invoiceId, invoice.id) });
-        const returned = await invoke(createSalesReturnFn, { invoiceId: invoice.id, reason: "Good loose goods", condition: "good",
-          items: [{ invoiceItemId: item!.id, quantityReturned: 2, refundPerUnit: 20 }] }, f.actor.id) as { id: string };
-        await invoke(processSalesReturnFn, { returnId: returned.id, action: "approve" }, f.actor.id);
+        const [reason] = await tx.insert(salesReturnReasons).values({ name: randomUUID() }).returning();
+        const returned = await invoke(createSalesReturnFn, { invoiceId: invoice.id, reasonId: reason.id,
+          items: [{ invoiceItemId: item!.id, quantityReturned: 2, refundPerUnit: 20 }] }, f.actor.id) as { id: string; items: Array<{ id: string }> };
+        await invoke(decideSalesReturnFn, { returnId: returned.id, action: "approve" }, f.actor.id);
+        await invoke(completeSalesReturnFn, { returnId: returned.id, lines: [{ returnItemId: returned.items[0].id, goodUnits: 2 }] }, f.actor.id);
         const [stock] = await tx.select().from(finishedGoodsStock).where(eq(finishedGoodsStock.recipeId, f.recipe.id));
         expect(stock.quantityCartons).toBe(0);
         expect(stock.quantityContainers).toBe(7);
@@ -1071,15 +1078,17 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("two phase production database r
       );
       try {
         const invoiceItem = await tx.query.invoiceItems.findFirst({ where: (item, { eq }) => eq(item.invoiceId, invoice.id) });
-        const returned = await invoke(createSalesReturnFn, { invoiceId: invoice.id, reason: "Good return", condition: "good", items: [{ invoiceItemId: invoiceItem!.id, quantityReturned: 1, refundPerUnit: 20 }] }, f.actor.id) as { id: string };
-        await invoke(processSalesReturnFn, { returnId: returned.id, action: "approve" }, f.actor.id);
+        const [reason] = await tx.insert(salesReturnReasons).values({ name: randomUUID() }).returning();
+        const returned = await invoke(createSalesReturnFn, { invoiceId: invoice.id, reasonId: reason.id, items: [{ invoiceItemId: invoiceItem!.id, quantityReturned: 1, refundPerUnit: 20 }] }, f.actor.id) as { id: string; items: Array<{ id: string }> };
+        await invoke(decideSalesReturnFn, { returnId: returned.id, action: "approve" }, f.actor.id);
+        await invoke(completeSalesReturnFn, { returnId: returned.id, lines: [{ returnItemId: returned.items[0].id, goodUnits: 1 }] }, f.actor.id);
         const [restocked] = await tx.select().from(finishedGoodsStock).where(eq(finishedGoodsStock.recipeId, f.recipe.id));
         const afterReturn = await tx.select().from(cartons).where(eq(cartons.recipeId, f.recipe.id));
         expect(restocked.quantityCartons * 4 + restocked.quantityContainers).toBe(6);
         expect(afterReturn.reduce((sum, row) => sum + row.currentPacks, 0)).toBe(6);
         expect(Number(restocked.totalInventoryValue)).toBe(78);
-        await expect(invoke(processSalesReturnFn, { returnId: returned.id, action: "approve" }, f.actor.id)).rejects.toThrow("already been processed");
-        await expect(invoke(createSalesReturnFn, { invoiceId: invoice.id, reason: "Excess", condition: "good", items: [{ invoiceItemId: invoiceItem!.id, quantityReturned: 1, refundPerUnit: 20 }] }, f.actor.id)).rejects.toThrow("remaining returnable");
+        await expect(invoke(decideSalesReturnFn, { returnId: returned.id, action: "approve" }, f.actor.id)).rejects.toThrow("can't be approved");
+        await expect(invoke(createSalesReturnFn, { invoiceId: invoice.id, reasonId: reason.id, items: [{ invoiceItemId: invoiceItem!.id, quantityReturned: 1, refundPerUnit: 20 }] }, f.actor.id)).rejects.toThrow("remaining returnable");
 
         const standard = afterReturn.find(carton => carton.currentPacks === 4)!;
         await repackCarton(standard.id, 6, "Use a larger temporary box", f.actor.id);
@@ -1090,10 +1099,12 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("two phase production database r
 
         const fullInvoice = await postInvoice(tx, request(1, "carton"));
         const fullItem = await tx.query.invoiceItems.findFirst({ where: (item, { eq }) => eq(item.invoiceId, fullInvoice.id) });
-        const good = await invoke(createSalesReturnFn, { invoiceId: fullInvoice.id, reason: "Partial good return", condition: "good", items: [{ invoiceItemId: fullItem!.id, quantityReturned: 2, refundPerUnit: 20 }] }, f.actor.id) as { id: string };
-        await invoke(processSalesReturnFn, { returnId: good.id, action: "approve" }, f.actor.id);
-        const damaged = await invoke(createSalesReturnFn, { invoiceId: fullInvoice.id, reason: "Remaining damaged return", condition: "damaged", items: [{ invoiceItemId: fullItem!.id, quantityReturned: 2, refundPerUnit: 20 }] }, f.actor.id) as { id: string };
-        await invoke(processSalesReturnFn, { returnId: damaged.id, action: "approve" }, f.actor.id);
+        const good = await invoke(createSalesReturnFn, { invoiceId: fullInvoice.id, reasonId: reason.id, items: [{ invoiceItemId: fullItem!.id, quantityReturned: 2, refundPerUnit: 20 }] }, f.actor.id) as { id: string; items: Array<{ id: string }> };
+        await invoke(decideSalesReturnFn, { returnId: good.id, action: "approve" }, f.actor.id);
+        await invoke(completeSalesReturnFn, { returnId: good.id, lines: [{ returnItemId: good.items[0].id, goodUnits: 2 }] }, f.actor.id);
+        const damaged = await invoke(createSalesReturnFn, { invoiceId: fullInvoice.id, reasonId: reason.id, items: [{ invoiceItemId: fullItem!.id, quantityReturned: 2, refundPerUnit: 20 }] }, f.actor.id) as { id: string; items: Array<{ id: string }> };
+        await invoke(decideSalesReturnFn, { returnId: damaged.id, action: "approve" }, f.actor.id);
+        await invoke(completeSalesReturnFn, { returnId: damaged.id, lines: [{ returnItemId: damaged.items[0].id, damagedUnits: 2 }] }, f.actor.id);
         const [sellable] = await tx.select().from(finishedGoodsStock).where(eq(finishedGoodsStock.recipeId, f.recipe.id));
         const [damagedStock] = await tx.select().from(returnedFinishedGoodsStock).where(eq(returnedFinishedGoodsStock.recipeId, f.recipe.id));
         const goodCartons = await tx.select().from(cartons).where(eq(cartons.recipeId, f.recipe.id));

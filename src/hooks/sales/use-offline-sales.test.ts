@@ -8,7 +8,6 @@ describe("offline sales hooks source", () => {
     expect(source).toContain('all: ["offline-sales"] as const');
     for (const key of [
       "workbooks",
-      "operators",
       "history",
       "batch",
       "wallets",
@@ -18,10 +17,11 @@ describe("offline sales hooks source", () => {
     }
   });
 
-  it("downloads transient bytes and never stores workbook contents locally", () => {
-    expect(source).toContain("response.blob()");
-    expect(source).toContain('response.headers.get("Content-Disposition")');
-    expect(source).toContain("window.URL.createObjectURL(blob)");
+  it("has no Excel download or upload and keeps nothing in the browser", () => {
+    expect(source).not.toContain("response.blob()");
+    expect(source).not.toContain("createObjectURL");
+    expect(source).not.toContain("uploadOfflineSalesWorkbookFn");
+    expect(source).toContain("sendOfflineSalesEntriesFn");
     expect(source).not.toContain("localStorage");
     expect(source).not.toContain("indexedDB");
   });

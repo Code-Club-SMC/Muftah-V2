@@ -295,6 +295,7 @@ const buildRetailerData = (inv: any): RetailerInvoiceData => {
     }),
     cgstRate: 0,
     sgstRate: 0,
+    invoiceDiscount: Number(inv.invoiceDiscount) || 0,
     totalProfit: Math.round(calculateInvoiceProfit(inv.items)),
     bookedOrderNo: inv.order?.billNumber ?? undefined,
   };

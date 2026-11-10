@@ -207,6 +207,15 @@ export const requireSalesViewMiddleware = createPermissionMiddleware("sales.view
 export const requireSalesManageMiddleware = createPermissionMiddleware(
   "sales.manage",
 );
+export const requireSalesReturnsCreateMiddleware = createPermissionMiddleware(
+  "sales.returns.create",
+);
+export const requireSalesReturnsApproveMiddleware = createPermissionMiddleware(
+  "sales.returns.approve",
+);
+export const requireReturnsReceiveMiddleware = createPermissionMiddleware(
+  "inventory.returns.receive",
+);
 export const requireSalesPeopleViewMiddleware = createPermissionMiddleware(
   "sales.people.view",
 );

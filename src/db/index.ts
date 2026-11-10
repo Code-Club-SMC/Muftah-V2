@@ -113,6 +113,7 @@ export const {
   entityRecipeRates,
   ledgerExportAuditLog,
   salesPerformanceLogs,
+  salesReturnReasons,
   salesReturns,
   salesReturnItems,
   salesReturnStockTraces,

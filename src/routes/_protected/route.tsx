@@ -1,11 +1,12 @@
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
 import { AppSidebar } from "@/components/custom/app-sidebar";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
+import { viewerAccessQueryKey } from "@/hooks/use-viewer-access";
 import { getViewerAccessFn } from "@/server-functions/auth/get-viewer-access-fn";
 import { canAccessPath } from "@/lib/rbac";
 
 export const Route = createFileRoute("/_protected")({
-  beforeLoad: async ({ location }) => {
+  beforeLoad: async ({ context, location }) => {
     const viewerAccess = await getViewerAccessFn();
 
     if (!viewerAccess) {
@@ -22,6 +23,8 @@ export const Route = createFileRoute("/_protected")({
         to: viewerAccess.defaultLandingPath,
       });
     }
+
+    context.queryClient?.setQueryData(viewerAccessQueryKey, viewerAccess);
 
     return {
       viewerAccess,

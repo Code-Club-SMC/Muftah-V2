@@ -23,6 +23,9 @@ scripts/*
 !scripts/nuke-db.sh
 !scripts/super-admin-bootstrap.sh
 !scripts/check-report-pdfs.cjs
+!scripts/check-sales-return-schema.ts
+!scripts/verify-migration-integration.ts
+!scripts/verify-migration-integration.test.ts
 .codex
 .opencode
 .claude

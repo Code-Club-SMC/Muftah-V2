@@ -4,6 +4,7 @@ import { chemicalLabReports } from "@/db/schemas/inventory-schema";
 import { requireInventoryManageMiddleware } from "@/lib/middlewares";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
+import { lockOwnedLabReport } from "@/lib/inventory/lab-report-ownership.server";
 
 const analysisItemSchema = z.object({
     item: z.string().min(1, "Analysis item name is required"),
@@ -25,13 +26,15 @@ const updateLabReportSchema = z.object({
     reportDate: z.string().min(1, "Report date is required"),
     standardReference: z.string().optional(),
     notes: z.string().optional(),
-});
+}).strict();
 
-export const updateLabReportFn = createServerFn()
+export const updateLabReportFn = createServerFn({ method: "POST" })
     .middleware([requireInventoryManageMiddleware])
     .inputValidator(updateLabReportSchema)
     .handler(async ({ data }) => {
-        const [report] = await db
+      return db.transaction(async tx => {
+        await lockOwnedLabReport(tx, data.reportId);
+        const [report] = await tx
             .update(chemicalLabReports)
             .set({
                 productName: data.productName,
@@ -48,4 +51,5 @@ export const updateLabReportFn = createServerFn()
             .returning();
 
         return report;
+      });
     });

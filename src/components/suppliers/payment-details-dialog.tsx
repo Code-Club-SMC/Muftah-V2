@@ -6,6 +6,7 @@ import { Separator } from "@/components/ui/separator";
 import { Info } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { getWalletsListFn } from "@/server-functions/finance-fn";
+import { PurchaseVoidAudit, type PurchaseVoidMetadata } from "./purchase-void-audit";
 
 type Props = {
   open: boolean;
@@ -20,7 +21,8 @@ type Props = {
     bankName?: string | null;
     paidBy?: string | null;
     notes: string | null;
-    purchase: {
+    purchase: PurchaseVoidMetadata & {
+      paidAmount: string;
       materialType: string;
       chemical: { name: string } | null;
       packagingMaterial: { name: string } | null;
@@ -34,9 +36,8 @@ export const PaymentDetailsDialog = ({
   onOpenChange,
   payment,
 }: Props) => {
-  if (!payment) return null;
-
   const { data: wallets = [] } = useQuery({ queryKey: ["wallets"], queryFn: getWalletsListFn });
+  if (!payment) return null;
 
   const known: Record<string, string> = {
     cash: "Cash",
@@ -58,6 +59,7 @@ export const PaymentDetailsDialog = ({
       icon={Info}
     >
       <div className="space-y-4 py-2">
+        {payment.purchase && <PurchaseVoidAudit purchase={payment.purchase} />}
         <div className="flex justify-between items-center">
           <span className="text-sm text-muted-foreground">Date</span>
           <span className="font-medium">

@@ -6,7 +6,6 @@ import {
   eq,
   gte,
   inArray,
-  isNull,
   lt,
   lte,
   ne,
@@ -30,11 +29,12 @@ import type {
   SalesmanLedgerResponse,
 } from "@/lib/ledger-types";
 import { requireSalesViewMiddleware } from "@/lib/middlewares";
+import { returnMoneyEvents } from "@/lib/sales/returns/return-lifecycle";
+import { roundMoney } from "@/lib/sales/settlement/money";
 
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 500;
-const APPROVED_RETURN_STATUSES = ["approved", "completed"] as const;
 
 const ledgerQuerySchema = z.object({
   dateFrom: z.string().optional(),
@@ -74,31 +74,6 @@ function buildDateConditions(
   if (fromDate) conditions.push(gte(dateField, fromDate));
   if (toDate) conditions.push(lte(dateField, endOfDay(toDate)));
   return conditions;
-}
-
-function buildApprovedReturnWindow(dateFrom?: string, dateTo?: string) {
-  const fromDate = parseDateInput(dateFrom);
-  const toDate = parseDateInput(dateTo);
-  if (!fromDate && !toDate) return undefined;
-
-  const approvedConditions: any[] = [];
-  const fallbackConditions: any[] = [isNull(salesReturns.approvedAt)];
-  if (fromDate) {
-    approvedConditions.push(gte(salesReturns.approvedAt, fromDate));
-    fallbackConditions.push(gte(salesReturns.returnDate, fromDate));
-  }
-  if (toDate) {
-    approvedConditions.push(lte(salesReturns.approvedAt, endOfDay(toDate)));
-    fallbackConditions.push(lte(salesReturns.returnDate, endOfDay(toDate)));
-  }
-  return or(and(...fallbackConditions), and(...approvedConditions));
-}
-
-function buildApprovedReturnBeforeDate(fromDate: Date) {
-  return or(
-    and(isNull(salesReturns.approvedAt), lt(salesReturns.returnDate, fromDate)),
-    lt(salesReturns.approvedAt, fromDate),
-  );
 }
 
 function customerCondition(
@@ -224,9 +199,43 @@ async function buildLedger(customerIds: string[], query: LedgerQuery) {
   }
 
   const fromDate = parseDateInput(query.dateFrom);
+  const toDate = parseDateInput(query.dateTo);
+  const throughDate = toDate ? endOfDay(toDate) : null;
+  // Load through the end, with no lower bound: opening needs older receipts,
+  // and a void in this period can belong to a receipt from an older period.
+  const returnRows = await db.query.salesReturns.findMany({
+    where: and(
+      customerCondition(customerIds, salesReturns.customerId),
+      inArray(salesReturns.status, ["completed", "voided"]),
+      throughDate
+        ? or(
+            lte(salesReturns.completedAt, throughDate),
+            lte(salesReturns.voidedAt, throughDate),
+          )
+        : undefined,
+    ),
+    with: {
+      invoice: { columns: { invoiceNumber: true } },
+      stockTraces: { columns: { kind: true, totalCost: true } },
+    },
+  });
+  const returnEvents = returnRows.flatMap((row) =>
+    returnMoneyEvents(row).map((event) => ({
+      row,
+      ...event,
+      id: `${row.id}:${event.kind}`,
+      signedAmount: event.kind === "return" ? event.amount : -event.amount,
+      signedProfit: (event.kind === "return" ? 1 : -1) * (event.amount - event.cost),
+    })),
+  );
+  const periodReturnEvents = returnEvents.filter(
+    (event) =>
+      (!fromDate || event.date >= fromDate) &&
+      (!throughDate || event.date <= throughDate),
+  );
   let openingBalance = 0;
   if (fromDate) {
-    const [preInvoices, prePayments, preReturns] = await Promise.all([
+    const [preInvoices, prePayments] = await Promise.all([
       db.query.invoices.findMany({
         where: and(
           customerCondition(customerIds, invoices.customerId),
@@ -243,20 +252,15 @@ async function buildLedger(customerIds: string[], query: LedgerQuery) {
         ),
         columns: { amount: true },
       }),
-      db.query.salesReturns.findMany({
-        where: and(
-          customerCondition(customerIds, salesReturns.customerId),
-          inArray(salesReturns.status, [...APPROVED_RETURN_STATUSES]),
-          buildApprovedReturnBeforeDate(fromDate),
-        ),
-        columns: { totalAmount: true },
-      }),
     ]);
 
-    openingBalance =
+    openingBalance = roundMoney(
       preInvoices.reduce((sum, row) => sum + safeNumber(row.totalPrice), 0) -
-      prePayments.reduce((sum, row) => sum + safeNumber(row.amount), 0) -
-      preReturns.reduce((sum, row) => sum + safeNumber(row.totalAmount), 0);
+        prePayments.reduce((sum, row) => sum + safeNumber(row.amount), 0) -
+        returnEvents
+          .filter((event) => event.date < fromDate)
+          .reduce((sum, event) => sum + event.signedAmount, 0),
+    );
   }
 
   const invoiceConditions = [
@@ -273,14 +277,7 @@ async function buildLedger(customerIds: string[], query: LedgerQuery) {
       payments.effectiveDate,
     ),
   ];
-  const returnConditions = [
-    customerCondition(customerIds, salesReturns.customerId),
-    inArray(salesReturns.status, [...APPROVED_RETURN_STATUSES]),
-  ];
-  const returnWindow = buildApprovedReturnWindow(query.dateFrom, query.dateTo);
-  if (returnWindow) returnConditions.push(returnWindow);
-
-  const [invoiceRows, paymentRows, returnRows, slipRows, linkedCustomers] =
+  const [invoiceRows, paymentRows, slipRows, linkedCustomers] =
     await Promise.all([
       db.query.invoices.findMany({
         where: and(...invoiceConditions),
@@ -298,14 +295,6 @@ async function buildLedger(customerIds: string[], query: LedgerQuery) {
           wallet: { columns: { id: true, name: true, type: true } },
         },
         orderBy: [asc(payments.effectiveDate), asc(payments.id)],
-      }),
-      db.query.salesReturns.findMany({
-        where: and(...returnConditions),
-        with: {
-          invoice: { columns: { invoiceNumber: true } },
-          stockTraces: { columns: { totalCost: true } },
-        },
-        orderBy: [asc(salesReturns.approvedAt), asc(salesReturns.id)],
       }),
       db.query.slipRecords.findMany({
         where: customerCondition(customerIds, slipRecords.customerId),
@@ -337,10 +326,10 @@ async function buildLedger(customerIds: string[], query: LedgerQuery) {
   invoiceRows.forEach((row, index) =>
     timeline.push({ date: row.date, id: row.id, kind: "invoice", index }),
   );
-  returnRows.forEach((row, index) =>
+  periodReturnEvents.forEach((event, index) =>
     timeline.push({
-      date: row.approvedAt ?? row.returnDate,
-      id: row.id,
+      date: event.date,
+      id: event.id,
       kind: "return",
       index,
     }),
@@ -371,7 +360,7 @@ async function buildLedger(customerIds: string[], query: LedgerQuery) {
       const invoice = invoiceRows[event.index];
       const totalPrice = safeNumber(invoice.totalPrice);
       const slip = slips.get(invoice.id);
-      runningBalance += totalPrice;
+      runningBalance = roundMoney(runningBalance + totalPrice);
       entries.push({
         type: "invoice",
         id: invoice.id,
@@ -398,13 +387,15 @@ async function buildLedger(customerIds: string[], query: LedgerQuery) {
     }
 
     if (event.kind === "return") {
-      const salesReturn = returnRows[event.index];
-      const amount = safeNumber(salesReturn.totalAmount);
-      runningBalance -= amount;
+      const returnEvent = periodReturnEvents[event.index];
+      const salesReturn = returnEvent.row;
+      const amount = returnEvent.amount;
+      runningBalance = roundMoney(runningBalance - returnEvent.signedAmount);
       entries.push({
         type: "return",
-        id: salesReturn.id,
-        date: salesReturn.approvedAt ?? salesReturn.returnDate,
+        eventKind: returnEvent.kind,
+        id: returnEvent.id,
+        date: returnEvent.date,
         returnNumber: salesReturn.returnNumber,
         invoiceId: salesReturn.invoiceId,
         invoiceNumber: salesReturn.invoice.invoiceNumber,
@@ -421,7 +412,7 @@ async function buildLedger(customerIds: string[], query: LedgerQuery) {
 
     const payment = paymentRows[event.index];
     const amount = safeNumber(payment.amount);
-    runningBalance -= amount;
+    runningBalance = roundMoney(runningBalance - amount);
     entries.push({
       type: "payment",
       id: payment.id,
@@ -442,17 +433,14 @@ async function buildLedger(customerIds: string[], query: LedgerQuery) {
     });
   }
 
-  const periodTotalSales = invoiceRows.reduce(
-    (sum, row) => sum + safeNumber(row.totalPrice),
-    0,
+  const periodTotalSales = roundMoney(
+    invoiceRows.reduce((sum, row) => sum + safeNumber(row.totalPrice), 0),
   );
-  const periodPayments = paymentRows.reduce(
-    (sum, row) => sum + safeNumber(row.amount),
-    0,
+  const periodPayments = roundMoney(
+    paymentRows.reduce((sum, row) => sum + safeNumber(row.amount), 0),
   );
-  const periodReturns = returnRows.reduce(
-    (sum, row) => sum + safeNumber(row.totalAmount),
-    0,
+  const periodReturns = roundMoney(
+    periodReturnEvents.reduce((sum, event) => sum + event.signedAmount, 0),
   );
   const invoiceProfit = invoiceRows.reduce((sum, invoice) => {
     const lineProfit = invoice.items.reduce(
@@ -462,13 +450,10 @@ async function buildLedger(customerIds: string[], query: LedgerQuery) {
     );
     return sum + lineProfit - safeNumber(invoice.invoiceDiscount);
   }, 0);
-  const returnedProfit = returnRows.reduce((sum, salesReturn) => {
-    const returnedCost = salesReturn.stockTraces.reduce(
-      (cost, trace) => cost + safeNumber(trace.totalCost),
-      0,
-    );
-    return sum + safeNumber(salesReturn.totalAmount) - returnedCost;
-  }, 0);
+  const returnedProfit = periodReturnEvents.reduce(
+    (sum, event) => sum + event.signedProfit,
+    0,
+  );
 
   return {
     entries,
@@ -478,7 +463,7 @@ async function buildLedger(customerIds: string[], query: LedgerQuery) {
       periodTotalSales,
       periodPayments,
       periodReturns,
-      periodTotalProfit: invoiceProfit - returnedProfit,
+      periodTotalProfit: roundMoney(invoiceProfit - returnedProfit),
       invoiceCount: invoiceRows.length,
       paymentCount: paymentRows.length,
     } satisfies LedgerSummary,

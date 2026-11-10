@@ -17,6 +17,10 @@ export type OfflineClassificationInput = {
   creditHoldActive: boolean;
   creditLimitExceeded: boolean;
   staleSnapshot: boolean;
+  /** A price was typed over the signed list at the desk. The office should look at it. */
+  hasPriceOverride?: boolean;
+  /** Other reasons for the office to look, such as a printed total that differs. */
+  extraWarningCodes?: string[];
 };
 
 export type OfflineClassificationResult = {
@@ -50,10 +54,43 @@ export function classifyOfflineSalesInvoice(
     input.hasStockShortage ? "stock_shortage" : null,
     input.creditHoldActive ? "credit_hold_active" : null,
     input.creditLimitExceeded ? "credit_limit_exceeded" : null,
+    input.hasPriceOverride ? "price_override" : null,
+    ...(input.extraWarningCodes ?? []),
     input.staleSnapshot ? "stale_snapshot_context" : null,
     input.workbookStatus === "force_retired" ? "force_retired_workbook" : null,
   ].filter((value): value is string => Boolean(value));
   return warningCodes.length > 0
     ? { status: "warning", issueCodes: warningCodes }
     : { status: "ready", issueCodes: [] };
+}
+
+/**
+ * Whether the invoice's customer can still be used.
+ * - distributor sale: the signed distributor must still exist;
+ * - retailer sale to an existing customer: that customer must still exist and
+ *   must not have become a distributor;
+ * - retailer sale to a new walk-in: always usable, the customer is created on posting;
+ * - booked order: the order check covers it.
+ */
+export function isCustomerUsable(input: {
+  saleType: "direct_distributor" | "direct_retailer" | "booked_order";
+  hasSignedCustomer: boolean;
+  liveCustomer: { customerType: string } | null | undefined;
+}) {
+  if (input.saleType === "booked_order") return true;
+  if (input.saleType === "direct_distributor") return Boolean(input.liveCustomer);
+  if (!input.hasSignedCustomer) return true;
+  return Boolean(input.liveCustomer && input.liveCustomer.customerType !== "distributor");
+}
+
+/**
+ * The paper copy shows the total the desk worked out. If the system works out a
+ * different one, someone should look before the customer is billed.
+ */
+export function printedTotalDiffers(
+  printedTotal: string | number | null | undefined,
+  systemTotal: string | number,
+) {
+  if (printedTotal === null || printedTotal === undefined) return false;
+  return Math.abs(Number(printedTotal) - Number(systemTotal)) > 0.005;
 }

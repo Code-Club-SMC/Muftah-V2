@@ -66,11 +66,10 @@ describe("sales workflow regressions", () => {
       "utf8",
     );
 
-    expect(source).toContain("getReturnedUnitsByInvoiceItem");
-    expect(source).toContain("[\"pending\", \"approved\"]");
-    expect(source).toContain("[\"approved\"]");
+    expect(source).toContain("getReservedUnitsByInvoiceItem");
+    expect(source).toContain("reservedReturnUnits(");
     expect(source).toContain("remaining returnable quantity");
-    expect(source).toContain("Invoice totals are intentionally NOT mutated here.");
+    expect(source).not.toContain("processSalesReturnFn");
     expect(source).not.toContain("status: deriveInvoiceStatus(currentInvoiceCash, nextInvoiceCredit)");
   });
 
@@ -127,14 +126,14 @@ describe("sales workflow regressions", () => {
     );
 
     expect(invoiceSource).toContain('customerType: true');
-    expect(invoiceSource).toContain('const isRetailerInvoice = customerRecord?.customerType === "retailer"');
+    expect(invoiceSource).not.toContain("isRetailerInvoice");
     expect(invoiceSource).toContain("if (invoiceDiscount > totalAmount)");
     expect(invoiceSource).toContain("const totalPayable = roundMoney(");
     expect(invoiceSource).toContain("netInvoiceAmount + Number(data.expenses ?? 0)");
     expect(invoiceSource).toContain("const settlementPreview = calculateSettlement(");
     expect(invoiceSource).toContain("assertSettlementDueDate(settlementPreview, data.paymentDueDate)");
     expect(invoiceSource).toContain("invoiceDiscount: invoiceDiscount.toString()");
-    expect(invoiceSource).toContain("invoiceDiscountDescription: isRetailerInvoice");
+    expect(invoiceSource).toContain("invoiceDiscountDescription: data.invoiceDiscountDescription ?? null");
     expect(invoiceSource).toContain("amount: netInvoiceAmount.toString()");
   });
 
@@ -239,7 +238,7 @@ describe("sales workflow regressions", () => {
     expect(ledgerSource).toContain("lineProfit - safeNumber(invoice.invoiceDiscount)");
   });
 
-  it("threads approved returns through ledgers and audits full export fetches separately from paginated views", () => {
+  it("threads receipt and void events through ledgers and audits full export fetches separately from paginated views", () => {
     const ledgerSource = readFileSync(
       resolve(SALES_FN_DIR, "ledger-fn.ts"),
       "utf8",
@@ -249,14 +248,16 @@ describe("sales workflow regressions", () => {
       "utf8",
     );
 
-    expect(ledgerSource).toContain("buildApprovedReturnWindow");
-    expect(ledgerSource).toContain("buildApprovedReturnBeforeDate");
+    expect(ledgerSource).toContain("returnMoneyEvents");
+    expect(ledgerSource).toContain("salesReturns.completedAt");
+    expect(ledgerSource).toContain("salesReturns.voidedAt");
+    expect(ledgerSource).toContain("eventKind:");
     expect(ledgerSource).toContain('kind: "invoice" | "return" | "payment"');
     expect(ledgerSource).toContain('type: "return"');
     expect(ledgerSource).toContain('eq(payments.status, "confirmed")');
     expect(ledgerSource).toContain("payments.effectiveDate");
-    expect(ledgerSource).toContain("runningBalance += totalPrice");
-    expect(ledgerSource).toContain("runningBalance -= amount");
+    expect(ledgerSource).toContain("runningBalance = roundMoney(runningBalance + totalPrice)");
+    expect(ledgerSource).toContain("runningBalance = roundMoney(runningBalance - amount)");
     expect(ledgerSource).toContain('includeFullEntries: z.boolean().optional()');
     expect(ledgerSource).toContain('exportType: z.enum(["view", "print", "csv", "pdf"]).optional()');
     expect(ledgerSource).toContain("entries: query.includeFullEntries");
@@ -285,27 +286,27 @@ describe("sales workflow regressions", () => {
   });
 
   it("routes approved returns into sellable or segregated inventory based on condition", () => {
-    const returnsSource = readFileSync(
-      resolve(SALES_FN_DIR, "sales-returns-fn.ts"),
+    const stockSource = readFileSync(
+      resolve(process.cwd(), "src/lib/sales/returns/return-stock.server.ts"),
       "utf8",
     );
 
-    expect(returnsSource).toContain("finishedGoodsStock");
-    expect(returnsSource).toContain("returnedFinishedGoodsStock");
-    expect(returnsSource).toContain('if (salesReturn.condition === "good")');
-    expect(returnsSource).toContain("moved to ${salesReturn.condition} returned stock");
+    expect(stockSource).toContain("finishedGoodsStock");
+    expect(stockSource).toContain("returnedFinishedGoodsStock");
+    expect(stockSource).toContain('if (input.condition === "good")');
+    expect(stockSource).toContain('destination: input.condition === "good" ? "sellable" : input.condition');
   });
 
   it("records a stock trace row for each approved return item", () => {
-    const returnsSource = readFileSync(
-      resolve(SALES_FN_DIR, "sales-returns-fn.ts"),
+    const stockSource = readFileSync(
+      resolve(process.cwd(), "src/lib/sales/returns/return-stock.server.ts"),
       "utf8",
     );
 
-    expect(returnsSource).toContain("salesReturnStockTraces");
-    expect(returnsSource).toContain("destination =");
-    expect(returnsSource).toContain("await tx.insert(salesReturnStockTraces).values({");
-    expect(returnsSource).toContain("totalUnitsMoved");
+    expect(stockSource).toContain("salesReturnStockTraces");
+    expect(stockSource).toContain("await tx.insert(salesReturnStockTraces).values({");
+    expect(stockSource).toContain('kind: "receive"');
+    expect(stockSource).toContain("totalUnitsMoved");
   });
 
   it("keeps invoice browser-facing server functions free of top-level db imports", () => {
@@ -453,5 +454,34 @@ describe("sales workflow regressions", () => {
     expect(dialog).not.toContain("item.retailPrice");
     expect(invoicePage).toContain("invoiceDiscount={invoice.invoiceDiscount}");
     expect(invoicePage).toContain("ret.priceOverride");
+  });
+
+  it("keeps stock and money still until a return is received", () => {
+    const source = readFileSync(resolve(SALES_FN_DIR, "sales-returns-fn.ts"), "utf8");
+    const decide = source.slice(source.indexOf("export const decideSalesReturnFn"), source.indexOf("export const cancelSalesReturnFn"));
+    expect(decide).toContain('assertReturnAction(salesReturn, data.action)');
+    expect(decide).not.toContain("recalculateInvoiceSettlement");
+    expect(decide).not.toContain("finishedGoodsStock");
+    expect(source).toContain(".middleware([requireSalesReturnsCreateMiddleware])");
+    expect(source).toContain(".middleware([requireSalesReturnsApproveMiddleware])");
+    expect(source).toContain('"sales.returns.approve"');
+  });
+
+  it("binds explicit return lifecycle actions without reviving the removed process alias or relaxing invoice reads", () => {
+    const hooks = readFileSync(resolve(process.cwd(), "src/hooks/sales/use-sales-returns.ts"), "utf8");
+    const invoicePage = readFileSync(resolve(process.cwd(), "src/routes/_protected/sales/invoices/$invoiceId/index.tsx"), "utf8");
+    const dialog = readFileSync(resolve(SALES_COMPONENTS_DIR, "create-return-dialog.tsx"), "utf8");
+    const actions = readFileSync(resolve(SALES_COMPONENTS_DIR, "return-lifecycle-actions.tsx"), "utf8");
+    const detail = readFileSync(resolve(SALES_FN_DIR, "invoice-detail-fn.ts"), "utf8");
+    expect(hooks).not.toContain("processSalesReturnFn");
+    expect(invoicePage).not.toContain("useProcessSalesReturn");
+    for (const name of ["decideSalesReturnFn", "completeSalesReturnFn", "cancelSalesReturnFn", "voidSalesReturnFn"]) expect(hooks).toContain(name);
+    expect(actions).toContain("availableReturnActions(");
+    expect(actions).toContain('"sales.returns.approve"');
+    expect(actions).toContain('"inventory.returns.receive"');
+    expect(actions).toContain('"sales.view"');
+    expect(dialog).toContain("reservedReturnUnits(");
+    expect(dialog).toContain("open && canRequest");
+    expect(detail).toContain(".middleware([requireSalesViewMiddleware])");
   });
 });

@@ -77,7 +77,7 @@ export function LedgerPrintExport({
 
   const getDebitAmount = (entry: LedgerEntry) => {
     if (entry.type === "return") {
-      return entry.amount;
+      return entry.eventKind === "return" ? entry.amount : 0;
     }
     if (entry.type === "payment") {
       return entry.amount;
@@ -86,7 +86,8 @@ export function LedgerPrintExport({
   };
 
   const getCreditAmount = (entry: LedgerEntry) =>
-    entry.type === "invoice" ? entry.totalPrice : 0;
+    entry.type === "invoice" ? entry.totalPrice
+      : entry.type === "return" && entry.eventKind === "void" ? entry.amount : 0;
 
   const resolveExportEntries = async (exportType: ExportMode) => {
     if (!loadEntriesForExport) {
@@ -142,7 +143,7 @@ export function LedgerPrintExport({
           const titleDesc = isInvoice
             ? `Sales Invoice #${entry.invoiceNumber}`
             : isReturn
-              ? `Sales Return #${entry.returnNumber}`
+              ? `Sales Return${entry.eventKind === "void" ? " Void" : ""} #${entry.returnNumber}`
               : pay?.method === "cheque"
                 ? `Payment (Cheque #${pay.chequeNumber || "—"}${pay.chequeBank ? ` · ${pay.chequeBank}` : ""})`
                 : `Payment (${methodLabel}${pay?.walletName ? ` · ${pay.walletName}` : ""})`;
@@ -158,7 +159,7 @@ export function LedgerPrintExport({
           const vrNo = isInvoice
             ? entry.invoiceNumber
             : isReturn
-              ? `RET-${entry.returnNumber ?? "—"}`
+              ? `${entry.eventKind === "void" ? "VOID" : "RET"}-${entry.returnNumber ?? "—"}`
               : (pay?.reference || pay?.chequeNumber || (pay ? `REC-${pay.id.slice(-6).toUpperCase()}` : "—"));
 
           const creditStyle = isReturn
@@ -375,7 +376,7 @@ export function LedgerPrintExport({
         const vrNo = isInvoice
           ? entry.invoiceNumber
           : isReturn
-            ? `RET-${entry.returnNumber ?? ""}`
+            ? `${entry.eventKind === "void" ? "VOID" : "RET"}-${entry.returnNumber ?? ""}`
             : (pay?.reference || pay?.chequeNumber || (pay ? `REC-${pay.id.slice(-6).toUpperCase()}` : "—"));
         const digitalMatch = pay?.notes?.match(/^\[(.*?)\]/);
         const provider = digitalMatch ? digitalMatch[1] : null;
@@ -391,7 +392,7 @@ export function LedgerPrintExport({
         const desc = isInvoice
           ? `Sales Invoice #${entry.invoiceNumber} (Paid Amount: ${fmtPKR(entry.paidAmount)}, Returned Amount: ${fmtPKR(entry.returnedAmount)}, Outstanding Amount: ${fmtPKR(entry.outstandingAmount)})`
           : isReturn
-            ? `Sales Return #${entry.returnNumber} (Invoice ${entry.invoiceNumber}) - ${entry.reason}`
+            ? `Sales Return${entry.eventKind === "void" ? " Void" : ""} #${entry.returnNumber} (Invoice ${entry.invoiceNumber}) - ${entry.reason}`
             : pay?.method === "cheque"
               ? `Payment (Cheque #${pay.chequeNumber || "—"} · ${pay.chequeBank || "—"}) for Invoice ${entry.invoiceNumber}${pay.reference ? ` Ref: ${pay.reference}` : ""}${displayNotes ? ` · ${displayNotes}` : ""}`
               : `Payment (${methodLabel}${pay?.walletName ? ` · ${pay.walletName}` : ""}) for Invoice ${entry.invoiceNumber}${entry.reference ? ` Ref: ${entry.reference}` : ""}${displayNotes ? ` · ${displayNotes}` : ""}`;

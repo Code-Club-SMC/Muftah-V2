@@ -5,6 +5,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { invalidateStockQueries } from "@/lib/inventory/invalidate-stock";
 import { postOfflineSalesBatchFn } from "@/server-functions/sales/offline-post-fn";
 import {
   acknowledgeOfflineSalesWarningFn,
@@ -20,20 +21,16 @@ import {
   listStockReconciliationIssuesFn,
   resolveStockReconciliationIssueFn,
 } from "@/server-functions/sales/offline-stock-reconciliation-fn";
-import { uploadOfflineSalesWorkbookFn } from "@/server-functions/sales/offline-upload-fn";
+import { offlineBackupSchema } from "@/lib/sales/offline/entry-schema";
+import { sendOfflineSalesEntriesFn } from "@/server-functions/sales/offline-entries-fn";
 import {
-  downloadOfflineSalesWorkbookFn,
   forceRetireOfflineSalesWorkbookFn,
-  issueOfflineSalesWorkbookFn,
-  listOfflineSalesOperatorsFn,
   listOfflineSalesWorkbooksFn,
-  replaceOfflineSalesWorkbookFn,
 } from "@/server-functions/sales/offline-workbooks-fn";
 
 export const offlineSalesKeys = {
   all: ["offline-sales"] as const,
   workbooks: () => [...offlineSalesKeys.all, "workbooks"] as const,
-  operators: () => [...offlineSalesKeys.all, "operators"] as const,
   history: () => [...offlineSalesKeys.all, "history"] as const,
   batches: () => [...offlineSalesKeys.all, "batch"] as const,
   batch: (batchId: string) => [...offlineSalesKeys.batches(), batchId] as const,
@@ -48,12 +45,6 @@ export const offlineSalesQueries = {
       queryKey: offlineSalesKeys.workbooks(),
       queryFn: () => listOfflineSalesWorkbooksFn(),
       staleTime: 15_000,
-    }),
-  operators: () =>
-    queryOptions({
-      queryKey: offlineSalesKeys.operators(),
-      queryFn: () => listOfflineSalesOperatorsFn(),
-      staleTime: 60_000,
     }),
   history: () =>
     queryOptions({
@@ -85,32 +76,8 @@ function message(error: unknown, fallback: string) {
   return error instanceof Error && error.message ? error.message : fallback;
 }
 
-function filenameFromDisposition(disposition: string | null) {
-  return (
-    disposition?.match(/filename="([^"]+)"/)?.[1] ?? "offline-sales-F01.xlsx"
-  );
-}
-
-async function saveWorkbookResponse(response: Response) {
-  const blob = await response.blob();
-  const url = window.URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = filenameFromDisposition(
-    response.headers.get("Content-Disposition"),
-  );
-  document.body.append(anchor);
-  anchor.click();
-  anchor.remove();
-  window.URL.revokeObjectURL(url);
-}
-
 export function useOfflineSalesWorkbooks(enabled = true) {
   return useQuery({ ...offlineSalesQueries.workbooks(), enabled });
-}
-
-export function useOfflineSalesOperators(enabled = true) {
-  return useQuery({ ...offlineSalesQueries.operators(), enabled });
 }
 
 export function useOfflineSalesHistory(enabled = true) {
@@ -154,53 +121,6 @@ function useInvalidateOfflineSales() {
   };
 }
 
-export function useIssueOfflineSalesWorkbook() {
-  const invalidate = useInvalidateOfflineSales();
-  return useMutation({
-    mutationKey: ["offline-sales", "issue-workbook"],
-    mutationFn: (operatorUserId: string) =>
-      issueOfflineSalesWorkbookFn({ data: { operatorUserId } }),
-    onSuccess: async () => {
-      toast.success("Official offline sales workbook issued");
-      await invalidate();
-    },
-    onError: (error) => toast.error(message(error, "Could not issue workbook")),
-  });
-}
-
-export function useDownloadOfflineSalesWorkbook() {
-  return useMutation({
-    mutationKey: ["offline-sales", "download-workbook"],
-    mutationFn: async (workbookId: string) => {
-      const response = await downloadOfflineSalesWorkbookFn({
-        data: { workbookId },
-      });
-      await saveWorkbookResponse(response);
-    },
-    onSuccess: () => toast.success("Workbook downloaded"),
-    onError: (error) =>
-      toast.error(message(error, "Could not download workbook")),
-  });
-}
-
-export function useReplaceOfflineSalesWorkbook() {
-  const invalidate = useInvalidateOfflineSales();
-  return useMutation({
-    mutationKey: ["offline-sales", "replace-workbook"],
-    mutationFn: (data: {
-      workbookId: string;
-      usedRowsUploaded: true;
-      operatorUserId?: string;
-    }) => replaceOfflineSalesWorkbookFn({ data }),
-    onSuccess: async () => {
-      toast.success("Workbook replaced. Download the new official file.");
-      await invalidate();
-    },
-    onError: (error) =>
-      toast.error(message(error, "Could not replace workbook")),
-  });
-}
-
 export function useForceRetireOfflineSalesWorkbook() {
   const invalidate = useInvalidateOfflineSales();
   return useMutation({
@@ -208,29 +128,49 @@ export function useForceRetireOfflineSalesWorkbook() {
     mutationFn: (data: { workbookId: string; reason: string }) =>
       forceRetireOfflineSalesWorkbookFn({ data }),
     onSuccess: async () => {
-      toast.success("Unsafe workbook force-retired");
+      toast.success("Offline invoice numbers retired");
       await invalidate();
     },
     onError: (error) =>
-      toast.error(message(error, "Could not retire workbook")),
+      toast.error(message(error, "Could not retire the invoice numbers")),
   });
 }
 
-export function useUploadOfflineSalesWorkbook() {
+/** Office-side upload of the backup file the offline desk can download. */
+export function useUploadOfflineSalesBackup() {
   const invalidate = useInvalidateOfflineSales();
   return useMutation({
-    mutationKey: ["offline-sales", "upload"],
-    mutationFn: (data: FormData) => uploadOfflineSalesWorkbookFn({ data }),
+    mutationKey: ["offline-sales", "upload-backup"],
+    mutationFn: async (input: {
+      file: File;
+      outageStartedAt: string;
+      outageEndedAt: string;
+      outageReason: string;
+    }) => {
+      let raw: unknown;
+      try {
+        raw = JSON.parse(await input.file.text());
+      } catch {
+        throw new Error("That file is not an offline desk backup.");
+      }
+      const parsed = offlineBackupSchema.safeParse(raw);
+      if (!parsed.success) throw new Error("That file is not an offline desk backup.");
+      return await sendOfflineSalesEntriesFn({
+        data: {
+          workbookId: parsed.data.workbookId,
+          outageStartedAt: input.outageStartedAt,
+          outageEndedAt: input.outageEndedAt,
+          outageReason: input.outageReason,
+          source: "backup_file",
+          entries: parsed.data.entries,
+        },
+      });
+    },
     onSuccess: async (result) => {
-      toast.success(
-        result.status === "rejected"
-          ? "Workbook rejected as unsafe"
-          : "Workbook checked. Review results before posting.",
-      );
+      toast.success("Backup checked. Review results before posting.");
       await invalidate(result.batchId);
     },
-    onError: (error) =>
-      toast.error(message(error, "Could not upload workbook")),
+    onError: (error) => toast.error(message(error, "Could not upload backup")),
   });
 }
 
@@ -306,6 +246,7 @@ export const useResolveOfflineSalesOrderConflict = batchMutation({
 });
 
 export function usePostOfflineSalesBatch() {
+  const queryClient = useQueryClient();
   const invalidate = useInvalidateOfflineSales();
   return useMutation({
     mutationKey: ["offline-sales", "post-batch"],
@@ -319,6 +260,7 @@ export function usePostOfflineSalesBatch() {
       return result;
     },
     onSuccess: async (result) => {
+      await invalidateStockQueries(queryClient);
       toast.success(
         result.hasMore
           ? "Posting paused safely. Press Post again to continue."

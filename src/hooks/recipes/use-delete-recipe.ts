@@ -7,7 +7,8 @@ export const useDeleteRecipe = () => {
 
   return useMutation({
     mutationFn: deleteRecipeFn,
-    onSuccess: (result) => {
+    onSuccess: async (result) => {
+      await queryClient.invalidateQueries({ queryKey: ["low-stock-alerts"] });
       toast.success(result.archived ? "Format archived. Existing records are kept." : "Unused format removed.");
       queryClient.invalidateQueries({ queryKey: ["recipes"] });
       queryClient.invalidateQueries({ queryKey: ["batch-packing"] });

@@ -14,11 +14,12 @@ export const getSuppliersFn = createServerFn()
     });
 
     return suppliersData.map((supplier) => {
-      const totalPurchases = supplier.purchases.reduce(
+      const active = supplier.purchases.filter((purchase) => !purchase.voidedAt);
+      const totalPurchases = active.reduce(
         (acc, p) => acc + parseFloat(p.cost),
         0,
       );
-      const totalPayments = supplier.purchases.reduce(
+      const totalPayments = active.reduce(
         (acc, p) => acc + parseFloat(p.paidAmount || "0"),
         0,
       );

@@ -12,14 +12,15 @@ export const getPurchaseEditStateFn = createServerFn()
   .middleware([requireSuppliersManageMiddleware])
   .inputValidator(z.object({ id: z.string().min(1) }))
   .handler(({ data }) => db.transaction(async (tx) => {
-    const [purchase] = await tx.select().from(purchaseRecords).where(eq(purchaseRecords.id, data.id));
+    const [purchase] = await tx.select().from(purchaseRecords).where(eq(purchaseRecords.id, data.id)).for("update");
     if (!purchase) throw new Error("Purchase record not found");
+    if (purchase.voidedAt) throw new Error("Purchase is already voided");
     const ref = purchase.materialType === "chemical"
       ? { materialType: "chemical" as const, materialId: purchase.chemicalId! }
       : { materialType: "packaging" as const, materialId: purchase.packagingMaterialId! };
     await lockMaterialStock(tx, [purchase.warehouseId], [ref]);
 
-    // What deleting would give back, and the wallet that paid it, so the delete form can start with them.
+    // Default refund for voiding, to the wallet that paid it.
     const { payments, walletIds } = await loadPurchasePayments(tx, purchase.id);
     const { paid, defaultWalletId } = planPurchaseRefund({ payments, walletIds });
     return {

@@ -1,18 +1,25 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
-import { and, eq, inArray, sql } from "drizzle-orm";
-import { db, user, warehouses, products, packagingMaterials, recipes, finishedGoodsStock, cartons, adjustmentLog, customers, invoices, invoiceItems, inventoryAuditLog, wallets, payments, transactions, slipRecords } from "@/db";
+import { and, eq, inArray, ne, sql } from "drizzle-orm";
+import { db, user, warehouses, products, packagingMaterials, recipes, finishedGoodsStock, cartons, adjustmentLog, customers, invoices, invoiceItems, inventoryAuditLog, wallets, payments, transactions, slipRecords, returnedFinishedGoodsStock } from "@/db";
 import { formulas, mixingRuns, packagingAllocations } from "@/db/schemas/production-schema";
 import { createInvoiceFn, updateInvoiceFn, deleteInvoiceFn } from "@/server-functions/sales/invoices-fn";
 import { postInvoice } from "@/server-functions/sales/invoice-posting-service";
 import { createInvoiceSchema } from "@/db/zod_schemas";
-import { createSalesReturnFn, processSalesReturnFn } from "@/server-functions/sales/sales-returns-fn";
+import { cancelSalesReturnFn, completeSalesReturnFn, createSalesReturnFn, decideSalesReturnFn, voidSalesReturnFn } from "@/server-functions/sales/sales-returns-fn";
 import { processReturn } from "@/lib/cartons/carton-extended.service";
 import { closeBatch, topUpCarton } from "@/lib/cartons/carton.service";
-import { discountRules, salesReturnStockTraces } from "@/db/schemas/sales-erp-schema";
+import { discountRules, salesmen, salesReturnReasons, salesReturnItems, salesReturns, salesReturnStockTraces } from "@/db/schemas/sales-erp-schema";
 import { transferStockFn } from "@/server-functions/inventory/stock/transfer-stock-fn";
 import { getCartonAvailabilityFn } from "@/server-functions/inventory/get-carton-availability-fn";
 import { completePackagingAllocationCore } from "@/server-functions/manufacturing/packaging/complete-packaging-allocation-core.server";
+import { addPaymentsToInvoice } from "@/server-functions/sales/settlement-service";
+import { generateDistributorLedgerFn } from "@/server-functions/sales/ledger-fn";
+import { buildSnapshot, getCompanyReportData, loadContext } from "@/server-functions/reports/profit-loss/company-reporting-core";
+import { createReportDateRange } from "@/server-functions/reports/profit-loss/reporting-math";
+import { fetchScopedSummary } from "@/server-functions/reports/profit-loss/reporting-core";
+import { exportPnlCsvFn } from "@/server-functions/reports/profit-loss/export-csv-fn";
+import { formatReportMoney } from "@/lib/report-format";
 
 // Only HTTP/session transport is bypassed. Real validation, callbacks, SQL,
 // nested transactions, receipt and invoice/return accounting are exercised.
@@ -26,16 +33,17 @@ vi.mock("@tanstack/react-start", () => ({ createServerFn: () => {
   };
   return builder;
 } }));
-vi.mock("@/lib/middlewares", () => ({ requireSalesViewMiddleware: {}, requireSalesManageMiddleware: {}, requireInventoryManageMiddleware: {}, requireInventoryViewMiddleware: {} }));
+vi.mock("@/lib/middlewares", () => ({ requireSalesViewMiddleware: {}, requireSalesManageMiddleware: {}, requireInventoryManageMiddleware: {}, requireInventoryViewMiddleware: {}, requireSalesReturnsCreateMiddleware: {}, requireSalesReturnsApproveMiddleware: {}, requireReturnsReceiveMiddleware: {}, requireReportsViewMiddleware: {} }));
 vi.mock("@/lib/activity-logger.server", () => ({ logActivityQuiet: vi.fn() }));
+vi.mock("@tanstack/react-start/server", () => ({ getRequestHeaders: () => ({}) }));
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 type Fixture = Awaited<ReturnType<typeof seed>>;
 const rollback = new Error("rollback invoice fixture");
 
-async function invoke(fn: unknown, data: unknown, actorId: string): Promise<any> {
+async function invoke(fn: unknown, data: unknown, actorId: string, permissions: string[] = []): Promise<any> {
   const session = { user: { id: actorId, name: "Invoice test" } };
-  return (fn as Function)({ data, context: { session, authContext: { session } } });
+  return (fn as Function)({ data, context: { session, authContext: { session, permissions: new Set(permissions) } } });
 }
 
 async function seed(tx: Tx, usesCartons = true) {
@@ -54,7 +62,8 @@ async function seed(tx: Tx, usesCartons = true) {
   const [recipe] = await tx.insert(recipes).values({ productId: product.id, formulaId: formula.id, name: id, batchSize: "20", batchUnit: "kg", containerType: "pack", containerPackagingId: primary.id, cartonPackagingId: usesCartons ? master.id : null, containersPerCarton: usesCartons ? 4 : 0, fillAmount: "1000", fillUnit: "g" }).returning();
   const [run] = await tx.insert(mixingRuns).values({ batchId: id, formulaId: formula.id, warehouseId: warehouse.id, operatorId: actor.id, targetBulkQuantity: "20", bulkUnit: "kg", status: "completed" }).returning();
   const [customer] = await tx.insert(customers).values({ name: id, customerType: "retailer" }).returning();
-  return { actor, warehouse, recipe, run, customer, usesCartons };
+  const [reason] = await tx.insert(salesReturnReasons).values({ name: id }).returning();
+  return { actor, warehouse, recipe, run, customer, usesCartons, reason };
 }
 
 async function withFixture(check: (tx: Tx, f: Fixture) => Promise<void>, usesCartons = true) {
@@ -90,12 +99,27 @@ function request(f: Fixture, items: ReturnType<typeof line>[]) {
   return { customerId: f.customer.id, warehouseId: f.warehouse.id, paymentDueDate: new Date("2099-01-01"), items };
 }
 
-async function approveGoodReturn(f: Fixture, invoiceId: string, invoiceItemId: string, quantities: number[]) {
-  const salesReturn = await invoke(createSalesReturnFn, {
-    invoiceId, reason: "Recorded cost regression", condition: "good",
+type CreatedReturn = { id: string; items: Array<{ id: string; quantityReturned: number }> };
+
+async function requestReturn(f: Fixture, invoiceId: string, invoiceItemId: string, quantities: number[]): Promise<CreatedReturn> {
+  return invoke(createSalesReturnFn, {
+    invoiceId, reasonId: f.reason.id,
     items: quantities.map(quantityReturned => ({ invoiceItemId, quantityReturned, refundPerUnit: 10 })),
   }, f.actor.id);
-  await invoke(processSalesReturnFn, { returnId: salesReturn.id, action: "approve", notes: "Recorded cost regression" }, f.actor.id);
+}
+
+// Named receiveReturn because receive(tx, f, units, cost) already receives packaging stock.
+async function receiveReturn(f: Fixture, salesReturn: CreatedReturn, split: (units: number) => { goodUnits?: number; damagedUnits?: number; expiredUnits?: number } = units => ({ goodUnits: units })) {
+  return invoke(completeSalesReturnFn, {
+    returnId: salesReturn.id,
+    lines: salesReturn.items.map(item => ({ returnItemId: item.id, ...split(item.quantityReturned) })),
+  }, f.actor.id);
+}
+
+async function approveGoodReturn(f: Fixture, invoiceId: string, invoiceItemId: string, quantities: number[]) {
+  const salesReturn = await requestReturn(f, invoiceId, invoiceItemId, quantities);
+  await invoke(decideSalesReturnFn, { returnId: salesReturn.id, action: "approve" }, f.actor.id);
+  await receiveReturn(f, salesReturn);
   return salesReturn;
 }
 
@@ -106,6 +130,20 @@ async function readCartonAvailability(tx: Tx, f: Fixture) {
     const rows = await invoke(getCartonAvailabilityFn, { warehouseId: f.warehouse.id }, f.actor.id);
     return rows.find((row: { recipeId: string }) => row.recipeId === f.recipe.id);
   } finally { spy.mockRestore(); }
+}
+
+// Historical readers use the root DB. Bind them to the same rollback-only SQL
+// connection, without mocking their queries, event expansion or accounting.
+async function readAccounting<T>(tx: Tx, read: () => Promise<T>): Promise<T> {
+  const spies: Array<{ mockRestore: () => void }> = [
+    vi.spyOn(db, "select").mockImplementation(tx.select.bind(tx) as typeof db.select),
+    vi.spyOn(db, "insert").mockImplementation(tx.insert.bind(tx) as typeof db.insert),
+  ];
+  for (const name of ["invoices", "payments", "salesReturns", "slipRecords", "customers", "expenses", "orderBookers", "travelLogs", "recipes"] as const) {
+    spies.push(vi.spyOn(db.query[name], "findMany").mockImplementation(tx.query[name].findMany.bind(tx.query[name]) as any));
+  }
+  spies.push(vi.spyOn(db.query.customers, "findFirst").mockImplementation(tx.query.customers.findFirst.bind(tx.query.customers)));
+  try { return await read(); } finally { spies.forEach(spy => spy.mockRestore()); }
 }
 
 async function assertStock(tx: Tx, f: Fixture, units: number, value = units * 10) {
@@ -119,7 +157,8 @@ async function assertStock(tx: Tx, f: Fixture, units: number, value = units * 10
   if (f.usesCartons) {
     const physical = await tx.select().from(cartons).where(and(eq(cartons.recipeId, f.recipe.id), eq(cartons.warehouseId, f.warehouse.id), inArray(cartons.status, ["PARTIAL", "COMPLETE", "SEALED", "ON_HOLD"])));
     expect(physical.reduce((total, carton) => total + carton.currentPacks, 0)).toBe(units);
-    const ledger = await tx.select({ total: sql<string>`coalesce(sum(${adjustmentLog.delta}), 0)` }).from(adjustmentLog).innerJoin(cartons, eq(adjustmentLog.cartonId, cartons.id)).where(and(eq(cartons.recipeId, f.recipe.id), eq(cartons.warehouseId, f.warehouse.id)));
+    const ledger = await tx.select({ total: sql<string>`coalesce(sum(${adjustmentLog.delta}), 0)` }).from(adjustmentLog).innerJoin(cartons, eq(adjustmentLog.cartonId, cartons.id)).where(and(eq(cartons.recipeId, f.recipe.id), eq(cartons.warehouseId, f.warehouse.id), ne(adjustmentLog.type, "RETURN_DAMAGED")));
+    // Damaged returns are logged against the source carton but never re-enter sellable packs.
     expect(Number(ledger[0].total)).toBe(units);
     const logs = await tx.select().from(adjustmentLog).innerJoin(cartons, eq(adjustmentLog.cartonId, cartons.id)).where(eq(cartons.recipeId, f.recipe.id));
     for (const row of logs) {
@@ -540,17 +579,18 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("reachable two-phase invoice mut
     });
   });
 
-  it("rejects edits and deletion for reserved and approved sales returns", async () => {
+  it("rejects edits and deletion once a sales return exists, at every step", async () => {
     await withFixture(async (tx, f) => {
       await receive(tx, f, 4);
       const invoice = await invoke(createInvoiceFn, request(f, [line(f, 2)]), f.actor.id);
       const [item] = await tx.select().from(invoiceItems).where(eq(invoiceItems.invoiceId, invoice.id));
-      const salesReturn = await invoke(createSalesReturnFn, { invoiceId: invoice.id, reason: "Test return", condition: "good", items: [{ invoiceItemId: item.id, quantityReturned: 1, refundPerUnit: 10 }] }, f.actor.id);
-      for (const approved of [false, true]) {
-        if (approved) await invoke(processSalesReturnFn, { returnId: salesReturn.id, action: "approve" }, f.actor.id);
+      const salesReturn = await requestReturn(f, invoice.id, item.id, [1]);
+      for (const step of ["requested", "approved", "completed"] as const) {
+        if (step === "approved") await invoke(decideSalesReturnFn, { returnId: salesReturn.id, action: "approve" }, f.actor.id);
+        if (step === "completed") await receiveReturn(f, salesReturn);
         await expect(invoke(updateInvoiceFn, { ...request(f, [line(f, 1)]), id: invoice.id }, f.actor.id)).rejects.toThrow("sales return activity");
         await expect(invoke(deleteInvoiceFn, { id: invoice.id }, f.actor.id)).rejects.toThrow("sales return activity");
-        await assertStock(tx, f, approved ? 3 : 2);
+        await assertStock(tx, f, step === "completed" ? 3 : 2);
       }
     });
   });
@@ -588,8 +628,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("reachable two-phase invoice mut
       const invoice = await invoke(createInvoiceFn, request(f, [line(f, 3)]), f.actor.id);
       await invoke(updateInvoiceFn, { ...request(f, [line(f, 1)]), id: invoice.id }, f.actor.id);
       const [item] = await tx.select().from(invoiceItems).where(eq(invoiceItems.invoiceId, invoice.id));
-      const salesReturn = await invoke(createSalesReturnFn, { invoiceId: invoice.id, reason: "Edited invoice", condition: "good", items: [{ invoiceItemId: item.id, quantityReturned: 1, refundPerUnit: 10 }] }, f.actor.id);
-      await invoke(processSalesReturnFn, { returnId: salesReturn.id, action: "approve" }, f.actor.id);
+      await approveGoodReturn(f, invoice.id, item.id, [1]);
       await assertStock(tx, f, 4);
     });
   });
@@ -634,6 +673,270 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("reachable two-phase invoice mut
       await invoke(deleteInvoiceFn, { id: invoice.id }, f.actor.id);
       await assertStock(tx, f, 4);
       await assertStock(tx, moved, 4);
+    });
+  });
+
+  describe("sales return lifecycle", () => {
+    it.each([100, 900, 1000])("dates receipt and void independently after an intervening payment of %s", async paid => {
+      await withFixture(async (tx, f) => {
+        await receive(tx, f, 100, 600);
+        const invoice = await invoke(createInvoiceFn, request(f, [{ ...line(f, 100), perCartonPrice: 10 }]), f.actor.id);
+        expect(invoice.totalPrice).toBe("1000.00");
+        await tx.update(invoices).set({ date: new Date("2026-01-15T12:00:00Z") }).where(eq(invoices.id, invoice.id));
+        const [item] = await tx.select().from(invoiceItems).where(eq(invoiceItems.invoiceId, invoice.id));
+        const salesReturn = await requestReturn(f, invoice.id, item.id, [10, 10]);
+        await invoke(decideSalesReturnFn, { returnId: salesReturn.id, action: "approve" }, f.actor.id);
+        const [wallet] = await tx.insert(wallets).values({ id: randomUUID(), name: randomUUID(), type: "cash" }).returning();
+        await addPaymentsToInvoice(tx, { invoiceId: invoice.id, actorId: f.actor.id,
+          payments: [{ method: "cash", walletId: wallet.id, amount: paid, paymentDate: new Date("2026-02-15T12:00:00Z") }] });
+        if (paid === 100) {
+          const [bank] = await tx.insert(wallets).values({ id: randomUUID(), name: randomUUID(), type: "bank" }).returning();
+          await addPaymentsToInvoice(tx, { invoiceId: invoice.id, actorId: f.actor.id,
+            payments: [{ method: "bank_transfer", walletId: bank.id, reference: "Pending synthetic payment", amount: 100, paymentDate: new Date("2026-02-16T12:00:00Z") }] });
+          expect((await tx.query.wallets.findFirst({ where: eq(wallets.id, bank.id) }))!.balance).toBe("0.00");
+        }
+        const savedInvoice = () => tx.query.invoices.findFirst({ where: eq(invoices.id, invoice.id) });
+        const savedSlip = () => tx.query.slipRecords.findFirst({ where: eq(slipRecords.invoiceId, invoice.id) });
+        expect([(await savedInvoice())!.returnedAmount, Number((await savedInvoice())!.outstandingAmount)]).toEqual(["0.00", 1000 - paid]);
+        const originalPayments = await tx.select().from(payments).where(eq(payments.invoiceId, invoice.id));
+        const originalMovements = await tx.select().from(transactions).where(eq(transactions.walletId, wallet.id));
+        const ledger = (dateFrom: string, dateTo: string, extra = {}) => readAccounting(tx, () => invoke(generateDistributorLedgerFn,
+          { customerId: f.customer.id, dateFrom, dateTo, ...extra }, f.actor.id));
+        expect((await ledger("2026-01-01", "2026-02-28")).summary.periodReturns).toBe(0);
+
+        const [collector] = await tx.insert(salesmen).values({ name: randomUUID() }).returning();
+        await tx.update(slipRecords).set({ recoveryStatus: "in_progress", recoveryAssignedToId: collector.id,
+          nextFollowUpDate: new Date("2026-03-02"), escalationLevel: 2 }).where(eq(slipRecords.invoiceId, invoice.id));
+        await receiveReturn(f, salesReturn);
+        await tx.update(salesReturns).set({ completedAt: new Date("2026-03-01T12:00:00Z") }).where(eq(salesReturns.id, salesReturn.id));
+        expect(Number((await savedInvoice())!.outstandingAmount)).toBe(800 - paid);
+        if (paid >= 900) {
+          const slip = (await savedSlip())!;
+          expect([slip.status, slip.recoveryStatus, slip.recoveryAssignedToId, slip.nextFollowUpDate, slip.escalationLevel]).toEqual(["closed", null, null, null, 0]);
+          expect(slip.reconciledAt).not.toBeNull();
+          await expect(tx.transaction(inner => addPaymentsToInvoice(inner, { invoiceId: invoice.id, actorId: f.actor.id,
+            payments: [{ method: "cash", walletId: wallet.id, amount: 1, paymentDate: new Date() }] }))).rejects.toThrow("Payments cannot exceed invoice total");
+        }
+        const receiptStatement = await ledger("2026-03-01", "2026-03-31");
+        expect(receiptStatement.summary).toMatchObject({ openingBalance: 1000 - paid, closingBalance: 800 - paid, periodReturns: 200, periodTotalProfit: -80 });
+        const receipt = (await tx.query.salesReturns.findFirst({ where: eq(salesReturns.id, salesReturn.id) }))!;
+        const receiptRange = createReportDateRange({ dateFrom: "2026-03-01", dateTo: "2026-03-31" });
+        const receiptSnapshot = await readAccounting(tx, async () => buildSnapshot(await loadContext(receiptRange.fromDate, receiptRange.toDate, "online"), receiptRange));
+
+        // Actual reversal cost differs after another priced receipt changes WAC.
+        await receive(tx, f, 20, 240);
+        await invoke(voidSalesReturnFn, { returnId: salesReturn.id, reason: "Wrong invoice received" }, f.actor.id);
+        await tx.update(salesReturns).set({ voidedAt: new Date("2026-04-01T12:00:00Z") }).where(eq(salesReturns.id, salesReturn.id));
+        expect(Number((await savedInvoice())!.outstandingAmount)).toBe(1000 - paid);
+        expect((await savedSlip())!.status).toBe(paid === 1000 ? "closed" : "partially_recovered");
+        expect((await savedInvoice())!.totalPrice).toBe("1000.00");
+        expect((await savedSlip())!.invoiceAmount).toBe("1000.00");
+        const voided = (await tx.query.salesReturns.findFirst({ where: eq(salesReturns.id, salesReturn.id) }))!;
+        expect([voided.completedAt, voided.receivedById, voided.totalAmount]).toEqual([receipt.completedAt, receipt.receivedById, receipt.totalAmount]);
+        expect(Number((await tx.query.customers.findFirst({ where: eq(customers.id, f.customer.id) }))!.outstandingAmount)).toBe(1000 - paid);
+        expect(await tx.select().from(payments).where(eq(payments.invoiceId, invoice.id))).toEqual(originalPayments);
+        expect(await tx.select().from(transactions).where(eq(transactions.walletId, wallet.id))).toEqual(originalMovements);
+        expect((await tx.query.wallets.findFirst({ where: eq(wallets.id, wallet.id) }))!.balance).toBe(`${paid}.00`);
+        expect((await ledger("2026-03-01", "2026-03-31")).summary).toEqual(receiptStatement.summary);
+        const voidStatement = await ledger("2026-04-01", "2026-04-30", { typeFilter: "return", includeFullEntries: true, exportType: "csv" });
+        expect(voidStatement.summary).toMatchObject({ openingBalance: 800 - paid, closingBalance: 1000 - paid, periodReturns: -200, periodTotalProfit: 20 });
+        expect(voidStatement.entries).toMatchObject([{ id: `${salesReturn.id}:void`, type: "return", eventKind: "void", amount: 200 }]);
+        expect((await ledger("2026-05-01", "2026-05-31")).summary.openingBalance).toBe(1000 - paid);
+
+        await readAccounting(tx, async () => {
+          const context = await loadContext(new Date("2026-01-01"), new Date("2026-04-30T23:59:59.999Z"), "online");
+          expect(context.returns.map(event => [event.effectiveDate.toISOString(), event.totalRefund, event.totalCost, event.quantityReturned])).toEqual([
+            ["2026-03-01T12:00:00.000Z", 100, 60, 10], ["2026-04-01T12:00:00.000Z", -100, -90, -10],
+            ["2026-03-01T12:00:00.000Z", 100, 60, 10], ["2026-04-01T12:00:00.000Z", -100, -90, -10],
+          ]);
+          const voidOnly = await loadContext(new Date("2026-04-01"), new Date("2026-04-30T23:59:59.999Z"), "online");
+          expect(voidOnly.lines.map(line => line.invoiceId)).toContain(invoice.id);
+          const beforeVoid = await loadContext(new Date("2026-03-01"), new Date("2026-03-31T23:59:59.999Z"), "online");
+          expect(beforeVoid.returns).toHaveLength(2);
+          expect(buildSnapshot(beforeVoid, receiptRange)).toEqual(receiptSnapshot);
+          const range = createReportDateRange({ dateFrom: "2026-04-01", dateTo: "2026-04-30" });
+          const snapshot = buildSnapshot(voidOnly, range);
+          expect(snapshot.summary.grossProfit).toBe(paid === 1000 ? 20 : paid === 900 ? -14 : -6);
+          expect(snapshot.perProduct[0].profit).toBe(snapshot.summary.grossProfit);
+          expect(snapshot.perRecipe[0].profit).toBe(snapshot.summary.grossProfit);
+          const scope = { ...range, source: "online" as const };
+          for (const filter of [{ productId: f.recipe.productId }, { recipeId: f.recipe.id }]) {
+            expect((await fetchScopedSummary({ ...scope, ...filter })).grossProfit).toBe(snapshot.summary.grossProfit);
+            const exported = await invoke(exportPnlCsvFn, { dateFrom: "2026-04-01", dateTo: "2026-04-30", source: "online", ...filter }, f.actor.id);
+            expect(exported.csv).toContain(formatReportMoney(snapshot.summary.grossProfit));
+          }
+          const company = await getCompanyReportData({ dateFrom: "2026-04-01", dateTo: "2026-04-30", source: "online" });
+          expect(company.summary).toEqual(snapshot.summary);
+          expect(company.previousSummary).toEqual(receiptSnapshot.summary);
+          expect(company.monthlyTrend.find(month => month.monthKey === "2026-04-01")!.grossProfit).toBe(snapshot.summary.grossProfit);
+          const exported = await invoke(exportPnlCsvFn, { dateFrom: "2026-04-01", dateTo: "2026-04-30", source: "online" }, f.actor.id);
+          expect(exported.csv).toContain(`Gross Profit,${formatReportMoney(snapshot.summary.grossProfit)}`);
+          expect((await loadContext(new Date("2026-04-01"), new Date("2026-04-30T23:59:59.999Z"), "offline_import")).lines).toEqual([]);
+        });
+        // Synthetic source fixture, not a historical status/quantity conversion.
+        await tx.update(invoices).set({ source: "offline_import" }).where(eq(invoices.id, invoice.id));
+        await readAccounting(tx, async () => {
+          const from = new Date("2026-04-01"), to = new Date("2026-04-30T23:59:59.999Z");
+          expect((await loadContext(from, to, "online")).lines).toEqual([]);
+          expect((await loadContext(from, to, "offline_import")).returns).toHaveLength(4);
+        });
+      }, false);
+    });
+
+    it("moves nothing until received, then credits only what arrived and closes the short part", async () => {
+      await withFixture(async (tx, f) => {
+        await receive(tx, f, 10);
+        const invoice = await invoke(createInvoiceFn, request(f, [line(f, 4)]), f.actor.id);
+        const [item] = await tx.select().from(invoiceItems).where(eq(invoiceItems.invoiceId, invoice.id));
+        const salesReturn = await requestReturn(f, invoice.id, item.id, [3]);
+        await assertStock(tx, f, 6);
+        await invoke(decideSalesReturnFn, { returnId: salesReturn.id, action: "approve" }, f.actor.id);
+        await assertStock(tx, f, 6);
+        expect((await tx.query.invoices.findFirst({ where: eq(invoices.id, invoice.id) }))!.returnedAmount).toBe("0.00");
+
+        await receiveReturn(f, salesReturn, () => ({ goodUnits: 1, damagedUnits: 1 }));
+        await assertStock(tx, f, 7, 70);
+        const [damaged] = await tx.select().from(returnedFinishedGoodsStock).where(and(
+          eq(returnedFinishedGoodsStock.recipeId, f.recipe.id), eq(returnedFinishedGoodsStock.condition, "damaged")));
+        expect(damaged.quantityCartons * 4 + damaged.quantityContainers).toBe(1);
+        expect(damaged.totalInventoryValue).toBe("10.00");
+        const saved = await tx.query.salesReturns.findFirst({ where: eq(salesReturns.id, salesReturn.id) });
+        expect([saved!.status, saved!.totalAmount, saved!.receivedById]).toEqual(["completed", "20.00", f.actor.id]);
+        const [savedItem] = await tx.select().from(salesReturnItems).where(eq(salesReturnItems.salesReturnId, salesReturn.id));
+        expect([savedItem.quantityRequested, savedItem.goodUnits, savedItem.damagedUnits, savedItem.quantityReturned]).toEqual([3, 1, 1, 2]);
+        expect((await tx.query.invoices.findFirst({ where: eq(invoices.id, invoice.id) }))!.returnedAmount).toBe("20.00");
+
+        // The short pack is released: 4 sold − 2 received leaves 2 returnable.
+        await expect(requestReturn(f, invoice.id, item.id, [3])).rejects.toThrow("remaining returnable");
+        await requestReturn(f, invoice.id, item.id, [2]);
+      });
+    });
+
+    it("enforces the order of steps and needs reasons to reject or cancel", async () => {
+      await withFixture(async (tx, f) => {
+        await receive(tx, f, 4);
+        const invoice = await invoke(createInvoiceFn, request(f, [line(f, 2)]), f.actor.id);
+        const [item] = await tx.select().from(invoiceItems).where(eq(invoiceItems.invoiceId, invoice.id));
+        const first = await requestReturn(f, invoice.id, item.id, [2]);
+        await expect(receiveReturn(f, first)).rejects.toThrow("is requested, so it can't be received");
+        await expect(invoke(decideSalesReturnFn, { returnId: first.id, action: "reject" }, f.actor.id)).rejects.toThrow("Give a reason");
+        await invoke(decideSalesReturnFn, { returnId: first.id, action: "reject", reason: "Not our goods" }, f.actor.id);
+
+        const second = await requestReturn(f, invoice.id, item.id, [2]); // rejected one released its units
+        await invoke(decideSalesReturnFn, { returnId: second.id, action: "approve" }, f.actor.id);
+        await expect(invoke(decideSalesReturnFn, { returnId: second.id, action: "approve" }, f.actor.id)).rejects.toThrow("can't be approved");
+        await invoke(cancelSalesReturnFn, { returnId: second.id, reason: "Customer kept them" }, f.actor.id);
+        await expect(receiveReturn(f, second)).rejects.toThrow("is cancelled, so it can't be received");
+        await assertStock(tx, f, 2);
+        const statuses = await tx.select({ status: salesReturns.status }).from(salesReturns).where(eq(salesReturns.invoiceId, invoice.id));
+        expect(statuses.map(row => row.status).sort()).toEqual(["cancelled", "rejected"]);
+      });
+    });
+
+    it("keeps rejected and cancelled requests out of settlement after payments", async () => {
+      await withFixture(async (tx, f) => {
+        await receive(tx, f, 4);
+        const invoice = await invoke(createInvoiceFn, request(f, [line(f, 4)]), f.actor.id);
+        const [item] = await tx.select().from(invoiceItems).where(eq(invoiceItems.invoiceId, invoice.id));
+        const rejected = await requestReturn(f, invoice.id, item.id, [2]);
+        await invoke(decideSalesReturnFn, { returnId: rejected.id, action: "reject", reason: "Not our goods" }, f.actor.id);
+        const cancelled = await requestReturn(f, invoice.id, item.id, [2]);
+        await invoke(decideSalesReturnFn, { returnId: cancelled.id, action: "approve" }, f.actor.id);
+        const [wallet] = await tx.insert(wallets).values({ id: randomUUID(), name: randomUUID(), type: "cash" }).returning();
+        await addPaymentsToInvoice(tx, { invoiceId: invoice.id, actorId: f.actor.id,
+          payments: [{ method: "cash", walletId: wallet.id, amount: 10, paymentDate: new Date() }] });
+        const before = await tx.query.invoices.findFirst({ where: eq(invoices.id, invoice.id) });
+        expect([before!.returnedAmount, before!.outstandingAmount]).toEqual(["0.00", "30.00"]);
+        await invoke(cancelSalesReturnFn, { returnId: cancelled.id, reason: "Customer kept the goods" }, f.actor.id);
+        expect(await tx.query.invoices.findFirst({ where: eq(invoices.id, invoice.id) })).toEqual(before);
+        expect(await tx.select().from(salesReturnStockTraces).where(eq(salesReturnStockTraces.invoiceId, invoice.id))).toEqual([]);
+        await assertStock(tx, f, 0);
+        await requestReturn(f, invoice.id, item.id, [4]);
+      });
+    });
+
+    it("checks reasons and the right to approve on the spot", async () => {
+      await withFixture(async (tx, f) => {
+        await receive(tx, f, 4);
+        const invoice = await invoke(createInvoiceFn, request(f, [line(f, 2)]), f.actor.id);
+        const [item] = await tx.select().from(invoiceItems).where(eq(invoiceItems.invoiceId, invoice.id));
+        const [other] = await tx.insert(salesReturnReasons).values({ name: `${f.reason.name}-other`, requiresNote: true }).returning();
+        const [retired] = await tx.insert(salesReturnReasons).values({ name: `${f.reason.name}-old`, isActive: false }).returning();
+        const base = { invoiceId: invoice.id, items: [{ invoiceItemId: item.id, quantityReturned: 1 }] };
+        await expect(invoke(createSalesReturnFn, { ...base, reasonId: other.id }, f.actor.id)).rejects.toThrow("Add a note");
+        await expect(invoke(createSalesReturnFn, { ...base, reasonId: retired.id }, f.actor.id)).rejects.toThrow("Pick a return reason");
+        await expect(invoke(createSalesReturnFn, { ...base, reasonId: f.reason.id, approveNow: true }, f.actor.id)).rejects.toThrow("right to approve");
+        const fast = await invoke(createSalesReturnFn, { ...base, reasonId: other.id, reasonNote: "Changed brand", approveNow: true }, f.actor.id, ["sales.returns.approve"]);
+        expect([fast.status, fast.reason, fast.approvedById]).toEqual(["approved", `${other.name}: Changed brand`, f.actor.id]);
+      });
+    });
+
+    it("voids a good return: packs leave stock again and the balance goes back up", async () => {
+      for (const usesCartons of [true, false]) {
+        await withFixture(async (tx, f) => {
+          await receive(tx, f, 10);
+          const invoice = await invoke(createInvoiceFn, request(f, [line(f, 4)]), f.actor.id);
+          const [item] = await tx.select().from(invoiceItems).where(eq(invoiceItems.invoiceId, invoice.id));
+          const salesReturn = await approveGoodReturn(f, invoice.id, item.id, [2]);
+          await assertStock(tx, f, 8);
+          await expect(invoke(voidSalesReturnFn, { returnId: salesReturn.id, reason: "x" }, f.actor.id)).rejects.toThrow("Give a reason");
+          await invoke(voidSalesReturnFn, { returnId: salesReturn.id, reason: "Entered against the wrong invoice" }, f.actor.id);
+          await assertStock(tx, f, 6);
+          const saved = await tx.query.salesReturns.findFirst({ where: eq(salesReturns.id, salesReturn.id) });
+          expect([saved!.status, saved!.voidReason, saved!.voidedById]).toEqual(["voided", "Entered against the wrong invoice", f.actor.id]);
+          expect((await tx.query.invoices.findFirst({ where: eq(invoices.id, invoice.id) }))!.returnedAmount).toBe("0.00");
+          const traces = await tx.select().from(salesReturnStockTraces).where(eq(salesReturnStockTraces.salesReturnId, salesReturn.id));
+          expect(traces.map(trace => [trace.kind, trace.totalUnitsMoved, trace.totalCost]).sort()).toEqual([["receive", 2, "20.00"], ["void", -2, "-20.00"]]);
+          await expect(invoke(voidSalesReturnFn, { returnId: salesReturn.id, reason: "Again please" }, f.actor.id)).rejects.toThrow("is voided, so it can't be voided");
+          // The customer can send the same packs back again.
+          await approveGoodReturn(f, invoice.id, item.id, [2]);
+          await assertStock(tx, f, 8);
+        }, usesCartons);
+      }
+    });
+
+    it("blocks a void when the restocked packs were sold since", async () => {
+      await withFixture(async (tx, f) => {
+        await receive(tx, f, 4);
+        const invoice = await invoke(createInvoiceFn, request(f, [line(f, 4)]), f.actor.id);
+        const [item] = await tx.select().from(invoiceItems).where(eq(invoiceItems.invoiceId, invoice.id));
+        const salesReturn = await approveGoodReturn(f, invoice.id, item.id, [2]);
+        await invoke(createInvoiceFn, request(f, [line(f, 2)]), f.actor.id);
+        await assertStock(tx, f, 0, 0);
+        const accounting = async () => ({
+          invoice: await tx.query.invoices.findFirst({ where: eq(invoices.id, invoice.id) }),
+          slip: await tx.query.slipRecords.findFirst({ where: eq(slipRecords.invoiceId, invoice.id) }),
+          customer: await tx.query.customers.findFirst({ where: eq(customers.id, f.customer.id) }),
+          salesReturn: await tx.query.salesReturns.findFirst({ where: eq(salesReturns.id, salesReturn.id) }),
+          traces: await tx.select().from(salesReturnStockTraces).where(eq(salesReturnStockTraces.salesReturnId, salesReturn.id)),
+        });
+        const before = await accounting();
+        await expect(invoke(voidSalesReturnFn, { returnId: salesReturn.id, reason: "Wrong invoice" }, f.actor.id))
+          .rejects.toThrow("but only 0 are left");
+        expect((await tx.query.salesReturns.findFirst({ where: eq(salesReturns.id, salesReturn.id) }))!.status).toBe("completed");
+        expect(await accounting()).toEqual(before);
+        await assertStock(tx, f, 0, 0);
+      });
+    });
+
+    it("voids a damaged return and lets the same packs be returned again", async () => {
+      await withFixture(async (tx, f) => {
+        await receive(tx, f, 4);
+        const invoice = await invoke(createInvoiceFn, request(f, [line(f, 2)]), f.actor.id);
+        const [item] = await tx.select().from(invoiceItems).where(eq(invoiceItems.invoiceId, invoice.id));
+        const damagedOnly = (units: number) => ({ damagedUnits: units });
+        const first = await requestReturn(f, invoice.id, item.id, [2]);
+        await invoke(decideSalesReturnFn, { returnId: first.id, action: "approve" }, f.actor.id);
+        await receiveReturn(f, first, damagedOnly);
+        await invoke(voidSalesReturnFn, { returnId: first.id, reason: "Counted twice" }, f.actor.id);
+        const [damaged] = await tx.select().from(returnedFinishedGoodsStock).where(and(
+          eq(returnedFinishedGoodsStock.recipeId, f.recipe.id), eq(returnedFinishedGoodsStock.condition, "damaged")));
+        expect([damaged.quantityCartons, damaged.quantityContainers, damaged.totalInventoryValue]).toEqual([0, 0, "0.00"]);
+        const second = await requestReturn(f, invoice.id, item.id, [2]);
+        await invoke(decideSalesReturnFn, { returnId: second.id, action: "approve" }, f.actor.id);
+        await receiveReturn(f, second, damagedOnly);
+        await assertStock(tx, f, 2);
+      });
     });
   });
 });

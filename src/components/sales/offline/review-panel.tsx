@@ -2,6 +2,7 @@ import { useState } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   AlertSquareIcon,
+  ArrowDown01Icon,
   Database01Icon,
   Refresh03Icon,
 } from "@hugeicons/core-free-icons";
@@ -28,17 +29,18 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import {
   Empty,
   EmptyDescription,
   EmptyHeader,
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
-import {
-  Field,
-  FieldGroup,
-  FieldLabel,
-} from "@/components/ui/field";
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import {
   Select,
   SelectContent,
@@ -47,7 +49,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import {
@@ -70,6 +71,7 @@ import {
   useResolveOfflineSalesOrderConflict,
 } from "@/hooks/sales/use-offline-sales";
 import type { OfflineSalesBatchDetail } from "@/lib/sales/offline/contracts";
+import { batchSource, batchStatusLabel, dateTime } from "./format";
 
 type Invoice = OfflineSalesBatchDetail["invoices"][number];
 type Wallet = { id: string; name: string; type: string };
@@ -83,15 +85,6 @@ const PKR = (value: string | number) =>
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`;
-
-function dateTime(value: Date | string | null) {
-  if (!value) return "—";
-  return new Intl.DateTimeFormat("en-PK", {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: "Asia/Karachi",
-  }).format(new Date(value));
-}
 
 function statusLabel(status: Invoice["status"]) {
   const labels: Record<Invoice["status"], string> = {
@@ -117,29 +110,76 @@ function statusVariant(status: Invoice["status"]) {
 function paymentLabel(method: Invoice["payments"][number]["method"]) {
   if (method === "bank_transfer") return "Bank transfer";
   if (method === "cheque") return "Cheque";
-  return "Paid Amount";
+  if (method === "expense_offset") return "Salary paid by distributor";
+  return "Cash";
+}
+
+function saleTypeLabel(invoice: Invoice) {
+  if (invoice.saleType === "direct_distributor") return "Direct distributor";
+  if (invoice.saleType === "direct_retailer")
+    return invoice.customerDetails ? "New retail customer" : "Retail customer";
+  return "Booked order";
+}
+
+function quantity(item: Invoice["items"][number]) {
+  const free = item.freeCartons + item.manualFreeCartons;
+  return (
+    [
+      item.cartonQuantity > 0 &&
+        `${item.cartonQuantity} carton${item.cartonQuantity === 1 ? "" : "s"}`,
+      item.looseUnitQuantity > 0 && `${item.looseUnitQuantity} loose`,
+      free > 0 && `${free} free`,
+    ]
+      .filter(Boolean)
+      .join(" + ") || "—"
+  );
+}
+
+// Invoices the reviewer still has to act on before the batch can post.
+function needsAttention(invoice: Invoice) {
+  return (
+    invoice.status === "invalid" ||
+    invoice.status === "needs_review" ||
+    (invoice.status === "warning" && !invoice.warningsAcknowledged)
+  );
 }
 
 function Counts({ counts }: { counts: OfflineSalesBatchDetail["counts"] }) {
-  const values = [
-    ["Total", counts.total],
-    ["Ready", counts.ready],
-    ["Warning", counts.warning],
-    ["Needs review", counts.needsReview],
-    ["Invalid", counts.invalid],
-    ["Duplicate", counts.duplicate],
-    ["Posted", counts.posted],
-    ["Excluded", counts.excluded],
-  ] as const;
+  const values: Array<[Invoice["status"], number]> = [
+    ["ready", counts.ready],
+    ["warning", counts.warning],
+    ["needs_review", counts.needsReview],
+    ["invalid", counts.invalid],
+    ["duplicate", counts.duplicate],
+    ["posted", counts.posted],
+    ["excluded", counts.excluded],
+  ];
   return (
-    <div className="grid gap-px border bg-border sm:grid-cols-4 lg:grid-cols-8">
-      {values.map(([label, value]) => (
-        <div key={label} className="bg-card p-3">
-          <p className="text-xs text-muted-foreground">{label}</p>
-          <p className="text-xl font-semibold tabular-nums">{value}</p>
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="text-sm text-muted-foreground">
+        {counts.total} invoice{counts.total === 1 ? "" : "s"}:
+      </span>
+      {values
+        .filter(([, value]) => value > 0)
+        .map(([status, value]) => (
+          <Badge key={status} variant={statusVariant(status)}>
+            {value} {statusLabel(status)}
+          </Badge>
+        ))}
+    </div>
+  );
+}
+
+function Facts({ items }: { items: Array<[string, string]> }) {
+  return (
+    <dl className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
+      {items.map(([label, value]) => (
+        <div key={label} className="flex gap-1.5">
+          <dt className="text-muted-foreground">{label}</dt>
+          <dd className="font-medium tabular-nums">{value}</dd>
         </div>
       ))}
-    </div>
+    </dl>
   );
 }
 
@@ -162,15 +202,11 @@ function OrderConflict({
   return (
     <Alert variant="destructive">
       <HugeiconsIcon icon={AlertSquareIcon} strokeWidth={2} />
-      <AlertTitle>Booked order already has an invoice</AlertTitle>
+      <AlertTitle>This order already has an invoice</AlertTitle>
       <AlertDescription className="flex flex-col gap-4">
-        <p>
-          Choose what physically happened. This decision is saved in the audit
-          trail.
-        </p>
         <FieldGroup className="grid gap-4 lg:grid-cols-3">
           <Field>
-            <FieldLabel>Decision</FieldLabel>
+            <FieldLabel>What happened?</FieldLabel>
             <Select
               value={resolution}
               onValueChange={(value) =>
@@ -183,7 +219,7 @@ function OrderConflict({
               <SelectContent>
                 <SelectGroup>
                   <SelectItem value="same_dispatch_duplicate">
-                    Same delivery — exclude Excel row
+                    Same delivery — exclude this offline invoice
                   </SelectItem>
                   <SelectItem value="replace_incorrect_online">
                     Replace a voided wrong invoice
@@ -219,7 +255,7 @@ function OrderConflict({
             <FieldLabel>Reason</FieldLabel>
             <Textarea
               value={reason}
-              placeholder="Explain what was checked"
+              placeholder="What did you check?"
               onChange={(event) => setReason(event.target.value)}
             />
           </Field>
@@ -251,7 +287,7 @@ function OrderConflict({
   );
 }
 
-function PaymentTable({
+function Payments({
   batchId,
   invoice,
   wallets,
@@ -264,122 +300,123 @@ function PaymentTable({
 }) {
   const [replacements, setReplacements] = useState<Record<string, string>>({});
   const replace = useReplaceOfflineSalesWallet();
+
+  if (invoice.payments.length === 0) {
+    return <p className="text-sm text-muted-foreground">No payment yet.</p>;
+  }
+
   return (
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead>Excel row</TableHead>
           <TableHead>Method</TableHead>
-          <TableHead>Destination account</TableHead>
-          <TableHead>Reference</TableHead>
+          <TableHead>Account</TableHead>
           <TableHead className="text-right">Amount</TableHead>
-          {canReview && (
-            <TableHead className="text-right">Correction</TableHead>
-          )}
         </TableRow>
       </TableHeader>
       <TableBody>
-        {invoice.payments.length === 0 ? (
-          <TableRow>
-            <TableCell
-              colSpan={canReview ? 6 : 5}
-              className="text-center text-muted-foreground"
-            >
-              Pay later — no payment rows
-            </TableCell>
-          </TableRow>
-        ) : (
-          invoice.payments.map((payment) => {
-            const requiredType = payment.method === "cash" ? "cash" : "bank";
-            const accountUnavailable = payment.walletType !== requiredType;
-            const choices = wallets.filter(
-              (wallet) => wallet.type === requiredType,
-            );
-            return (
-              <TableRow key={payment.id}>
-                <TableCell>Payments!{payment.worksheetRowNumber}</TableCell>
-                <TableCell>
-                  <div className="flex flex-col gap-1">
-                    <span>{paymentLabel(payment.method)}</span>
-                    {payment.method !== "cash" && (
-                      <Badge variant="outline">Pending Verification</Badge>
-                    )}
-                  </div>
-                </TableCell>
-                <TableCell>
-                  {payment.walletName ?? payment.walletCode}
-                </TableCell>
-                <TableCell>
-                  {payment.reference ?? payment.chequeNumber ?? "—"}
-                </TableCell>
-                <TableCell className="text-right tabular-nums">
-                  {PKR(payment.amount)}
-                </TableCell>
-                {canReview && (
-                  <TableCell>
-                    {accountUnavailable ? (
-                      <div className="flex min-w-72 justify-end gap-2">
-                        <Select
-                          value={replacements[payment.id] ?? ""}
-                          onValueChange={(value) =>
-                            setReplacements((current) => ({
-                              ...current,
-                              [payment.id]: value,
-                            }))
-                          }
-                        >
-                          <SelectTrigger className="w-48">
-                            <SelectValue
-                              placeholder={`Choose ${requiredType} account`}
-                            />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectGroup>
-                              {choices.map((wallet) => (
-                                <SelectItem key={wallet.id} value={wallet.id}>
-                                  {wallet.name}
-                                </SelectItem>
-                              ))}
-                            </SelectGroup>
-                          </SelectContent>
-                        </Select>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={
-                            !replacements[payment.id] || replace.isPending
-                          }
-                          onClick={() => {
-                            const replacementWalletId =
-                              replacements[payment.id];
-                            if (!replacementWalletId) return;
-                            replace.mutate({
-                              batchId,
-                              stagedPaymentId: payment.id,
-                              replacementWalletId,
-                            });
-                          }}
-                        >
-                          Replace
-                        </Button>
-                      </div>
-                    ) : (
-                      <span className="block text-right text-xs text-muted-foreground">
-                        No change allowed
-                      </span>
-                    )}
-                  </TableCell>
+        {invoice.payments.map((payment) => {
+          const requiredType = payment.method === "cash" ? "cash" : "bank";
+          // A salary paid by the distributor goes through no account.
+          const accountUnavailable =
+            payment.method !== "expense_offset" &&
+            payment.walletType !== requiredType;
+          const choices = wallets.filter(
+            (wallet) => wallet.type === requiredType,
+          );
+          const replacementWalletId = replacements[payment.id];
+          const detail = [
+            payment.reference ?? payment.chequeNumber,
+            payment.method !== "cash" && payment.method !== "expense_offset"
+              ? payment.instantVerify
+                ? "verified instantly"
+                : "pending verification"
+              : null,
+            payment.notes,
+          ]
+            .filter(Boolean)
+            .join(" · ");
+          return (
+            <TableRow key={payment.id}>
+              <TableCell>
+                <span className="block">{paymentLabel(payment.method)}</span>
+                {detail && (
+                  <span className="text-xs text-muted-foreground">
+                    {detail}
+                  </span>
                 )}
-              </TableRow>
-            );
-          })
-        )}
+              </TableCell>
+              <TableCell>
+                {payment.method === "expense_offset" ? (
+                  <span className="text-muted-foreground">
+                    Settles an HR salary advance
+                  </span>
+                ) : (
+                  <span className="block">
+                    {payment.walletName ?? payment.walletCode}
+                  </span>
+                )}
+                {accountUnavailable &&
+                  (canReview ? (
+                    <div className="mt-1 flex gap-2">
+                      <Select
+                        value={replacementWalletId ?? ""}
+                        onValueChange={(value) =>
+                          setReplacements((current) => ({
+                            ...current,
+                            [payment.id]: value,
+                          }))
+                        }
+                      >
+                        <SelectTrigger className="w-48">
+                          <SelectValue
+                            placeholder={`Choose ${requiredType} account`}
+                          />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectGroup>
+                            {choices.map((wallet) => (
+                              <SelectItem key={wallet.id} value={wallet.id}>
+                                {wallet.name}
+                              </SelectItem>
+                            ))}
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={!replacementWalletId || replace.isPending}
+                        onClick={() => {
+                          if (!replacementWalletId) return;
+                          replace.mutate({
+                            batchId,
+                            stagedPaymentId: payment.id,
+                            replacementWalletId,
+                          });
+                        }}
+                      >
+                        Replace
+                      </Button>
+                    </div>
+                  ) : (
+                    <span className="text-xs text-destructive">
+                      Needs a {requiredType} account
+                    </span>
+                  ))}
+              </TableCell>
+              <TableCell className="text-right tabular-nums">
+                {PKR(payment.amount)}
+              </TableCell>
+            </TableRow>
+          );
+        })}
       </TableBody>
     </Table>
   );
 }
 
-function InvoiceCard({
+function InvoiceRow({
   batchId,
   invoice,
   wallets,
@@ -390,71 +427,81 @@ function InvoiceCard({
   wallets: Wallet[];
   canReview: boolean;
 }) {
+  const attention = needsAttention(invoice);
+  const [open, setOpen] = useState(attention);
   const [excludeOpen, setExcludeOpen] = useState(false);
   const [excludeReason, setExcludeReason] = useState("");
   const acknowledge = useAcknowledgeOfflineSalesWarning();
   const exclude = useExcludeOfflineSalesInvoice();
   const canExclude =
     invoice.status === "invalid" || invoice.status === "needs_review";
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex flex-wrap items-center gap-2">
-          <span className="font-mono">{invoice.invoiceNumber}</span>
-          <Badge variant={statusVariant(invoice.status)}>
-            {statusLabel(invoice.status)}
-          </Badge>
-        </CardTitle>
-        <CardDescription>
-          Invoices!{invoice.worksheetRowNumber} ·{" "}
-          {invoice.saleType === "direct_distributor"
-            ? "Direct distributor"
-            : "Booked order"}{" "}
-          ·{" "}
-          {invoice.customerName ??
-            invoice.distributorCode ??
-            `Bill ${invoice.billNumber ?? "—"}`}{" "}
-          · {dateTime(invoice.businessDate)}
-        </CardDescription>
-        <CardAction className="text-right">
-          <p className="font-mono text-lg font-semibold">
-            {PKR(invoice.invoiceAmount)}
-          </p>
-          <p className="text-xs text-muted-foreground">invoice total</p>
-        </CardAction>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-5">
-        <div className="grid gap-px border bg-border sm:grid-cols-3">
-          <div className="bg-card p-3">
-            <p className="text-xs text-muted-foreground">Paid Amount</p>
-            <p className="font-medium tabular-nums">
-              {PKR(invoice.paidAmount)}
-            </p>
-          </div>
-          <div className="bg-card p-3">
-            <p className="text-xs text-muted-foreground">
-              Pending Verification
-            </p>
-            <p className="font-medium tabular-nums">
-              {PKR(invoice.pendingAmount)}
-            </p>
-          </div>
-          <div className="bg-card p-3">
-            <p className="text-xs text-muted-foreground">Outstanding Amount</p>
-            <p className="font-medium tabular-nums">
-              {PKR(invoice.outstandingAmount)}
-            </p>
-          </div>
-        </div>
+  const canAcknowledge =
+    invoice.status === "warning" && !invoice.warningsAcknowledged;
+  const facts: Array<[string, string]> = [
+    ["Paid", PKR(invoice.paidAmount)],
+    ["Pending verification", PKR(invoice.pendingAmount)],
+    ["Outstanding", PKR(invoice.outstandingAmount)],
+  ];
+  if (Number(invoice.invoiceDiscount) > 0)
+    facts.push(["Discount", PKR(invoice.invoiceDiscount)]);
+  if (Number(invoice.expenses) > 0)
+    facts.push(["Freight and expenses", PKR(invoice.expenses)]);
+  if (invoice.customerDetails)
+    facts.push([
+      "New customer (created when posted)",
+      [
+        invoice.customerDetails.name,
+        invoice.customerDetails.mobile,
+        invoice.customerDetails.city,
+      ]
+        .filter(Boolean)
+        .join(" · "),
+    ]);
 
+  return (
+    <Collapsible open={open} onOpenChange={setOpen} className="border bg-card">
+      <CollapsibleTrigger className="group flex w-full items-center gap-3 p-3 text-left">
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-mono font-medium">
+              {invoice.invoiceNumber}
+            </span>
+            <Badge variant={statusVariant(invoice.status)}>
+              {statusLabel(invoice.status)}
+            </Badge>
+            {invoice.status === "warning" && invoice.warningsAcknowledged && (
+              <span className="text-xs text-muted-foreground">
+                warning acknowledged
+              </span>
+            )}
+          </div>
+          <span className="truncate text-xs text-muted-foreground">
+            {saleTypeLabel(invoice)} ·{" "}
+            {invoice.customerName ??
+              invoice.distributorCode ??
+              `Bill ${invoice.billNumber ?? "—"}`}{" "}
+            · {dateTime(invoice.businessDate)}
+          </span>
+        </div>
+        <span className="font-mono font-semibold">
+          {PKR(invoice.invoiceAmount)}
+        </span>
+        <HugeiconsIcon
+          icon={ArrowDown01Icon}
+          strokeWidth={2}
+          className="shrink-0 transition-transform group-data-[state=open]:rotate-180"
+        />
+      </CollapsibleTrigger>
+
+      <CollapsibleContent className="flex flex-col gap-4 border-t p-4">
         {invoice.issueDetails.length > 0 && (
           <Alert
             variant={invoice.status === "warning" ? "default" : "destructive"}
           >
             <HugeiconsIcon icon={AlertSquareIcon} strokeWidth={2} />
-            <AlertTitle>Review these checks</AlertTitle>
+            <AlertTitle>Check this</AlertTitle>
             <AlertDescription>
-              <ul className="flex list-disc flex-col gap-2 pl-4">
+              <ul className="flex list-disc flex-col gap-1 pl-4">
                 {invoice.issueDetails.map((issue, index) => (
                   <li key={`${issue.code}-${index}`}>
                     {issue.source && (
@@ -473,84 +520,83 @@ function InvoiceCard({
           </Alert>
         )}
 
+        {invoice.status === "duplicate" && (
+          <p className="text-sm text-muted-foreground">
+            Already received earlier. It will not create another invoice.
+          </p>
+        )}
+
         <OrderConflict batchId={batchId} invoice={invoice} />
 
-        <div className="flex flex-col gap-2">
-          <h3 className="text-sm font-medium">Products</h3>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Excel row</TableHead>
-                <TableHead>Product</TableHead>
-                <TableHead className="text-right">Cartons</TableHead>
-                <TableHead className="text-right">Loose units</TableHead>
-                <TableHead className="text-right">Free cartons</TableHead>
-                <TableHead className="text-right">Dispatched units</TableHead>
-                <TableHead className="text-right">Line total</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {invoice.items.map((item) => (
-                <TableRow key={item.id}>
-                  <TableCell>Items!{item.worksheetRowNumber}</TableCell>
-                  <TableCell>{item.productName ?? item.productCode}</TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {item.cartonQuantity}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {item.looseUnitQuantity}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {item.freeCartons}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {item.dispatchedUnits}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {PKR(item.lineAmount)}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+        <Facts items={facts} />
 
-        <div className="flex flex-col gap-2">
-          <h3 className="text-sm font-medium">Payments</h3>
-          <PaymentTable
-            batchId={batchId}
-            invoice={invoice}
-            wallets={wallets}
-            canReview={canReview}
-          />
-        </div>
-      </CardContent>
-      {canReview && (invoice.status === "warning" || canExclude) && (
-        <CardFooter className="justify-end gap-2">
-          {canExclude && (
-            <Button variant="outline" onClick={() => setExcludeOpen(true)}>
-              Exclude invoice
-            </Button>
-          )}
-          {invoice.status === "warning" && !invoice.warningsAcknowledged && (
-            <Button
-              disabled={acknowledge.isPending}
-              onClick={() =>
-                acknowledge.mutate({
-                  batchId,
-                  stagedInvoiceId: invoice.stagedInvoiceId,
-                })
-              }
-            >
-              {acknowledge.isPending && <Spinner data-icon="inline-start" />}I
-              checked this warning
-            </Button>
-          )}
-          {invoice.status === "warning" && invoice.warningsAcknowledged && (
-            <Badge variant="default">Warning acknowledged</Badge>
-          )}
-        </CardFooter>
-      )}
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Product</TableHead>
+              <TableHead>Quantity</TableHead>
+              <TableHead className="text-right">Total</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {invoice.items.map((item) => (
+              <TableRow key={item.id}>
+                <TableCell>
+                  {item.productName ?? item.productCode}
+                  {item.isPriceOverride && (
+                    <p className="text-xs text-amber-600">
+                      Price changed from {PKR(item.listedCartonPrice ?? "0")} to{" "}
+                      {PKR(item.baseCartonPrice)} per carton
+                    </p>
+                  )}
+                </TableCell>
+                <TableCell>
+                  <span className="block">{quantity(item)}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {item.dispatchedUnits} units
+                    {item.manualFreeCartons > 0 &&
+                      ` · ${item.manualFreeCartons} free by hand`}
+                  </span>
+                </TableCell>
+                <TableCell className="text-right tabular-nums">
+                  {PKR(item.lineAmount)}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+
+        <Payments
+          batchId={batchId}
+          invoice={invoice}
+          wallets={wallets}
+          canReview={canReview}
+        />
+
+        {canReview && (canExclude || canAcknowledge) && (
+          <div className="flex justify-end gap-2">
+            {canExclude && (
+              <Button variant="outline" onClick={() => setExcludeOpen(true)}>
+                Exclude invoice
+              </Button>
+            )}
+            {canAcknowledge && (
+              <Button
+                disabled={acknowledge.isPending}
+                onClick={() =>
+                  acknowledge.mutate({
+                    batchId,
+                    stagedInvoiceId: invoice.stagedInvoiceId,
+                  })
+                }
+              >
+                {acknowledge.isPending && <Spinner data-icon="inline-start" />}I
+                checked this warning
+              </Button>
+            )}
+          </div>
+        )}
+      </CollapsibleContent>
 
       <AlertDialog open={excludeOpen} onOpenChange={setExcludeOpen}>
         <AlertDialogContent>
@@ -559,8 +605,8 @@ function InvoiceCard({
               Exclude {invoice.invoiceNumber}?
             </AlertDialogTitle>
             <AlertDialogDescription>
-              This invoice will not be posted. Its reserved offline invoice
-              number remains in the audit history.
+              It will not be posted. The invoice number stays in the audit
+              history.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <FieldGroup>
@@ -578,7 +624,7 @@ function InvoiceCard({
                 aria-invalid={
                   excludeReason.length > 0 && excludeReason.trim().length < 5
                 }
-                placeholder="Explain why this invoice must not be posted"
+                placeholder="Why must this invoice not be posted?"
                 onChange={(event) => setExcludeReason(event.target.value)}
               />
             </Field>
@@ -606,7 +652,7 @@ function InvoiceCard({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </Card>
+    </Collapsible>
   );
 }
 
@@ -631,9 +677,9 @@ export function ReviewPanel({
           <EmptyMedia variant="icon">
             <HugeiconsIcon icon={Database01Icon} strokeWidth={2} />
           </EmptyMedia>
-          <EmptyTitle>Select an uploaded workbook</EmptyTitle>
+          <EmptyTitle>Nothing to review</EmptyTitle>
           <EmptyDescription>
-            Its invoices, products, payments, and warnings will appear here.
+            Invoices sent from the offline desk will show up here.
           </EmptyDescription>
         </EmptyHeader>
       </Empty>
@@ -666,20 +712,31 @@ export function ReviewPanel({
       invoice.status === "ready" ||
       (invoice.status === "warning" && invoice.warningsAcknowledged),
   ).length;
+  const attention = detail.invoices.filter(needsAttention);
+  const rest = detail.invoices.filter((invoice) => !needsAttention(invoice));
+  const renderInvoice = (invoice: Invoice) => (
+    <InvoiceRow
+      key={invoice.stagedInvoiceId}
+      batchId={batchId}
+      invoice={invoice}
+      wallets={wallets.data ?? []}
+      canReview={canReview}
+    />
+  );
 
   return (
     <div className="flex flex-col gap-5">
       <Card>
         <CardHeader>
-          <CardTitle>{detail.filename}</CardTitle>
+          <CardTitle>
+            {batchSource(detail.filename)} · {dateTime(detail.uploadedAt)}
+          </CardTitle>
           <CardDescription>
             Outage {dateTime(detail.outageStartedAt)} to{" "}
             {dateTime(detail.outageEndedAt)} · {detail.outageReason}
           </CardDescription>
           <CardAction>
-            <Badge variant="outline">
-              {detail.status.replaceAll("_", " ")}
-            </Badge>
+            <Badge variant="outline">{batchStatusLabel(detail.status)}</Badge>
           </CardAction>
         </CardHeader>
         <CardContent>
@@ -715,39 +772,30 @@ export function ReviewPanel({
                 />
               )}
               {post.isPending
-                ? "Posting safely…"
+                ? "Posting…"
                 : `Post eligible invoices (${eligible})`}
             </Button>
           )}
         </CardFooter>
       </Card>
 
-      {detail.counts.duplicate > 0 && (
-        <Alert>
-          <HugeiconsIcon icon={Database01Icon} strokeWidth={2} />
-          <AlertTitle>
-            {detail.counts.duplicate} duplicate invoice record
-            {detail.counts.duplicate === 1 ? "" : "s"}
-          </AlertTitle>
-          <AlertDescription>
-            These exact rows were uploaded earlier. They will not create another
-            invoice.
-          </AlertDescription>
-        </Alert>
+      {attention.length > 0 && (
+        <section className="flex flex-col gap-2">
+          <h3 className="text-sm font-medium">
+            Needs your attention ({attention.length})
+          </h3>
+          {attention.map(renderInvoice)}
+        </section>
       )}
-
-      <Separator />
-      <div className="flex flex-col gap-4">
-        {detail.invoices.map((invoice) => (
-          <InvoiceCard
-            key={invoice.stagedInvoiceId}
-            batchId={batchId}
-            invoice={invoice}
-            wallets={wallets.data ?? []}
-            canReview={canReview}
-          />
-        ))}
-      </div>
+      {rest.length > 0 && (
+        <section className="flex flex-col gap-2">
+          <h3 className="text-sm font-medium">
+            {attention.length > 0 ? "No action needed" : "Invoices"} (
+            {rest.length})
+          </h3>
+          {rest.map(renderInvoice)}
+        </section>
+      )}
     </div>
   );
 }

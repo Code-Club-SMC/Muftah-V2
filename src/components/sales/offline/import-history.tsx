@@ -6,7 +6,6 @@ import {
   Card,
   CardAction,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -27,32 +26,13 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useOfflineSalesHistory } from "@/hooks/sales/use-offline-sales";
-
-function dateTime(value: Date | string) {
-  return new Intl.DateTimeFormat("en-PK", {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: "Asia/Karachi",
-  }).format(new Date(value));
-}
+import { batchSource, batchStatusLabel, dateTime } from "./format";
 
 function statusVariant(status: string) {
   if (status === "completed") return "default" as const;
   if (status === "rejected") return "destructive" as const;
   if (status === "completed_with_issues") return "secondary" as const;
   return "outline" as const;
-}
-
-function statusLabel(status: string) {
-  const labels: Record<string, string> = {
-    uploaded: "Uploaded",
-    preview_ready: "Ready for review",
-    posting: "Posting",
-    completed: "Completed",
-    completed_with_issues: "Completed with issues",
-    rejected: "Rejected",
-  };
-  return labels[status] ?? status;
 }
 
 export function ImportHistory({
@@ -63,15 +43,12 @@ export function ImportHistory({
   canReview: boolean;
 }) {
   const history = useOfflineSalesHistory();
+  const batches = history.data ?? [];
 
   return (
     <Card>
       <CardHeader>
         <CardTitle>Import history</CardTitle>
-        <CardDescription>
-          Audit of uploaded filenames, file fingerprints, outage windows, and
-          posting results. Workbook bytes are not retained.
-        </CardDescription>
         <CardAction>
           <Button
             variant="outline"
@@ -95,15 +72,15 @@ export function ImportHistory({
             <Skeleton className="h-12 w-full" />
             <Skeleton className="h-12 w-full" />
           </div>
-        ) : (history.data ?? []).length === 0 ? (
+        ) : batches.length === 0 ? (
           <Empty>
             <EmptyHeader>
               <EmptyMedia variant="icon">
                 <HugeiconsIcon icon={Database01Icon} strokeWidth={2} />
               </EmptyMedia>
-              <EmptyTitle>No offline imports yet</EmptyTitle>
+              <EmptyTitle>No imports yet</EmptyTitle>
               <EmptyDescription>
-                Uploaded workbooks will appear here with their final result.
+                Invoices sent from the offline desk will show up here.
               </EmptyDescription>
             </EmptyHeader>
           </Empty>
@@ -111,67 +88,62 @@ export function ImportHistory({
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Uploaded</TableHead>
-                <TableHead>File</TableHead>
-                <TableHead>Outage</TableHead>
+                <TableHead>Received</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead>Invoices</TableHead>
-                <TableHead>Fingerprint</TableHead>
-                <TableHead className="text-right">Action</TableHead>
+                <TableHead>Posted</TableHead>
+                <TableHead className="text-right" />
               </TableRow>
             </TableHeader>
             <TableBody>
-              {(history.data ?? []).map((batch) => {
+              {batches.map((batch) => {
+                const needAttention =
+                  batch.invalidInvoices + batch.needsReviewInvoices;
                 const reviewable =
-                  batch.status !== "rejected" && batch.workbookId != null;
+                  canReview &&
+                  batch.status !== "rejected" &&
+                  batch.workbookId != null;
                 return (
                   <TableRow key={batch.id}>
-                    <TableCell>{dateTime(batch.uploadedAt)}</TableCell>
                     <TableCell>
-                      <div className="flex max-w-52 flex-col gap-1">
-                        <span className="truncate font-medium">
-                          {batch.originalFilename}
+                      <div className="flex max-w-72 flex-col gap-0.5">
+                        <span className="font-medium">
+                          {dateTime(batch.uploadedAt)}
                         </span>
-                        <span className="truncate text-xs text-muted-foreground">
-                          {batch.outageReason}
+                        <span className="text-xs text-muted-foreground">
+                          {batchSource(batch.originalFilename)}
                         </span>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex flex-col gap-1 text-xs">
-                        <span>{dateTime(batch.outageStartedAt)}</span>
-                        <span className="text-muted-foreground">
-                          to {dateTime(batch.outageEndedAt)}
+                        <span
+                          className="truncate text-xs text-muted-foreground"
+                          title={batch.outageReason}
+                        >
+                          Outage {dateTime(batch.outageStartedAt)} to{" "}
+                          {dateTime(batch.outageEndedAt)}
                         </span>
                       </div>
                     </TableCell>
                     <TableCell>
                       <Badge variant={statusVariant(batch.status)}>
-                        {statusLabel(batch.status)}
+                        {batchStatusLabel(batch.status)}
                       </Badge>
                     </TableCell>
                     <TableCell className="tabular-nums">
-                      {batch.postedInvoices}/{batch.totalInvoices} posted
-                      {(batch.invalidInvoices > 0 ||
-                        batch.needsReviewInvoices > 0) && (
-                        <span className="block text-xs text-muted-foreground">
-                          {batch.invalidInvoices + batch.needsReviewInvoices}{" "}
-                          need attention
+                      {batch.postedInvoices} of {batch.totalInvoices}
+                      {needAttention > 0 && (
+                        <span className="block text-xs text-destructive">
+                          {needAttention} need attention
                         </span>
                       )}
                     </TableCell>
-                    <TableCell className="font-mono text-xs">
-                      {batch.fileSha256.slice(0, 12)}…
-                    </TableCell>
                     <TableCell className="text-right">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={!canReview || !reviewable}
-                        onClick={() => onReview(batch.id)}
-                      >
-                        View details
-                      </Button>
+                      {reviewable && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => onReview(batch.id)}
+                        >
+                          Open
+                        </Button>
+                      )}
                     </TableCell>
                   </TableRow>
                 );

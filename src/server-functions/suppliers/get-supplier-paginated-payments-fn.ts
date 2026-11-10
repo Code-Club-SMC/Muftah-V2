@@ -40,6 +40,8 @@ export const getSupplierPaginatedPaymentsFn = createServerFn()
           with: {
             chemical: true,
             packagingMaterial: true,
+            voidedBy: { columns: { name: true } },
+            voidRefundWallet: { columns: { name: true } },
           },
         },
       },

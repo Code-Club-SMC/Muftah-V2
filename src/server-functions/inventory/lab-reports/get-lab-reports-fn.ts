@@ -2,20 +2,29 @@ import { createServerFn } from "@tanstack/react-start";
 import { db } from "@/db";
 import { chemicalLabReports } from "@/db/schemas/inventory-schema";
 import { requireInventoryViewMiddleware } from "@/lib/middlewares";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and } from "drizzle-orm";
 import { z } from "zod";
+import { purchaseRecords } from "@/db/schemas/supplier-schema";
 
 const getLabReportsSchema = z.object({
     chemicalId: z.string().min(1),
+    purchaseId: z.string().min(1).optional(),
 });
 
 export const getLabReportsFn = createServerFn()
     .middleware([requireInventoryViewMiddleware])
     .inputValidator(getLabReportsSchema)
     .handler(async ({ data }) => {
+        if (data.purchaseId) {
+            const purchase = await db.query.purchaseRecords.findFirst({ where: eq(purchaseRecords.id, data.purchaseId) });
+            if (!purchase || purchase.materialType !== "chemical" || purchase.chemicalId !== data.chemicalId) {
+                throw new Error("Purchase does not belong to this chemical");
+            }
+        }
         const reports = await db.query.chemicalLabReports.findMany({
-            where: eq(chemicalLabReports.chemicalId, data.chemicalId),
+            where: and(eq(chemicalLabReports.chemicalId, data.chemicalId), data.purchaseId ? eq(chemicalLabReports.purchaseId, data.purchaseId) : undefined),
             with: {
+                purchase: { with: { supplier: { columns: { supplierName: true } } } },
                 createdBy: {
                     columns: { id: true, name: true },
                 },
@@ -23,7 +32,7 @@ export const getLabReportsFn = createServerFn()
                     columns: { id: true, name: true, unit: true },
                 },
             },
-            orderBy: [desc(chemicalLabReports.reportDate)],
+            orderBy: [desc(chemicalLabReports.reportDate), desc(chemicalLabReports.id)],
         });
 
         return reports;
@@ -40,6 +49,7 @@ export const getLabReportByIdFn = createServerFn()
         const report = await db.query.chemicalLabReports.findFirst({
             where: eq(chemicalLabReports.id, data.reportId),
             with: {
+                purchase: { with: { supplier: { columns: { supplierName: true } } } },
                 createdBy: {
                     columns: { id: true, name: true },
                 },

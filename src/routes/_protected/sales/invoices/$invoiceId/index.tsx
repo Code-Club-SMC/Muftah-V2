@@ -6,7 +6,10 @@ import { cn } from "@/lib/utils";
 import { GenericLoader } from "@/components/custom/generic-loader";
 import { getInvoiceDetailFn } from "@/server-functions/sales/invoice-detail-fn";
 import { CreateReturnDialog } from "@/components/sales/create-return-dialog";
-import { useProcessSalesReturn } from "@/hooks/sales/use-sales-returns";
+import { ReturnLifecycleActions } from "@/components/sales/return-lifecycle-actions";
+import { ReturnStatusBadge } from "@/components/sales/returns/return-status";
+import { conditionSummary, requestedUnits, receivedUnits } from "@/lib/sales/returns/return-lifecycle";
+import { getReturnUnitsPerCarton } from "@/lib/sales/returns/refund-pricing";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -55,7 +58,7 @@ type InvoiceDetailData = Awaited<ReturnType<typeof getInvoiceDetailFn>>;
 
 export const Route = createFileRoute("/_protected/sales/invoices/$invoiceId/")({
   loader: async ({ context, params }) => {
-    void context.queryClient.prefetchQuery({
+    await context.queryClient.prefetchQuery({
       queryKey: ["invoice-detail", params.invoiceId],
       queryFn: () => getInvoiceDetailFn({ data: { invoiceId: params.invoiceId } }),
     });
@@ -250,13 +253,13 @@ function InvoiceDetailContent({ invoiceId }: { invoiceId: string }) {
                 <span className="text-muted-foreground">Invoice Expense</span>
                 <span className="font-medium text-amber-600">{Number(invoice.expenses) > 0 ? PKR(Number(invoice.expenses)) : "—"}</span>
               </div>
-              {isRetailerInvoice && (
+              {(isRetailerInvoice || invoiceDiscount > 0) && (
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground">Discount</span>
                   <span className="font-medium text-rose-600">{invoiceDiscount > 0 ? `- ${PKR(invoiceDiscount)}` : "—"}</span>
                 </div>
               )}
-              {isRetailerInvoice && invoice.invoiceDiscountDescription && (
+              {invoice.invoiceDiscountDescription && (
                 <div className="rounded-md bg-rose-50 border border-rose-100 px-3 py-2 text-xs text-rose-900">
                   {invoice.invoiceDiscountDescription}
                 </div>
@@ -286,18 +289,39 @@ function InvoiceDetailContent({ invoiceId }: { invoiceId: string }) {
                   {returns.map((ret: any) => (
                     <div key={ret.id} className="rounded-lg border p-3 space-y-2">
                       <div className="flex items-center justify-between">
-                        <p className="text-sm font-medium">Return #{ret.returnNumber}</p>
+                        <Link
+                          to="/sales/returns/$returnId"
+                          params={{ returnId: ret.id }}
+                          className="text-sm font-medium hover:underline"
+                        >
+                          Return #{ret.returnNumber}
+                        </Link>
                         <ReturnStatusBadge status={ret.status} />
                       </div>
                       <p className="text-xs text-muted-foreground">
-                        {format(new Date(ret.returnDate), "dd MMM yyyy")} · {ret.condition} · {ret.reason}
+                        Requested {formatPaymentDate(ret.returnDate)} · {ret.reason}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        {ret.condition === "good"
-                          ? "Approved good returns go back to sellable stock."
-                          : `Approved ${ret.condition} returns go to segregated ${ret.condition} inventory.`}
+                        {ret.completedAt
+                          ? `Inspected conditions: ${conditionSummary(ret.items) || "None recorded"}`
+                          : "Not received. Request and approval do not change stock or invoice credit."}
                       </p>
-                      <p className="text-sm font-semibold tabular-nums">{PKR(Number(ret.totalAmount))}</p>
+                      {ret.completedAt && <p className="text-xs text-muted-foreground">Received at: {formatPaymentDate(ret.completedAt)}</p>}
+                      {ret.voidedAt && <p className="text-xs text-muted-foreground">Voided at: {formatPaymentDate(ret.voidedAt)}. Receipt credit reversed.</p>}
+                      {ret.rejectReason && <p className="text-xs text-muted-foreground">Rejection reason: {ret.rejectReason}</p>}
+                      {ret.cancelReason && <p className="text-xs text-muted-foreground">Cancellation reason: {ret.cancelReason}</p>}
+                      {ret.voidReason && <p className="text-xs text-muted-foreground">Void reason: {ret.voidReason}</p>}
+                      {ret.notes && <p className="text-xs text-muted-foreground">Notes: {ret.notes}</p>}
+                      {ret.items.map((line: any) => {
+                        const source = invoice.items.find((item: any) => item.id === line.invoiceItem?.id);
+                        const requested = requestedUnits(line, source ? getReturnUnitsPerCarton(source) : 1);
+                        const received = receivedUnits(line);
+                        return <p key={line.id} className="text-xs text-muted-foreground">
+                          {line.invoiceItem?.pack ?? "Item"}: requested {requested} packs.
+                          {ret.completedAt && <> Good: {line.goodUnits}, Damaged: {line.damagedUnits}, Expired: {line.expiredUnits}. Received: {received} packs. Shortfall: {Math.max(0, requested - received)} packs.</>}
+                        </p>;
+                      })}
+                      <p className="text-sm font-semibold tabular-nums">{ret.completedAt ? "Receipt amount" : "Requested amount"}: {PKR(Number(ret.totalAmount))}{ret.status === "voided" ? " (reversed)" : ""}</p>
                       {ret.priceOverride && (
                         <p className="text-xs rounded-md bg-amber-500/10 text-amber-700 dark:text-amber-400 px-2 py-1">
                           Refund price set above the invoice price. Reason: {ret.priceOverrideReason}
@@ -310,19 +334,17 @@ function InvoiceDetailContent({ invoiceId }: { invoiceId: string }) {
                           </p>
                           {ret.stockTraces.map((trace: any) => (
                             <p key={trace.id} className="text-xs text-muted-foreground">
-                              {trace.recipe?.name ?? "Recipe"}: moved {trace.cartonsMoved} cartons and{" "}
-                              {trace.quantityMoved} loose units to {trace.destination} stock in{" "}
+                              {trace.kind === "void" ? "Void: removed" : trace.kind === "receive" ? "Receipt: added" : `${trace.kind}: recorded`} {Math.abs(trace.cartonsMoved)} cartons and{" "}
+                              {Math.abs(trace.quantityMoved)} loose packs {trace.kind === "void" ? "from" : "to"} {trace.destination} stock for {trace.recipe?.name ?? "Recipe"} in{" "}
                               {trace.warehouse?.name ?? "the original warehouse"}.
                             </p>
                           ))}
                         </div>
                       )}
-                      {ret.status === "pending" && (
-                        <div className="flex items-center gap-2 pt-1">
-                          <ProcessReturnButton invoiceId={invoice.id} returnId={ret.id} action="approve" />
-                          <ProcessReturnButton invoiceId={invoice.id} returnId={ret.id} action="reject" />
-                        </div>
-                      )}
+                      <ReturnLifecycleActions invoiceId={invoice.id} returnId={ret.id} status={ret.status} items={ret.items.map((line: any) => {
+                        const source = invoice.items.find((item: any) => item.id === line.invoiceItem?.id);
+                        return { id: line.id, label: line.invoiceItem?.pack ?? "Item", approvedUnits: requestedUnits(line, source ? getReturnUnitsPerCarton(source) : 1) };
+                      })} />
                     </div>
                   ))}
                 </div>
@@ -588,50 +610,6 @@ function RecoveryStatusBadge({ status }: { status: string | null }) {
   return (
     <Badge variant={style.variant} className={cn("text-[10px] capitalize", style.color)}>
       {status.replace("_", " ")}
-    </Badge>
-  );
-}
-
-function ProcessReturnButton({
-  invoiceId,
-  returnId,
-  action,
-}: {
-  invoiceId: string;
-  returnId: string;
-  action: "approve" | "reject";
-}) {
-  const process = useProcessSalesReturn();
-  return (
-    <Button
-      variant={action === "approve" ? "default" : "outline"}
-      size="sm"
-      className="h-7 text-xs"
-      disabled={process.isPending}
-      onClick={() =>
-        process.mutate({
-          invoiceId,
-          returnId,
-          action,
-          notes: action === "reject" ? "Rejected from invoice detail" : undefined,
-        })
-      }
-    >
-      {process.isPending ? "..." : action === "approve" ? "Approve" : "Reject"}
-    </Button>
-  );
-}
-
-function ReturnStatusBadge({ status }: { status: string }) {
-  const map: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
-    pending: "outline",
-    approved: "default",
-    rejected: "destructive",
-    completed: "secondary",
-  };
-  return (
-    <Badge variant={map[status] ?? "outline"} className="text-[10px] capitalize">
-      {status}
     </Badge>
   );
 }

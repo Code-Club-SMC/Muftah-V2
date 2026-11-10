@@ -11,6 +11,7 @@ import {
 import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
 import { ThemeProvider } from "next-themes";
 import NotFound from "@/components/errors/404-not-found";
+import { OfflineDeskRefresher } from "@/components/sales/offline-desk/offline-desk-refresher";
 import { Toaster } from "@/components/ui/sonner";
 import TanStackQueryDevtools from "../integrations/react-query/devtools";
 import appCss from "../styles.css?url";
@@ -67,6 +68,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
           </TooltipProvider>
         </ThemeProvider>
         <Toaster />
+        <OfflineDeskRefresher />
         <TanStackDevtools
           config={{
             position: "bottom-right",

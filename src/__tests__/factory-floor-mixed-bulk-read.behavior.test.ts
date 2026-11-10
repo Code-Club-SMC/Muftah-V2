@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   batches: vi.fn(),
   select: vi.fn(),
   middleware: vi.fn(),
+  coverage: vi.fn(),
 }));
 vi.mock("@/db", async () => ({
   ...(await import("@/db/schemas/inventory-schema")),
@@ -20,6 +21,7 @@ vi.mock("@/db", async () => ({
 vi.mock("@/lib/middlewares", () => ({
   requireFactoryFloorViewMiddleware: "factory-floor-view",
 }));
+vi.mock("@/lib/inventory/chemical-report-coverage.server", () => ({ chemicalReportCoverage: mocks.coverage }));
 vi.mock("@tanstack/react-start", () => ({
   createServerFn: () => ({
     middleware: mocks.middleware.mockImplementation(() => ({
@@ -48,8 +50,9 @@ describe("factory-floor mixed bulk", () => {
   beforeEach(() => {
     mocks.warehouse
       .mockReset()
-      .mockResolvedValue({ id: "north", finishedGoodsStock: [] });
+      .mockResolvedValue({ id: "north", materialStock: [], finishedGoodsStock: [] });
     mocks.batches.mockReset().mockResolvedValue([batch]);
+    mocks.coverage.mockReset().mockResolvedValue({});
     const query: any = {
       from: () => query,
       where: () => query,
@@ -129,5 +132,19 @@ describe("factory-floor mixed bulk", () => {
     mocks.warehouse.mockResolvedValue(undefined);
     expect(await invoke()).toBeNull();
     expect(mocks.batches).not.toHaveBeenCalled();
+    expect(mocks.coverage).not.toHaveBeenCalled();
+  });
+
+  it("hydrates all chemical coverage in one floor-scoped batch without an inventory-only endpoint", async () => {
+    const coverage = { purchaseCount: 2, missingPurchaseCount: 1, reportCount: 3 };
+    mocks.warehouse.mockResolvedValue({ id: "north", finishedGoodsStock: [], materialStock: [
+      { id: "s1", chemical: { id: "c1", name: "Soda", lastSupplier: { supplierName: "Supplier" } } },
+      { id: "s2", chemical: { id: "c2", name: "Salt" } }, { id: "packaging", chemical: null },
+    ] });
+    mocks.coverage.mockResolvedValue({ c1: coverage, c2: { purchaseCount: 0, missingPurchaseCount: 0, reportCount: 0 } });
+    const result = await invoke();
+    expect(mocks.coverage).toHaveBeenCalledExactlyOnceWith(["c1", "c2"], "north");
+    expect(result.materialStock[0].chemical).toMatchObject({ reportCoverage: coverage, lastSupplier: { supplierName: "Supplier" } });
+    expect(result.materialStock[2].chemical).toBeNull();
   });
 });

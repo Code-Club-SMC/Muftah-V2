@@ -3,7 +3,6 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import {
   Database01Icon,
   FileDownloadIcon,
-  FileUploadIcon,
   InternetIcon,
 } from "@hugeicons/core-free-icons";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -21,30 +20,39 @@ import { WorkbookPanel } from "./workbook-panel";
 const steps = [
   {
     number: "01",
-    title: "Keep it ready",
-    text: "Download the official workbook and keep it on the factory computer before any outage.",
+    title: "Prepare once",
+    text: "While the internet works, open the offline desk and press Prepare this computer. It saves prices and invoice numbers on that computer.",
     icon: FileDownloadIcon,
   },
   {
     number: "02",
     title: "Work during outage",
-    text: "Enter invoices in that workbook only while the web app is unavailable.",
+    text: "Make and print invoices in the offline desk. Everything is saved on the computer, so nothing is lost if the page closes.",
     icon: InternetIcon,
   },
   {
     number: "03",
-    title: "Upload and check",
-    text: "When internet returns, upload it, review warnings, then post records to the database.",
+    title: "Send and review",
+    text: "When internet returns, send the invoices to the office, then review warnings and post them here.",
     icon: Database01Icon,
   },
 ] as const;
 
 type TabName = "workbook" | "review" | "history" | "stock";
 
-export function OfflineSalesPage() {
+export function OfflineSalesPage({
+  initialBatchId,
+}: {
+  initialBatchId?: string;
+}) {
   const { data: viewerAccess, isLoading } = useViewerAccess();
-  const [selectedBatchId, setSelectedBatchId] = useState<string | null>(null);
-  const [requestedTab, setRequestedTab] = useState<TabName | null>(null);
+  const [selectedBatchId, setSelectedBatchId] = useState<string | null>(
+    initialBatchId ?? null,
+  );
+  // Arriving from the offline desk with a batch opens the Review tab on it.
+  const [requestedTab, setRequestedTab] = useState<TabName | null>(
+    initialBatchId ? "review" : null,
+  );
   const permissions = viewerAccess?.permissions ?? [];
   const canManageWorkbooks = hasPermission(
     permissions,
@@ -89,24 +97,28 @@ export function OfflineSalesPage() {
           <h1 className="text-2xl font-semibold tracking-tight">
             Offline invoices
           </h1>
-          <Badge variant="secondary">Factory F01 · Excel fallback</Badge>
+          <Badge variant="secondary">Factory F01</Badge>
         </div>
         <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground">
-          Keep factory sales moving during an internet outage. Excel captures
-          the work temporarily; the database remains the final record after
-          review.
+          Keep factory sales moving during an internet outage. Invoices are made
+          and printed offline, then reviewed here. The database remains the final record after review.
         </p>
       </header>
 
-      <Alert>
-        <HugeiconsIcon icon={FileUploadIcon} strokeWidth={2} />
-        <AlertTitle>Use only the official workbook</AlertTitle>
-        <AlertDescription>
-          Do not make a blank Excel file during an outage. Prices, invoice
-          numbers, distributors, products, orders, and accounts come from the
-          signed workbook.
-        </AlertDescription>
-      </Alert>
+      {(canUpload || canManageWorkbooks) && (
+        <Alert>
+          <HugeiconsIcon icon={InternetIcon} strokeWidth={2} />
+          <AlertTitle>Offline invoice desk</AlertTitle>
+          <AlertDescription>
+            Make and print invoices straight from the browser, even with no
+            internet. Prices and invoice numbers are saved on the computer in advance.{" "}
+            <a className="font-medium underline" href="/offline-desk">
+              Open the offline desk
+            </a>
+            .
+          </AlertDescription>
+        </Alert>
+      )}
 
       <div className="grid gap-3 lg:grid-cols-3">
         {steps.map((step) => (
@@ -137,10 +149,10 @@ export function OfflineSalesPage() {
       >
         <TabsList className="h-auto flex-wrap justify-start">
           {canManageWorkbooks && (
-            <TabsTrigger value="workbook">Workbook</TabsTrigger>
+            <TabsTrigger value="workbook">Invoice numbers</TabsTrigger>
           )}
           {canUseReview && (
-            <TabsTrigger value="review">Upload &amp; Review</TabsTrigger>
+            <TabsTrigger value="review">Review</TabsTrigger>
           )}
           <TabsTrigger value="history">Import History</TabsTrigger>
           {canManageStock && (
