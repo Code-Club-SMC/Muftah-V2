@@ -1,3 +1,4 @@
+import { plainNumber } from "@/lib/utils";
 import { useForm } from "@tanstack/react-form";
 import { Loader2, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -101,19 +102,19 @@ export const AddRawMaterialForm = ({
     defaultValues: {
       name: initialValues?.name || "",
       warehouseId: initialValues?.warehouseId || preselectedWarehouse || availableWarehouses[0]?.id || "",
-      quantity: initialValues?.quantity || "",
+      quantity: plainNumber(initialValues?.quantity),
       packagingType: initialValues?.packagingType || "",
       packagingSize: initialValues?.packagingSize || "",
-      costPerUnit: initialValues?.unitCost || "",
+      costPerUnit: plainNumber(initialValues?.unitCost),
       unit: (initialValues?.unit || "kg") as "kg" | "liters",
-      minimumStockLevel: (initialValues?.minimumStockLevel || "0") as string | number,
+      minimumStockLevel: (plainNumber(initialValues?.minimumStockLevel) || "0") as string | number,
       supplierId: initialValues?.supplierId || preselectedSupplierId || "",
       notes: initialValues?.notes || "",
       invoiceNumber: initialValues?.invoiceNumber || "",
       paymentMethod: initialValues?.paymentMethod || "pay_later",
       paymentStatus: (initialValues?.paymentStatus || "unpaid") as "paid" | "partial" | "unpaid",
       walletId: "",
-      amountPaid: initialValues?.paidAmount || "",
+      amountPaid: plainNumber(initialValues?.paidAmount),
       transactionId: initialValues?.transactionId || "",
       bankName: initialValues?.bankName || "",
     },

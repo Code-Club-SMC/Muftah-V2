@@ -1,3 +1,4 @@
+import { plainNumber } from "@/lib/utils";
 import { useState, type ReactNode } from "react";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import Big from "big.js";
@@ -80,7 +81,7 @@ export function CreateRecipeForm({ onOpenChange, initialRecipe }: Props) {
   const [productId, setProductId] = useState(initialRecipe?.productId ?? "");
   const [formulaId, setFormulaId] = useState(initialRecipe?.formulaId ?? "");
   const [name, setName] = useState(initialRecipe?.name ?? "");
-  const [fillAmount, setFillAmount] = useState(initialRecipe?.fillAmount ?? "");
+  const [fillAmount, setFillAmount] = useState(plainNumber(initialRecipe?.fillAmount));
   const [fillUnit, setFillUnit] = useState(initialRecipe?.fillUnit ?? "g");
   const [containerId, setContainerId] = useState(
     initialRecipe?.containerPackagingId ?? "",
@@ -100,7 +101,7 @@ export function CreateRecipeForm({ onOpenChange, initialRecipe }: Props) {
   const [extras, setExtras] = useState(
     (initialRecipe?.packaging ?? []).map((row) => ({
       packagingMaterialId: row.packagingMaterialId,
-      quantity: row.quantityPerContainer,
+      quantity: plainNumber(row.quantityPerContainer),
       usageBasis: normalizePackagingUsageBasis(row.usageBasis),
     })),
   );

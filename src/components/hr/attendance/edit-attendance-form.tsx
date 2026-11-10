@@ -908,7 +908,7 @@ import {
 } from "lucide-react";
 import { upsertAttendanceSchema } from "@/lib/validators/hr-validators";
 import { Separator } from "@/components/ui/separator";
-import { cn } from "@/lib/utils";
+import { cn, plainNumber } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { ManualPunchTimeline } from "./manual-punch-timeline";
@@ -1351,8 +1351,8 @@ export const EditAttendanceForm = ({
         | null,
       checkIn: attendance?.checkIn ?? null,
       checkOut: attendance?.checkOut ?? null,
-      overtimeHours: attendance?.overtimeHours ?? null,
-      compensatoryHoursUsed: attendance?.compensatoryHoursUsed ?? null,
+      overtimeHours: attendance?.overtimeHours == null ? null : plainNumber(attendance.overtimeHours),
+      compensatoryHoursUsed: attendance?.compensatoryHoursUsed == null ? null : plainNumber(attendance.compensatoryHoursUsed),
       isLate: attendance?.isLate ?? false,
       isNightShift: attendance?.isNightShift ?? false,
       isApprovedLeave: attendance?.isApprovedLeave ?? false,
@@ -1367,7 +1367,7 @@ export const EditAttendanceForm = ({
         | "approved"
         | "rejected",
       entrySource: (attendance?.entrySource ?? "manual") as AttendanceEntrySource,
-      dutyHours: attendance?.dutyHours ?? null,
+      dutyHours: attendance?.dutyHours == null ? null : plainNumber(attendance.dutyHours),
       leaveApprovalStatus: attendance?.leaveApprovalStatus ?? "none",
       notes: attendance?.notes ?? null,
     },

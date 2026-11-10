@@ -23,7 +23,7 @@ import { getInventoryFn } from "@/server-functions/inventory/get-inventory-fn";
 import { useAddPackagingMaterial } from "@/hooks/inventory/use-add-packaging-material";
 import { addPackagingMaterialSchema } from "@/lib/validators/validators";
 import { useState, useMemo, useRef } from "react";
-import { cn } from "@/lib/utils";
+import { cn, plainNumber } from "@/lib/utils";
 import { useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { getSuppliersFn } from "@/server-functions/suppliers/get-suppliers-fn";
 import { Textarea } from "../ui/textarea";
@@ -110,12 +110,12 @@ export const AddPackagingMaterialForm = ({
     defaultValues: {
       name: initialValues?.name || "",
       warehouseId: initialValues?.warehouseId || preselectedWarehouse || availableWarehouses[0]?.id || "",
-      quantity: initialValues?.quantity || "",
-      costPerUnit: initialValues?.unitCost || "",
+      quantity: plainNumber(initialValues?.quantity),
+      costPerUnit: plainNumber(initialValues?.unitCost),
       minimumStockLevel: (initialValues?.minimumStockLevel ?? 0) as string | number,
       type: (initialValues?.type || "primary") as "primary" | "master" | "sticker" | "extra",
       packagingKind: (initialValues?.packagingKind ?? null) as PackagingKind | null,
-      capacity: initialValues?.capacity || "",
+      capacity: plainNumber(initialValues?.capacity),
       capacityUnit: initialValues?.capacityUnit || "",
       weightPerPack: "",
       pricePerKg: "",
@@ -128,7 +128,7 @@ export const AddPackagingMaterialForm = ({
       paymentMethod: initialValues?.paymentMethod || "pay_later",
       paymentStatus: (initialValues?.paymentStatus || "unpaid") as "paid" | "partial" | "unpaid",
       walletId: "",
-      amountPaid: initialValues?.paidAmount || "",
+      amountPaid: plainNumber(initialValues?.paidAmount),
       transactionId: initialValues?.transactionId || "",
       bankName: initialValues?.bankName || "",
     },
