@@ -1,3 +1,4 @@
+import { plainNumber } from "@/lib/utils";
 import { useForm } from "@tanstack/react-form";
 import { InfoIcon, Loader2, MapPin } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -38,8 +39,8 @@ export const EditWarehouseForm = ({ warehouse, onSuccess }: Props) => {
       city: warehouse.city,
       state: warehouse.state,
       type: warehouse.type,
-      latitude: warehouse.latitude.toString(),
-      longitude: warehouse.longitude.toString(),
+      latitude: plainNumber(warehouse.latitude),
+      longitude: plainNumber(warehouse.longitude),
     },
     validators: {
       onSubmit: updateWarehouseSchema,

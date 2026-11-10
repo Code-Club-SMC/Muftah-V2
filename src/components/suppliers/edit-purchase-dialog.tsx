@@ -1,3 +1,4 @@
+import { plainNumber } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ResponsiveDialog } from "@/components/custom/responsive-dialog";
 import { useForm } from "@tanstack/react-form";
@@ -80,9 +81,9 @@ export const EditPurchaseDialog = ({ open, onOpenChange, purchase }: Props) => {
 
   const form = useForm({
     defaultValues: {
-      quantity: purchase?.quantity || "",
-      unitCost: purchase?.unitCost || "",
-      cost: purchase?.cost || "",
+      quantity: plainNumber(purchase?.quantity),
+      unitCost: plainNumber(purchase?.unitCost),
+      cost: plainNumber(purchase?.cost),
       materialName: "",
       capacity: "",
       capacityUnit: "",
@@ -112,21 +113,21 @@ export const EditPurchaseDialog = ({ open, onOpenChange, purchase }: Props) => {
 
   useEffect(() => {
     if (purchase) {
-      form.setFieldValue("quantity", purchase.quantity);
-      form.setFieldValue("unitCost", purchase.unitCost || "");
-      form.setFieldValue("cost", purchase.cost);
+      form.setFieldValue("quantity", plainNumber(purchase.quantity));
+      form.setFieldValue("unitCost", plainNumber(purchase.unitCost));
+      form.setFieldValue("cost", plainNumber(purchase.cost));
       form.setFieldValue("notes", purchase.notes || "");
       form.setFieldValue("transactionId", purchase.transactionId || "");
       form.setFieldValue("invoiceNumber", purchase.invoiceNumber || "");
 
       if (purchase.materialType === "packaging" && purchase.packagingMaterial) {
         form.setFieldValue("materialName", purchase.packagingMaterial.name);
-        form.setFieldValue("capacity", purchase.packagingMaterial.capacity || "");
+        form.setFieldValue("capacity", plainNumber(purchase.packagingMaterial.capacity));
         form.setFieldValue("capacityUnit", purchase.packagingMaterial.capacityUnit || "");
-        form.setFieldValue("minStock", purchase.packagingMaterial.minimumStockLevel?.toString() || "0");
+        form.setFieldValue("minStock", plainNumber(purchase.packagingMaterial.minimumStockLevel) || "0");
       } else if (purchase.materialType === "chemical" && purchase.chemical) {
         form.setFieldValue("materialName", purchase.chemical.name);
-        form.setFieldValue("minStock", purchase.chemical.minimumStockLevel || "0");
+        form.setFieldValue("minStock", plainNumber(purchase.chemical.minimumStockLevel) || "0");
       }
     }
   }, [purchase, form]);

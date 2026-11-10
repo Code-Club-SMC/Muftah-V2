@@ -186,7 +186,7 @@ describe("packaging format editor", () => {
           "Content in one pack",
         )) as HTMLInputElement
       ).value,
-    ).toBe("0.250");
+    ).toBe("0.25");
     expect(
       (screen.getByLabelText("Packs in one full carton") as HTMLInputElement)
         .value,
@@ -200,7 +200,7 @@ describe("packaging format editor", () => {
     await waitFor(() => expect(mocks.update).toHaveBeenCalled());
     expect(mocks.update.mock.calls[0][0].data).toMatchObject({
       id: "r1",
-      fillAmount: "0.250",
+      fillAmount: "0.25",
       fillUnit: "kg",
       containersPerCarton: 40,
     });
@@ -245,7 +245,7 @@ describe("packaging format editor", () => {
     fireEvent.click(screen.getByRole("button", { name: "Back to edit" }));
     expect(
       (screen.getByLabelText("Content in one pack") as HTMLInputElement).value,
-    ).toBe("0.250");
+    ).toBe("0.25");
   });
   it("rejects per-carton extras on loose-only formats", async () => {
     mount(<CreateRecipeForm onOpenChange={vi.fn()} />);

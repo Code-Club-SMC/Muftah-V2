@@ -40,7 +40,7 @@ import {
   AllowanceCard,
   DEDUCTION_OCCASIONS,
 } from "@/components/hr/employees/allowance-card";
-import { cn } from "@/lib/utils";
+import { cn, plainNumber } from "@/lib/utils";
 import { BasicSalaryPolicyCard } from "@/components/hr/employees/basic-salary-policy-card";
 import { calculateTotalShiftHours } from "@/lib/attendance/time";
 
@@ -156,7 +156,7 @@ export const EditEmployeeForm = ({ employee, onSuccess }: Props) => {
       bankAccountNumber: employee.bankAccountNumber ?? "",
       standardDutyHours: employee.standardDutyHours ?? 8,
       shifts: ((employee as any).shifts ?? []) as { start: string; end: string }[],
-      basicSalary: employee.basicSalary ?? "",
+      basicSalary: plainNumber(employee.basicSalary),
       annualLeaveAllowance: (employee as any).annualLeaveAllowance ?? 14,
       compensatoryHoursBalance: Number((employee as any).compensatoryHoursBalance || 0),
       basicSalaryDeductionPolicyOverrideEnabled:

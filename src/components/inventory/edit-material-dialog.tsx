@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useForm } from "@tanstack/react-form";
 import Big from "big.js";
 import { Loader2, Package, Box } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, plainNumber } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { useUpdateMaterial } from "@/hooks/inventory/use-material-actions";
 import { useMaterialLots } from "@/hooks/stock/use-material-lots";
@@ -63,16 +63,16 @@ export const EditMaterialDialog = ({
     defaultValues: {
       name: material?.name || "",
       unit: material?.unit || (type === "chemical" ? "kg" : ""),
-      costPerUnit: material?.costPerUnit || "0",
-      minimumStockLevel: material?.minimumStockLevel || "0",
+      costPerUnit: plainNumber(material?.costPerUnit) || "0",
+      minimumStockLevel: plainNumber(material?.minimumStockLevel) || "0",
       quantity: new Big(item?.quantity || "0").toString(),
       materialType:
         (material?.type?.toLowerCase() as "primary" | "master") || "primary",
-      capacity: material?.capacity || "",
+      capacity: plainNumber(material?.capacity),
       capacityUnit: material?.capacityUnit || "",
       measuredInKg: !!material?.measuredInKg,
       packagingKind: (material?.packagingKind ?? null) as PackagingKind | null,
-      weightPerPack: material?.weightPerPack || "",
+      weightPerPack: plainNumber(material?.weightPerPack),
     },
     onSubmit: async ({ value }) => {
       const changed = !stockChange(value.quantity).eq(0);

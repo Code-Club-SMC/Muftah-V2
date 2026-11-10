@@ -19,3 +19,14 @@ export function formatNum(num: number | string | null | undefined): string {
   if (isNaN(parsed)) return "0";
   return new Intl.NumberFormat("en-US").format(parsed);
 }
+
+/**
+ * Saved decimals come back from the database padded ("100.000", "37.50").
+ * Use this to fill a form field so people see "100" and "37.5".
+ */
+export function plainNumber(value: string | number | null | undefined): string {
+  if (value === null || value === undefined) return "";
+  const text = String(value).trim();
+  const trimmed = /^-?\d+\.\d+$/.test(text) ? text.replace(/\.?0+$/, "") : text;
+  return trimmed === "-0" ? "0" : trimmed;
+}

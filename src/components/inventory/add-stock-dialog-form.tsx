@@ -1,3 +1,4 @@
+import { plainNumber } from "@/lib/utils";
 import { Button } from "../ui/button";
 import {
   Field,
@@ -139,9 +140,9 @@ export const AddStockForm = ({
         itemToRestock?.chemical?.id ||
         itemToRestock?.packagingMaterial?.id ||
         "",
-      quantity: itemToRestock?.quantity || "",
+      quantity: plainNumber(itemToRestock?.quantity),
       supplierId: preselectedSupplierId || "", // prioritizing explicit prop, though itemToRestock context usually implies it too
-      cost: itemToRestock?.cost || "",
+      cost: plainNumber(itemToRestock?.cost),
       notes: "",
       paymentMethod: itemToRestock?.paymentMethod || "pay_later",
       paymentStatus: "unpaid" as "paid" | "partial" | "unpaid",
