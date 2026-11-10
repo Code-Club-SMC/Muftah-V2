@@ -7,7 +7,8 @@ import { GenericLoader } from "@/components/custom/generic-loader";
 import { getInvoiceDetailFn } from "@/server-functions/sales/invoice-detail-fn";
 import { CreateReturnDialog } from "@/components/sales/create-return-dialog";
 import { ReturnLifecycleActions } from "@/components/sales/return-lifecycle-actions";
-import { conditionSummary, requestedUnits, receivedUnits, returnStatusLabel } from "@/lib/sales/returns/return-lifecycle";
+import { ReturnStatusBadge } from "@/components/sales/returns/return-status";
+import { conditionSummary, requestedUnits, receivedUnits } from "@/lib/sales/returns/return-lifecycle";
 import { getReturnUnitsPerCarton } from "@/lib/sales/returns/refund-pricing";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -288,7 +289,13 @@ function InvoiceDetailContent({ invoiceId }: { invoiceId: string }) {
                   {returns.map((ret: any) => (
                     <div key={ret.id} className="rounded-lg border p-3 space-y-2">
                       <div className="flex items-center justify-between">
-                        <p className="text-sm font-medium">Return #{ret.returnNumber}</p>
+                        <Link
+                          to="/sales/returns/$returnId"
+                          params={{ returnId: ret.id }}
+                          className="text-sm font-medium hover:underline"
+                        >
+                          Return #{ret.returnNumber}
+                        </Link>
                         <ReturnStatusBadge status={ret.status} />
                       </div>
                       <p className="text-xs text-muted-foreground">
@@ -603,22 +610,6 @@ function RecoveryStatusBadge({ status }: { status: string | null }) {
   return (
     <Badge variant={style.variant} className={cn("text-[10px] capitalize", style.color)}>
       {status.replace("_", " ")}
-    </Badge>
-  );
-}
-
-function ReturnStatusBadge({ status }: { status: string }) {
-  const map: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
-    requested: "outline",
-    approved: "default",
-    rejected: "destructive",
-    completed: "secondary",
-    cancelled: "outline",
-    voided: "destructive",
-  };
-  return (
-    <Badge variant={map[status] ?? "outline"} className="text-[10px] capitalize">
-      {returnStatusLabel(status)}
     </Badge>
   );
 }

@@ -4,11 +4,28 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Field, FieldGroup } from "@/components/ui/field";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { useViewerAccess } from "@/hooks/use-viewer-access";
 import { hasPermission } from "@/lib/rbac";
-import { useDecideSalesReturn, useCompleteSalesReturn, useCancelSalesReturn, useVoidSalesReturn } from "@/hooks/sales/use-sales-returns";
-import { availableReturnActions, checkInspection, receivedUnits, shortUnits, type ReturnAction } from "@/lib/sales/returns/return-lifecycle";
+import {
+  useDecideSalesReturn,
+  useCompleteSalesReturn,
+  useCancelSalesReturn,
+  useVoidSalesReturn,
+  useSalesReturnDetail,
+} from "@/hooks/sales/use-sales-returns";
+import { getReturnUnitsPerCarton } from "@/lib/sales/returns/refund-pricing";
+import {
+  availableReturnActions,
+  checkInspection,
+  receivedUnits,
+  requestedUnits,
+  shortUnits,
+  type ReturnAction,
+} from "@/lib/sales/returns/return-lifecycle";
+
+export type ReturnLifecycleItem = { id: string; label: string; approvedUnits: number };
 
 const labels: Record<ReturnAction, string> = {
   approve: "Approve", reject: "Reject", receive: "Receive", cancel: "Cancel return", void: "Void receipt",
@@ -18,13 +35,15 @@ export function ReturnLifecycleActions({ invoiceId, returnId, status, items }: {
   invoiceId: string;
   returnId: string;
   status: string;
-  items: Array<{ id: string; label: string; approvedUnits: number }>;
+  items?: ReturnLifecycleItem[];
 }) {
   const { data: viewer } = useViewerAccess();
   const canRead = !!viewer && hasPermission(viewer.permissions, "sales.view");
+  const canApprove = canRead && hasPermission(viewer?.permissions ?? [], "sales.returns.approve");
+  const canReceive = canRead && hasPermission(viewer?.permissions ?? [], "inventory.returns.receive");
   const actions = availableReturnActions(status, {
-    approve: canRead && hasPermission(viewer!.permissions, "sales.returns.approve"),
-    receive: canRead && hasPermission(viewer!.permissions, "inventory.returns.receive"),
+    approve: canApprove,
+    receive: canReceive,
   });
   const decide = useDecideSalesReturn(invoiceId);
   const complete = useCompleteSalesReturn(invoiceId);
@@ -37,25 +56,57 @@ export function ReturnLifecycleActions({ invoiceId, returnId, status, items }: {
   const [notes, setNotes] = useState("");
   const [error, setError] = useState("");
   const [lines, setLines] = useState<Array<{ returnItemId: string; goodUnits: string; damagedUnits: string; expiredUnits: string }>>([]);
+
+  const needsDetail = action === "receive" && items === undefined;
+  const detailQuery = useSalesReturnDetail(needsDetail ? returnId : null);
+  const waitingForDetail = needsDetail && (detailQuery.isLoading || detailQuery.isError || !detailQuery.data);
+  const effectiveStatus = needsDetail && detailQuery.data ? detailQuery.data.status : status;
+  const effectiveActions = availableReturnActions(effectiveStatus, {
+    approve: canApprove,
+    receive: canReceive,
+  });
+  const resolvedItems: ReturnLifecycleItem[] = items ?? (
+    detailQuery.data
+      ? detailQuery.data.items.map(line => ({
+          id: line.id,
+          label: line.invoiceItem.pack,
+          approvedUnits: requestedUnits(line, getReturnUnitsPerCarton(line.invoiceItem)),
+        }))
+      : []
+  );
+
   // Read current requested limits after a stale-detail refresh; never fill inspection from them.
-  const inspection = items.map(item => {
+  const inspection = resolvedItems.map(item => {
     const line = lines.find(line => line.returnItemId === item.id);
     return { ...item, goodUnits: Number(line?.goodUnits ?? ""), damagedUnits: Number(line?.damagedUnits ?? ""), expiredUnits: Number(line?.expiredUnits ?? "") };
   });
   let inspectionError = "";
   try { checkInspection(inspection); } catch (error) { inspectionError = (error as Error).message; }
   const reasonValid = reason.trim().length >= 3 && reason.trim().length <= 500;
-  const valid = !!action && actions.includes(action) && (action === "receive" ? !inspectionError : reasonValid);
+  const valid =
+    !!action &&
+    effectiveActions.includes(action) &&
+    !waitingForDetail &&
+    (action === "receive" ? resolvedItems.length > 0 && !inspectionError : reasonValid);
 
   function open(nextAction: ReturnAction) {
     if (submitting.current || !actions.includes(nextAction)) return;
     setError(""); setReason(""); setNotes("");
-    setLines(items.map(item => ({ returnItemId: item.id, goodUnits: "", damagedUnits: "", expiredUnits: "" })));
+    setLines((items ?? []).map(item => ({ returnItemId: item.id, goodUnits: "", damagedUnits: "", expiredUnits: "" })));
     setAction(nextAction);
   }
 
+  function updateLineValue(itemId: string, key: "goodUnits" | "damagedUnits" | "expiredUnits", value: string) {
+    setLines(current => {
+      if (current.some(line => line.returnItemId === itemId)) {
+        return current.map(line => (line.returnItemId === itemId ? { ...line, [key]: value } : line));
+      }
+      return [...current, { returnItemId: itemId, goodUnits: "", damagedUnits: "", expiredUnits: "", [key]: value }];
+    });
+  }
+
   async function submit(nextAction: ReturnAction) {
-    if (submitting.current || pending || !actions.includes(nextAction)) return;
+    if (submitting.current || pending || !effectiveActions.includes(nextAction)) return;
     if (nextAction !== "approve" && !valid) return;
     submitting.current = true;
     setError("");
@@ -97,33 +148,48 @@ export function ReturnLifecycleActions({ invoiceId, returnId, status, items }: {
             </DialogHeader>
             <fieldset disabled={pending}>
               <FieldGroup>
-                {action === "receive" ? <>
-                  {items.map(item => {
-                    const line = lines.find(line => line.returnItemId === item.id);
-                    return <FieldGroup key={item.id}>
-                      <p>{item.label}: requested {item.approvedUnits} packs</p>
-                      <div className="grid grid-cols-3 gap-3">
-                        {(["goodUnits", "damagedUnits", "expiredUnits"] as const).map(key => {
-                          const condition = key.replace("Units", "");
-                          const id = `${returnId}-${item.id}-${key}`;
-                          return <Field key={key}>
-                            <Label htmlFor={id}>{item.label} {condition} packs</Label>
-                            <Input id={id} type="number" min={0} max={item.approvedUnits} step={1} placeholder="0" value={line?.[key] ?? ""} onChange={event => setLines(current => current.map(line => line.returnItemId === item.id ? { ...line, [key]: event.target.value } : line))} />
-                          </Field>;
-                        })}
-                      </div>
-                    </FieldGroup>;
-                  })}
-                  <p>Received: {inspection.reduce((sum, line) => sum + receivedUnits(line), 0)} packs. Shortfall: {inspection.reduce((sum, line) => sum + shortUnits(line), 0)} packs. The shortfall is released when this receipt closes the request.</p>
-                  {inspectionError && <p className="text-destructive">{inspectionError}</p>}
-                  <Field><Label htmlFor={`${returnId}-receipt-notes`}>Inspection notes</Label><Textarea id={`${returnId}-receipt-notes`} value={notes} maxLength={1000} onChange={event => setNotes(event.target.value)} /></Field>
-                </> : <Field>
+                {action === "receive" ? (
+                  needsDetail && detailQuery.isLoading ? (
+                    <Skeleton className="h-32 w-full" />
+                  ) : needsDetail && detailQuery.isError ? (
+                    <div className="flex flex-col gap-2">
+                      <p role="alert" className="text-sm text-destructive">
+                        {detailQuery.error instanceof Error ? detailQuery.error.message : "Failed to load return items."}
+                      </p>
+                      <Button type="button" variant="outline" size="sm" onClick={() => void detailQuery.refetch()}>
+                        Retry
+                      </Button>
+                    </div>
+                  ) : (
+                    <>
+                      {resolvedItems.map(item => {
+                        const line = lines.find(line => line.returnItemId === item.id);
+                        return <FieldGroup key={item.id}>
+                          <p>{item.label}: requested {item.approvedUnits} packs</p>
+                          <div className="grid grid-cols-3 gap-3">
+                            {(["goodUnits", "damagedUnits", "expiredUnits"] as const).map(key => {
+                              const condition = key.replace("Units", "");
+                              const id = `${returnId}-${item.id}-${key}`;
+                              return <Field key={key}>
+                                <Label htmlFor={id}>{item.label} {condition} packs</Label>
+                                <Input id={id} type="number" min={0} max={item.approvedUnits} step={1} placeholder="0" value={line?.[key] ?? ""} onChange={event => updateLineValue(item.id, key, event.target.value)} />
+                              </Field>;
+                            })}
+                          </div>
+                        </FieldGroup>;
+                      })}
+                      <p>Received: {inspection.reduce((sum, line) => sum + receivedUnits(line), 0)} packs. Shortfall: {inspection.reduce((sum, line) => sum + shortUnits(line), 0)} packs. The shortfall is released when this receipt closes the request.</p>
+                      {inspectionError && <p className="text-destructive">{inspectionError}</p>}
+                      <Field><Label htmlFor={`${returnId}-receipt-notes`}>Inspection notes</Label><Textarea id={`${returnId}-receipt-notes`} value={notes} maxLength={1000} onChange={event => setNotes(event.target.value)} /></Field>
+                    </>
+                  )
+                ) : <Field>
                   <Label htmlFor={`${returnId}-action-reason`}>Reason</Label>
                   <Textarea id={`${returnId}-action-reason`} required minLength={3} maxLength={500} value={reason} onChange={event => setReason(event.target.value)} />
                 </Field>}
               </FieldGroup>
             </fieldset>
-            {action && !actions.includes(action) && <p role="alert">This action is no longer available. Invoice details have refreshed; your entries are kept.</p>}
+            {action && !effectiveActions.includes(action) && !waitingForDetail && <p role="alert">This action is no longer available. Invoice details have refreshed; your entries are kept.</p>}
             {error && <p role="alert">{error}</p>}
             <DialogFooter>
               <Button type="button" variant="ghost" disabled={pending} onClick={() => setAction(null)}>Close</Button>

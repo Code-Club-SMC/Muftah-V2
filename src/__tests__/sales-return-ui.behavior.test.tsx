@@ -4,9 +4,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CreateReturnDialog } from "@/components/sales/create-return-dialog";
 import { Route } from "@/routes/_protected/sales/invoices/$invoiceId/index";
 
-const mocks = vi.hoisted(() => ({ create: vi.fn(), decide: vi.fn(), complete: vi.fn(), cancel: vi.fn(), void: vi.fn(), reasons: vi.fn(), detail: vi.fn(), permissions: ["*"] as string[] }));
-vi.mock("@/server-functions/sales/sales-returns-fn", () => ({ createSalesReturnFn: mocks.create, decideSalesReturnFn: mocks.decide, completeSalesReturnFn: mocks.complete, cancelSalesReturnFn: mocks.cancel, voidSalesReturnFn: mocks.void }));
-vi.mock("@/server-functions/sales/return-reasons-fn", () => ({ getReturnReasonsFn: mocks.reasons }));
+const mocks = vi.hoisted(() => ({ create: vi.fn(), decide: vi.fn(), complete: vi.fn(), cancel: vi.fn(), void: vi.fn(), reasons: vi.fn(), saveReason: vi.fn(), listReturns: vi.fn(), returnDetail: vi.fn(), detail: vi.fn(), permissions: ["*"] as string[] }));
+vi.mock("@/server-functions/sales/sales-returns-fn", () => ({ createSalesReturnFn: mocks.create, decideSalesReturnFn: mocks.decide, completeSalesReturnFn: mocks.complete, cancelSalesReturnFn: mocks.cancel, voidSalesReturnFn: mocks.void, listSalesReturnsFn: mocks.listReturns, getSalesReturnDetailFn: mocks.returnDetail }));
+vi.mock("@/server-functions/sales/return-reasons-fn", () => ({ getReturnReasonsFn: mocks.reasons, saveReturnReasonFn: mocks.saveReason }));
 vi.mock("@/server-functions/sales/invoice-detail-fn", () => ({ getInvoiceDetailFn: mocks.detail }));
 vi.mock("@/hooks/use-viewer-access", () => ({ useViewerAccess: () => ({ data: { permissions: mocks.permissions } }) }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));

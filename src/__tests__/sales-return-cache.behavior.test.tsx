@@ -1,14 +1,29 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from "vitest";
-import { useCreateSalesReturn, useDecideSalesReturn, useCompleteSalesReturn, useCancelSalesReturn, useVoidSalesReturn, useReturnReasons, type CreateSalesReturnInput } from "@/hooks/sales/use-sales-returns";
+import {
+  salesReturnKeys,
+  useCreateSalesReturn,
+  useDecideSalesReturn,
+  useCompleteSalesReturn,
+  useCancelSalesReturn,
+  useVoidSalesReturn,
+  useReturnReasons,
+  useSaveReturnReason,
+  type CreateSalesReturnInput,
+} from "@/hooks/sales/use-sales-returns";
 
-const mocks = vi.hoisted(() => ({ create: vi.fn(), decide: vi.fn(), complete: vi.fn(), cancel: vi.fn(), void: vi.fn(), reasons: vi.fn() }));
-vi.mock("@/server-functions/sales/sales-returns-fn", () => ({ createSalesReturnFn: mocks.create, decideSalesReturnFn: mocks.decide, completeSalesReturnFn: mocks.complete, cancelSalesReturnFn: mocks.cancel, voidSalesReturnFn: mocks.void }));
-vi.mock("@/server-functions/sales/return-reasons-fn", () => ({ getReturnReasonsFn: mocks.reasons }));
+const mocks = vi.hoisted(() => ({ create: vi.fn(), decide: vi.fn(), complete: vi.fn(), cancel: vi.fn(), void: vi.fn(), reasons: vi.fn(), saveReason: vi.fn(), list: vi.fn(), detail: vi.fn() }));
+vi.mock("@/server-functions/sales/sales-returns-fn", () => ({ createSalesReturnFn: mocks.create, decideSalesReturnFn: mocks.decide, completeSalesReturnFn: mocks.complete, cancelSalesReturnFn: mocks.cancel, voidSalesReturnFn: mocks.void, listSalesReturnsFn: mocks.list, getSalesReturnDetailFn: mocks.detail }));
+vi.mock("@/server-functions/sales/return-reasons-fn", () => ({ getReturnReasonsFn: mocks.reasons, saveReturnReasonFn: mocks.saveReason }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 let client: QueryClient;
-const local = [["sales-returns", "invoice", "invoice"], ["invoice-detail", "invoice"]];
+const local = [
+  ["sales-returns", "invoice", "invoice"],
+  ["sales-returns", "list", { tab: "to-approve", page: 1 }],
+  ["sales-returns", "detail", "return"],
+  ["invoice-detail", "invoice"],
+];
 const physical = ["inventory", "factory-floor", "item-detail", "low-stock-alerts", "carton-availability", "cartons", "invoices", "customers", "sales-people", "salesman-summary", "distributor-profile", "shopkeeper-profile", "reconciliation", "credit-recovery", "slip-lookup", "overdue-slips", "distributor-ledger", "shopkeeper-ledger", "salesman-ledger", "salesman-shop-ledger", "reports"].map(key => [key, "cached"]);
 physical.push(["production-runs", "batch", "kpis"], ["production-runs", "batch", "audit"]);
 const untouched = [["wallets"], ["transactions"], ["unrelated"]];
@@ -20,7 +35,7 @@ beforeEach(() => {
   [...local, ...physical, ...untouched].forEach(key => client.setQueryData(key, []));
 });
 afterEach(() => { cleanup(); client.clear(); });
-const invalid = (keys: string[][], expected: boolean) => keys.forEach(key => expect(client.getQueryState(key)?.isInvalidated, key.join("/")).toBe(expected));
+const invalid = (keys: unknown[][], expected: boolean) => keys.forEach(key => expect(client.getQueryState(key)?.isInvalidated, key.join("/")).toBe(expected));
 const createInput = { invoiceId: "invoice", reasonId: "reason", reasonNote: "Details", items: [{ invoiceItemId: "item", cartonsReturned: 0, quantityReturned: 2 }] };
 const receipt = { returnId: "return", lines: [{ returnItemId: "line", goodUnits: 1, damagedUnits: 1, expiredUnits: 0 }] };
 function useActions() {
@@ -78,5 +93,16 @@ describe("return lifecycle cache and contracts", () => {
     expect(mocks.reasons).not.toHaveBeenCalled();
     await act(async () => { rerender({ enabled: true }); });
     expect(mocks.reasons).toHaveBeenCalledWith({ data: { includeInactive: false } });
+  });
+  it("separates active and includeInactive reason keys while invalidating both on save", async () => {
+    client.setQueryData(salesReturnKeys.reasons, []);
+    client.setQueryData([...salesReturnKeys.reasons, "all"], []);
+    const { result } = renderHook(() => useSaveReturnReason(), { wrapper });
+    await act(async () => {
+      await result.current.mutateAsync({ name: "Late delivery", requiresNote: false, isActive: true });
+    });
+    expect(mocks.saveReason).toHaveBeenCalledWith({ data: { name: "Late delivery", requiresNote: false, isActive: true } });
+    invalid([["return-reasons"], ["return-reasons", "all"]], true);
+    invalid(untouched, false);
   });
 });

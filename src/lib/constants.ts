@@ -137,6 +137,11 @@ export const navigations: NavigationItem[] = [
         icon: InvoiceIcon,
       },
       {
+        title: "Returns",
+        url: "/sales/returns",
+        icon: InvoiceIcon,
+      },
+      {
         title: "Customers",
         url: "/sales/customers",
         icon: CustomersIcon,

@@ -1,12 +1,15 @@
-import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import {
   createSalesReturnFn,
   decideSalesReturnFn,
   completeSalesReturnFn,
   cancelSalesReturnFn,
   voidSalesReturnFn,
+  listSalesReturnsFn,
+  getSalesReturnDetailFn,
 } from "@/server-functions/sales/sales-returns-fn";
-import { getReturnReasonsFn } from "@/server-functions/sales/return-reasons-fn";
+import { getReturnReasonsFn, saveReturnReasonFn } from "@/server-functions/sales/return-reasons-fn";
+import type { ReturnTab } from "@/lib/sales/returns/return-lifecycle";
 import { toast } from "sonner";
 import { invalidateStockQueries } from "@/lib/inventory/invalidate-stock";
 import type { OptionalFetcher } from "@tanstack/react-start";
@@ -20,19 +23,66 @@ type DecideInput = ValidatedInput<typeof decideSalesReturnFn>;
 type CompleteInput = ValidatedInput<typeof completeSalesReturnFn>;
 type CancelInput = ValidatedInput<typeof cancelSalesReturnFn>;
 type VoidInput = ValidatedInput<typeof voidSalesReturnFn>;
+type SaveReturnReasonInput = ValidatedInput<typeof saveReturnReasonFn>;
+
+export type SalesReturnListFilters = {
+  tab: ReturnTab;
+  search?: string;
+  reasonId?: string;
+  page: number;
+};
+export type SalesReturnListResult = Awaited<ReturnType<typeof listSalesReturnsFn>>;
+export type SalesReturnListRow = SalesReturnListResult["rows"][number];
+export type SalesReturnDetail = Awaited<ReturnType<typeof getSalesReturnDetailFn>>;
 
 export const salesReturnKeys = {
   all: ["sales-returns"] as const,
   invoice: (invoiceId: string) => [...salesReturnKeys.all, "invoice", invoiceId] as const,
+  list: (filters: SalesReturnListFilters) => [...salesReturnKeys.all, "list", filters] as const,
+  detail: (returnId: string) => [...salesReturnKeys.all, "detail", returnId] as const,
   reasons: ["return-reasons"] as const,
 };
 
-export function useReturnReasons(enabled: boolean) {
+export function useSalesReturnList(filters: SalesReturnListFilters, enabled = true) {
   return useQuery({
-    queryKey: salesReturnKeys.reasons,
-    queryFn: () => getReturnReasonsFn({ data: { includeInactive: false } }),
+    queryKey: salesReturnKeys.list(filters),
+    queryFn: () => listSalesReturnsFn({ data: filters }),
+    enabled,
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function useSalesReturnDetail(returnId: string | null) {
+  return useQuery({
+    queryKey: salesReturnKeys.detail(returnId ?? ""),
+    queryFn: () => getSalesReturnDetailFn({ data: { returnId: returnId ?? "" } }),
+    enabled: !!returnId,
+  });
+}
+
+export function useReturnReasons(enabled = true, options?: { includeInactive?: boolean }) {
+  const includeInactive = options?.includeInactive ?? false;
+  return useQuery({
+    queryKey: includeInactive ? ([...salesReturnKeys.reasons, "all"] as const) : salesReturnKeys.reasons,
+    queryFn: () => getReturnReasonsFn({ data: { includeInactive } }),
     enabled,
     retry: false,
+  });
+}
+
+export function useSaveReturnReason() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: SaveReturnReasonInput) => saveReturnReasonFn({ data }),
+    retry: false,
+    onSuccess: async () => {
+      toast.success("Return reason saved");
+      await qc.invalidateQueries({ queryKey: salesReturnKeys.reasons });
+    },
+    onError: async (error) => {
+      toast.error(error.message || "Failed to save return reason");
+      await qc.invalidateQueries({ queryKey: salesReturnKeys.reasons });
+    },
   });
 }
 

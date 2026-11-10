@@ -19,8 +19,8 @@ vi.mock("@/server-functions/inventory/add-warehouse.fn", () => ({ addWarehouseFn
 vi.mock("@/server-functions/inventory/update-warehouse-fn", () => ({ updateWarehouseFn: mocks.warehouse }));
 vi.mock("@/server-functions/sales/invoices-fn", () => ({ createInvoiceFn: mocks.create, updateInvoiceFn: mocks.update, deleteInvoiceFn: mocks.remove, getInvoicesFn: vi.fn(), getInvoiceStatsFn: vi.fn() }));
 vi.mock("@/server-functions/sales/invoice-detail-fn", () => ({ getInvoiceDetailFn: vi.fn() }));
-vi.mock("@/server-functions/sales/sales-returns-fn", () => ({ createSalesReturnFn: vi.fn(), decideSalesReturnFn: mocks.process, completeSalesReturnFn: mocks.process, cancelSalesReturnFn: vi.fn(), voidSalesReturnFn: mocks.process }));
-vi.mock("@/server-functions/sales/return-reasons-fn", () => ({ getReturnReasonsFn: vi.fn() }));
+vi.mock("@/server-functions/sales/sales-returns-fn", () => ({ createSalesReturnFn: vi.fn(), decideSalesReturnFn: mocks.process, completeSalesReturnFn: mocks.process, cancelSalesReturnFn: vi.fn(), voidSalesReturnFn: mocks.process, listSalesReturnsFn: vi.fn(), getSalesReturnDetailFn: vi.fn() }));
+vi.mock("@/server-functions/sales/return-reasons-fn", () => ({ getReturnReasonsFn: vi.fn(), saveReturnReasonFn: vi.fn() }));
 vi.mock("@/server-functions/manufacturing/cartons", () => ({ applyQcHoldFn: async () => ({}), releaseQcHoldFn: async () => ({}), dispatchCartonsFn: async () => ({}), processReturnFn: async () => ({}), closeBatchFn: async () => ({}) }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 let client: QueryClient;
