@@ -1,5 +1,6 @@
 import { format } from "date-fns";
 import { AlertCircle, Printer } from "lucide-react";
+import { toast } from "sonner";
 import { ResponsiveDialog } from "@/components/custom/responsive-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -16,6 +17,15 @@ import { useSalesReturnDetail } from "@/hooks/sales/use-sales-returns";
 import { formatRupees } from "@/lib/finance/expense-entry";
 import { receivedUnits } from "@/lib/sales/returns/return-lifecycle";
 
+function escapeHtml(value: unknown): string {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -28,27 +38,30 @@ export function CreditNotePrintDialog({ open, onOpenChange, returnId }: Props) {
   const handlePrint = () => {
     if (!data) return;
     const win = window.open("", "_blank");
-    if (!win) return;
+    if (!win) {
+      toast.error("Popup blocked. Please allow popups for this site to print.");
+      return;
+    }
     const issuedAt = data.creditNoteIssuedAt ?? data.completedAt ?? data.returnDate;
     const itemRows = data.items
       .map((item) => {
         const qty = receivedUnits(item);
         return `
           <tr>
-            <td style="border:1px solid #cbd5e1;padding:6px 8px;">${item.invoiceItem?.pack ?? "Item"}</td>
-            <td style="border:1px solid #cbd5e1;padding:6px 8px;text-align:right;">${item.goodUnits}</td>
-            <td style="border:1px solid #cbd5e1;padding:6px 8px;text-align:right;">${item.damagedUnits}</td>
-            <td style="border:1px solid #cbd5e1;padding:6px 8px;text-align:right;">${item.expiredUnits}</td>
-            <td style="border:1px solid #cbd5e1;padding:6px 8px;text-align:right;">${qty}</td>
-            <td style="border:1px solid #cbd5e1;padding:6px 8px;text-align:right;">${formatRupees(item.refundPerUnit)}</td>
-            <td style="border:1px solid #cbd5e1;padding:6px 8px;text-align:right;font-weight:600;">${formatRupees(item.totalRefund)}</td>
+            <td style="border:1px solid #cbd5e1;padding:6px 8px;">${escapeHtml(item.invoiceItem?.pack ?? "Item")}</td>
+            <td style="border:1px solid #cbd5e1;padding:6px 8px;text-align:right;">${escapeHtml(item.goodUnits)}</td>
+            <td style="border:1px solid #cbd5e1;padding:6px 8px;text-align:right;">${escapeHtml(item.damagedUnits)}</td>
+            <td style="border:1px solid #cbd5e1;padding:6px 8px;text-align:right;">${escapeHtml(item.expiredUnits)}</td>
+            <td style="border:1px solid #cbd5e1;padding:6px 8px;text-align:right;">${escapeHtml(qty)}</td>
+            <td style="border:1px solid #cbd5e1;padding:6px 8px;text-align:right;">${escapeHtml(formatRupees(item.refundPerUnit))}</td>
+            <td style="border:1px solid #cbd5e1;padding:6px 8px;text-align:right;font-weight:600;">${escapeHtml(formatRupees(item.totalRefund))}</td>
           </tr>`;
       })
       .join("");
     const html = `<!DOCTYPE html>
 <html>
 <head>
-  <title>Credit Note ${data.creditNoteNumber ?? `#${data.returnNumber}`}</title>
+  <title>Credit Note ${escapeHtml(data.creditNoteNumber ?? `#${data.returnNumber}`)}</title>
   <style>
     @page { size: A4 portrait; margin: 14mm; }
     body { font-family: 'Segoe UI', Arial, sans-serif; color: #0f172a; margin: 0; padding: 16px; }
@@ -65,14 +78,14 @@ export function CreditNotePrintDialog({ open, onOpenChange, returnId }: Props) {
   <div class="header">
     <div>
       <h1 style="margin:0;font-size:22px;">CREDIT NOTE</h1>
-      <div style="font-size:13px;font-weight:700;margin-top:4px;">${data.creditNoteNumber ?? `RET-${data.returnNumber}`}</div>
-      <div style="font-size:11px;color:#475569;">Return #${data.returnNumber} · Invoice #${data.invoice?.invoiceNumber ?? "—"}</div>
+      <div style="font-size:13px;font-weight:700;margin-top:4px;">${escapeHtml(data.creditNoteNumber ?? `RET-${data.returnNumber}`)}</div>
+      <div style="font-size:11px;color:#475569;">Return #${escapeHtml(data.returnNumber)} · Invoice #${escapeHtml(data.invoice?.invoiceNumber ?? "—")}</div>
     </div>
     <div style="text-align:right;font-size:12px;">
-      <div><strong>Issued:</strong> ${issuedAt ? format(new Date(issuedAt), "dd MMM yyyy") : "—"}</div>
-      <div><strong>Customer:</strong> ${data.customer?.name ?? "—"}</div>
-      ${data.customer?.city ? `<div>${data.customer.city}</div>` : ""}
-      ${data.customer?.mobileNumber ? `<div>${data.customer.mobileNumber}</div>` : ""}
+      <div><strong>Issued:</strong> ${escapeHtml(issuedAt ? format(new Date(issuedAt), "dd MMM yyyy") : "—")}</div>
+      <div><strong>Customer:</strong> ${escapeHtml(data.customer?.name ?? "—")}</div>
+      ${data.customer?.city ? `<div>${escapeHtml(data.customer.city)}</div>` : ""}
+      ${data.customer?.mobileNumber ? `<div>${escapeHtml(data.customer.mobileNumber)}</div>` : ""}
     </div>
   </div>
   <table>
@@ -90,9 +103,9 @@ export function CreditNotePrintDialog({ open, onOpenChange, returnId }: Props) {
     <tbody>${itemRows}</tbody>
   </table>
   <div class="split">
-    <div><span>Credit Note Total</span><strong>${formatRupees(data.totalAmount)}</strong></div>
-    <div><span>Applied to Invoice Balance</span><span>${formatRupees(data.appliedToInvoiceAmount ?? 0)}</span></div>
-    <div><span>Transferred to Store Credit</span><span>${formatRupees(data.customerCreditAmount ?? 0)}</span></div>
+    <div><span>Credit Note Total</span><strong>${escapeHtml(formatRupees(data.totalAmount))}</strong></div>
+    <div><span>Applied to Invoice Balance</span><span>${escapeHtml(formatRupees(data.appliedToInvoiceAmount ?? 0))}</span></div>
+    <div><span>Transferred to Store Credit</span><span>${escapeHtml(formatRupees(data.customerCreditAmount ?? 0))}</span></div>
   </div>
   <script>window.onload = () => { window.print(); };</script>
 </body>

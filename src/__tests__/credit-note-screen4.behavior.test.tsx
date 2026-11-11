@@ -218,4 +218,62 @@ describe("Screen 4 credit note settlement & void-blocked UX", () => {
     expect(screen.getByText(/Al-Noor Traders/)).toBeTruthy();
     expect(screen.getByText(/Mango 1L/)).toBeTruthy();
   });
+
+  it("escapes dynamic customer and item values against HTML injection when printing credit note", async () => {
+    const mockDocumentWrite = vi.fn();
+    const mockDocumentClose = vi.fn();
+    const mockOpen = vi.spyOn(window, "open").mockReturnValue({
+      document: {
+        write: mockDocumentWrite,
+        close: mockDocumentClose,
+      },
+    } as unknown as Window);
+
+    mocks.detail.mockResolvedValue({
+      id: "ret-xss",
+      returnNumber: 99,
+      creditNoteNumber: "CN-2026-9999",
+      creditNoteIssuedAt: "2026-11-11T10:00:00.000Z",
+      status: "completed",
+      totalAmount: "500.00",
+      appliedToInvoiceAmount: "500.00",
+      customerCreditAmount: "0.00",
+      invoice: { id: "inv-99", invoiceNumber: "INV-<99>&", date: "2026-11-01" },
+      customer: {
+        id: "c-xss",
+        name: '<script>alert("xss")</script> & "Co"',
+        city: 'City <"Lahore">',
+        mobileNumber: "0300-0000000",
+      },
+      items: [
+        {
+          id: "ri-xss",
+          goodUnits: 1,
+          damagedUnits: 0,
+          expiredUnits: 0,
+          refundPerUnit: "500.00",
+          totalRefund: "500.00",
+          invoiceItem: { id: "ii-xss", pack: 'Drink <Pack> & "Bottles"' },
+        },
+      ],
+      refunds: [],
+    });
+
+    mount(<CreditNotePrintDialog open onOpenChange={vi.fn()} returnId="ret-xss" />);
+    await screen.findByText("CN-2026-9999");
+
+    fireEvent.click(screen.getByRole("button", { name: /Print credit note/i }));
+
+    expect(mockOpen).toHaveBeenCalled();
+    expect(mockDocumentWrite).toHaveBeenCalledTimes(1);
+    const html = mockDocumentWrite.mock.calls[0][0] as string;
+    expect(html).not.toContain('<script>alert("xss")</script>');
+    expect(html).toContain("&lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt; &amp; &quot;Co&quot;");
+    expect(html).toContain("Drink &lt;Pack&gt; &amp; &quot;Bottles&quot;");
+    expect(html).toContain("City &lt;&quot;Lahore&quot;&gt;");
+    expect(html).toContain("INV-&lt;99&gt;&amp;");
+    expect(mockDocumentClose).toHaveBeenCalled();
+
+    mockOpen.mockRestore();
+  });
 });
