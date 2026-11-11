@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { getRequestHeaders } from "@tanstack/react-start/server";
 import { redirect } from "@tanstack/react-router";
 import {
@@ -160,18 +160,22 @@ export async function ensureRbacSeeded() {
         for (const [newKey, sourceKey] of Object.entries(PERMISSION_BACKFILLS)) {
           if (!sourceKey || existingPermissionKeys.has(newKey)) continue;
           const newPermissionId = permissionIdByKey.get(newKey);
-          const sourcePermissionId = permissionIdByKey.get(sourceKey);
-          if (!newPermissionId || !sourcePermissionId) continue;
+          const sourceKeys = Array.isArray(sourceKey) ? sourceKey : [sourceKey];
+          const sourcePermissionIds = sourceKeys
+            .map((key) => permissionIdByKey.get(key))
+            .filter((id): id is string => Boolean(id));
+          if (!newPermissionId || sourcePermissionIds.length === 0) continue;
           const holders = await tx.query.appRolePermissions.findMany({
-            where: eq(appRolePermissions.permissionId, sourcePermissionId),
+            where: inArray(appRolePermissions.permissionId, sourcePermissionIds),
             columns: { roleId: true },
           });
-          if (holders.length > 0) {
+          const uniqueRoleIds = [...new Set(holders.map((holder) => holder.roleId))];
+          if (uniqueRoleIds.length > 0) {
             await tx
               .insert(appRolePermissions)
               .values(
-                holders.map((holder) => ({
-                  roleId: holder.roleId,
+                uniqueRoleIds.map((roleId) => ({
+                  roleId,
                   permissionId: newPermissionId,
                 })),
               )

@@ -87,6 +87,7 @@ export const PERMISSION_KEYS = [
   "finance.manage",
   "finance.payments.verify",
   "finance.payments.reverse",
+  "finance.refunds.issue",
   "hr.view",
   "hr.manage",
   "attendance.offline.view",
@@ -549,6 +550,13 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
     kind: "action",
   },
   {
+    key: "finance.refunds.issue",
+    moduleKey: "finance",
+    label: "Issue customer refunds",
+    description: "Pay out customer store credit in cash or bank transfer.",
+    kind: "action",
+  },
+  {
     key: "hr.view",
     moduleKey: "hr",
     label: "View HR & payroll",
@@ -738,10 +746,13 @@ export const PERMISSION_DEFINITION_MAP = Object.fromEntries(
  * the mapped permission gets it too, so nobody loses access on the day it ships. It runs once:
  * removing the permission from a role later is respected.
  */
-export const PERMISSION_BACKFILLS: Partial<Record<PermissionKey, PermissionKey>> = {
+export const PERMISSION_BACKFILLS: Partial<
+  Record<PermissionKey, PermissionKey | readonly PermissionKey[]>
+> = {
   "sales.returns.create": "sales.manage",
   "sales.returns.approve": "sales.manage",
   "inventory.returns.receive": "inventory.manage",
+  "finance.refunds.issue": ["finance.manage", "inventory.returns.receive"],
 };
 
 export type AppRoleSeed = {
@@ -814,6 +825,7 @@ export const SYSTEM_ROLE_SEEDS: AppRoleSeed[] = [
       "finance.manage",
       "finance.payments.verify",
       "finance.payments.reverse",
+      "finance.refunds.issue",
       "hr.view",
       "hr.manage",
       "attendance.offline.view",
@@ -861,6 +873,7 @@ export const SYSTEM_ROLE_SEEDS: AppRoleSeed[] = [
       "finance.manage",
       "finance.payments.verify",
       "finance.payments.reverse",
+      "finance.refunds.issue",
     ],
   },
   {

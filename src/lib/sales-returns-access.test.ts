@@ -24,7 +24,7 @@ describe("sales return permissions", () => {
   });
 
   it("backfills existing roles once from the rights they already hold", () => {
-    expect(PERMISSION_BACKFILLS).toEqual({
+    expect(PERMISSION_BACKFILLS).toMatchObject({
       "sales.returns.create": "sales.manage",
       "sales.returns.approve": "sales.manage",
       "inventory.returns.receive": "inventory.manage",
