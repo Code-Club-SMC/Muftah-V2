@@ -39,6 +39,7 @@ type SettlementSectionProps = {
 	wallets: WalletOption[];
 	isEditing: boolean;
 	handleFocus: (event: React.FocusEvent<HTMLInputElement>) => void;
+	availableCustomerCredit?: number;
 };
 
 export const SettlementSection = ({
@@ -52,11 +53,40 @@ export const SettlementSection = ({
 	wallets,
 	isEditing,
 	handleFocus,
+	availableCustomerCredit = 0,
 }: SettlementSectionProps) => {
 	const roundedTotalProfit = Math.round(totalProfit);
 	const breakdown = calculatePaymentBreakdown(totalPayable, payments);
 	const cashWallet = wallets.find((wallet) => wallet.type === "cash");
 	const duplicateRows = findDuplicatePaymentRows(payments);
+
+	const newCreditAllocated = Number(
+		payments
+			.filter((p) => !p.status && p.method === "customer_credit")
+			.reduce((sum, p) => sum + Number(p.amount || 0), 0)
+			.toFixed(2),
+	);
+	const remainingCustomerCredit = Number(
+		Math.max(0, availableCustomerCredit - newCreditAllocated).toFixed(2),
+	);
+	const storeCreditOverLimit = Number(
+		Math.max(0, newCreditAllocated - availableCustomerCredit).toFixed(2),
+	);
+
+	function addStoreCreditPayment() {
+		if (remainingCustomerCredit <= 0 || breakdown.payLaterAmount <= 0) return;
+		const currentPayments = form.getFieldValue("payments") as PaymentInput[];
+		const applyAmount = Number(
+			Math.min(remainingCustomerCredit, breakdown.payLaterAmount).toFixed(2),
+		);
+		form.setFieldValue("payments", [
+			...currentPayments,
+			{
+				...blankPayment("customer_credit"),
+				amount: applyAmount,
+			},
+		]);
+	}
 
 	function setFullCashPayment() {
 		if (!cashWallet) return;
@@ -246,6 +276,43 @@ export const SettlementSection = ({
 							<Separator />
 						</div>
 
+					{availableCustomerCredit > 0 && (
+						<div className="flex items-center justify-between rounded-xl border border-primary/20 bg-primary/5 p-3 text-sm">
+							<div className="space-y-0.5">
+								<p className="font-medium text-xs text-muted-foreground">Available Store Credit</p>
+								<p className="font-semibold tabular-nums text-foreground">
+									{PKR(availableCustomerCredit)}
+									{newCreditAllocated > 0 && (
+										<span className="ml-2 text-xs text-muted-foreground font-normal">
+											({PKR(remainingCustomerCredit)} remaining)
+										</span>
+									)}
+								</p>
+							</div>
+							<Button
+								type="button"
+								variant="outline"
+								size="sm"
+								onClick={addStoreCreditPayment}
+								disabled={remainingCustomerCredit <= 0 || breakdown.payLaterAmount <= 0}
+							>
+								Apply Store Credit
+							</Button>
+						</div>
+					)}
+
+					{storeCreditOverLimit > 0 && (
+						<div className="flex gap-2 rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+							<AlertCircle className="mt-0.5 size-4 shrink-0" />
+							<div>
+								<p className="font-medium">Store Credit Over-allocated</p>
+								<p className="text-xs">
+									Store credit allocated exceeds available balance by {PKR(storeCreditOverLimit)}.
+								</p>
+							</div>
+						</div>
+					)}
+
 					{!isEditing && totalPayable > 0 && (
 						<div className="grid gap-2 sm:grid-cols-2">
 							<Button
@@ -282,6 +349,7 @@ export const SettlementSection = ({
 							payments={payments}
 							wallets={wallets}
 							readOnly={isEditing}
+							availableCustomerCredit={availableCustomerCredit}
 						/>
 
 						{breakdown.overAllocatedAmount > 0 && (

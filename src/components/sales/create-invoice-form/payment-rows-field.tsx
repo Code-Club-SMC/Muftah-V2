@@ -25,9 +25,10 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
+import { PKR } from "./utils";
 
 export type PaymentInput = {
-	method: "cash" | "bank_transfer" | "digital_wallet" | "cheque" | "expense_offset";
+	method: "cash" | "bank_transfer" | "digital_wallet" | "cheque" | "expense_offset" | "customer_credit";
 	amount: number;
 	walletId: string;
 	reference: string;
@@ -121,11 +122,15 @@ export function calculatePaymentBreakdown(
 	const countsAsPaid = (payment: PaymentInput) =>
 		payment.status
 			? payment.status === "confirmed"
-			: payment.method === "cash" || Boolean(payment.instantVerify);
+			: payment.method === "cash" ||
+				payment.method === "expense_offset" ||
+				payment.method === "customer_credit" ||
+				Boolean(payment.instantVerify);
 	const countsAsPending = (payment: PaymentInput) =>
 		payment.status
 			? payment.status === "pending"
-			: payment.method !== "cash" && !payment.instantVerify;
+			: !["cash", "expense_offset", "customer_credit"].includes(payment.method) &&
+				!payment.instantVerify;
 	const paidAmount = Number(
 		payments
 			.filter(countsAsPaid)
@@ -160,6 +165,7 @@ function paymentMethodLabel(method: PaymentInput["method"]) {
 	if (method === "digital_wallet") return "Digital Account";
 	if (method === "cheque") return "Cheque";
 	if (method === "expense_offset") return "Salesman Salary Paid by Distributor";
+	if (method === "customer_credit") return "Store Credit";
 	return "Cash";
 }
 
@@ -170,11 +176,13 @@ export function PaymentRowsField({
 	payments,
 	wallets,
 	readOnly = false,
+	availableCustomerCredit,
 }: {
 	form: any;
 	payments: PaymentInput[];
 	wallets: WalletOption[];
 	readOnly?: boolean;
+	availableCustomerCredit?: number;
 }) {
 	const duplicateRows = findDuplicatePaymentRows(payments);
 	const { data: salesmen } = useGetSalesmen();
@@ -272,8 +280,10 @@ export function PaymentRowsField({
 														: payment.status[0].toUpperCase() +
 															payment.status.slice(1)}
 											</Badge>
-										) : payment.method !== "cash" ? (
+										) : !["cash", "expense_offset", "customer_credit"].includes(payment.method) ? (
 											<Badge variant="secondary">Pending Verification</Badge>
+										) : payment.method === "customer_credit" ? (
+											<Badge variant="default">Instant Credit</Badge>
 										) : null}
 									{!rowReadOnly && (
 										<Button
@@ -314,6 +324,9 @@ export function PaymentRowsField({
 														</SelectItem>
 														<SelectItem value="cheque">Cheque</SelectItem>
 														<SelectItem value="expense_offset">Salesman Salary Paid by Distributor</SelectItem>
+														<SelectItem value="customer_credit" disabled={availableCustomerCredit !== undefined && availableCustomerCredit <= 0}>
+															Store Credit
+														</SelectItem>
 													</SelectContent>
 												</Select>
 											</Field>
@@ -344,7 +357,7 @@ export function PaymentRowsField({
 										)}
 									</form.Field>
 
-									{payment.method !== "expense_offset" && (
+									{payment.method !== "expense_offset" && payment.method !== "customer_credit" && (
 										<form.Field name={`payments[${index}].walletId`}>
 											{(walletField: any) => (
 												<Field>
@@ -424,6 +437,22 @@ export function PaymentRowsField({
 												</Field>
 											)}
 										</form.Field>
+									</div>
+								)}
+
+								{payment.method === "customer_credit" && (
+									<div className="rounded-lg border border-primary/20 bg-primary/5 p-3 text-xs space-y-1">
+										<div className="flex items-center justify-between font-medium">
+											<span>Customer Store Credit</span>
+											{availableCustomerCredit !== undefined && (
+												<span className="font-semibold tabular-nums">
+													Available: {PKR(availableCustomerCredit)}
+												</span>
+											)}
+										</div>
+										<p className="text-muted-foreground">
+											Deducted FIFO from active customer credit lots. No cash or bank account movement.
+										</p>
 									</div>
 								)}
 
@@ -649,7 +678,7 @@ export function PaymentRowsField({
 									</form.Field>
 								)}
 
-								{payment.method !== "cash" && !rowReadOnly && (
+								{!["cash", "expense_offset", "customer_credit"].includes(payment.method) && !rowReadOnly && (
 									<div className="flex items-start gap-2.5 rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3 dark:border-emerald-500/30 dark:bg-emerald-950/10">
 										<input
 											type="checkbox"

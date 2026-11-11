@@ -426,7 +426,7 @@ const InvoiceDetailContent = ({
                     </Badge>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Destination: {payment.wallet?.name ?? "No account"}
+                    Destination: {payment.method === "customer_credit" ? "Customer Store Credit" : payment.method === "expense_offset" ? "Salary Offset" : (payment.wallet?.name ?? "No account")}
                   </p>
                   {payment.reference && (
                     <p className="text-xs text-muted-foreground">Reference: {payment.reference}</p>
@@ -686,6 +686,7 @@ function paymentMethodLabel(method: string) {
   if (method === "bank_transfer") return "Bank Transfer";
   if (method === "cheque") return "Cheque";
   if (method === "expense_offset") return "Expense Offset";
+  if (method === "customer_credit") return "Store Credit";
   return "Cash";
 }
 

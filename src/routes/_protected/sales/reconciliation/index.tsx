@@ -117,6 +117,7 @@ function ReconciliationPage() {
     (slip as any)?.unallocatedAmount !== undefined
       ? Number((slip as any).unallocatedAmount)
       : Math.max(0, outstandingAmount - pendingAmount);
+  const customerCreditBalance = Number((slip as any)?.customerCreditBalance ?? 0);
 
   // ── Overdue slips ────────────────────────────────────────────────────────
   const { data: overdueData, isLoading: overdueLoading } = useQuery({
@@ -142,7 +143,7 @@ function ReconciliationPage() {
     mutationFn: (payload: {
       slipId: string;
       amount: number;
-      method: "cash" | "bank_transfer" | "cheque" | "expense_offset";
+      method: "cash" | "bank_transfer" | "cheque" | "expense_offset" | "customer_credit";
       walletId?: string;
       reference?: string;
       chequeBank?: string;
@@ -168,6 +169,13 @@ function ReconciliationPage() {
       qc.invalidateQueries({ queryKey: ["overdue-slips"] });
       qc.invalidateQueries({ queryKey: ["daily-closing"] });
       qc.invalidateQueries({ queryKey: ["customers"] });
+      qc.invalidateQueries({ queryKey: ["customer-credit"] });
+      qc.invalidateQueries({ queryKey: ["distributor-profile"] });
+      qc.invalidateQueries({ queryKey: ["shopkeeper-profile"] });
+      qc.invalidateQueries({ queryKey: ["distributor-ledger"] });
+      qc.invalidateQueries({ queryKey: ["shopkeeper-ledger"] });
+      qc.invalidateQueries({ queryKey: ["salesman-ledger"] });
+      qc.invalidateQueries({ queryKey: ["salesman-shop-ledger"] });
       setSubmittedSlip(slip?.slipNumber ?? "");
     },
     onError: (err: Error) => toast.error(err.message ?? "Failed to reconcile"),
@@ -177,7 +185,7 @@ function ReconciliationPage() {
   const form = useForm({
     defaultValues: {
       amount: 0,
-      method: "cash" as "cash" | "bank_transfer" | "digital_wallet" | "cheque" | "expense_offset",
+      method: "cash" as "cash" | "bank_transfer" | "digital_wallet" | "cheque" | "expense_offset" | "customer_credit",
       walletId: wallets.find((w) => w.type === "cash")?.id ?? wallets[0]?.id ?? "",
       reference: "",
       senderBankName: "",
@@ -202,7 +210,11 @@ function ReconciliationPage() {
         toast.error(`Amount cannot exceed remaining collectible: ${PKR(unallocatedAmount)}`);
         return;
       }
-      if (value.method !== "expense_offset" && (!value.walletId || value.walletId === "__none__")) {
+      if (value.method === "customer_credit" && value.amount > customerCreditBalance) {
+        toast.error(`Amount cannot exceed available store credit: ${PKR(customerCreditBalance)}`);
+        return;
+      }
+      if (value.method !== "expense_offset" && value.method !== "customer_credit" && (!value.walletId || value.walletId === "__none__")) {
         toast.error(
           value.method === "cash"
             ? "Please select a cash deposit account"
@@ -259,7 +271,7 @@ function ReconciliationPage() {
         }
       }
 
-      const backendMethod: "cash" | "bank_transfer" | "cheque" | "expense_offset" =
+      const backendMethod: "cash" | "bank_transfer" | "cheque" | "expense_offset" | "customer_credit" =
         value.method === "digital_wallet"
           ? "bank_transfer"
           : value.method;
@@ -277,13 +289,13 @@ function ReconciliationPage() {
         slipId: slip.id,
         amount: value.amount,
         method: backendMethod,
-        walletId: value.method === "expense_offset" ? undefined : value.walletId,
+        walletId: value.method === "expense_offset" || value.method === "customer_credit" ? undefined : value.walletId,
         reference: value.reference?.trim(),
         chequeBank: value.method === "cheque" ? value.chequeBank.trim() : undefined,
         chequeNumber: value.method === "cheque" ? value.chequeNumber.trim() : undefined,
         chequeDate: value.method === "cheque" && value.chequeDate ? new Date(value.chequeDate) : undefined,
         notes: formattedNotes,
-        instantVerify: value.method !== "cash" && value.method !== "expense_offset" ? Boolean(value.instantVerify) : undefined,
+        instantVerify: !["cash", "expense_offset", "customer_credit"].includes(value.method) ? Boolean(value.instantVerify) : undefined,
         expenseType: value.method === "expense_offset" ? value.expenseType : undefined,
         expenseEmployeeId: value.method === "expense_offset" ? value.expenseEmployeeId : undefined,
       });
@@ -292,6 +304,7 @@ function ReconciliationPage() {
 
   useEffect(() => {
     const currentMethod = form.getFieldValue("method");
+    if (currentMethod === "expense_offset" || currentMethod === "customer_credit") return;
     const currentWalletId = form.getFieldValue("walletId");
     const requiredType = currentMethod === "cash" ? "cash" : "bank";
     const eligible = wallets.filter(
@@ -489,6 +502,32 @@ function ReconciliationPage() {
                       )}
                     </div>
                   </div>
+
+                  {customerCreditBalance > 0 && (
+                    <div className="flex items-center justify-between rounded-lg border border-primary/20 bg-primary/5 p-3 text-xs mt-3">
+                      <div>
+                        <p className="text-muted-foreground">Available Store Credit</p>
+                        <p className="text-sm font-semibold tabular-nums text-foreground">
+                          {PKR(customerCreditBalance)}
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={unallocatedAmount <= 0}
+                        onClick={() => {
+                          const applyAmount = Math.round(Math.min(customerCreditBalance, unallocatedAmount) * 100) / 100;
+                          form.setFieldValue("method", "customer_credit");
+                          form.setFieldValue("amount", applyAmount);
+                          form.setFieldValue("walletId", "");
+                          form.setFieldValue("instantVerify", false);
+                        }}
+                      >
+                        Apply Store Credit
+                      </Button>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
 
@@ -549,6 +588,33 @@ function ReconciliationPage() {
                       }}
                       className="space-y-4"
                     >
+                      {customerCreditBalance > 0 && (
+                        <div className="flex items-center justify-between rounded-lg border border-primary/20 bg-primary/5 p-2.5 text-xs">
+                          <div>
+                            <span className="text-muted-foreground">Store Credit Available: </span>
+                            <span className="font-semibold tabular-nums text-foreground">
+                              {PKR(customerCreditBalance)}
+                            </span>
+                          </div>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-xs"
+                            disabled={unallocatedAmount <= 0}
+                            onClick={() => {
+                              const applyAmount = Math.round(Math.min(customerCreditBalance, unallocatedAmount) * 100) / 100;
+                              form.setFieldValue("method", "customer_credit");
+                              form.setFieldValue("amount", applyAmount);
+                              form.setFieldValue("walletId", "");
+                              form.setFieldValue("instantVerify", false);
+                            }}
+                          >
+                            Apply Store Credit
+                          </Button>
+                        </div>
+                      )}
+
                       <form.Field name="amount">
                         {(field) => (
                           <div className="space-y-1.5">
@@ -576,11 +642,15 @@ function ReconciliationPage() {
                             <Select
                               value={field.state.value}
                               onValueChange={(v: string) => {
-                                const nextMethod = v as "cash" | "bank_transfer" | "digital_wallet" | "cheque" | "expense_offset";
+                                const nextMethod = v as "cash" | "bank_transfer" | "digital_wallet" | "cheque" | "expense_offset" | "customer_credit";
                                 field.handleChange(nextMethod);
                                 form.setFieldValue("instantVerify", false);
                                 form.setFieldValue("expenseType", nextMethod === "expense_offset" ? "salesman_salary" : "");
                                 form.setFieldValue("expenseEmployeeId", "");
+                                if (nextMethod === "customer_credit" || nextMethod === "expense_offset") {
+                                  form.setFieldValue("walletId", "");
+                                  return;
+                                }
                                 const requiredType = nextMethod === "cash" ? "cash" : "bank";
                                 const eligible = wallets.filter((w) => w.type === requiredType);
                                 if (eligible.length > 0 && !eligible.some((w) => w.id === form.getFieldValue("walletId"))) {
@@ -622,16 +692,31 @@ function ReconciliationPage() {
                                     Salesman Salary Paid by Distributor
                                   </span>
                                 </SelectItem>
+                                <SelectItem
+                                  value="customer_credit"
+                                  disabled={customerCreditBalance <= 0}
+                                >
+                                  <span className="flex items-center gap-2">
+                                    <Receipt className="size-3.5 text-purple-500" />
+                                    Store Credit
+                                  </span>
+                                </SelectItem>
                               </SelectContent>
                             </Select>
                           </div>
                         )}
                       </form.Field>
 
+                      {form.getFieldValue("method") === "customer_credit" && (
+                        <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 text-xs text-muted-foreground">
+                          Store Credit will be deducted FIFO from the customer's credit lots without bank account movement.
+                        </div>
+                      )}
+
                       <form.Field name="walletId">
                         {(field) => {
                           const currentMethod = form.getFieldValue("method");
-                          if (currentMethod === "expense_offset") return null;
+                          if (currentMethod === "expense_offset" || currentMethod === "customer_credit") return null;
                           const requiredType = currentMethod === "cash" ? "cash" : "bank";
                           const filteredWallets = wallets.filter(
                             (w) => w.type === requiredType,
@@ -919,7 +1004,7 @@ function ReconciliationPage() {
                         </form.Field>
                       )}
 
-                      {form.getFieldValue("method") !== "cash" && (
+                      {!["cash", "expense_offset", "customer_credit"].includes(form.getFieldValue("method")) && (
                         <form.Field name="instantVerify">
                           {(field) => (
                             <div className="flex items-start gap-2.5 rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3 dark:border-emerald-500/30 dark:bg-emerald-950/10">
@@ -1278,7 +1363,7 @@ function ReconciliationPage() {
             </div>
           ) : dailySummary ? (
             <>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
                 <div className="p-4 rounded-xl border bg-card">
                   <p className="text-xs font-medium text-muted-foreground mb-1">
                     Total Collected
@@ -1301,6 +1386,22 @@ function ReconciliationPage() {
                   </p>
                   <p className="text-xl font-bold tabular-nums">
                     {PKR(dailySummary.totalBankTransfer)}
+                  </p>
+                </div>
+                <div className="p-4 rounded-xl border bg-card">
+                  <p className="text-xs font-medium text-muted-foreground mb-1">
+                    Store Credit Applied
+                  </p>
+                  <p className="text-xl font-bold tabular-nums text-purple-600">
+                    {PKR(dailySummary.totalCreditApplied ?? 0)}
+                  </p>
+                </div>
+                <div className="p-4 rounded-xl border bg-card">
+                  <p className="text-xs font-medium text-muted-foreground mb-1">
+                    Customer Refunds
+                  </p>
+                  <p className="text-xl font-bold tabular-nums text-amber-600">
+                    {PKR(dailySummary.totalCustomerRefunds ?? 0)}
                   </p>
                 </div>
                 <div className="p-4 rounded-xl border bg-card">
@@ -1346,7 +1447,7 @@ function ReconciliationPage() {
                             {p.customer?.name ?? "—"}
                           </TableCell>
                           <TableCell className="text-sm capitalize">
-                            {p.method.replace("_", " ")}
+                            {p.method === "customer_credit" ? "Store Credit" : p.method.replace("_", " ")}
                           </TableCell>
                           <TableCell className="text-sm text-muted-foreground">
                             {p.reference ?? "—"}
@@ -1360,6 +1461,53 @@ function ReconciliationPage() {
                   </TableBody>
                 </Table>
               </div>
+
+              {Boolean(dailySummary.refunds?.length) && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-semibold">Customer Refunds Issued Today</h3>
+                    <span className="text-xs text-muted-foreground">
+                      {dailySummary.refunds.length} refund{dailySummary.refunds.length === 1 ? "" : "s"}
+                    </span>
+                  </div>
+                  <div className="rounded-xl border overflow-hidden">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="text-[11px]">Time</TableHead>
+                          <TableHead className="text-[11px]">Customer</TableHead>
+                          <TableHead className="text-[11px]">Account</TableHead>
+                          <TableHead className="text-[11px]">Credit Note #</TableHead>
+                          <TableHead className="text-[11px] text-right">
+                            Amount
+                          </TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {dailySummary.refunds.map((r: any) => (
+                          <TableRow key={r.id}>
+                            <TableCell className="text-xs tabular-nums">
+                              {format(new Date(r.refundDate), "HH:mm")}
+                            </TableCell>
+                            <TableCell className="text-sm font-medium">
+                              {r.customer?.name ?? "—"}
+                            </TableCell>
+                            <TableCell className="text-sm text-muted-foreground">
+                              {r.wallet?.name ?? "—"}
+                            </TableCell>
+                            <TableCell className="text-xs font-mono text-muted-foreground">
+                              {r.creditNoteNumber ?? "—"}
+                            </TableCell>
+                            <TableCell className="text-sm tabular-nums text-right font-semibold text-amber-600">
+                              {PKR(Number(r.amount))}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              )}
             </>
           ) : null}
         </TabsContent>
