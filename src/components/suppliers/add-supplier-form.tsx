@@ -86,6 +86,7 @@ export const AddSupplierForm = ({ onSuccess }: Props) => {
 			// Invalidate the suppliers query so the active observer refetches in the
 			// background and picks up computed fields (totalPurchases, balance, etc.).
 			queryClient.invalidateQueries({ queryKey: ["suppliers"] });
+			queryClient.invalidateQueries({ queryKey: ["activity-timeline"] });
 			toast.success("Supplier added successfully");
 			onSuccess();
 		},

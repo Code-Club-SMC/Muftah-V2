@@ -1,8 +1,9 @@
 import { createServerFn } from "@tanstack/react-start";
-import { db, purchaseRecords, transactions, wallets, expenses } from "@/db";
+import { db, purchaseRecords, transactions, wallets, expenses, suppliers } from "@/db";
 import { eq, sql } from "drizzle-orm";
 import Big from "big.js";
 import { requireSuppliersManageMiddleware } from "@/lib/middlewares";
+import { logActivityQuiet } from "@/lib/activity-logger.server";
 import { z } from "zod";
 import { createId } from "@paralleldrive/cuid2";
 import { lotPrice, lotQuantity, PURCHASE_LOCKED_MESSAGE } from "@/lib/inventory/material-lots";
@@ -87,7 +88,7 @@ export const updatePurchaseRecordFn = createServerFn({ method: "POST" })
   .middleware([requireSuppliersManageMiddleware])
   .inputValidator(updatePurchaseSchema)
   .handler(async ({ data, context }) => {
-    return await db.transaction(async (tx) => {
+    const audit = await db.transaction(async (tx) => {
       // 1. Get existing purchase record
       const [existingRecord] = await tx.select().from(purchaseRecords)
         .where(eq(purchaseRecords.id, data.id)).for("update");
@@ -98,6 +99,38 @@ export const updatePurchaseRecordFn = createServerFn({ method: "POST" })
       if (existingRecord.voidedAt) throw new Error("Purchase is already voided");
       const minimumStock = data.minStock === undefined ? undefined
         : (existingRecord.materialType === "chemical" ? chemicalStockThresholdSchema : packagingStockThresholdSchema).parse(data.minStock);
+
+      let resolvedMaterialName = data.materialName?.trim() || "";
+      if (!resolvedMaterialName) {
+        if (existingRecord.materialType === "chemical" && existingRecord.chemicalId) {
+          const [chemical] = await tx
+            .select({ name: chemicals.name })
+            .from(chemicals)
+            .where(eq(chemicals.id, existingRecord.chemicalId));
+          resolvedMaterialName = chemical?.name ?? "Unknown Material";
+        } else if (existingRecord.materialType === "packaging" && existingRecord.packagingMaterialId) {
+          const [pkg] = await tx
+            .select({ name: packagingMaterials.name })
+            .from(packagingMaterials)
+            .where(eq(packagingMaterials.id, existingRecord.packagingMaterialId));
+          resolvedMaterialName = pkg?.name ?? "Unknown Material";
+        } else {
+          resolvedMaterialName = "Unknown Material";
+        }
+      }
+
+      let resolvedSupplierName = data.supplierName?.trim() || "";
+      if (!resolvedSupplierName) {
+        if (existingRecord.supplierId) {
+          const [supplier] = await tx
+            .select({ supplierName: suppliers.supplierName })
+            .from(suppliers)
+            .where(eq(suppliers.id, existingRecord.supplierId));
+          resolvedSupplierName = supplier?.supplierName ?? "Unknown Supplier";
+        } else {
+          resolvedSupplierName = "Unknown Supplier";
+        }
+      }
 
       // 2. Move lot stock if quantity or price changed. Only allowed while the purchase is untouched.
       const ref = existingRecord.materialType === "chemical"
@@ -147,17 +180,16 @@ export const updatePurchaseRecordFn = createServerFn({ method: "POST" })
       }
 
       // 4. Update Purchase Record
-      const updateData: any = {
+      const updateData = {
         notes: data.notes || null,
         invoiceNumber: data.invoiceNumber || null,
         transactionId: data.transactionId || null,
         updatedAt: new Date(),
+        quantity: newQuantity,
+        cost: new Big(newCost).toFixed(2),
+        unitCost: new Big(newCost).div(newQuantity).toFixed(4),
+        lotId,
       };
-
-      updateData.quantity = newQuantity;
-      updateData.cost = new Big(newCost).toFixed(2);
-      updateData.unitCost = new Big(newCost).div(newQuantity).toFixed(4);
-      updateData.lotId = lotId;
 
       await tx
         .update(purchaseRecords)
@@ -199,7 +231,7 @@ export const updatePurchaseRecordFn = createServerFn({ method: "POST" })
         const expenseId = createId();
         await tx.insert(expenses).values({
           id: expenseId,
-          description: `Supplier Purchase: ${data.materialName} from ${data.supplierName}`,
+          description: `Supplier Purchase: ${resolvedMaterialName} from ${resolvedSupplierName}`,
           category: expenseCategory.name,
           categoryId: expenseCategory.id,
           amount: expenseAmount.toString(),
@@ -219,6 +251,53 @@ export const updatePurchaseRecordFn = createServerFn({ method: "POST" })
         });
       }
 
-      return { success: true };
+      return {
+        purchaseId: existingRecord.id,
+        supplierId: existingRecord.supplierId,
+        supplierName: resolvedSupplierName,
+        materialType: existingRecord.materialType,
+        materialId: existingRecord.materialType === "chemical"
+          ? existingRecord.chemicalId
+          : existingRecord.packagingMaterialId,
+        materialName: resolvedMaterialName,
+        previousQuantity: new Big(existingRecord.quantity).toFixed(3),
+        newQuantity,
+        previousCost: new Big(existingRecord.cost).toFixed(2),
+        newCost: updateData.cost,
+        previousInvoiceNumber: existingRecord.invoiceNumber ?? null,
+        newInvoiceNumber: updateData.invoiceNumber,
+        previousNotes: existingRecord.notes ?? null,
+        newNotes: updateData.notes,
+      };
     });
+
+    await logActivityQuiet({
+      module: "suppliers",
+      action: "updated",
+      entityType: "purchase",
+      entityId: audit.purchaseId,
+      entityLabel: `${audit.materialName} (${audit.newQuantity})`,
+      actorId: context.session.user.id,
+      actorName: context.session.user.name,
+      description: `Updated purchase of ${audit.materialName} from ${audit.supplierName} (Qty ${audit.previousQuantity} to ${audit.newQuantity}, Cost PKR ${audit.previousCost} to PKR ${audit.newCost})`,
+      severity: "info",
+      metadata: {
+        purchaseId: audit.purchaseId,
+        supplierId: audit.supplierId,
+        supplierName: audit.supplierName,
+        materialType: audit.materialType,
+        materialId: audit.materialId,
+        materialName: audit.materialName,
+        previousQuantity: audit.previousQuantity,
+        newQuantity: audit.newQuantity,
+        previousCost: audit.previousCost,
+        newCost: audit.newCost,
+        previousInvoiceNumber: audit.previousInvoiceNumber,
+        newInvoiceNumber: audit.newInvoiceNumber,
+        previousNotes: audit.previousNotes,
+        newNotes: audit.newNotes,
+      },
+    });
+
+    return { success: true };
   });

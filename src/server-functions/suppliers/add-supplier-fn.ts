@@ -24,15 +24,25 @@ export const addSupplierFn = createServerFn()
         })
         .returning();
 
-      void logActivityQuiet({
+      await logActivityQuiet({
         module: "suppliers",
         action: "created",
         entityType: "supplier",
+        entityId: newSupplier.id,
         entityLabel: newSupplier.supplierName,
         actorId: context.session.user.id,
         actorName: context.session.user.name,
         description: `Created new supplier ${newSupplier.supplierName}`,
         severity: "info",
+        metadata: {
+          supplierId: newSupplier.id,
+          supplierName: newSupplier.supplierName,
+          supplierShopName: newSupplier.supplierShopName,
+          phone: newSupplier.phone,
+          email: newSupplier.email,
+          city: newSupplier.city,
+          state: newSupplier.state,
+        },
       });
 
       return newSupplier;

@@ -86,6 +86,7 @@ export const AddPackagingMaterialForm = ({
       queryClient.invalidateQueries({ queryKey: ["supplier"] });
       queryClient.invalidateQueries({ queryKey: ["wallets"] });
       queryClient.invalidateQueries({ queryKey: ["expenses"] });
+      queryClient.invalidateQueries({ queryKey: ["activity-timeline"] });
       onSuccess();
     },
     onError: (err: any) => toast.error(err.message || "Failed to update purchase record"),

@@ -83,7 +83,7 @@ export const addStockFn = createServerFn()
 			"Quantity must be positive and use at most three decimal places"),
 	}))
 	.handler(async ({ data, context }) => {
-		return await db.transaction(async (tx) => {
+		const { response, activity } = await db.transaction(async (tx) => {
 			// Validate Warehouse Type
 			const [warehouse] = await tx.select().from(warehouses)
 				.where(eq(warehouses.id, data.warehouseId)).for("share");
@@ -309,34 +309,40 @@ export const addStockFn = createServerFn()
 
 			const logDescription = `Purchased ${data.quantity} ${materialUnit} of ${loggedMaterialName} from ${supplierName} ${paymentSummary}`;
 
-			logActivityQuiet({
-				module: "inventory",
-				action: "purchased",
-				entityType: "purchase",
-				entityId: purchase.id,
-				entityLabel: `${loggedMaterialName} (${data.quantity} ${materialUnit})`,
-				actorId: context.authContext.session.user.id,
-				actorName: context.authContext.session.user.name,
-				description: logDescription,
-				metadata: {
-					materialName: loggedMaterialName,
-					materialType: data.materialType,
-					quantityPurchased: `${data.quantity} ${materialUnit}`,
-					unitCost: `PKR ${parseFloat(lot.unitPrice).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / ${materialUnit}`,
-					totalPrice: totalCostFormatted,
-					amountPaid: paidFormatted,
-					paymentStatus: data.paymentStatus,
-					paymentMethod: data.paymentMethod || "pay_later",
-					supplier: supplierName,
-					supplierId: data.supplierId,
-					facility: warehouse.name,
-					notes: data.notes || undefined,
-				},
-			});
-
 			const [result] = await tx.select().from(materialStock).where(and(eq(materialStock.warehouseId, targetWarehouseId), eq(data.materialType === "chemical" ? materialStock.chemicalId : materialStock.packagingMaterialId, data.materialId)));
 			const reportPurchase: ChemicalPurchaseRef | null = data.materialType === "chemical"
 				? { purchaseId: purchase.id, chemicalId: data.materialId, chemicalName: loggedMaterialName } : null;
-			return { ...result, purchase: reportPurchase };
+			return {
+				response: { ...result, purchase: reportPurchase },
+				activity: {
+					module: "inventory" as const,
+					action: "purchased",
+					entityType: "purchase",
+					entityId: purchase.id,
+					entityLabel: `${loggedMaterialName} (${data.quantity} ${materialUnit})`,
+					actorId: context.authContext.session.user.id,
+					actorName: context.authContext.session.user.name,
+					description: logDescription,
+					metadata: {
+						purchaseId: purchase.id,
+						materialName: loggedMaterialName,
+						materialType: data.materialType,
+						quantityPurchased: `${data.quantity} ${materialUnit}`,
+						unitCost: `PKR ${parseFloat(lot.unitPrice).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / ${materialUnit}`,
+						totalPrice: totalCostFormatted,
+						amountPaid: paidFormatted,
+						paymentStatus: data.paymentStatus,
+						paymentMethod: data.paymentMethod || "pay_later",
+						supplier: supplierName,
+						supplierId: data.supplierId,
+						facility: warehouse.name,
+						notes: data.notes || undefined,
+					},
+				},
+			};
 		});
+
+		await logActivityQuiet(activity);
+
+		return response;
 	});

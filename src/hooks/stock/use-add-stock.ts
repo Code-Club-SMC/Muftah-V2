@@ -12,6 +12,7 @@ export const useAddStock = () => {
       toast.success("Stock added successfully");
       queryClient.invalidateQueries({ queryKey: ["suppliers"] });
       queryClient.invalidateQueries({ queryKey: ["supplier"] });
+      queryClient.invalidateQueries({ queryKey: ["activity-timeline"] });
     },
     onError: (error) => {
       toast.error(error.message || "Failed to add stock");

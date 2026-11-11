@@ -74,7 +74,7 @@ export const addRawMaterialFn = createServerFn()
   .middleware([requireInventoryManageMiddleware])
   .inputValidator(addChemicalSchema)
   .handler(async ({ data, context }) => {
-    return await db.transaction(async (tx) => {
+    const { response, activity } = await db.transaction(async (tx) => {
       // Validate Warehouse
       const warehouse = await tx.query.warehouses.findFirst({
         where: eq(warehouses.id, data.warehouseId),
@@ -257,27 +257,34 @@ export const addRawMaterialFn = createServerFn()
         }
       }
 
-      logActivityQuiet({
-        module: "inventory",
-        action: "created",
-        entityType: "chemical",
-        entityLabel: `${finalMaterial.name}${qty > 0 ? ` (${data.quantity} ${data.unit})` : ""}`,
-        actorId: context.authContext.session.user.id,
-        actorName: context.authContext.session.user.name,
-        description: `Created raw material ${finalMaterial.name}${purchaseDescription}`,
-        metadata: {
-          materialName: finalMaterial.name,
-          materialType: "chemical",
-          initialQuantity: `${data.quantity} ${data.unit}`,
-          unitCost: `PKR ${unitCostNum.toFixed(2)} / ${data.unit}`,
-          totalCost: totalCostFormatted,
-          amountPaid: paidFormatted,
-          supplier: supplierName,
-          supplierId: data.supplierId,
-          facility: warehouse.name,
+      return {
+        response: { ...finalMaterial, purchase: reportPurchase },
+        activity: {
+          module: "inventory" as const,
+          action: "created",
+          entityType: "chemical",
+          entityId: finalMaterial.id,
+          entityLabel: `${finalMaterial.name}${qty > 0 ? ` (${data.quantity} ${data.unit})` : ""}`,
+          actorId: context.authContext.session.user.id,
+          actorName: context.authContext.session.user.name,
+          description: `Created raw material ${finalMaterial.name}${purchaseDescription}`,
+          metadata: {
+            materialName: finalMaterial.name,
+            materialType: "chemical",
+            initialQuantity: `${data.quantity} ${data.unit}`,
+            unitCost: `PKR ${unitCostNum.toFixed(2)} / ${data.unit}`,
+            totalCost: totalCostFormatted,
+            amountPaid: paidFormatted,
+            supplier: supplierName,
+            supplierId: data.supplierId,
+            purchaseId: reportPurchase?.purchaseId ?? null,
+            facility: warehouse.name,
+          },
         },
-      });
-
-      return { ...finalMaterial, purchase: reportPurchase };
+      };
     });
+
+    await logActivityQuiet(activity);
+
+    return response;
   });

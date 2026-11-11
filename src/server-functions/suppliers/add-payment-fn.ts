@@ -160,15 +160,25 @@ export const addPaymentFn = createServerFn({ method: "POST" })
       return payment;
     });
 
-    void logActivityQuiet({
+    await logActivityQuiet({
       module: "suppliers",
       action: "created",
       entityType: "payment",
+      entityId: result.id,
       entityLabel: data.amount.toString(),
       actorId: context.session.user.id,
       actorName: context.session.user.name,
       description: `Added payment of ${data.amount} for supplier ${resolvedSupplierName}`,
       severity: "info",
+      metadata: {
+        paymentId: result.id,
+        supplierId: data.supplierId,
+        supplierName: resolvedSupplierName,
+        purchaseId: data.purchaseId ?? null,
+        amount: data.amount,
+        walletId: data.walletId,
+        reference: data.reference ?? null,
+      },
     });
 
     return result;

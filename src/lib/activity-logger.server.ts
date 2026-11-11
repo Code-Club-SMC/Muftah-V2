@@ -88,8 +88,8 @@ export async function logActivity(params: LogActivityParams): Promise<void> {
 }
 
 /**
- * Convenience: log and return void. For one-liner usage in `.then()` chains.
+ * Convenience: fire-and-forget safe logger returning the underlying promise so
+ * callers can `await` completion without ever throwing on failure.
  */
-export const logActivityQuiet = (params: LogActivityParams): void => {
-  void logActivity(params);
-};
+export const logActivityQuiet = (params: LogActivityParams): Promise<void> =>
+  logActivity(params);

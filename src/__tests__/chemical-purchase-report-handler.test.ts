@@ -66,11 +66,13 @@ describe("purchase-owned certificate writes", () => {
     expect(events.indexOf("lock:purchase_records")).toBeLessThan(events.indexOf("lock:chemical_lab_reports"));
     expect(events.indexOf("lock:chemical_lab_reports")).toBeLessThan(events.indexOf("write-report"));
   });
-  it("makes certificates on voided purchases read-only", async () => {
+  it("keeps voided purchase certificates uneditable while allowing deletion", async () => {
     purchases[0].voidedAt = new Date();
     await expect(update()).rejects.toThrow(/voided/i);
-    await expect(remove()).rejects.toThrow(/voided/i);
     expect(events).not.toContain("write-report");
+    await remove();
+    expect(reports).toEqual([]);
+    expect(events).toContain("write-report");
   });
   it("allows legacy edits/deletes but rejects ownership or chemical reassignment", async () => {
     reports[0].purchaseId = null;

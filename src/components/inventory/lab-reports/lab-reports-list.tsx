@@ -178,22 +178,22 @@ function PurchaseReports({ chemicalId, chemicalName, purchaseId }: Props) {
                   View certificate
                 </Button>
                 {canManage && !report.purchase?.voidedAt && (
-                  <>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setEditingId(report.id)}
-                    >
-                      Edit report
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setDeleting(report.id)}
-                    >
-                      Delete report
-                    </Button>
-                  </>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setEditingId(report.id)}
+                  >
+                    Edit report
+                  </Button>
+                )}
+                {canManage && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setDeleting(report.id)}
+                  >
+                    Delete report
+                  </Button>
                 )}
               </div>
             </div>
@@ -237,9 +237,7 @@ function PurchaseReports({ chemicalId, chemicalName, purchaseId }: Props) {
         />
       )}
       <AlertDialog
-        open={
-          canManage && !!deletionTarget && !deletionTarget.purchase?.voidedAt
-        }
+        open={canManage && !!deletionTarget}
         onOpenChange={(open) => {
           if (!open) setDeleting(null);
         }}
@@ -257,12 +255,7 @@ function PurchaseReports({ chemicalId, chemicalName, purchaseId }: Props) {
             <AlertDialogAction
               disabled={deletion.isPending}
               onClick={() => {
-                if (
-                  deleting &&
-                  canManage &&
-                  deletionTarget &&
-                  !deletionTarget.purchase?.voidedAt
-                )
+                if (deleting && canManage && deletionTarget)
                   deletion.mutate(
                     { data: { reportId: deleting } },
                     { onSuccess: () => setDeleting(null) },

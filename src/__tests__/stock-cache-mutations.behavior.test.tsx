@@ -81,13 +81,13 @@ describe("stock mutation cache entry points", () => {
     expect(mocks.success).not.toHaveBeenCalled();
     expect(mocks.error).toHaveBeenCalled();
   });
-  it.each(["edit", "void"] as const)("refreshes after the real purchase %s dialog succeeds", async action => {
+  it.each(["edit", "delete"] as const)("refreshes after the real purchase %s dialog succeeds", async action => {
     const observed = observe();
-    client.setQueryData(["purchase-edit-state", "p"], { stockLocked: false, refund: { paid: "0.00", walletId: null } });
+    client.setQueryData(["purchase-edit-state", "p"], { stockLocked: false, alreadyVoided: false, hasLabReports: false, refund: { paid: "0.00", walletId: null } });
     const props = { open: true, onOpenChange: vi.fn(), purchase: { id: "p", materialType: "chemical", cost: "20", unitCost: "2", quantity: "10" } };
     render(action === "edit" ? <EditPurchaseDialog {...props} /> : <DeletePurchaseDialog {...props} />, { wrapper });
     if (screen.queryByLabelText("Reason")) fireEvent.change(screen.getByLabelText("Reason"), { target: { value: "Duplicate supplier entry" } });
-    fireEvent.click(screen.getByRole("button", { name: action === "edit" ? "Save Changes" : /Delete Record|Void purchase/i }));
+    fireEvent.click(screen.getByRole("button", { name: action === "edit" ? "Save Changes" : /Delete purchase/i }));
     await waitFor(() => expect(props.onOpenChange).toHaveBeenCalledWith(false));
     assertRefreshed(observed);
   });

@@ -41,14 +41,15 @@ describe("retained void history", () => {
     expect(within(dialog).getByText("Amount Paid").nextElementSibling?.textContent).toContain("7,000");
     expect(within(dialog).getAllByText("Cash wallet").length).toBeGreaterThan(0);
   });
-  it("only offers details for a voided purchase, not edit, pay, void or restock", () => {
+  it("offers details and permanent delete for a voided purchase, not edit, pay, report or restock", () => {
     show(<PurchaseHistoryTable data={[purchase]} setSelectedItem={vi.fn()} setDetailsOpen={vi.fn()} setEditDialogOpen={vi.fn()} setDeleteDialogOpen={vi.fn()} onRecordPayment={vi.fn()} onRestock={vi.fn()} onCreateReport={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "Expand group" }));
     expect(screen.queryByText("Restock")).toBeNull();
     expect(screen.queryByText("Buy Again")).toBeNull();
     fireEvent.pointerDown(screen.getByRole("button", { name: "Actions menu" }), { button: 0, ctrlKey: false, pointerType: "mouse" });
     expect(screen.getByRole("menuitem", { name: /View Details/ })).toBeTruthy();
-    expect(screen.queryByRole("menuitem", { name: /Edit|Record Payment|Void|Delete|Create report/ })).toBeNull();
+    expect(screen.getByRole("menuitem", { name: /Delete purchase/ })).toBeTruthy();
+    expect(screen.queryByRole("menuitem", { name: /Edit|Record Payment|Void|Create report/ })).toBeNull();
   });
   it("shows actor, snapshot, original amounts and no active balance in purchase details", () => {
     show(<PurchaseDetailsDialog open onOpenChange={vi.fn()} purchase={purchase} />);

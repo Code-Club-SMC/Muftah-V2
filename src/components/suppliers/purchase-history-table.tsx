@@ -703,18 +703,23 @@ export const PurchaseHistoryTable = ({
                                       </DropdownMenuItem>
                                     )}
 
-                                    {!record.voidedAt && <>
-                                    <DropdownMenuSeparator />
+                                    {!record.voidedAt && (
+                                      <>
+                                        <DropdownMenuSeparator />
 
-                                    <DropdownMenuItem
-                                      onClick={() => {
-                                        setSelectedItem(record);
-                                        setEditDialogOpen(true);
-                                      }}
-                                    >
-                                      <PencilIcon className="mr-2 size-3.5" />
-                                      Edit Record
-                                    </DropdownMenuItem>
+                                        <DropdownMenuItem
+                                          onClick={() => {
+                                            setSelectedItem(record);
+                                            setEditDialogOpen(true);
+                                          }}
+                                        >
+                                          <PencilIcon className="mr-2 size-3.5" />
+                                          Edit Record
+                                        </DropdownMenuItem>
+                                      </>
+                                    )}
+
+                                    <DropdownMenuSeparator />
 
                                     <DropdownMenuItem
                                       className="text-red-600 focus:text-red-600"
@@ -724,9 +729,8 @@ export const PurchaseHistoryTable = ({
                                       }}
                                     >
                                       <Trash2Icon className="mr-2 size-3.5" />
-                                      Void purchase
+                                      Delete purchase
                                     </DropdownMenuItem>
-                                    </>}
                                     </DropdownMenuGroup>
                                   </DropdownMenuContent>
                                 </DropdownMenu>

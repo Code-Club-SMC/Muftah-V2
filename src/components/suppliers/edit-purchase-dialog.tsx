@@ -73,6 +73,7 @@ export const EditPurchaseDialog = ({ open, onOpenChange, purchase }: Props) => {
       queryClient.invalidateQueries({ queryKey: ["suppliers"] });
       queryClient.invalidateQueries({ queryKey: ["wallets"] });
       queryClient.invalidateQueries({ queryKey: ["expenses"] });
+      queryClient.invalidateQueries({ queryKey: ["activity-timeline"] });
       onOpenChange(false);
     },
     onError: (err) =>

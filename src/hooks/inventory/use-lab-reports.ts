@@ -24,7 +24,7 @@ export const useChemicalReportPurchases = (chemicalId: string) => useQuery({
 });
 
 async function invalidateReports(queryClient: QueryClient) {
-    await Promise.all(["lab-reports", "lab-report", "chemical-report-purchases", "factory-floor", "inventory", "item-detail"]
+    await Promise.all(["lab-reports", "lab-report", "chemical-report-purchases", "purchase-edit-state", "factory-floor", "inventory", "item-detail"]
         .map(prefix => queryClient.invalidateQueries({ queryKey: [prefix] })));
 }
 
