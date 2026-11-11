@@ -33,4 +33,20 @@ describe("store credit application safeguards across invoice, reconciliation, an
     expect(batchSource).toContain('"customer_credit"');
     expect(batchSource).toContain("customerCreditBalance");
   });
+
+  it("omits and normalizes blank optional payment references in slip reconciliation", () => {
+    const recSource = readFileSync(resolve(process.cwd(), "src/routes/_protected/sales/reconciliation/index.tsx"), "utf8");
+    const recFnSource = readFileSync(resolve(process.cwd(), "src/server-functions/sales/reconciliation-fn.ts"), "utf8");
+
+    expect(recSource).toContain("reference: value.reference?.trim() || undefined");
+    expect(recFnSource).not.toContain("reference: z.string().trim().min(1).optional()");
+    expect(
+      recFnSource.match(
+        /reference:\s*z\s*\.string\(\)\s*\.trim\(\)\s*\.transform\(\(val\) => \(val\.length > 0 \? val : undefined\)\)\s*\.optional\(\)/g,
+      ),
+    ).toHaveLength(2);
+    expect(
+      recFnSource.match(/if \(row\.method === "bank_transfer" && !row\.reference\)/g),
+    ).toHaveLength(2);
+  });
 });

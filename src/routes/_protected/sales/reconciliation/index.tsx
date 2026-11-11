@@ -290,7 +290,7 @@ function ReconciliationPage() {
         amount: value.amount,
         method: backendMethod,
         walletId: value.method === "expense_offset" || value.method === "customer_credit" ? undefined : value.walletId,
-        reference: value.reference?.trim(),
+        reference: value.reference?.trim() || undefined,
         chequeBank: value.method === "cheque" ? value.chequeBank.trim() : undefined,
         chequeNumber: value.method === "cheque" ? value.chequeNumber.trim() : undefined,
         chequeDate: value.method === "cheque" && value.chequeDate ? new Date(value.chequeDate) : undefined,

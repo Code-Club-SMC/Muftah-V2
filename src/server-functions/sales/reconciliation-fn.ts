@@ -164,7 +164,11 @@ export const reconcileSlipFn = createServerFn()
         amount: z.number().positive("Amount must be positive"),
         method: z.enum(["cash", "bank_transfer", "cheque", "expense_offset", "customer_credit"]).default("cash"),
         walletId: z.string().optional(),
-        reference: z.string().trim().min(1).optional(),
+        reference: z
+          .string()
+          .trim()
+          .transform((val) => (val.length > 0 ? val : undefined))
+          .optional(),
         chequeNumber: z.string().trim().min(1).optional(),
         chequeBank: z.string().trim().min(1).optional(),
         chequeDate: z.coerce.date().optional(),
@@ -507,7 +511,11 @@ export const batchReconcileSlipsFn = createServerFn()
           .min(1, "At least one item required"),
         method: z.enum(["cash", "bank_transfer", "cheque", "customer_credit"]).default("cash"),
         walletId: z.string().optional(),
-        reference: z.string().trim().min(1).optional(),
+        reference: z
+          .string()
+          .trim()
+          .transform((val) => (val.length > 0 ? val : undefined))
+          .optional(),
         chequeNumber: z.string().trim().min(1).optional(),
         chequeBank: z.string().trim().min(1).optional(),
         chequeDate: z.coerce.date().optional(),
