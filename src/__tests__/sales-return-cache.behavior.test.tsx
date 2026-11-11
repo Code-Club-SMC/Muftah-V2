@@ -13,10 +13,35 @@ import {
   useSaveReturnReason,
   type CreateSalesReturnInput,
 } from "@/hooks/sales/use-sales-returns";
+import {
+  customerCreditKeys,
+  useCustomerCreditSummary,
+  useIssueCustomerRefund,
+  useReverseCustomerRefund,
+} from "@/hooks/sales/use-customer-credit";
+import { overdrawError } from "@/lib/finance/expense-corrections";
 
-const mocks = vi.hoisted(() => ({ create: vi.fn(), decide: vi.fn(), complete: vi.fn(), cancel: vi.fn(), void: vi.fn(), reasons: vi.fn(), saveReason: vi.fn(), list: vi.fn(), detail: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  create: vi.fn(),
+  decide: vi.fn(),
+  complete: vi.fn(),
+  cancel: vi.fn(),
+  void: vi.fn(),
+  reasons: vi.fn(),
+  saveReason: vi.fn(),
+  list: vi.fn(),
+  detail: vi.fn(),
+  customerCreditSummary: vi.fn(),
+  issueRefund: vi.fn(),
+  reverseRefund: vi.fn(),
+}));
 vi.mock("@/server-functions/sales/sales-returns-fn", () => ({ createSalesReturnFn: mocks.create, decideSalesReturnFn: mocks.decide, completeSalesReturnFn: mocks.complete, cancelSalesReturnFn: mocks.cancel, voidSalesReturnFn: mocks.void, listSalesReturnsFn: mocks.list, getSalesReturnDetailFn: mocks.detail }));
 vi.mock("@/server-functions/sales/return-reasons-fn", () => ({ getReturnReasonsFn: mocks.reasons, saveReturnReasonFn: mocks.saveReason }));
+vi.mock("@/server-functions/sales/customer-credit-fn", () => ({
+  getCustomerCreditSummaryFn: mocks.customerCreditSummary,
+  issueCustomerRefundFn: mocks.issueRefund,
+  reverseCustomerRefundFn: mocks.reverseRefund,
+}));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn() } }));
 let client: QueryClient;
 const local = [
@@ -25,13 +50,13 @@ const local = [
   ["sales-returns", "detail", "return"],
   ["invoice-detail", "invoice"],
 ];
-const physical = ["inventory", "factory-floor", "item-detail", "low-stock-alerts", "carton-availability", "cartons", "invoices", "customers", "sales-people", "salesman-summary", "distributor-profile", "shopkeeper-profile", "reconciliation", "credit-recovery", "slip-lookup", "overdue-slips", "distributor-ledger", "shopkeeper-ledger", "salesman-ledger", "salesman-shop-ledger", "reports"].map(key => [key, "cached"]);
+const physical = ["inventory", "factory-floor", "item-detail", "low-stock-alerts", "carton-availability", "cartons", "invoices", "customers", "sales-people", "salesman-summary", "distributor-profile", "shopkeeper-profile", "reconciliation", "credit-recovery", "slip-lookup", "overdue-slips", "distributor-ledger", "shopkeeper-ledger", "salesman-ledger", "salesman-shop-ledger", "reports", "customer-credit"].map(key => [key, "cached"]);
 physical.push(["production-runs", "batch", "kpis"], ["production-runs", "batch", "audit"]);
 const untouched = [["wallets"], ["transactions"], ["unrelated"]];
 const wrapper = ({ children }: { children: React.ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
 beforeEach(() => {
   vi.resetAllMocks();
-  Object.values(mocks).forEach(mock => mock.mockResolvedValue({ success: true }));
+  Object.values(mocks).forEach(mock => mock.mockResolvedValue({ success: true, walletName: "Cash Box" }));
   client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity }, mutations: { retry: false } } });
   [...local, ...physical, ...untouched].forEach(key => client.setQueryData(key, []));
 });
@@ -113,5 +138,159 @@ describe("return lifecycle cache and contracts", () => {
     });
     invalid(local, true); invalid(physical, false); invalid(untouched, false);
     expect(toast.success).toHaveBeenCalledWith(expect.stringContaining("awaiting receipt"));
+  });
+});
+
+describe("customer credit and refund cache invalidation", () => {
+  const creditKeysToTrack = [
+    ["customer-credit"],
+    ["customer-credit", "cust-1"],
+    ["wallets"],
+    ["transactions"],
+    ["transactions-recent"],
+    ["daily-closing"],
+    ["customers"],
+    ["distributor-profile"],
+    ["shopkeeper-profile"],
+    ["distributor-ledger"],
+    ["shopkeeper-ledger"],
+    ["salesman-ledger"],
+    ["salesman-shop-ledger"],
+    ["sales-returns"],
+    ["invoices"],
+    ["invoice-detail"],
+    ["reports"],
+  ];
+
+  it("useIssueCustomerRefund invalidates credit, wallet, transaction, customer, invoice, returns, ledger, and report keys", async () => {
+    creditKeysToTrack.forEach(key => client.setQueryData(key, []));
+    client.setQueryData(["unrelated-key"], []);
+    mocks.issueRefund.mockResolvedValueOnce({ refundId: "ref-1", walletName: "Cash Box" });
+
+    const { result } = renderHook(() => useIssueCustomerRefund("cust-1"), { wrapper });
+    await act(async () => {
+      await result.current.mutateAsync({
+        customerId: "cust-1",
+        amount: 500,
+        walletId: "wallet-1",
+      });
+    });
+
+    expect(mocks.issueRefund).toHaveBeenCalledWith({
+      data: {
+        customerId: "cust-1",
+        amount: 500,
+        walletId: "wallet-1",
+      },
+    });
+    expect(toast.success).toHaveBeenCalledWith("Refund recorded from Cash Box");
+    invalid(creditKeysToTrack, true);
+    invalid([["unrelated-key"]], false);
+  });
+
+  it("useIssueCustomerRefund suppresses error toast and invalidates wallets when isOverdrawConfirmError is true", async () => {
+    creditKeysToTrack.forEach(key => client.setQueryData(key, []));
+    const overdraw = overdrawError("Cash Box", "-100");
+    mocks.issueRefund.mockRejectedValueOnce(overdraw);
+
+    const { result } = renderHook(() => useIssueCustomerRefund("cust-1"), { wrapper });
+    await act(async () => {
+      await expect(
+        result.current.mutateAsync({
+          customerId: "cust-1",
+          amount: 500,
+          walletId: "wallet-1",
+        })
+      ).rejects.toThrow();
+    });
+
+    expect(toast.error).not.toHaveBeenCalled();
+    expect(client.getQueryState(["wallets"])?.isInvalidated).toBe(true);
+    // Other credit keys should NOT be invalidated on overdraw error
+    expect(client.getQueryState(["customer-credit"])?.isInvalidated).toBe(false);
+    expect(client.getQueryState(["transactions"])?.isInvalidated).toBe(false);
+  });
+
+  it("useIssueCustomerRefund shows error toast on normal error", async () => {
+    mocks.issueRefund.mockRejectedValueOnce(new Error("Database connection failed"));
+
+    const { result } = renderHook(() => useIssueCustomerRefund("cust-1"), { wrapper });
+    await act(async () => {
+      await expect(
+        result.current.mutateAsync({
+          customerId: "cust-1",
+          amount: 500,
+          walletId: "wallet-1",
+        })
+      ).rejects.toThrow("Database connection failed");
+    });
+
+    expect(toast.error).toHaveBeenCalledWith("Failed to record refund", {
+      description: "Database connection failed",
+    });
+  });
+
+  it("useReverseCustomerRefund invalidates credit, wallet, transaction, customer, invoice, returns, ledger, and report keys", async () => {
+    creditKeysToTrack.forEach(key => client.setQueryData(key, []));
+    client.setQueryData(["unrelated-key"], []);
+    mocks.reverseRefund.mockResolvedValueOnce({ success: true });
+
+    const { result } = renderHook(() => useReverseCustomerRefund("cust-1"), { wrapper });
+    await act(async () => {
+      await result.current.mutateAsync({
+        refundId: "ref-1",
+        reason: "Customer returned money",
+      });
+    });
+
+    expect(mocks.reverseRefund).toHaveBeenCalledWith({
+      data: {
+        refundId: "ref-1",
+        reason: "Customer returned money",
+      },
+    });
+    expect(toast.success).toHaveBeenCalledWith("Refund reversed and store credit restored");
+    invalid(creditKeysToTrack, true);
+    invalid([["unrelated-key"]], false);
+  });
+
+  it("useReverseCustomerRefund shows error toast on failure", async () => {
+    mocks.reverseRefund.mockRejectedValueOnce(new Error("Cannot reverse settled refund"));
+
+    const { result } = renderHook(() => useReverseCustomerRefund("cust-1"), { wrapper });
+    await act(async () => {
+      await expect(
+        result.current.mutateAsync({
+          refundId: "ref-1",
+          reason: "Customer returned money",
+        })
+      ).rejects.toThrow("Cannot reverse settled refund");
+    });
+
+    expect(toast.error).toHaveBeenCalledWith("Failed to reverse refund", {
+      description: "Cannot reverse settled refund",
+    });
+  });
+
+  it("useCustomerCreditSummary fetches credit summary when enabled", async () => {
+    mocks.customerCreditSummary.mockResolvedValueOnce({ storeCredit: "1500" });
+
+    renderHook(() => useCustomerCreditSummary("cust-1"), { wrapper });
+    await act(async () => {
+      await client.refetchQueries({ queryKey: customerCreditKeys.detail("cust-1") });
+    });
+
+    expect(mocks.customerCreditSummary).toHaveBeenCalledWith({
+      data: { customerId: "cust-1" },
+    });
+  });
+
+  it("useCustomerCreditSummary is disabled when customerId is empty or enabled is false", () => {
+    renderHook(() => useCustomerCreditSummary("", true), { wrapper });
+    renderHook(() => useCustomerCreditSummary("cust-1", false), { wrapper });
+    renderHook(() => useCustomerCreditSummary(null, true), { wrapper });
+    renderHook(() => useCustomerCreditSummary(undefined, true), { wrapper });
+
+    expect(mocks.customerCreditSummary).not.toHaveBeenCalled();
   });
 });
