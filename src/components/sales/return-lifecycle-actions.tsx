@@ -1,5 +1,9 @@
 import { useRef, useState } from "react";
 import { toast } from "sonner";
+import { Link } from "@tanstack/react-router";
+import { format } from "date-fns";
+import { Printer } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field, FieldGroup } from "@/components/ui/field";
@@ -7,6 +11,13 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useViewerAccess } from "@/hooks/use-viewer-access";
 import { hasPermission } from "@/lib/rbac";
 import {
@@ -16,10 +27,22 @@ import {
   useVoidSalesReturn,
   useSalesReturnDetail,
 } from "@/hooks/sales/use-sales-returns";
+import { useWallets } from "@/hooks/finance/use-finance";
+import { useIssueCustomerRefund } from "@/hooks/sales/use-customer-credit";
+import { OverdrawConfirmDialog } from "@/components/finance/overdraw-confirm-dialog";
+import { CreditNotePrintDialog } from "./credit-note-print-dialog";
+import { isOverdrawConfirmError } from "@/lib/finance/expense-corrections";
+import {
+  formatAmountInput,
+  formatRupees,
+  getBalanceAfter,
+  parseAmountInput,
+} from "@/lib/finance/expense-entry";
 import { getReturnUnitsPerCarton } from "@/lib/sales/returns/refund-pricing";
 import {
   availableReturnActions,
   checkInspection,
+  parseVoidBlockedByRefundError,
   receivedUnits,
   requestedUnits,
   shortUnits,
@@ -27,6 +50,19 @@ import {
 } from "@/lib/sales/returns/return-lifecycle";
 
 export type ReturnLifecycleItem = { id: string; label: string; approvedUnits: number };
+
+type SettledCreditNoteResult = {
+  returnId: string;
+  creditNoteNumber: string;
+  totalAmount: number;
+  appliedToInvoiceAmount: number;
+  customerCreditAmount: number;
+  customerId: string;
+  customerName: string;
+  customerType: string;
+  invoiceNumber: string;
+  leftoverCreditBalance: number;
+};
 
 const labels: Record<ReturnAction, string> = {
   approve: "Approve", reject: "Reject", receive: "Receive", cancel: "Cancel return", void: "Void receipt",
@@ -42,6 +78,7 @@ export function ReturnLifecycleActions({
   hideButtons = false,
   onReceiveCompleted,
   onReceiveClosedWithoutConfirm,
+  creditNoteNumber,
 }: {
   invoiceId: string;
   returnId: string;
@@ -52,11 +89,13 @@ export function ReturnLifecycleActions({
   hideButtons?: boolean;
   onReceiveCompleted?: () => void;
   onReceiveClosedWithoutConfirm?: () => void;
+  creditNoteNumber?: string | null;
 }) {
   const { data: viewer } = useViewerAccess();
   const canRead = !!viewer && hasPermission(viewer.permissions, "sales.view");
   const canApprove = canRead && hasPermission(viewer?.permissions ?? [], "sales.returns.approve");
   const canReceive = canRead && hasPermission(viewer?.permissions ?? [], "inventory.returns.receive");
+  const canIssueRefund = canRead && hasPermission(viewer?.permissions ?? [], "finance.refunds.issue");
   const actions = availableReturnActions(status, {
     approve: canApprove,
     receive: canReceive,
@@ -74,6 +113,25 @@ export function ReturnLifecycleActions({
   const [notes, setNotes] = useState("");
   const [error, setError] = useState("");
   const [lines, setLines] = useState<Array<{ returnItemId: string; goodUnits: string; damagedUnits: string; expiredUnits: string }>>([]);
+
+  const [settledCreditNote, setSettledCreditNote] = useState<SettledCreditNoteResult | null>(null);
+  const [settlementChoice, setSettlementChoice] = useState<"keep" | "refund">("keep");
+  const [refundWalletId, setRefundWalletId] = useState("");
+  const [refundAmount, setRefundAmount] = useState("");
+  const [refundDate, setRefundDate] = useState(() => format(new Date(), "yyyy-MM-dd"));
+  const [refundNotes, setRefundNotes] = useState("");
+  const [refundError, setRefundError] = useState("");
+  const [overdrawOpen, setOverdrawOpen] = useState(false);
+  const [printOpen, setPrintOpen] = useState(false);
+
+  const walletsQuery = useWallets({
+    enabled: Boolean(settledCreditNote) && settlementChoice === "refund",
+  });
+  const issueRefund = useIssueCustomerRefund(settledCreditNote?.customerId);
+
+  const selectedWallet = (walletsQuery.data ?? []).find(
+    (w: any) => w.id === refundWalletId,
+  );
 
   const needsDetail = action === "receive" && items === undefined;
   const detailQuery = useSalesReturnDetail(needsDetail ? returnId : null);
@@ -123,6 +181,37 @@ export function ReturnLifecycleActions({
     });
   }
 
+  function closeScreen4() {
+    setSettledCreditNote(null);
+    onReceiveCompleted?.();
+  }
+
+  async function handleRecordRefund(allowOverdraw: boolean) {
+    if (!settledCreditNote || !refundWalletId) return;
+    const amount = parseAmountInput(refundAmount);
+    if (amount <= 0) return;
+    setRefundError("");
+    try {
+      await issueRefund.mutateAsync({
+        customerId: settledCreditNote.customerId,
+        amount,
+        walletId: refundWalletId,
+        refundDate: refundDate ? new Date(refundDate) : undefined,
+        notes: refundNotes.trim() || undefined,
+        salesReturnId: settledCreditNote.returnId,
+        allowOverdraw,
+      });
+      setOverdrawOpen(false);
+      closeScreen4();
+    } catch (err) {
+      if (isOverdrawConfirmError(err)) {
+        setOverdrawOpen(true);
+      } else {
+        setRefundError(err instanceof Error ? err.message : "Failed to record refund");
+      }
+    }
+  }
+
   async function submit(nextAction: ReturnAction) {
     if (submitting.current || pending || !effectiveActions.includes(nextAction)) return;
     if (nextAction !== "approve" && !valid) return;
@@ -131,16 +220,45 @@ export function ReturnLifecycleActions({
     try {
       if (nextAction === "approve" || nextAction === "reject") {
         await decide.mutateAsync({ returnId, action: nextAction, ...(nextAction === "reject" ? { reason: reason.trim() } : {}) });
+        setAction(null);
       } else if (nextAction === "receive") {
         checkInspection(inspection);
-        await complete.mutateAsync({ returnId, notes: notes.trim() || undefined, lines: inspection.map(line => ({ returnItemId: line.id, goodUnits: line.goodUnits, damagedUnits: line.damagedUnits, expiredUnits: line.expiredUnits })) });
+        const result = await complete.mutateAsync({
+          returnId,
+          notes: notes.trim() || undefined,
+          lines: inspection.map(line => ({
+            returnItemId: line.id,
+            goodUnits: line.goodUnits,
+            damagedUnits: line.damagedUnits,
+            expiredUnits: line.expiredUnits,
+          })),
+        });
+        if (
+          result &&
+          typeof result === "object" &&
+          "creditNoteNumber" in result &&
+          Boolean((result as { creditNoteNumber?: string | null }).creditNoteNumber)
+        ) {
+          const cn = result as unknown as SettledCreditNoteResult;
+          setSettledCreditNote({ ...cn, returnId });
+          setSettlementChoice("keep");
+          setRefundWalletId("");
+          setRefundAmount(String(cn.customerCreditAmount ?? 0));
+          setRefundDate(format(new Date(), "yyyy-MM-dd"));
+          setRefundNotes("");
+          setRefundError("");
+          setAction(null);
+        } else {
+          setAction(null);
+          onReceiveCompleted?.();
+        }
       } else if (nextAction === "cancel") {
         await cancel.mutateAsync({ returnId, reason: reason.trim() });
+        setAction(null);
       } else {
         await voidReceipt.mutateAsync({ returnId, reason: reason.trim() });
+        setAction(null);
       }
-      setAction(null);
-      if (nextAction === "receive") onReceiveCompleted?.();
     } catch (error) {
       setError(error instanceof Error ? error.message : "Return action failed. Your entries have been kept.");
     } finally {
@@ -160,14 +278,47 @@ export function ReturnLifecycleActions({
     }
   }
 
+  const voidBlocked = error ? parseVoidBlockedByRefundError(new Error(error)) : null;
+
   return (
     <div className="flex flex-col gap-2">
       {!hideButtons && (
         <div className="flex flex-wrap items-center gap-2">
-          {actions.map(action => <Button key={action} size="sm" variant={action === "approve" || action === "receive" ? "default" : "outline"} disabled={pending} onClick={() => action === "approve" ? void submit(action) : open(action)}>{labels[action]}</Button>)}
+          {actions.map(action => (
+            <Button
+              key={action}
+              size="sm"
+              variant={action === "approve" || action === "receive" ? "default" : "outline"}
+              disabled={pending}
+              onClick={() => (action === "approve" ? void submit(action) : open(action))}
+            >
+              {labels[action]}
+            </Button>
+          ))}
         </div>
       )}
-      {!action && error && <p role="alert">{error}</p>}
+      {voidBlocked ? (
+        <Alert variant="destructive">
+          <AlertDescription className="space-y-1.5">
+            <p>{voidBlocked.displayMessage}</p>
+            <Link
+              to={
+                voidBlocked.customerType === "distributor"
+                  ? "/sales/people/distributors/$customerId"
+                  : voidBlocked.customerType === "shopkeeper"
+                    ? "/sales/people/shopkeepers/$customerId"
+                    : "/sales/customers/$customerId"
+              }
+              params={{ customerId: voidBlocked.customerId }}
+              className="inline-block font-semibold underline"
+            >
+              Open customer profile to reverse refund
+            </Link>
+          </AlertDescription>
+        </Alert>
+      ) : !action && error ? (
+        <p role="alert">{error}</p>
+      ) : null}
       <Dialog open={!!action} onOpenChange={nextOpen => { if (!nextOpen) dismissDialog(); }}>
         <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto" showCloseButton={!pending}>
           <form onSubmit={event => { event.preventDefault(); if (action) void submit(action); }} className="flex flex-col gap-4">
@@ -231,7 +382,28 @@ export function ReturnLifecycleActions({
               </FieldGroup>
             </fieldset>
             {action && !effectiveActions.includes(action) && !waitingForDetail && <p role="alert">This action is no longer available. Invoice details have refreshed; your entries are kept.</p>}
-            {error && <p role="alert">{error}</p>}
+            {voidBlocked ? (
+              <Alert variant="destructive">
+                <AlertDescription className="space-y-1.5">
+                  <p>{voidBlocked.displayMessage}</p>
+                  <Link
+                    to={
+                      voidBlocked.customerType === "distributor"
+                        ? "/sales/people/distributors/$customerId"
+                        : voidBlocked.customerType === "shopkeeper"
+                          ? "/sales/people/shopkeepers/$customerId"
+                          : "/sales/customers/$customerId"
+                    }
+                    params={{ customerId: voidBlocked.customerId }}
+                    className="inline-block font-semibold underline"
+                  >
+                    Open customer profile to reverse refund
+                  </Link>
+                </AlertDescription>
+              </Alert>
+            ) : error ? (
+              <p role="alert" className="text-sm text-destructive">{error}</p>
+            ) : null}
             <DialogFooter>
               <Button type="button" variant="ghost" disabled={pending} onClick={dismissDialog}>
                 {action === "receive" ? "Close without confirming" : "Close"}
@@ -241,6 +413,198 @@ export function ReturnLifecycleActions({
           </form>
         </DialogContent>
       </Dialog>
+
+      <Dialog
+        open={Boolean(settledCreditNote)}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen && !issueRefund.isPending) {
+            closeScreen4();
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto" showCloseButton={!issueRefund.isPending}>
+          <DialogHeader>
+            <DialogTitle>Credit Note Issued</DialogTitle>
+            <DialogDescription>
+              Return has been completed and Credit Note has been generated.
+            </DialogDescription>
+          </DialogHeader>
+
+          {settledCreditNote && (
+            <div className="space-y-4">
+              <div className="rounded-lg border p-4 bg-muted/20 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-mono text-base font-bold">
+                    {settledCreditNote.creditNoteNumber}
+                  </span>
+                  <span className="text-sm font-semibold">{settledCreditNote.customerName}</span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Invoice #{settledCreditNote.invoiceNumber}
+                </p>
+                <div className="grid grid-cols-3 gap-2 pt-2 border-t text-xs">
+                  <div>
+                    <span className="text-muted-foreground block">Credit Note Total</span>
+                    <span className="font-bold tabular-nums text-sm">
+                      {formatRupees(settledCreditNote.totalAmount)}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground block">Applied to Invoice</span>
+                    <span className="font-semibold tabular-nums text-sm">
+                      {formatRupees(settledCreditNote.appliedToInvoiceAmount)}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground block">Transferred to Credit</span>
+                    <span className="font-semibold tabular-nums text-sm text-emerald-600">
+                      {formatRupees(settledCreditNote.customerCreditAmount)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {settledCreditNote.customerCreditAmount > 0 && (
+                <div className="space-y-3 rounded-lg border p-3">
+                  <div className="text-xs font-medium">Customer Credit Settlement</div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={settlementChoice === "keep" ? "default" : "outline"}
+                      onClick={() => setSettlementChoice("keep")}
+                    >
+                      Keep as Store Credit
+                    </Button>
+                    {canIssueRefund ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={settlementChoice === "refund" ? "default" : "outline"}
+                        onClick={() => setSettlementChoice("refund")}
+                      >
+                        Refund Cash / Bank Now
+                      </Button>
+                    ) : (
+                      <p className="text-xs text-muted-foreground self-center">
+                        Permission finance.refunds.issue required to issue a cash or bank refund.
+                      </p>
+                    )}
+                  </div>
+
+                  {settlementChoice === "refund" && canIssueRefund && (
+                    <div className="space-y-3 pt-2 border-t">
+                      <div className="space-y-1">
+                        <Label htmlFor="refund-account">Refund from account</Label>
+                        <Select value={refundWalletId} onValueChange={setRefundWalletId}>
+                          <SelectTrigger id="refund-account" aria-label="Refund from account" className="w-full">
+                            <SelectValue placeholder="Select account" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {(walletsQuery.data ?? [])
+                              .filter((w: any) => !w.archived)
+                              .map((w: any) => (
+                                <SelectItem key={w.id} value={w.id}>
+                                  {w.name} ({formatRupees(w.balance)})
+                                </SelectItem>
+                              ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <Label htmlFor="refund-amount">Amount</Label>
+                          <Input
+                            id="refund-amount"
+                            type="text"
+                            value={refundAmount}
+                            onChange={(e) => setRefundAmount(formatAmountInput(e.target.value))}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label htmlFor="refund-date">Date</Label>
+                          <Input
+                            id="refund-date"
+                            type="date"
+                            value={refundDate}
+                            onChange={(e) => setRefundDate(e.target.value)}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-1">
+                        <Label htmlFor="refund-notes">Notes</Label>
+                        <Input
+                          id="refund-notes"
+                          placeholder="Optional notes"
+                          value={refundNotes}
+                          onChange={(e) => setRefundNotes(e.target.value)}
+                        />
+                      </div>
+
+                      {refundError && (
+                        <p role="alert" className="text-xs text-destructive">
+                          {refundError}
+                        </p>
+                      )}
+
+                      <div className="flex justify-end pt-1">
+                        <Button
+                          type="button"
+                          size="sm"
+                          disabled={!refundWalletId || !parseAmountInput(refundAmount) || issueRefund.isPending}
+                          onClick={() => void handleRecordRefund(false)}
+                        >
+                          {issueRefund.isPending ? "Recording..." : "Record refund"}
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <DialogFooter className="flex flex-row items-center justify-between sm:justify-between pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setPrintOpen(true)}
+                  className="gap-1.5"
+                >
+                  <Printer className="size-4" />
+                  Print credit note
+                </Button>
+                <Button type="button" onClick={closeScreen4}>
+                  Done
+                </Button>
+              </DialogFooter>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <OverdrawConfirmDialog
+        open={overdrawOpen}
+        onOpenChange={setOverdrawOpen}
+        walletName={selectedWallet?.name ?? "This account"}
+        balance={selectedWallet?.balance ?? "0"}
+        balanceAfter={
+          selectedWallet
+            ? getBalanceAfter(selectedWallet.balance, parseAmountInput(refundAmount))
+            : "0"
+        }
+        onConfirm={() => void handleRecordRefund(true)}
+        pending={issueRefund.isPending}
+        descriptionLabel="refund"
+      />
+
+      {(creditNoteNumber || settledCreditNote) && (
+        <CreditNotePrintDialog
+          open={printOpen}
+          onOpenChange={setPrintOpen}
+          returnId={settledCreditNote?.returnId ?? returnId}
+        />
+      )}
     </div>
   );
 }

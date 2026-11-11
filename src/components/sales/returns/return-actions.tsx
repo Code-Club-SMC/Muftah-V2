@@ -36,6 +36,7 @@ export function ReturnActions({
     invoiceId: string;
     status: string;
     items?: ReturnActionSourceItem[];
+    creditNoteNumber?: string | null;
   };
 }) {
   return (
@@ -45,6 +46,7 @@ export function ReturnActions({
       returnNumber={salesReturn.returnNumber}
       status={salesReturn.status}
       items={salesReturn.items ? toReturnLifecycleItems(salesReturn.items) : undefined}
+      creditNoteNumber={salesReturn.creditNoteNumber}
     />
   );
 }
