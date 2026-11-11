@@ -15,6 +15,7 @@ import { endOfDay, isValid, parseISO } from "date-fns";
 import { z } from "zod";
 import { db } from "@/db";
 import {
+  customerRefunds,
   ledgerExportAuditLog,
   payments,
   salesmen,
@@ -44,7 +45,7 @@ const ledgerQuerySchema = z.object({
   search: z.string().optional(),
   sortBy: z.literal("date").optional(),
   sortOrder: z.enum(["asc", "desc"]).optional(),
-  typeFilter: z.enum(["all", "invoice", "payment", "return"]).optional(),
+  typeFilter: z.enum(["all", "invoice", "payment", "return", "refund"]).optional(),
   includeFullEntries: z.boolean().optional(),
   exportType: z.enum(["view", "print", "csv", "pdf"]).optional(),
 });
@@ -82,6 +83,7 @@ function customerCondition(
     | typeof invoices.customerId
     | typeof payments.customerId
     | typeof salesReturns.customerId
+    | typeof customerRefunds.customerId
     | typeof slipRecords.customerId,
 ) {
   return customerIds.length === 1
@@ -103,12 +105,10 @@ function filterAndSortEntries(entries: LedgerEntry[], query: LedgerQuery) {
   if (query.search?.trim()) {
     const term = query.search.trim().toLowerCase();
     result = result.filter((entry) => {
-      const invoiceNumber =
-        entry.type === "invoice" ? entry.invoiceNumber : entry.invoiceNumber;
-      if (invoiceNumber.toLowerCase().includes(term)) return true;
       if (entry.customerName?.toLowerCase().includes(term)) return true;
       if (entry.type === "invoice") {
         return (
+          entry.invoiceNumber.toLowerCase().includes(term) ||
           entry.warehouseName?.toLowerCase().includes(term) ||
           entry.remarks?.toLowerCase().includes(term) ||
           entry.items.some((item) => item.pack.toLowerCase().includes(term))
@@ -116,12 +116,23 @@ function filterAndSortEntries(entries: LedgerEntry[], query: LedgerQuery) {
       }
       if (entry.type === "return") {
         return (
+          entry.invoiceNumber.toLowerCase().includes(term) ||
           String(entry.returnNumber).includes(term) ||
           entry.reason.toLowerCase().includes(term) ||
-          entry.notes?.toLowerCase().includes(term)
+          entry.notes?.toLowerCase().includes(term) ||
+          (entry.creditNoteNumber ? entry.creditNoteNumber.toLowerCase().includes(term) : false)
+        );
+      }
+      if (entry.type === "refund") {
+        return (
+          (entry.creditNoteNumber ? entry.creditNoteNumber.toLowerCase().includes(term) : false) ||
+          entry.walletName?.toLowerCase().includes(term) ||
+          entry.notes?.toLowerCase().includes(term) ||
+          entry.reverseReason?.toLowerCase().includes(term)
         );
       }
       return (
+        entry.invoiceNumber.toLowerCase().includes(term) ||
         entry.reference?.toLowerCase().includes(term) ||
         entry.method.toLowerCase().includes(term) ||
         entry.walletName?.toLowerCase().includes(term) ||
@@ -134,7 +145,7 @@ function filterAndSortEntries(entries: LedgerEntry[], query: LedgerQuery) {
 
   // Ledger must stay chronological by calendar date, with Invoices preceding Payments on the same day.
   const order = query.sortOrder === "desc" ? -1 : 1;
-  const kindRank = { invoice: 0, return: 1, payment: 2 } as const;
+  const kindRank = { invoice: 0, return: 1, payment: 2, refund: 3 } as const;
   result.sort((a, b) => {
     const dayDiff = startOfDayTime(a.date) - startOfDayTime(b.date);
     if (dayDiff !== 0) return dayDiff * order;
@@ -233,6 +244,51 @@ async function buildLedger(customerIds: string[], query: LedgerQuery) {
       (!fromDate || event.date >= fromDate) &&
       (!throughDate || event.date <= throughDate),
   );
+
+  const refundRows = await db.query.customerRefunds.findMany({
+    where: and(
+      customerCondition(customerIds, customerRefunds.customerId),
+      throughDate ? lte(customerRefunds.refundDate, throughDate) : undefined,
+    ),
+    with: {
+      wallet: { columns: { name: true } },
+    },
+    orderBy: [
+      asc(customerRefunds.refundDate),
+      asc(customerRefunds.createdAt),
+      asc(customerRefunds.id),
+    ],
+  });
+  const refundEvents = refundRows.flatMap((row) => {
+    const events: Array<{
+      kind: "refund" | "refund_reversal";
+      date: Date;
+      amount: number;
+      row: typeof row;
+    }> = [
+      {
+        kind: "refund",
+        date: row.refundDate,
+        amount: safeNumber(row.amount),
+        row,
+      },
+    ];
+    if (row.status === "reversed" && row.reversedAt) {
+      events.push({
+        kind: "refund_reversal",
+        date: row.reversedAt,
+        amount: safeNumber(row.amount),
+        row,
+      });
+    }
+    return events;
+  });
+  const periodRefundEvents = refundEvents.filter(
+    (event) =>
+      (!fromDate || event.date >= fromDate) &&
+      (!throughDate || event.date <= throughDate),
+  );
+
   let openingBalance = 0;
   if (fromDate) {
     const [preInvoices, prePayments] = await Promise.all([
@@ -248,6 +304,7 @@ async function buildLedger(customerIds: string[], query: LedgerQuery) {
         where: and(
           customerCondition(customerIds, payments.customerId),
           eq(payments.status, "confirmed"),
+          ne(payments.method, "customer_credit"),
           lt(payments.effectiveDate, fromDate),
         ),
         columns: { amount: true },
@@ -259,7 +316,14 @@ async function buildLedger(customerIds: string[], query: LedgerQuery) {
         prePayments.reduce((sum, row) => sum + safeNumber(row.amount), 0) -
         returnEvents
           .filter((event) => event.date < fromDate)
-          .reduce((sum, event) => sum + event.signedAmount, 0),
+          .reduce((sum, event) => sum + event.signedAmount, 0) +
+        refundEvents
+          .filter((event) => event.date < fromDate)
+          .reduce(
+            (sum, event) =>
+              sum + (event.kind === "refund" ? event.amount : -event.amount),
+            0,
+          ),
     );
   }
 
@@ -319,7 +383,7 @@ async function buildLedger(customerIds: string[], query: LedgerQuery) {
   const timeline: Array<{
     date: Date;
     id: string;
-    kind: "invoice" | "return" | "payment";
+    kind: "invoice" | "return" | "payment" | "refund";
     index: number;
   }> = [];
 
@@ -342,7 +406,15 @@ async function buildLedger(customerIds: string[], query: LedgerQuery) {
       index,
     }),
   );
-  const kindRank = { invoice: 0, return: 1, payment: 2 } as const;
+  periodRefundEvents.forEach((event, index) =>
+    timeline.push({
+      date: event.date,
+      id: `${event.row.id}:${event.kind}`,
+      kind: "refund",
+      index,
+    }),
+  );
+  const kindRank = { invoice: 0, return: 1, payment: 2, refund: 3 } as const;
   timeline.sort((left, right) => {
     const dayDiff = startOfDayTime(left.date) - startOfDayTime(right.date);
     if (dayDiff !== 0) return dayDiff;
@@ -397,6 +469,7 @@ async function buildLedger(customerIds: string[], query: LedgerQuery) {
         id: returnEvent.id,
         date: returnEvent.date,
         returnNumber: salesReturn.returnNumber,
+        creditNoteNumber: salesReturn.creditNoteNumber,
         invoiceId: salesReturn.invoiceId,
         invoiceNumber: salesReturn.invoice.invoiceNumber,
         amount,
@@ -410,34 +483,66 @@ async function buildLedger(customerIds: string[], query: LedgerQuery) {
       continue;
     }
 
-    const payment = paymentRows[event.index];
-    const amount = safeNumber(payment.amount);
-    runningBalance = roundMoney(runningBalance - amount);
-    entries.push({
-      type: "payment",
-      id: payment.id,
-      date: payment.effectiveDate ?? payment.paymentDate,
-      reference: payment.reference ?? payment.chequeNumber,
-      method: payment.method,
-      amount,
-      notes: payment.notes,
-      runningBalance,
-      invoiceId: payment.invoiceId,
-      invoiceNumber: payment.invoice.invoiceNumber,
-      customerName: customerNames.get(payment.customerId) ?? null,
-      walletName: payment.wallet?.name ?? null,
-      walletType: payment.wallet?.type ?? null,
-      chequeNumber: payment.chequeNumber ?? null,
-      chequeBank: payment.chequeBank ?? null,
-      chequeDate: payment.chequeDate ?? null,
-    });
+    if (event.kind === "payment") {
+      const payment = paymentRows[event.index];
+      const amount = safeNumber(payment.amount);
+      if (payment.method !== "customer_credit") {
+        runningBalance = roundMoney(runningBalance - amount);
+      }
+      entries.push({
+        type: "payment",
+        id: payment.id,
+        date: payment.effectiveDate ?? payment.paymentDate,
+        reference: payment.reference ?? payment.chequeNumber,
+        method: payment.method,
+        isStoreCreditApplied: payment.method === "customer_credit",
+        amount,
+        notes: payment.notes,
+        runningBalance,
+        invoiceId: payment.invoiceId,
+        invoiceNumber: payment.invoice.invoiceNumber,
+        customerName: customerNames.get(payment.customerId) ?? null,
+        walletName: payment.wallet?.name ?? null,
+        walletType: payment.wallet?.type ?? null,
+        chequeNumber: payment.chequeNumber ?? null,
+        chequeBank: payment.chequeBank ?? null,
+        chequeDate: payment.chequeDate ?? null,
+      });
+      continue;
+    }
+
+    if (event.kind === "refund") {
+      const refEvent = periodRefundEvents[event.index];
+      runningBalance = roundMoney(
+        refEvent.kind === "refund"
+          ? runningBalance + refEvent.amount
+          : runningBalance - refEvent.amount,
+      );
+      entries.push({
+        type: "refund",
+        eventKind: refEvent.kind,
+        id: `${refEvent.row.id}:${refEvent.kind}`,
+        date: refEvent.date,
+        amount: refEvent.amount,
+        creditNoteNumber: refEvent.row.creditNoteNumber,
+        walletName: refEvent.row.wallet?.name ?? null,
+        notes: refEvent.row.notes,
+        reverseReason: refEvent.row.reverseReason,
+        runningBalance,
+        customerName: customerNames.get(refEvent.row.customerId) ?? null,
+      });
+      continue;
+    }
   }
 
   const periodTotalSales = roundMoney(
     invoiceRows.reduce((sum, row) => sum + safeNumber(row.totalPrice), 0),
   );
+  const nonCreditPaymentRows = paymentRows.filter(
+    (row) => row.method !== "customer_credit",
+  );
   const periodPayments = roundMoney(
-    paymentRows.reduce((sum, row) => sum + safeNumber(row.amount), 0),
+    nonCreditPaymentRows.reduce((sum, row) => sum + safeNumber(row.amount), 0),
   );
   const periodReturns = roundMoney(
     periodReturnEvents.reduce((sum, event) => sum + event.signedAmount, 0),
@@ -465,7 +570,7 @@ async function buildLedger(customerIds: string[], query: LedgerQuery) {
       periodReturns,
       periodTotalProfit: roundMoney(invoiceProfit - returnedProfit),
       invoiceCount: invoiceRows.length,
-      paymentCount: paymentRows.length,
+      paymentCount: nonCreditPaymentRows.length,
     } satisfies LedgerSummary,
   };
 }
@@ -495,6 +600,7 @@ async function getCustomer(customerId: string) {
       city: true,
       mobileNumber: true,
       outstandingAmount: true,
+      creditBalance: true,
       customerType: true,
       salesmanId: true,
     },
@@ -537,6 +643,7 @@ async function generateCustomerLedger(
       city: customer.city,
       mobileNumber: customer.mobileNumber,
       outstandingAmount: customer.outstandingAmount,
+      creditBalance: customer.creditBalance,
       customerType: customer.customerType,
     },
     entries: page.entries,

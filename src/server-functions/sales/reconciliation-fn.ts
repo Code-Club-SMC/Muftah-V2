@@ -2,7 +2,8 @@ import { createServerFn } from "@tanstack/react-start";
 import { db } from "@/db";
 import { createId } from "@paralleldrive/cuid2";
 import { invoices, customers } from "@/db/schemas/sales-schema";
-import { payments, slipRecords, invoiceTimelineEvents } from "@/db/schemas/sales-erp-schema";
+import { payments, slipRecords, invoiceTimelineEvents, customerRefunds } from "@/db/schemas/sales-erp-schema";
+import { summarizeDailyClosingBuckets } from "@/lib/sales/settlement/contracts";
 import { recordRecoveryPayment } from "./settlement-service";
 import {
   requireSalesManageMiddleware,
@@ -646,21 +647,19 @@ export const getDailyClosingSummaryFn = createServerFn()
       },
     });
 
-    const totalCash = todayPayments
-      .filter((p) => p.method === "cash")
-      .reduce((sum, p) => sum + Number(p.amount), 0);
+    const todayRefunds = await db.query.customerRefunds.findMany({
+      where: and(
+        gte(customerRefunds.refundDate, dayStart),
+        lte(customerRefunds.refundDate, dayEnd),
+        eq(customerRefunds.status, "active"),
+      ),
+      with: {
+        customer: { columns: { name: true } },
+        wallet: { columns: { name: true } },
+      },
+    });
 
-    const totalBankTransfer = todayPayments
-      .filter((p) => p.method === "bank_transfer")
-      .reduce((sum, p) => sum + Number(p.amount), 0);
-
-    const totalCheque = todayPayments
-      .filter((p) => p.method === "cheque")
-      .reduce((sum, p) => sum + Number(p.amount), 0);
-
-    const totalExpenseOffset = todayPayments
-      .filter((p) => p.method === "expense_offset")
-      .reduce((sum, p) => sum + Number(p.amount), 0);
+    const buckets = summarizeDailyClosingBuckets(todayPayments, todayRefunds);
 
     // Slips issued today
     const todaySlips = await db.query.slipRecords.findMany({
@@ -684,12 +683,14 @@ export const getDailyClosingSummaryFn = createServerFn()
     return {
       date: targetDate.toISOString().split("T")[0],
       payments: todayPayments,
-      totalCollected:
-        totalCash + totalBankTransfer + totalCheque + totalExpenseOffset,
-      totalCash,
-      totalBankTransfer,
-      totalCheque,
-      totalExpenseOffset,
+      refunds: todayRefunds,
+      totalCollected: buckets.totalCollected,
+      totalCash: buckets.totalCash,
+      totalBankTransfer: buckets.totalBankTransfer,
+      totalCheque: buckets.totalCheque,
+      totalExpenseOffset: buckets.totalExpenseOffset,
+      totalCreditApplied: buckets.totalCreditApplied,
+      totalCustomerRefunds: buckets.totalCustomerRefunds,
       slipsIssuedToday: todaySlips.length,
       slipsClosedToday: closedToday.length,
       closedSlips: closedToday,

@@ -621,6 +621,15 @@ describe("P&L Phase 4 — edge-case audit on company reporting core", () => {
 		expect(src).toContain("Remaining Timing Difference");
 	});
 
+	it("reconciles customer store-credit refunds as a dedicated bridge row and isolates from operating expenses", () => {
+		const src = source();
+
+		expect(src).toContain("FINANCE_CUSTOMER_REFUND_SOURCES");
+		expect(src).toContain("customerRefundOutflows");
+		expect(src).toContain('"customer_refunds"');
+		expect(src).toContain("Less Customer Store-Credit Refunds");
+	});
+
 	it("keeps every line traceable to its source invoice for drill-down", () => {
 		const src = source();
 

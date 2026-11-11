@@ -252,7 +252,7 @@ describe("sales workflow regressions", () => {
     expect(ledgerSource).toContain("salesReturns.completedAt");
     expect(ledgerSource).toContain("salesReturns.voidedAt");
     expect(ledgerSource).toContain("eventKind:");
-    expect(ledgerSource).toContain('kind: "invoice" | "return" | "payment"');
+    expect(ledgerSource).toContain('kind: "invoice" | "return" | "payment" | "refund"');
     expect(ledgerSource).toContain('type: "return"');
     expect(ledgerSource).toContain('eq(payments.status, "confirmed")');
     expect(ledgerSource).toContain("payments.effectiveDate");
