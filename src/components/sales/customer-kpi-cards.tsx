@@ -1,5 +1,5 @@
 import { useGetCustomerStats } from "@/hooks/sales/use-customers";
-import { Users, DollarSign, AlertTriangle, UserCheck } from "lucide-react";
+import { Users, DollarSign, AlertTriangle, UserCheck, Wallet } from "lucide-react";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 
@@ -34,6 +34,13 @@ const cards = [
     icon: UserCheck,
     format: (v: number) => v.toLocaleString(),
     theme: "amber",
+  },
+  {
+    key: "totalCustomerCredit",
+    label: "Total Store Credit",
+    icon: Wallet,
+    format: PKR,
+    theme: "violet",
   },
 ] as const;
 
@@ -74,7 +81,7 @@ export const CustomerKpiCards = ({ dateFrom, dateTo }: Props) => {
   const { data: stats } = useGetCustomerStats({ dateFrom, dateTo });
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
       {cards.map((card) => {
         const Icon = card.icon;
         const value = stats[card.key as keyof typeof stats] as number;

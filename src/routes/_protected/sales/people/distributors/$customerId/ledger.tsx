@@ -219,6 +219,14 @@ function DistributorLedgerPage() {
             >
               Distributor
             </Badge>
+            {Number((customer as any)?.creditBalance ?? 0) > 0 && (
+              <Badge
+                variant="outline"
+                className="border-emerald-200 text-emerald-700 bg-emerald-50 dark:bg-emerald-950/20 text-xs font-semibold"
+              >
+                Store Credit: {formatPKR(Number((customer as any).creditBalance), false)}
+              </Badge>
+            )}
           </div>
           <div className="flex flex-wrap items-center gap-3 mt-1 text-sm text-muted-foreground">
             <span className="flex items-center gap-1">
@@ -302,6 +310,7 @@ function DistributorLedgerPage() {
                 <SelectItem value="invoice">Invoices Only</SelectItem>
                 <SelectItem value="payment">Payments Only</SelectItem>
                 <SelectItem value="return">Returns Only</SelectItem>
+                <SelectItem value="refund">Refunds Only</SelectItem>
               </SelectContent>
             </Select>
         </div>
@@ -560,6 +569,11 @@ function LedgerTableRow({
 }) {
   const isInvoice = entry.type === "invoice";
   const isReturn = entry.type === "return";
+  const isRefund = entry.type === "refund";
+  const pay = entry.type === "payment" ? entry : null;
+  const isCreditApplied =
+    entry.type === "payment" &&
+    (Boolean(entry.isStoreCreditApplied) || entry.method === "customer_credit");
 
   return (
     <>
@@ -629,36 +643,78 @@ function LedgerTableRow({
               <div className="text-xs text-blue-600">
                 Invoice #{entry.invoiceNumber}
               </div>
+              {entry.creditNoteNumber && (
+                <div>
+                  <Badge variant="outline" className="border-amber-300 text-amber-700 bg-amber-50 dark:bg-amber-950/20 text-[10px] font-mono">
+                    CN: {entry.creditNoteNumber}
+                  </Badge>
+                </div>
+              )}
+            </div>
+          ) : isRefund ? (
+            <div className="space-y-1">
+              <div className="font-medium text-rose-700 dark:text-rose-400">
+                {entry.eventKind === "refund_reversal" ? "Customer Refund Reversal" : "Customer Refund"}
+                {entry.walletName && (
+                  <span className="text-muted-foreground font-normal"> · {entry.walletName}</span>
+                )}
+              </div>
+              <div className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+                {entry.creditNoteNumber && (
+                  <Badge variant="outline" className="border-rose-300 text-rose-700 bg-rose-50 dark:bg-rose-950/20 text-[10px] font-mono">
+                    CN: {entry.creditNoteNumber}
+                  </Badge>
+                )}
+                {entry.reverseReason ? (
+                  <span>Reason: {entry.reverseReason}</span>
+                ) : entry.notes ? (
+                  <span>{entry.notes}</span>
+                ) : null}
+              </div>
+            </div>
+          ) : isCreditApplied ? (
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <Badge variant="outline" className="border-emerald-300 text-emerald-700 bg-emerald-50 dark:bg-emerald-950/20 text-[10px] font-semibold">
+                  Store Credit Applied
+                </Badge>
+              </div>
+              <div className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+                <span className="text-blue-600 font-medium">Invoice #{pay?.invoiceNumber}</span>
+                <span>• {formatPKR(pay?.amount ?? 0, false)} applied (no cash movement)</span>
+                {pay?.notes && <span>• {pay.notes}</span>}
+              </div>
             </div>
           ) : (
             (() => {
-              const digitalMatch = entry.notes?.match(/^\[(.*?)\]/);
+              if (!pay) return null;
+              const digitalMatch = pay.notes?.match(/^\[(.*?)\]/);
               const provider = digitalMatch ? digitalMatch[1] : null;
-              const displayNotes = (digitalMatch && entry.notes)
-                ? entry.notes.slice(digitalMatch[0].length).trim().replace(/^[·•-]\s*/, "")
-                : entry.notes;
-              const methodLabel = provider ? provider : entry.method.replaceAll("_", " ");
+              const displayNotes = (digitalMatch && pay.notes)
+                ? pay.notes.slice(digitalMatch[0].length).trim().replace(/^[·•-]\s*/, "")
+                : pay.notes;
+              const methodLabel = provider ? provider : pay.method.replaceAll("_", " ");
 
               return (
                 <div className="space-y-1">
                   <div className="font-medium">
-                    {entry.method === "cheque" ? (
+                    {pay.method === "cheque" ? (
                       <span>
-                        Payment (Cheque #{entry.chequeNumber || "—"}{entry.chequeBank ? ` · ${entry.chequeBank}` : ""})
+                        Payment (Cheque #{pay.chequeNumber || "—"}{pay.chequeBank ? ` · ${pay.chequeBank}` : ""})
                       </span>
                     ) : (
                       <span>
                         Payment <span className="capitalize">({methodLabel})</span>
-                        {entry.walletName && (
-                          <span className="text-muted-foreground font-normal"> · {entry.walletName}</span>
+                        {pay.walletName && (
+                          <span className="text-muted-foreground font-normal"> · {pay.walletName}</span>
                         )}
                       </span>
                     )}
                   </div>
                   <div className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
-                    <span className="text-blue-600 font-medium">Invoice #{entry.invoiceNumber}</span>
-                    {entry.reference && (
-                      <span>• Ref: <strong className="text-foreground font-mono">{entry.reference}</strong></span>
+                    <span className="text-blue-600 font-medium">Invoice #{pay.invoiceNumber}</span>
+                    {pay.reference && (
+                      <span>• Ref: <strong className="text-foreground font-mono">{pay.reference}</strong></span>
                     )}
                     {displayNotes && <span>• {displayNotes}</span>}
                   </div>
@@ -667,11 +723,23 @@ function LedgerTableRow({
             })()
           )}
         </TableCell>
-        <TableCell className={cn("text-sm tabular-nums text-right", isReturn ? "text-amber-600 font-medium" : "text-green-600 font-medium")}>
-          {!isInvoice && (!isReturn || entry.eventKind === "return") ? formatPKR(entry.amount, false) : "—"}
+        <TableCell className={cn("text-sm tabular-nums text-right", isReturn ? "text-amber-600 font-medium" : isRefund ? "text-rose-600 font-medium" : "text-green-600 font-medium")}>
+          {isReturn && entry.eventKind === "return"
+            ? formatPKR(entry.amount, false)
+            : isRefund && entry.eventKind === "refund_reversal"
+              ? formatPKR(entry.amount, false)
+              : pay && !isCreditApplied
+                ? formatPKR(pay.amount, false)
+                : "—"}
         </TableCell>
         <TableCell className="text-sm tabular-nums text-right font-medium">
-          {isInvoice ? formatPKR(entry.totalPrice, false) : isReturn && entry.eventKind === "void" ? formatPKR(entry.amount, false) : "—"}
+          {isInvoice
+            ? formatPKR(entry.totalPrice, false)
+            : isReturn && entry.eventKind === "void"
+              ? formatPKR(entry.amount, false)
+              : isRefund && entry.eventKind === "refund"
+                ? formatPKR(entry.amount, false)
+                : "—"}
         </TableCell>
         <TableCell className="text-sm tabular-nums text-right font-semibold">
           {formatBalance(entry.runningBalance)}
