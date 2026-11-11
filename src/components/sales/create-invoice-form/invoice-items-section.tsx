@@ -16,6 +16,11 @@ import type { ItemFormValue, StockItem } from "./utils";
 import {
     PKR, safeEffectiveCPP,
     findStock, CartonCompositionBadge, blankItem,
+    doesStockUseCartons,
+    resolveProductUnitTypeForStock,
+    getDisplayedLineRate,
+    resolvePerCartonPriceFromInput,
+    getRecipeContainersPerCarton,
     getLinePricingBreakdown,
     getLineUnitCostPerPack, getLiveUnitCostPerPack,
     getInvoiceStockAvailability,
@@ -132,24 +137,49 @@ export const InvoiceItemsSection = ({
             customerDefaultMargin,
             isDistributor,
         );
+        const eCPP = getRecipeContainersPerCarton(stock);
+        const currentItems = (form.getFieldValue?.("items") ?? items) as ItemFormValue[];
+        const candidateAvailability = stock
+            ? getInvoiceStockAvailability(
+                stock,
+                getCartonInfo(stock.recipeId),
+                getReservedUnitsForRecipe(currentItems, availableStock, stock.recipeId, index, discountRuleMap),
+                getReservedCartonsForRecipe(currentItems, stock.recipeId, index, discountRuleMap),
+            )
+            : { units: 0, cartons: 0 };
+        const nextUnitType = resolveProductUnitTypeForStock(stock, candidateAvailability);
+        const currentRow = currentItems[index];
 
         form.setFieldValue(`items[${index}].pack`, stock?.recipe?.name || "");
+        form.setFieldValue(`items[${index}].packsPerCarton`, eCPP);
+        form.setFieldValue(`items[${index}].hsnCode`, stock?.recipe?.hsnCode || "");
+        form.setFieldValue(`items[${index}].unitType`, nextUnitType);
 
-        if (stock?.recipe?.hsnCode) {
-            form.setFieldValue(`items[${index}].hsnCode`, stock.recipe.hsnCode);
+        if (nextUnitType === "carton") {
+            form.setFieldValue(`items[${index}].numberOfUnits`, 0);
+            if (!currentRow || Number(currentRow.numberOfCartons || 0) <= 0) {
+                form.setFieldValue(`items[${index}].numberOfCartons`, 1);
+            }
+        } else {
+            form.setFieldValue(`items[${index}].numberOfCartons`, 0);
+            form.setFieldValue(`items[${index}].discountCartons`, 0);
+            if (!currentRow || Number(currentRow.numberOfUnits || 0) <= 0) {
+                form.setFieldValue(
+                    `items[${index}].numberOfUnits`,
+                    candidateAvailability.units > 0 ? Math.min(1, candidateAvailability.units) : 0,
+                );
+            }
         }
 
-        if (perCartonPrice > 0) {
-            form.setFieldValue(`items[${index}].perCartonPrice`, perCartonPrice);
-        }
-
-        if (recipePricing?.retailPricePerPack != null) {
-            form.setFieldValue(`items[${index}].retailPrice`, roundMoney(recipePricing.retailPricePerPack));
-        }
+        form.setFieldValue(`items[${index}].perCartonPrice`, perCartonPrice > 0 ? perCartonPrice : 0);
+        form.setFieldValue(
+            `items[${index}].retailPrice`,
+            recipePricing?.retailPricePerPack != null ? roundMoney(recipePricing.retailPricePerPack) : 0,
+        );
 
         form.setFieldValue(`items[${index}].isPriceOverride`, false);
         form.setFieldValue(`items[${index}].preserveStoredDistributorRate`, false);
-    }, [availableStock, customerDefaultMargin, form, getRecipePricing, isDistributor]);
+    }, [availableStock, customerDefaultMargin, discountRuleMap, form, getCartonInfo, getRecipePricing, isDistributor, items]);
 
     // Keep manual free cartons within the entered carton quantity.
     useEffect(() => {
@@ -196,6 +226,13 @@ export const InvoiceItemsSection = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [availableStock, customerDefaultMargin, form, getRecipePricing, isDistributor, items, preserveOrderLineRate]);
 
+    const hasCartonLines = items.some((row) => row.unitType !== "units");
+    const hasUnitLines = items.some((row) => row.unitType === "units");
+    const hasMixedUnitTypes = hasCartonLines && hasUnitLines;
+    const rateColumnLabel = hasUnitLines
+        ? (hasCartonLines ? "Rate" : "Unit Rate")
+        : "Carton Rate";
+
     return (
     <form.Field name="items">
         {(field: any) => (
@@ -206,7 +243,7 @@ export const InvoiceItemsSection = ({
                     className="hidden md:grid items-center gap-2 px-3 pb-1 border-b"
                     style={{ gridTemplateColumns: "2.2fr 1fr 0.7fr 0.7fr 1.2fr 1fr 0.9fr 0.9fr 32px" }}
                 >
-                    {["Product", "Unit Type", "HSN", "Packs/Ctn", "Qty", "Carton Rate", "Gross Amount", "Net Amount", ""].map((h) => (
+                    {["Product", "Unit Type", "HSN", "Packs/Ctn", "Qty", rateColumnLabel, "Gross Amount", "Net Amount", ""].map((h) => (
                         <div key={h} className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                             {h}
                         </div>
@@ -293,11 +330,14 @@ export const InvoiceItemsSection = ({
                             liveUnitCostPerPack: liveUnitCost,
                             pricingSourceLabel: pricingSourceNote,
                             effectiveCartonRate: pricingBreakdown.effectiveCartonRate,
+                            effectiveUnitRate: pricingBreakdown.effectiveUnitRate,
+                            unitType: item.unitType,
                             defaultMarginPercent: customerDefaultMargin,
                             isDistributor,
                             usesStoredDistributorRate,
                             isPriceOverride: Boolean(item.isPriceOverride),
                         });
+                        const stockSupportsCartons = !stock || doesStockUseCartons(stock);
 
                         return (
                             <div
@@ -343,17 +383,18 @@ export const InvoiceItemsSection = ({
                                                         {availableStock
                                                             .filter((s) => {
                                                                 const available = availabilityFor(s);
-                                                                return item.unitType === "carton" ? available.cartons > 0 : available.units > 0;
+                                                                return available.units > 0 || available.cartons > 0;
                                                             })
                                                             .map((s) => {
                                                                 const available = availabilityFor(s);
-                                                                const remaining = item.unitType === "carton" ? available.cartons : available.units;
+                                                                const showsCartonBadge = doesStockUseCartons(s) && available.cartons > 0;
+                                                                const remaining = showsCartonBadge ? available.cartons : available.units;
                                                                 return (
                                                                     <SelectItem key={s.id} value={s.recipeId}>
                                                                         <div className="flex items-center gap-2">
                                                                             <span className="font-medium text-sm">{s.recipe?.name}</span>
                                                                             <Badge variant="secondary" className="text-[9px] px-1 h-4">
-                                                                                {remaining}{item.unitType === "carton" ? "C" : "U"} avail
+                                                                                {remaining}{showsCartonBadge ? "C" : "U"} avail
                                                                             </Badge>
                                                                         </div>
                                                                     </SelectItem>
@@ -440,7 +481,7 @@ export const InvoiceItemsSection = ({
                                             >
                                                 <SelectTrigger className="h-9 text-xs" aria-label="Select unit type"><SelectValue /></SelectTrigger>
                                                 <SelectContent>
-                                                    <SelectItem value="carton">
+                                                    <SelectItem value="carton" disabled={!stockSupportsCartons}>
                                                         <span className="flex items-center gap-1.5 text-xs">
                                                             <Package className="size-3 text-primary" aria-hidden="true" /> Carton
                                                         </span>
@@ -524,35 +565,51 @@ export const InvoiceItemsSection = ({
                                         )}
                                     </div>
 
-                                    {/* Unit cost (per carton) */}
+                                    {/* Unit or carton rate */}
                                     <form.Field name={`items[${index}].perCartonPrice`}>
                                         {(sf: any) => (
-                                            <div className="relative">
-                                                <Input
-                                                    type="number"
-                                                    min="0"
-                                                    step="0.01"
-                                                    className="h-9 text-xs pl-7"
-                                                    value={sf.state.value}
-                                                    onFocus={handleFocus}
-                                                    onChange={(e) => {
-                                                        sf.handleChange(Number(e.target.value));
-                                                        form.setFieldValue(`items[${index}].isPriceOverride`, true);
-                                                        form.setFieldValue(`items[${index}].preserveStoredDistributorRate`, false);
-                                                    }}
-                                                    aria-label="Price per carton"
-                                                />
-                                                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[9px] text-muted-foreground font-semibold pointer-events-none">
-                                                    ₨
-                                                </span>
+                                            <div>
+                                                <div className="relative">
+                                                    <Input
+                                                        type="number"
+                                                        min="0"
+                                                        step="0.01"
+                                                        className="h-9 text-xs pl-7"
+                                                        value={getDisplayedLineRate(sf.state.value, item.unitType, eCPP)}
+                                                        onFocus={handleFocus}
+                                                        onChange={(e) => {
+                                                            sf.handleChange(
+                                                                resolvePerCartonPriceFromInput(
+                                                                    Number(e.target.value),
+                                                                    item.unitType,
+                                                                    eCPP,
+                                                                ),
+                                                            );
+                                                            form.setFieldValue(`items[${index}].isPriceOverride`, true);
+                                                            form.setFieldValue(`items[${index}].preserveStoredDistributorRate`, false);
+                                                        }}
+                                                        aria-label={item.unitType === "units" ? "Price per unit" : "Price per carton"}
+                                                    />
+                                                    <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[9px] text-muted-foreground font-semibold pointer-events-none">
+                                                        ₨
+                                                    </span>
+                                                </div>
                                                 <div className="mt-1 flex items-center justify-center gap-1 text-[9px] text-muted-foreground">
+                                                    {hasMixedUnitTypes && (
+                                                        <>
+                                                            <span className="font-semibold text-foreground/75">
+                                                                {item.unitType === "units" ? "/u" : "/ctn"}
+                                                            </span>
+                                                            <span>·</span>
+                                                        </>
+                                                    )}
                                                     <span>{pricingSourceNote ?? (distributorRateAdjusted ? "Pricing details" : "Pricing info")}</span>
                                                     <HoverCard openDelay={120} closeDelay={80}>
                                                         <HoverCardTrigger asChild>
                                                             <button
                                                                 type="button"
                                                                 className="inline-flex items-center justify-center text-muted-foreground hover:text-foreground"
-                                                                aria-label="Carton rate pricing details"
+                                                                aria-label={item.unitType === "units" ? "Unit rate pricing details" : "Carton rate pricing details"}
                                                             >
                                                                 <Info className="size-3" />
                                                             </button>
@@ -634,7 +691,9 @@ export const InvoiceItemsSection = ({
                                     {stockExceeded && (
                                         <div className="flex items-center gap-1.5 text-xs text-destructive bg-destructive/10 px-3 py-2 rounded-lg">
                                             <AlertCircle className="size-3.5 shrink-0" />
-                                            Exceeds available stock: {remainingCompleteCartons}C / {Math.max(0, remainingUnitsForLine % eCPP)}U
+                                            {item.unitType === "units"
+                                                ? `Exceeds available stock: ${remainingUnitsForLine} units available`
+                                                : `Exceeds available stock: ${remainingCompleteCartons}C / ${Math.max(0, remainingUnitsForLine % eCPP)}U`}
                                         </div>
                                     )}
 
@@ -652,7 +711,7 @@ export const InvoiceItemsSection = ({
                                                             {availableStock
                                                                 .filter((s) => {
                                                                     const available = availabilityFor(s);
-                                                                    return item.unitType === "carton" ? available.cartons > 0 : available.units > 0;
+                                                                    return available.units > 0 || available.cartons > 0;
                                                                 })
                                                                 .map((s) => (
                                                                     <SelectItem key={s.id} value={s.recipeId}>{s.recipe?.name}</SelectItem>
@@ -682,7 +741,7 @@ export const InvoiceItemsSection = ({
                                                         >
                                                             <SelectTrigger className="text-xs"><SelectValue /></SelectTrigger>
                                                             <SelectContent>
-                                                                <SelectItem value="carton">Carton</SelectItem>
+                                                                <SelectItem value="carton" disabled={!stockSupportsCartons}>Carton</SelectItem>
                                                                 <SelectItem value="units">Loose</SelectItem>
                                                             </SelectContent>
                                                         </Select>
@@ -721,7 +780,7 @@ export const InvoiceItemsSection = ({
                                         </div>
 
                                         <div>
-                                            <label className="text-xs font-semibold">Rate/Ctn</label>
+                                            <label className="text-xs font-semibold">{item.unitType === "units" ? "Unit Rate" : "Carton Rate"}</label>
                                             <form.Field name={`items[${index}].perCartonPrice`}>
                                                 {(sf: any) => (
                                                     <div className="space-y-1">
@@ -730,14 +789,20 @@ export const InvoiceItemsSection = ({
                                                             min="0"
                                                             step="0.01"
                                                             className="text-xs"
-                                                            value={sf.state.value}
+                                                            value={getDisplayedLineRate(sf.state.value, item.unitType, eCPP)}
                                                             onFocus={handleFocus}
                                                             onChange={(e) => {
-                                                                sf.handleChange(Number(e.target.value));
+                                                                sf.handleChange(
+                                                                    resolvePerCartonPriceFromInput(
+                                                                        Number(e.target.value),
+                                                                        item.unitType,
+                                                                        eCPP,
+                                                                    ),
+                                                                );
                                                                 form.setFieldValue(`items[${index}].isPriceOverride`, true);
                                                                 form.setFieldValue(`items[${index}].preserveStoredDistributorRate`, false);
                                                             }}
-                                                            aria-label="Price per carton"
+                                                            aria-label={item.unitType === "units" ? "Price per unit" : "Price per carton"}
                                                         />
                                                         <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
                                                             <span>{pricingSourceNote ?? (distributorRateAdjusted ? "Pricing details" : "Pricing info")}</span>
@@ -746,7 +811,7 @@ export const InvoiceItemsSection = ({
                                                                     <button
                                                                         type="button"
                                                                         className="inline-flex items-center justify-center text-muted-foreground hover:text-foreground"
-                                                                        aria-label="Carton rate pricing details"
+                                                                        aria-label={item.unitType === "units" ? "Unit rate pricing details" : "Carton rate pricing details"}
                                                                     >
                                                                         <Info className="size-3" />
                                                                     </button>

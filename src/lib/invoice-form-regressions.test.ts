@@ -9,6 +9,11 @@ import {
   getPreviewEffectiveCartonPrice,
   getPreviewPerCartonPrice,
   getLineUnitCostPerPack,
+  getCartonRateHoverLines,
+  doesStockUseCartons,
+  resolveProductUnitTypeForStock,
+  getDisplayedLineRate,
+  resolvePerCartonPriceFromInput,
 } from "@/components/sales/create-invoice-form/utils";
 import {
   calculateInvoiceLinePricing,
@@ -615,5 +620,42 @@ describe("invoice create/edit regressions", () => {
     expect(source).toContain("costOfGoodsSoldPerUnit: r.cogsPerUnit.toFixed(4)");
     expect(source).toContain("grossAmount: r.pricingBreakdown.grossAmount");
     expect(source).toContain("effectiveCartonRate: r.pricingBreakdown.effectiveCartonRate");
+  });
+
+  it("resolves product packaging unit types, unit-rate conversions, and unit hover text", () => {
+    const looseOnlyStock = {
+      id: "fg-loose",
+      recipeId: "r-loose",
+      recipe: { containersPerCarton: 0, cartonPackagingId: null },
+    };
+    const cartonStock = {
+      id: "fg-carton",
+      recipeId: "r-carton",
+      recipe: { containersPerCarton: 24, cartonPackagingId: "box-1" },
+    };
+
+    expect(doesStockUseCartons(looseOnlyStock as any)).toBe(false);
+    expect(doesStockUseCartons(cartonStock as any)).toBe(true);
+    expect(resolveProductUnitTypeForStock(looseOnlyStock as any, { units: 20, cartons: 0 })).toBe("units");
+    expect(resolveProductUnitTypeForStock(cartonStock as any, { units: 12, cartons: 0 })).toBe("units");
+    expect(resolveProductUnitTypeForStock(cartonStock as any, { units: 48, cartons: 2 })).toBe("carton");
+
+    expect(getDisplayedLineRate(240, "units", 24)).toBe(10);
+    expect(resolvePerCartonPriceFromInput(12.5, "units", 24)).toBe(300);
+    expect(getDisplayedLineRate(300, "units", 24)).toBe(12.5);
+    expect(getDisplayedLineRate(55, "units", 1)).toBe(55);
+    expect(resolvePerCartonPriceFromInput(55, "units", 1)).toBe(55);
+
+    const unitHover = getCartonRateHoverLines({
+      containersPerCarton: 24,
+      liveUnitCostPerPack: 8,
+      effectiveCartonRate: 240,
+      effectiveUnitRate: 10,
+      unitType: "units",
+      isPriceOverride: true,
+    });
+    expect(unitHover).toContain("Base cost: ₨8.00/unit");
+    expect(unitHover).toContain("Manual unit rate override");
+    expect(unitHover).toContain("Sell rate PKR 10.00/unit");
   });
 });

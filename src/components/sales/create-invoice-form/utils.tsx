@@ -67,6 +67,8 @@ export function getCartonRateHoverLines({
     liveUnitCostPerPack,
     pricingSourceLabel,
     effectiveCartonRate,
+    effectiveUnitRate,
+    unitType = "carton",
     defaultMarginPercent = 0,
     isDistributor = false,
     usesStoredDistributorRate = false,
@@ -76,6 +78,8 @@ export function getCartonRateHoverLines({
     liveUnitCostPerPack: number;
     pricingSourceLabel?: string | null;
     effectiveCartonRate: number;
+    effectiveUnitRate?: number;
+    unitType?: "carton" | "units";
     defaultMarginPercent?: number;
     isDistributor?: boolean;
     usesStoredDistributorRate?: boolean;
@@ -84,6 +88,33 @@ export function getCartonRateHoverLines({
     const lines: string[] = [];
     const normalizedContainersPerCarton = safeEffectiveCPP(containersPerCarton);
     const normalizedUnitCost = roundMoney(Math.max(0, Number(liveUnitCostPerPack || 0)));
+
+    if (unitType === "units") {
+        const resolvedUnitRate = roundMoney(
+            effectiveUnitRate ?? (Number(effectiveCartonRate || 0) / normalizedContainersPerCarton),
+        );
+
+        if (normalizedUnitCost > 0) {
+            lines.push(`Base cost: ₨${normalizedUnitCost.toFixed(2)}/unit`);
+        }
+
+        if (isPriceOverride) {
+            lines.push("Manual unit rate override");
+        } else if (pricingSourceLabel) {
+            lines.push(pricingSourceLabel);
+        }
+
+        if (usesStoredDistributorRate) {
+            lines.push(`Stored distributor sell rate -> ${PKR(resolvedUnitRate)}/unit`);
+        } else if (isDistributor && Number(defaultMarginPercent || 0) > 0) {
+            lines.push(`Default margin ${defaultMarginPercent}% -> sell rate ${PKR(resolvedUnitRate)}/unit`);
+        } else {
+            lines.push(`Sell rate ${PKR(resolvedUnitRate)}/unit`);
+        }
+
+        return lines;
+    }
+
     const baseCartonCost = roundMoney(normalizedContainersPerCarton * normalizedUnitCost);
 
     if (normalizedUnitCost > 0) {
@@ -120,6 +151,48 @@ const toNumber = (value: number | string | null | undefined): number => {
     return Number.isFinite(numeric) ? numeric : 0;
 };
 
+export function doesStockUseCartons(stock: StockItem | null | undefined): boolean {
+    const capacity = toNumber(stock?.recipe?.containersPerCarton);
+    return capacity > 0 && stock?.recipe?.cartonPackagingId !== null;
+}
+
+export function resolveProductUnitTypeForStock(
+    stock: StockItem | null | undefined,
+    availability: { units: number; cartons: number },
+): "carton" | "units" {
+    if (!doesStockUseCartons(stock)) {
+        return "units";
+    }
+    if (availability.cartons > 0 || availability.units === 0) {
+        return "carton";
+    }
+    return "units";
+}
+
+export function getDisplayedLineRate(
+    perCartonPrice: number | null | undefined,
+    unitType: "carton" | "units",
+    containersPerCarton: number,
+): number {
+    const normalizedPrice = Math.max(0, Number(perCartonPrice || 0));
+    if (unitType !== "units") {
+        return normalizedPrice;
+    }
+    return roundMoney(normalizedPrice / safeEffectiveCPP(containersPerCarton));
+}
+
+export function resolvePerCartonPriceFromInput(
+    enteredRate: number | null | undefined,
+    unitType: "carton" | "units",
+    containersPerCarton: number,
+): number {
+    const normalizedEntered = Math.max(0, Number(enteredRate || 0));
+    if (unitType !== "units") {
+        return roundMoney(normalizedEntered);
+    }
+    return roundMoney(normalizedEntered * safeEffectiveCPP(containersPerCarton));
+}
+
 export const getRecipeContainersPerCarton = (stock: StockItem | null, fallback = 1): number =>
     safeEffectiveCPP(toNumber(stock?.recipe?.containersPerCarton) || fallback);
 
@@ -130,7 +203,7 @@ export function getInvoiceStockAvailability(
     reservedCartons = 0,
 ) {
     const capacity = toNumber(stock?.recipe?.containersPerCarton);
-    const usesCartons = capacity > 0 && stock?.recipe?.cartonPackagingId !== null;
+    const usesCartons = doesStockUseCartons(stock);
     const canonicalUnits = toNumber(stock?.quantityContainers) + (usesCartons ? toNumber(stock?.quantityCartons) * capacity : 0);
     // Partial packs are already included in both the ledger and canonical stock.
     const sellableUnits = usesCartons ? Math.min(canonicalUnits, toNumber(cartonInfo.totalPacks)) : canonicalUnits;
