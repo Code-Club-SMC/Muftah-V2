@@ -5,6 +5,7 @@ export const paymentMethodSchema = z.enum([
 	"bank_transfer",
 	"cheque",
 	"expense_offset",
+	"customer_credit",
 ]);
 export const paymentStatusSchema = z.enum([
 	"pending",
@@ -33,7 +34,7 @@ export type InvoicePaymentStatus = z.infer<typeof invoicePaymentStatusSchema>;
 export type PaymentInput = {
 	method: Exclude<PaymentMethod, "expense_offset">;
 	amount: number;
-	walletId: string;
+	walletId?: string;
 	reference?: string;
 	chequeNumber?: string;
 	chequeBank?: string;
