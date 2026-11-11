@@ -41,6 +41,7 @@ import {
   allocateReturnCost,
   assertReturnAction,
   checkInspection,
+  computeReturnCreditSplit,
   receivedUnits,
   requestedUnits,
   reservedReturnUnits,
@@ -50,6 +51,13 @@ import {
   unitsOf,
   type ReturnStatus,
 } from "@/lib/sales/returns/return-lifecycle";
+import { moneyString, roundMoney } from "@/lib/sales/settlement/money";
+import {
+  allocateNextCreditNoteNumber,
+  ensureCreditNotesBackfilled,
+  issueCustomerCreditFromReturn,
+  voidReturnCreditSettlement,
+} from "./customer-credit-service";
 import { restockReturnedUnits, reverseReturnStock } from "@/lib/sales/returns/return-stock.server";
 
 const RETURN_LIST_PAGE_SIZE = 50;
@@ -120,6 +128,11 @@ export const getSalesReturnsByInvoiceFn = createServerFn()
             warehouse: { columns: { id: true, name: true } },
           },
         },
+        refunds: {
+          with: {
+            wallet: { columns: { id: true, name: true } },
+          },
+        },
       },
       orderBy: [desc(salesReturns.returnDate)],
     });
@@ -134,6 +147,7 @@ export const getSalesReturnDetailFn = createServerFn()
   )
   .handler(async ({ data }) => {
     const { db } = await import("@/db");
+    await ensureCreditNotesBackfilled(db);
     const person = { columns: { id: true, name: true } } as const;
     const salesReturn = await db.query.salesReturns.findFirst({
       where: eq(salesReturns.id, data.returnId),
@@ -143,13 +157,24 @@ export const getSalesReturnDetailFn = createServerFn()
             id: true,
             invoiceNumber: true,
             slipNumber: true,
+            date: true,
             totalPrice: true,
             invoiceDiscount: true,
             status: true,
           },
           with: { items: true },
         },
-        customer: { columns: { id: true, name: true, outstandingAmount: true } },
+        customer: {
+          columns: {
+            id: true,
+            name: true,
+            city: true,
+            mobileNumber: true,
+            outstandingAmount: true,
+            creditBalance: true,
+            customerType: true,
+          },
+        },
         createdBy: person,
         approvedBy: person,
         receivedBy: person,
@@ -165,6 +190,13 @@ export const getSalesReturnDetailFn = createServerFn()
           with: {
             recipe: { columns: { id: true, name: true } },
             warehouse: { columns: { id: true, name: true } },
+          },
+        },
+        refunds: {
+          with: {
+            wallet: { columns: { id: true, name: true } },
+            issuedBy: person,
+            reversedBy: person,
           },
         },
       },
@@ -461,6 +493,7 @@ export const listSalesReturnsFn = createServerFn()
   )
   .handler(async ({ data }) => {
     const { db } = await import("@/db");
+    await ensureCreditNotesBackfilled(db);
     const term = data.search?.replace(/^#/, "").trim();
     const searchCondition = term
       ? or(
@@ -480,9 +513,13 @@ export const listSalesReturnsFn = createServerFn()
         .select({
           id: salesReturns.id,
           returnNumber: salesReturns.returnNumber,
+          creditNoteNumber: salesReturns.creditNoteNumber,
           status: salesReturns.status,
           reason: salesReturns.reason,
           totalAmount: salesReturns.totalAmount,
+          appliedToInvoiceAmount: salesReturns.appliedToInvoiceAmount,
+          customerCreditAmount: salesReturns.customerCreditAmount,
+          customerId: salesReturns.customerId,
           createdAt: salesReturns.createdAt,
           completedAt: salesReturns.completedAt,
           invoiceId: salesReturns.invoiceId,
@@ -545,6 +582,7 @@ export const completeSalesReturnFn = createServerFn()
   )
   .handler(async ({ data, context }) => {
     const { db } = await import("@/db");
+    await ensureCreditNotesBackfilled(db);
     const userId = context.session.user.id;
 
     return await db.transaction(async (tx) => {
@@ -668,6 +706,36 @@ export const completeSalesReturnFn = createServerFn()
       }
 
       const totalAmount = sumMoney(lineRefunds);
+      const creditNoteNumber = await allocateNextCreditNoteNumber(tx);
+      const [lockedInvoice] = await tx
+        .select({
+          id: invoices.id,
+          invoiceNumber: invoices.invoiceNumber,
+          totalPrice: invoices.totalPrice,
+          paidAmount: invoices.paidAmount,
+          excessCreditedAmount: invoices.excessCreditedAmount,
+        })
+        .from(invoices)
+        .where(eq(invoices.id, salesReturn.invoiceId));
+      if (!lockedInvoice) throw new Error("Parent invoice not found");
+
+      const priorCompleted = await tx
+        .select({ applied: salesReturns.appliedToInvoiceAmount })
+        .from(salesReturns)
+        .where(and(eq(salesReturns.invoiceId, salesReturn.invoiceId), eq(salesReturns.status, "completed")));
+      const priorApplied = roundMoney(
+        priorCompleted.reduce((sum, r) => sum + roundMoney(r.applied), 0),
+      );
+      const preReturnOpenBalance = roundMoney(
+        Math.max(
+          0,
+          roundMoney(lockedInvoice.totalPrice) -
+            priorApplied -
+            roundMoney(lockedInvoice.paidAmount) +
+            roundMoney(lockedInvoice.excessCreditedAmount),
+        ),
+      );
+      const split = computeReturnCreditSplit(Number(totalAmount), preReturnOpenBalance);
       const now = new Date();
       const [updated] = await tx
         .update(salesReturns)
@@ -676,17 +744,39 @@ export const completeSalesReturnFn = createServerFn()
           completedAt: now,
           receivedById: userId,
           totalAmount,
+          creditNoteNumber,
+          creditNoteIssuedAt: now,
+          appliedToInvoiceAmount: moneyString(split.appliedToInvoiceAmount),
+          customerCreditAmount: moneyString(split.customerCreditAmount),
           notes: data.notes || salesReturn.notes,
           updatedAt: now,
         })
         .where(eq(salesReturns.id, salesReturn.id))
         .returning();
 
-      // NOTE: Invoice totals are intentionally NOT mutated here.
-      // Sales returns are immutable dated events surfaced in the ledger
-      // reader (see ledger-fn.ts). Mutating invoice.credit/amount would
-      // rewrite past-period statements and break historical immutability.
-      await recalculateInvoiceSettlement(tx, salesReturn.invoiceId);
+      let leftoverCreditBalance = 0;
+      if (split.customerCreditAmount > 0) {
+        const issued = await issueCustomerCreditFromReturn(tx, {
+          customerId: salesReturn.customerId,
+          salesReturnId: salesReturn.id,
+          sourceInvoiceId: salesReturn.invoiceId,
+          creditNoteNumber,
+          amount: split.customerCreditAmount,
+          performedById: userId,
+          notes: `Credit Note ${creditNoteNumber} from Return #${salesReturn.returnNumber}`,
+        });
+        leftoverCreditBalance = issued.balanceAfter;
+      }
+
+      await recalculateInvoiceSettlement(tx, salesReturn.invoiceId, {
+        actorId: userId,
+        reason: `Completed return #${salesReturn.returnNumber} (${creditNoteNumber})`,
+      });
+
+      const customerInfo = await tx.query.customers.findFirst({
+        where: eq(customers.id, salesReturn.customerId),
+        columns: { id: true, name: true, customerType: true, creditBalance: true },
+      });
 
       const received = inspection.reduce((sum: number, line: (typeof inspection)[number]) => sum + receivedUnits(line), 0);
       const requested = inspection.reduce((sum: number, line: (typeof inspection)[number]) => sum + line.approvedUnits, 0);
@@ -694,13 +784,16 @@ export const completeSalesReturnFn = createServerFn()
         {
           invoiceId: salesReturn.invoiceId,
           eventType: "status_change",
-          title: `Return #${salesReturn.returnNumber} completed`,
-          description: `Return #${salesReturn.returnNumber} received: ${received} of ${requested} packs arrived${requested > received ? ` (${requested - received} short, closed)` : ""}. Outstanding Amount reduced by PKR ${totalAmount}.`,
+          title: `Credit Note ${creditNoteNumber} issued (Return #${salesReturn.returnNumber})`,
+          description: `Return #${salesReturn.returnNumber} received: ${received} of ${requested} packs arrived${requested > received ? ` (${requested - received} short, closed)` : ""}. PKR ${moneyString(split.appliedToInvoiceAmount)} cleared invoice balance${split.customerCreditAmount > 0 ? `; PKR ${moneyString(split.customerCreditAmount)} transferred to store credit` : ""}.`,
           metadata: {
             salesReturnId: salesReturn.id,
             returnNumber: salesReturn.returnNumber,
+            creditNoteNumber,
             action: "complete",
             totalAmount,
+            appliedToInvoiceAmount: split.appliedToInvoiceAmount,
+            customerCreditAmount: split.customerCreditAmount,
             receivedUnits: received,
             requestedUnits: requested,
           },
@@ -708,7 +801,17 @@ export const completeSalesReturnFn = createServerFn()
         },
         tx,
       );
-      return updated;
+      return {
+        ...updated,
+        creditNoteNumber,
+        appliedToInvoiceAmount: split.appliedToInvoiceAmount,
+        customerCreditAmount: split.customerCreditAmount,
+        customerId: salesReturn.customerId,
+        customerName: customerInfo?.name ?? "",
+        customerType: customerInfo?.customerType ?? "retailer",
+        invoiceNumber: lockedInvoice.invoiceNumber,
+        leftoverCreditBalance: customerInfo ? roundMoney(customerInfo.creditBalance) : leftoverCreditBalance,
+      };
     });
   });
 
@@ -750,6 +853,24 @@ export const voidSalesReturnFn = createServerFn()
         traces,
       });
 
+      await voidReturnCreditSettlement(tx, {
+        salesReturnId: salesReturn.id,
+        invoiceId: salesReturn.invoiceId,
+        customerId: salesReturn.customerId,
+        creditNoteNumber: salesReturn.creditNoteNumber,
+        reason: data.reason,
+        performedById: userId,
+        recalculateInvoice: async (affectedInvoiceId) => {
+          await recalculateInvoiceSettlement(tx, affectedInvoiceId, {
+            actorId: userId,
+            reason: `Credit note ${salesReturn.creditNoteNumber ?? salesReturn.id} voided`,
+          });
+        },
+        recordTimeline: async (params) => {
+          await recordInvoiceTimelineEvent(params as any, tx);
+        },
+      });
+
       const now = new Date();
       const [updated] = await tx
         .update(salesReturns)
@@ -757,7 +878,11 @@ export const voidSalesReturnFn = createServerFn()
         .where(eq(salesReturns.id, salesReturn.id))
         .returning();
 
-      await recalculateInvoiceSettlement(tx, salesReturn.invoiceId);
+      await recalculateInvoiceSettlement(tx, salesReturn.invoiceId, {
+        actorId: userId,
+        reason: `Return #${salesReturn.returnNumber} voided: ${data.reason}`,
+        allowUnapplyOverageOnReturnVoid: true,
+      });
 
       await recordInvoiceTimelineEvent(
         {

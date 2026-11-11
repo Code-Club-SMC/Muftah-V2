@@ -43,6 +43,7 @@ export const lookupSlipFn = createServerFn()
             mobileNumber: true,
             customerType: true,
             outstandingAmount: true,
+            creditBalance: true,
           },
         },
         salesman: { columns: { id: true, name: true } },
@@ -94,6 +95,7 @@ export const lookupSlipFn = createServerFn()
 
     return {
       ...slip,
+      customerCreditBalance: Number(slip.customer?.creditBalance ?? 0),
       pendingAmount,
       unallocatedAmount,
     };
@@ -159,7 +161,7 @@ export const reconcileSlipFn = createServerFn()
       .object({
         slipId: z.string().min(1),
         amount: z.number().positive("Amount must be positive"),
-        method: z.enum(["cash", "bank_transfer", "cheque", "expense_offset"]).default("cash"),
+        method: z.enum(["cash", "bank_transfer", "cheque", "expense_offset", "customer_credit"]).default("cash"),
         walletId: z.string().optional(),
         reference: z.string().trim().min(1).optional(),
         chequeNumber: z.string().trim().min(1).optional(),
@@ -173,7 +175,7 @@ export const reconcileSlipFn = createServerFn()
         expenseEmployeeId: z.string().optional(),
       })
       .superRefine((row, ctx) => {
-        if (row.method !== "expense_offset" && !row.walletId) {
+        if (row.method !== "expense_offset" && row.method !== "customer_credit" && !row.walletId) {
           ctx.addIssue({
             code: "custom",
             path: ["walletId"],
@@ -246,7 +248,7 @@ export const reconcileSlipFn = createServerFn()
         } : {
           method: data.method,
           amount: data.amount,
-          walletId: data.walletId!,
+          walletId: data.method === "customer_credit" ? undefined : data.walletId!,
           reference: data.reference,
           chequeNumber: data.chequeNumber,
           chequeBank: data.chequeBank,
@@ -433,6 +435,7 @@ export const getOpenSlipsForRecoveryFn = createServerFn()
             name: true,
             city: true,
             mobileNumber: true,
+            creditBalance: true,
           },
         },
         salesman: { columns: { id: true, name: true } },
@@ -468,6 +471,7 @@ export const getOpenSlipsForRecoveryFn = createServerFn()
         customerId: s.customerId,
         customerName: s.customer?.name ?? "—",
         customerCity: s.customer?.city ?? null,
+        customerCreditBalance: Number(s.customer?.creditBalance ?? 0),
         salesmanName: s.salesman?.name ?? "—",
         invoiceDate: s.invoice?.date,
         paymentDueDate: s.invoice?.paymentDueDate,
@@ -500,8 +504,8 @@ export const batchReconcileSlipsFn = createServerFn()
             }),
           )
           .min(1, "At least one item required"),
-        method: z.enum(["cash", "bank_transfer", "cheque"]).default("cash"),
-        walletId: z.string().min(1, "Destination account is required"),
+        method: z.enum(["cash", "bank_transfer", "cheque", "customer_credit"]).default("cash"),
+        walletId: z.string().optional(),
         reference: z.string().trim().min(1).optional(),
         chequeNumber: z.string().trim().min(1).optional(),
         chequeBank: z.string().trim().min(1).optional(),
@@ -512,6 +516,16 @@ export const batchReconcileSlipsFn = createServerFn()
         instantVerify: z.boolean().optional(),
       })
       .superRefine((row, ctx) => {
+        if (
+          row.method !== "customer_credit" &&
+          (!row.walletId || row.walletId.trim().length === 0)
+        ) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["walletId"],
+            message: "Destination account is required",
+          });
+        }
         if (row.method === "bank_transfer" && !row.reference) {
           ctx.addIssue({
             code: "custom",
@@ -570,7 +584,7 @@ export const batchReconcileSlipsFn = createServerFn()
           payment: {
             method: data.method,
             amount: item.amount,
-            walletId: data.walletId,
+            walletId: data.method === "customer_credit" ? undefined : data.walletId,
             reference: data.reference,
             chequeNumber: data.chequeNumber,
             chequeBank: data.chequeBank,

@@ -315,6 +315,7 @@ describe("sales workflow regressions", () => {
       "invoice-detail-fn.ts",
       "invoice-timeline-fn.ts",
       "sales-returns-fn.ts",
+      "customer-credit-fn.ts",
     ].map((fileName) =>
       readFileSync(resolve(SALES_FN_DIR, fileName), "utf8"),
     );
