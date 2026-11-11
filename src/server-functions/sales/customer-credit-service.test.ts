@@ -104,6 +104,20 @@ describe("customer-credit-service source architecture invariants", () => {
     expect(serviceSource).toContain("movementType: m.type");
     expect(serviceSource).toContain("creditNotes:");
   });
+
+  it("consistently locks customers before customerCreditLots in reclaimInvoiceReturnCreditForPaymentReversal", () => {
+    const fnStart = serviceSource.indexOf("reclaimInvoiceReturnCreditForPaymentReversal");
+    expect(fnStart).toBeGreaterThan(-1);
+    const fnBody = serviceSource.slice(
+      fnStart,
+      serviceSource.indexOf("export async function voidReturnCreditSettlement"),
+    );
+    const lockCustomerPos = fnBody.indexOf("lockCustomerRow");
+    const selectLotsPos = fnBody.indexOf(".from(customerCreditLots)");
+    expect(lockCustomerPos).toBeGreaterThan(-1);
+    expect(selectLotsPos).toBeGreaterThan(-1);
+    expect(lockCustomerPos).toBeLessThan(selectLotsPos);
+  });
 });
 
 // Robust in-memory mock database helper
@@ -1010,6 +1024,60 @@ describe("customer-credit-service transactional accounting engine", () => {
       signedDelta: "-500.00",
       balanceAfter: "300.00",
     });
+  });
+
+  it("reclaimInvoiceReturnCreditForPaymentReversal acquires customer lock before customerCreditLots lock to prevent deadlocks", async () => {
+    const { state, mockTx } = createMockDb();
+    state.customers.push({
+      id: "cust-1",
+      name: "Retailer A",
+      customerType: "retailer",
+      creditBalance: "800.00",
+      outstandingAmount: "0.00",
+    });
+    state.customer_credit_lots.push({
+      id: "lot-ret",
+      customerId: "cust-1",
+      sourceType: "sales_return",
+      sourceReturnId: "ret-1",
+      sourceInvoiceId: "inv-source",
+      sourcePaymentId: null,
+      creditNoteNumber: "CN-0001",
+      originalAmount: "800.00",
+      remainingAmount: "800.00",
+      appliedAmount: "0.00",
+      refundedAmount: "0.00",
+      reclaimedAmount: "0.00",
+      createdAt: new Date(),
+      voidedAt: null,
+    });
+
+    const lockOrder: string[] = [];
+    const origSelect = mockTx.select.bind(mockTx);
+    mockTx.select = (fields?: any) => {
+      const selectBuilder: any = origSelect(fields);
+      const origFrom = selectBuilder.from.bind(selectBuilder);
+      selectBuilder.from = (tableDef: any) => {
+        const queryChain: any = origFrom(tableDef);
+        const curTable = tableDef[Symbol.for("drizzle:Name")] || tableDef._?.name;
+        const origFor = queryChain.for.bind(queryChain);
+        queryChain.for = (mode: string) => {
+          if (curTable) lockOrder.push(curTable);
+          return origFor(mode);
+        };
+        return queryChain;
+      };
+      return selectBuilder;
+    };
+
+    await reclaimInvoiceReturnCreditForPaymentReversal(mockTx, {
+      invoiceId: "inv-source",
+      customerId: "cust-1",
+      reopenNeeded: 500,
+      performedById: "user-1",
+    });
+
+    expect(lockOrder).toEqual(["customers", "customer_credit_lots"]);
   });
 
   it("getCustomerCreditSummary returns balance, activeLotCount, lots, movements with type & movementType, refunds, creditNotes", async () => {

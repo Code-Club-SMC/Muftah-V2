@@ -1026,6 +1026,8 @@ export async function reclaimInvoiceReturnCreditForPaymentReversal(
   const needed = roundMoney(input.reopenNeeded);
   if (needed <= 0) return;
 
+  const customer = await lockCustomerRow(tx, input.customerId);
+
   const returnLots = await tx
     .select()
     .from(customerCreditLots)
@@ -1055,7 +1057,6 @@ export async function reclaimInvoiceReturnCreditForPaymentReversal(
     );
   }
 
-  const customer = await lockCustomerRow(tx, input.customerId);
   let left = new Big(pullTarget);
   let runningBalance = roundMoney(customer.creditBalance);
 
