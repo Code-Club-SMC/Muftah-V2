@@ -286,6 +286,8 @@ export const LedgerContainer = () => {
                         <SelectItem value="Sale" className="rounded-none">Sale</SelectItem>
                         <SelectItem value="Payroll" className="rounded-none">Payroll</SelectItem>
                         <SelectItem value="Expense" className="rounded-none">Expense</SelectItem>
+                        <SelectItem value="Customer Refund" className="rounded-none">Customer Refund</SelectItem>
+                        <SelectItem value="Customer Refund Reversal" className="rounded-none">Customer Refund Reversal</SelectItem>
                         <SelectItem value="Opening Balance" className="rounded-none">Opening Balance</SelectItem>
                         <SelectItem value="Manual Adjustment" className="rounded-none">Manual Adjustment</SelectItem>
                       </SelectContent>

@@ -123,6 +123,36 @@ describe("invoice payment rows", () => {
 		});
 	});
 
+	it("treats customer_credit as immediately paid with zero pending amount", () => {
+		const result = calculatePaymentBreakdown(1_000, [
+			payment("customer_credit", 400),
+		]);
+
+		expect(result).toEqual({
+			invoiceTotal: 1_000,
+			paidAmount: 400,
+			pendingAmount: 0,
+			outstandingAmount: 600,
+			payLaterAmount: 600,
+			overAllocatedAmount: 0,
+		});
+	});
+
+	it("treats expense_offset as immediately paid with zero pending amount", () => {
+		const result = calculatePaymentBreakdown(1_000, [
+			payment("expense_offset", 300),
+		]);
+
+		expect(result).toEqual({
+			invoiceTotal: 1_000,
+			paidAmount: 300,
+			pendingAmount: 0,
+			outstandingAmount: 700,
+			payLaterAmount: 700,
+			overAllocatedAmount: 0,
+		});
+	});
+
 	it("keeps method fields, wallet filtering, array controls, and read-only edit mode", () => {
 		const source = readFileSync(PAYMENT_ROWS_SOURCE, "utf8");
 		const settlement = readFileSync(SETTLEMENT_SOURCE, "utf8");
@@ -131,6 +161,7 @@ describe("invoice payment rows", () => {
 		expect(source).toContain('value="bank_transfer"');
 		expect(source).toContain('value="digital_wallet"');
 		expect(source).toContain('<SelectItem value="cheque">Cheque</SelectItem>');
+		expect(source).toContain('<SelectItem value="customer_credit"');
 		expect(source).toContain("senderBankName");
 		expect(source).toContain("senderAccountNumber");
 		expect(source).toContain("digitalProvider");
@@ -144,5 +175,6 @@ describe("invoice payment rows", () => {
 		expect(settlement).toContain("breakdown.payLaterAmount > 0");
 		expect(settlement).toContain("Pending Verification");
 		expect(settlement).toContain("Outstanding Amount");
+		expect(settlement).toContain("Apply Store Credit");
 	});
 });

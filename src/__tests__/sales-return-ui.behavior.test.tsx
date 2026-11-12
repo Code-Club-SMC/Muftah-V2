@@ -9,6 +9,14 @@ const mocks = vi.hoisted(() => ({ create: vi.fn(), decide: vi.fn(), complete: vi
 vi.mock("@/server-functions/sales/sales-returns-fn", () => ({ createSalesReturnFn: mocks.create, decideSalesReturnFn: mocks.decide, completeSalesReturnFn: mocks.complete, cancelSalesReturnFn: mocks.cancel, voidSalesReturnFn: mocks.void, listSalesReturnsFn: mocks.listReturns, getSalesReturnDetailFn: mocks.returnDetail }));
 vi.mock("@/server-functions/sales/return-reasons-fn", () => ({ getReturnReasonsFn: mocks.reasons, saveReturnReasonFn: mocks.saveReason }));
 vi.mock("@/server-functions/sales/invoice-detail-fn", () => ({ getInvoiceDetailFn: mocks.detail }));
+vi.mock("@/server-functions/sales/customer-credit-fn", () => ({
+  getCustomerCreditSummaryFn: vi.fn(),
+  issueCustomerRefundFn: vi.fn(),
+  reverseCustomerRefundFn: vi.fn(),
+}));
+vi.mock("@/server-functions/finance-fn", () => ({
+  getWalletsListFn: vi.fn().mockResolvedValue([]),
+}));
 vi.mock("@/hooks/use-viewer-access", () => ({ useViewerAccess: () => ({ data: { permissions: mocks.permissions } }) }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn() } }));
 vi.mock("@tanstack/react-router", () => ({
@@ -48,7 +56,18 @@ async function chooseReason(name = "Other") {
 }
 const request = (returns: React.ComponentProps<typeof CreateReturnDialog>["returns"] = []) => mount(<CreateReturnDialog invoiceId="invoice" invoiceDiscount="0" items={[item]} returns={returns} />);
 beforeEach(() => {
-  vi.resetAllMocks(); mocks.permissions = ["*"];
+  vi.resetAllMocks();
+  window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  }));
+  mocks.permissions = ["*"];
   [mocks.create, mocks.decide, mocks.complete, mocks.cancel, mocks.void].forEach(mock => mock.mockResolvedValue({ success: true }));
   mocks.reasons.mockResolvedValue([{ id: "other", name: "Other", requiresNote: true, isActive: true }, { id: "damaged", name: "Damaged", requiresNote: false, isActive: true }, { id: "inactive", name: "Inactive", requiresNote: false, isActive: false }]);
   client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity }, mutations: { retry: false } } });

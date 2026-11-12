@@ -83,6 +83,7 @@ export const getInvoiceDetailFn = createServerFn()
             },
           },
           approvedBy: { columns: { id: true, name: true } },
+          refunds: { with: { wallet: { columns: { id: true, name: true } } } },
         },
         orderBy: [desc(salesReturns.returnDate)],
       }),

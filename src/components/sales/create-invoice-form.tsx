@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
 import { toast } from "sonner";
 import { useForm, useStore } from "@tanstack/react-form";
@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useGetAllCustomers } from "@/hooks/sales/use-customers";
+import { useCustomerCreditSummary } from "@/hooks/sales/use-customer-credit";
 import { useCreateInvoice, useUpdateInvoice } from "@/hooks/sales/use-invoices";
 import { useWallets } from "@/hooks/finance/use-finance";
 import { useGetRecipePrices } from "@/hooks/sales/use-sales-config";
@@ -199,6 +200,8 @@ export const CreateInvoiceForm = ({ onSuccess, onCancel, onDirtyChange, initialD
     const { mutateAsync: updateInvoice, isPending: isUpdating } = useUpdateInvoice();
     const isPending = isCreating || isUpdating;
 
+    const availableCustomerCreditRef = useRef(0);
+
     const form = useForm({
         defaultValues: initialData ? {
             customerId: initialData.customerId || "",
@@ -339,7 +342,7 @@ export const CreateInvoiceForm = ({ onSuccess, onCancel, onDirtyChange, initialD
                     toast.error(`Payment ${i + 1}: Amount must be greater than zero.`);
                     return;
                 }
-                if (!payment.walletId) {
+                if (payment.method !== "expense_offset" && payment.method !== "customer_credit" && !payment.walletId) {
                     toast.error(
                         payment.method === "cash"
                             ? `Payment ${i + 1}: Select a cash destination account.`
@@ -390,6 +393,19 @@ export const CreateInvoiceForm = ({ onSuccess, onCancel, onDirtyChange, initialD
                     }
                 }
             }
+
+            const newCreditAllocated = roundMoney(
+                value.payments
+                    .filter((p) => !p.status && p.method === "customer_credit")
+                    .reduce((sum, p) => sum + Number(p.amount || 0), 0),
+            );
+            if (newCreditAllocated > availableCustomerCreditRef.current) {
+                toast.error(
+                    `Store Credit allocated (${PKR(newCreditAllocated)}) exceeds available credit (${PKR(availableCustomerCreditRef.current)}).`,
+                );
+                return;
+            }
+
             if (paymentBreakdown.payLaterAmount > 0 && !value.paymentDueDate) {
                 toast.error("Please set a Payment Due Date for the amount being paid later.");
                 return;
@@ -413,7 +429,7 @@ export const CreateInvoiceForm = ({ onSuccess, onCancel, onDirtyChange, initialD
                 const normalizedPayments = value.payments.map((payment) => {
                     const isDigital = payment.method === "digital_wallet";
                     const isBank = payment.method === "bank_transfer";
-                    const backendMethod: "cash" | "bank_transfer" | "cheque" =
+                    const backendMethod: "cash" | "bank_transfer" | "cheque" | "expense_offset" | "customer_credit" =
                         isDigital ? "bank_transfer" : payment.method;
 
                     let formattedNotes = payment.notes?.trim() || undefined;
@@ -436,17 +452,25 @@ export const CreateInvoiceForm = ({ onSuccess, onCancel, onDirtyChange, initialD
                     return {
                         method: backendMethod,
                         amount: roundMoney(Number(payment.amount)),
-                        walletId: payment.walletId,
-                        reference: payment.reference.trim() || undefined,
-                        chequeNumber: payment.chequeNumber.trim() || undefined,
-                        chequeBank: payment.chequeBank.trim() || undefined,
+                        walletId:
+                            payment.method === "expense_offset" || payment.method === "customer_credit"
+                                ? undefined
+                                : payment.walletId || undefined,
+                        reference: payment.reference?.trim() || undefined,
+                        chequeNumber: payment.chequeNumber?.trim() || undefined,
+                        chequeBank: payment.chequeBank?.trim() || undefined,
                         chequeDate: payment.chequeDate
                             ? new Date(`${payment.chequeDate}T12:00:00`)
                             : undefined,
                         paymentDate: new Date(payment.paymentDate),
                         sourceRecordId: payment.sourceRecordId,
                         notes: formattedNotes,
-                        instantVerify: Boolean(payment.instantVerify),
+                        instantVerify:
+                            payment.method === "cash" ||
+                            payment.method === "expense_offset" ||
+                            payment.method === "customer_credit"
+                                ? false
+                                : Boolean(payment.instantVerify),
                     };
                 });
                 const commonPayload = {
@@ -561,6 +585,15 @@ export const CreateInvoiceForm = ({ onSuccess, onCancel, onDirtyChange, initialD
         return customers.find((c: any) => c.id === selectedCustomerId) || null;
     }, [selectedCustomerId, customers]);
     const selectedCustomerDefaultMargin = Number(selectedCustomerData?.defaultMargin || 0);
+
+    const { data: creditSummary } = useCustomerCreditSummary(
+        customerMode === "existing" ? (selectedCustomerId || initialData?.customerId || null) : null,
+        customerMode === "existing" && Boolean(selectedCustomerId || initialData?.customerId),
+    );
+    const availableCustomerCredit = roundMoney(
+        creditSummary?.creditBalance ?? Number(selectedCustomerData?.creditBalance ?? 0),
+    );
+    availableCustomerCreditRef.current = availableCustomerCredit;
 
     // Fetch distributor-specific recipe rates when a distributor is selected
     const { data: distributorRecipeRates } = useGetRecipeRatesForEntity(
@@ -994,6 +1027,7 @@ export const CreateInvoiceForm = ({ onSuccess, onCancel, onDirtyChange, initialD
                                     wallets={wallets}
                                     isEditing={Boolean(initialData?.id)}
                                     handleFocus={handleFocus}
+                                    availableCustomerCredit={availableCustomerCredit}
                                 />
                             </div>
                         );

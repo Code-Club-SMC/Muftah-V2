@@ -217,71 +217,121 @@ function PerShopLedgerPage() {
                 </TableCell>
               </TableRow>
             ) : (
-              entries.map((entry: any, i: number) => (
-                <TableRow key={i}>
-                  <TableCell className="text-sm whitespace-nowrap">
-                    {format(new Date(entry.date), "dd MMM yyyy")}
-                  </TableCell>
-                  <TableCell>
-                    {entry.type === "invoice" ? (
-                      <Badge variant="default" className="text-[10px] gap-1">
-                        <FileText className="size-3" /> Invoice
-                      </Badge>
-                    ) : (
-                      entry.type === "return" ? (
+              entries.map((entry: any, i: number) => {
+                const isInvoice = entry.type === "invoice";
+                const isReturn = entry.type === "return";
+                const isRefund = entry.type === "refund";
+                const isCreditApplied =
+                  entry.type === "payment" &&
+                  (Boolean(entry.isStoreCreditApplied) || entry.method === "customer_credit");
+
+                return (
+                  <TableRow key={i}>
+                    <TableCell className="text-sm whitespace-nowrap">
+                      {format(new Date(entry.date), "dd MMM yyyy")}
+                    </TableCell>
+                    <TableCell>
+                      {isInvoice ? (
+                        <Badge variant="default" className="text-[10px] gap-1">
+                          <FileText className="size-3" /> Invoice
+                        </Badge>
+                      ) : isReturn ? (
                         <Badge variant="outline" className="text-[10px] gap-1 text-amber-700 border-amber-300">
-                          <ArrowDownLeft className="size-3" /> Return
+                          {entry.eventKind === "void" ? <ArrowUpRight className="size-3" /> : <ArrowDownLeft className="size-3" />}
+                          Return{entry.eventKind === "void" ? " Void" : ""}
+                        </Badge>
+                      ) : isRefund ? (
+                        <Badge variant="outline" className="text-[10px] gap-1 text-rose-700 border-rose-300">
+                          {entry.eventKind === "refund_reversal" ? <ArrowDownLeft className="size-3" /> : <ArrowUpRight className="size-3" />}
+                          {entry.eventKind === "refund_reversal" ? "Refund Reversal" : "Refund"}
+                        </Badge>
+                      ) : isCreditApplied ? (
+                        <Badge variant="outline" className="text-[10px] gap-1 text-emerald-700 border-emerald-300">
+                          Store Credit
                         </Badge>
                       ) : (
                         <Badge variant="outline" className="text-[10px] gap-1 text-emerald-600 border-emerald-200">
                           <Wallet className="size-3" /> Payment
                         </Badge>
-                      )
-                    )}
-                  </TableCell>
-                  <TableCell className="text-sm">
-                    {entry.type === "invoice" ? (
-                      <span className="flex items-center gap-1">
-                        <Package className="size-3 text-muted-foreground" />
-                        {entry.invoiceNumber}
-                      </span>
-                    ) : entry.type === "return" ? (
-                      <span className="flex items-center gap-1 text-amber-700 dark:text-amber-400">
-                        <ArrowDownLeft className="size-3" />
-                        Return #{entry.returnNumber ?? "—"}
-                      </span>
-                    ) : (
-                      <span className="flex items-center gap-1">
-                        <ArrowDownLeft className="size-3 text-emerald-500" />
-                        {entry.reference || entry.method}
-                      </span>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-sm text-right tabular-nums">
-                    {entry.type === "invoice" ? (
-                      <span className="text-rose-600 font-medium flex items-center justify-end gap-1">
-                        <ArrowUpRight className="size-3" />
-                        {formatPKR(entry.totalPrice, false)}
-                      </span>
-                    ) : (
-                      <span className="text-muted-foreground">—</span>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-sm text-right tabular-nums">
-                    {entry.type === "payment" || entry.type === "return" ? (
-                      <span className={`font-medium flex items-center justify-end gap-1 ${entry.type === "return" ? "text-amber-600" : "text-emerald-600"}`}>
-                        <ArrowDownLeft className="size-3" />
-                        {formatPKR(entry.amount, false)}
-                      </span>
-                    ) : (
-                      <span className="text-muted-foreground">—</span>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-sm text-right font-bold tabular-nums">
-                    {formatPKR(entry.runningBalance, false)}
-                  </TableCell>
-                </TableRow>
-              ))
+                      )}
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {isInvoice ? (
+                        <span className="flex items-center gap-1">
+                          <Package className="size-3 text-muted-foreground" />
+                          {entry.invoiceNumber}
+                        </span>
+                      ) : isReturn ? (
+                        <div className="space-y-0.5">
+                          <span className="flex items-center gap-1 text-amber-700 dark:text-amber-400">
+                            {entry.eventKind === "void" ? <ArrowUpRight className="size-3" /> : <ArrowDownLeft className="size-3" />}
+                            Return #{entry.returnNumber ?? "—"}
+                          </span>
+                          {entry.creditNoteNumber && (
+                            <div className="text-[10px] font-mono text-muted-foreground">
+                              CN: {entry.creditNoteNumber}
+                            </div>
+                          )}
+                        </div>
+                      ) : isRefund ? (
+                        <div className="space-y-0.5">
+                          <div className="font-medium text-rose-700 dark:text-rose-400">
+                            {entry.eventKind === "refund_reversal" ? "Customer Refund Reversal" : "Customer Refund"}
+                            {entry.walletName && <span className="text-muted-foreground font-normal"> · {entry.walletName}</span>}
+                          </div>
+                          <div className="text-[10px] text-muted-foreground flex flex-wrap items-center gap-1">
+                            {entry.creditNoteNumber && (
+                              <span className="font-mono">CN: {entry.creditNoteNumber}</span>
+                            )}
+                            {entry.reverseReason ? <span>Reason: {entry.reverseReason}</span> : entry.notes ? <span>{entry.notes}</span> : null}
+                          </div>
+                        </div>
+                      ) : isCreditApplied ? (
+                        <div className="space-y-0.5">
+                          <span className="font-medium text-emerald-700 dark:text-emerald-400">
+                            Store Credit Applied
+                          </span>
+                          <div className="text-[10px] text-muted-foreground">
+                            Invoice #{entry.invoiceNumber} · {formatPKR(entry.amount ?? 0, false)} applied
+                          </div>
+                        </div>
+                      ) : (
+                        <span className="flex items-center gap-1">
+                          <ArrowDownLeft className="size-3 text-emerald-500" />
+                          {entry.reference || entry.method}
+                        </span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-sm text-right tabular-nums">
+                      {isInvoice || (isReturn && entry.eventKind === "void") || (isRefund && entry.eventKind === "refund") ? (
+                        <span className="text-rose-600 font-medium flex items-center justify-end gap-1">
+                          <ArrowUpRight className="size-3" />
+                          {formatPKR(isInvoice ? entry.totalPrice : entry.amount, false)}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-sm text-right tabular-nums">
+                      {(isReturn && entry.eventKind !== "void") || (isRefund && entry.eventKind === "refund_reversal") || (!isInvoice && !isReturn && !isRefund && !isCreditApplied) ? (
+                        <span
+                          className={`font-medium flex items-center justify-end gap-1 ${
+                            isReturn ? "text-amber-600" : isRefund ? "text-rose-600" : "text-emerald-600"
+                          }`}
+                        >
+                          <ArrowDownLeft className="size-3" />
+                          {formatPKR(entry.amount, false)}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-sm text-right font-bold tabular-nums">
+                      {formatPKR(entry.runningBalance, false)}
+                    </TableCell>
+                  </TableRow>
+                );
+              })
             )}
           </TableBody>
         </Table>

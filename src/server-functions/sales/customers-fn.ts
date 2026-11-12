@@ -207,11 +207,22 @@ export const getCustomerStatsFn = createServerFn()
       .from(customers)
       .where(gt(customers.outstandingAmount, "0"));
 
+    const [totalCustomerCreditResult] = await db
+      .select({ value: drizzleSum(customers.creditBalance) })
+      .from(customers);
+
+    const [creditCountResult] = await db
+      .select({ value: count() })
+      .from(customers)
+      .where(gt(customers.creditBalance, "0"));
+
     return {
       totalCustomers: Number(countResult.value) || 0,
       totalSalesRevenue: Number(totalSalesResult.value) || 0,
       totalOutstanding: Number(totalOutstandingResult.value) || 0,
       customersWithOutstanding: Number(outstandingCountResult.value) || 0,
+      totalCustomerCredit: Number(totalCustomerCreditResult.value) || 0,
+      customersWithCredit: Number(creditCountResult.value) || 0,
     };
   });
 

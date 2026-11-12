@@ -4,8 +4,10 @@ import {
   assertReturnAction,
   availableReturnActions,
   checkInspection,
+  computeReturnCreditSplit,
   conditionSummary,
   DEFAULT_RETURN_REASONS,
+  formatCreditNoteNumber,
   formatUnits,
   receivedUnits,
   requestedUnits,
@@ -144,5 +146,32 @@ describe("return lifecycle rules", () => {
       { kind: "return", date: completedAt, amount: 100, cost: 30 },
       { kind: "void", date: voidedAt, amount: 100, cost: 28.5 },
     ]);
+  });
+});
+
+describe("credit note formatting and split allocation", () => {
+  it("formats CN-XXXX padded to 4 digits and expands past 9999 without truncation", () => {
+    expect(formatCreditNoteNumber(1)).toBe("CN-0001");
+    expect(formatCreditNoteNumber(42)).toBe("CN-0042");
+    expect(formatCreditNoteNumber(10000)).toBe("CN-10000");
+  });
+
+  it("splits return amount between open invoice balance and customer store credit without negatives", () => {
+    expect(computeReturnCreditSplit(3000, 5000)).toEqual({
+      appliedToInvoiceAmount: 3000,
+      customerCreditAmount: 0,
+    });
+    expect(computeReturnCreditSplit(4500, 3000)).toEqual({
+      appliedToInvoiceAmount: 3000,
+      customerCreditAmount: 1500,
+    });
+    expect(computeReturnCreditSplit(2000, 0)).toEqual({
+      appliedToInvoiceAmount: 0,
+      customerCreditAmount: 2000,
+    });
+    expect(computeReturnCreditSplit(1000.05, 333.33)).toEqual({
+      appliedToInvoiceAmount: 333.33,
+      customerCreditAmount: 666.72,
+    });
   });
 });

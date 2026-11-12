@@ -84,3 +84,185 @@ describe("return direction on existing ledger screens and exports", () => {
     expect(rows.at(-1)!.slice(3, 6)).toEqual(["PKR 200.00", "PKR 1,100.00", "PKR 900.00 Cr"]);
   });
 });
+
+describe("store credit and refund rows in ledgers & exports", () => {
+  const storeCreditPayment: LedgerEntry = {
+    type: "payment",
+    id: "pay-credit-1",
+    date: new Date("2026-05-01"),
+    reference: null,
+    method: "customer_credit",
+    isStoreCreditApplied: true,
+    amount: 400,
+    notes: null,
+    runningBalance: 500,
+    invoiceId: "inv-1",
+    invoiceNumber: "INV-100",
+  };
+
+  const refundRow: LedgerEntry = {
+    type: "refund",
+    eventKind: "refund",
+    id: "ref-1",
+    date: new Date("2026-05-02"),
+    amount: 600,
+    creditNoteNumber: "CN-2026-0001",
+    walletName: "Main Cash",
+    notes: "Payout",
+    runningBalance: 0,
+  };
+
+  const refundReversalRow: LedgerEntry = {
+    type: "refund",
+    eventKind: "refund_reversal",
+    id: "ref-1:rev",
+    date: new Date("2026-05-03"),
+    amount: 600,
+    creditNoteNumber: "CN-2026-0001",
+    walletName: "Main Cash",
+    reverseReason: "Wrong account",
+    runningBalance: 0,
+  };
+
+  const customEntries: LedgerEntry[] = [storeCreditPayment, refundRow, refundReversalRow];
+
+  beforeEach(() => {
+    state.data = {
+      entries: customEntries,
+      summary,
+      customer: { id: "customer", name: "Synthetic Customer", creditBalance: 1200 },
+      salesman: { id: "salesman", name: "Synthetic Salesman" },
+      page: 1,
+      pageCount: 1,
+      totalEntries: 3,
+      generatedAt: new Date().toISOString(),
+    };
+  });
+
+  it.each([
+    ["distributor", distributor, 3, 4],
+    ["shopkeeper", shopkeeper, 3, 4],
+    ["salesman", salesman, 5, 4],
+  ] as const)(
+    "renders store credit and refunds in correct debit/credit columns on screen in %s",
+    (_name, route, decreaseCol, increaseCol) => {
+      const Page = route.options.component as React.ComponentType;
+      render(<Page />);
+
+      // Store credit applied row: both debit and credit are "—"
+      const rows = screen.getAllByRole("row");
+      const creditAppliedRow = rows.find(
+        (r) => r.textContent?.includes("Store Credit") || r.textContent?.includes("customer_credit"),
+      );
+      expect(creditAppliedRow).toBeDefined();
+      const creditAppliedCells = within(creditAppliedRow!).getAllByRole("cell");
+      expect(creditAppliedCells[decreaseCol].textContent?.trim()).toBe("—");
+      expect(creditAppliedCells[increaseCol].textContent?.trim()).toBe("—");
+
+      // Refund row: renders on debt-increasing column (increaseCol), "—" on decreaseCol
+      const refundEl = rows.find(
+        (r) => r.textContent?.includes("Customer Refund") && !r.textContent?.includes("Reversal"),
+      );
+      expect(refundEl).toBeDefined();
+      const refundCells = within(refundEl!).getAllByRole("cell");
+      expect(refundCells[increaseCol].textContent).toContain("600");
+      expect(refundCells[decreaseCol].textContent?.trim()).toBe("—");
+
+      // Refund reversal row: renders on debt-decreasing column (decreaseCol), "—" on increaseCol
+      const reversalEl = rows.find((r) => r.textContent?.includes("Customer Refund Reversal"));
+      expect(reversalEl).toBeDefined();
+      const reversalCells = within(reversalEl!).getAllByRole("cell");
+      expect(reversalCells[decreaseCol].textContent).toContain("600");
+      expect(reversalCells[increaseCol].textContent?.trim()).toBe("—");
+    },
+  );
+
+  it("exports store credit as 0.00 and refund amounts in HTML print/pdf export", async () => {
+    let html = "";
+    const printWindow = {
+      document: {
+        write: (value: string) => {
+          html = value;
+        },
+        close: vi.fn(),
+      },
+      focus: vi.fn(),
+      print: vi.fn(),
+      close: vi.fn(),
+    };
+    vi.spyOn(window, "open").mockReturnValue(printWindow as any);
+    render(
+      <LedgerPrintExport
+        title="Synthetic"
+        entries={customEntries}
+        summary={summary}
+      />,
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Print" }));
+    });
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    const rows = [...doc.querySelectorAll("tbody > tr")];
+
+    // Store credit row: both Debit (col 3) & Credit (col 4) are "0.00"
+    const creditRow = rows.find((r) => r.textContent?.includes("Store Credit Applied"))!;
+    expect(creditRow).toBeDefined();
+    expect(creditRow.children[3].textContent?.trim()).toBe("0.00");
+    expect(creditRow.children[4].textContent?.trim()).toBe("0.00");
+
+    // Refund row: Debit (col 3) is "0.00", Credit (col 4) is "600.00"
+    const refundDocRow = rows.find(
+      (r) => r.textContent?.includes("REF-CN-2026-0001") && r.textContent?.includes("Customer Refund") && !r.textContent?.includes("Reversal"),
+    )!;
+    expect(refundDocRow).toBeDefined();
+    expect(refundDocRow.children[3].textContent?.trim()).toBe("0.00");
+    expect(refundDocRow.children[4].textContent?.trim()).toContain("600.00");
+
+    // Refund reversal row: Debit (col 3) is "600.00", Credit (col 4) is "0.00"
+    const reversalDocRow = rows.find((r) => r.textContent?.includes("Customer Refund Reversal"))!;
+    expect(reversalDocRow).toBeDefined();
+    expect(reversalDocRow.children[3].textContent?.trim()).toContain("600.00");
+    expect(reversalDocRow.children[4].textContent?.trim()).toBe("0.00");
+  });
+
+  it("exports store credit as empty string and refund amounts in CSV export", async () => {
+    let captured: Blob | undefined;
+    vi.stubGlobal("URL", {
+      createObjectURL: (blob: Blob) => {
+        captured = blob;
+        return "blob:test";
+      },
+      revokeObjectURL: vi.fn(),
+    });
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    render(<LedgerPrintExport title="Synthetic" entries={customEntries} summary={summary} />);
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Download CSV" }));
+    });
+    const text = await new Promise<string>((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.readAsText(captured!);
+    });
+    const rows = text
+      .split("\n")
+      .map((row) => row.replace(/^\uFEFF/, "").slice(1, -1).split('","'));
+
+    // Store credit: debit and credit are both empty ""
+    const creditCsvRow = rows.find((r) => r[2]?.includes("Store Credit Applied"));
+    expect(creditCsvRow).toBeDefined();
+    expect(creditCsvRow!.slice(3, 5)).toEqual(["", ""]);
+
+    // Refund: debit is "", credit is "600"
+    const refundCsvRow = rows.find(
+      (r) => r[1]?.includes("REF-CN-2026-0001") && r[2]?.includes("Customer Refund") && !r[2]?.includes("Reversal"),
+    );
+    expect(refundCsvRow).toBeDefined();
+    expect(refundCsvRow!.slice(3, 5)).toEqual(["", "600"]);
+
+    // Refund reversal: debit is "600", credit is ""
+    const reversalCsvRow = rows.find((r) => r[2]?.includes("Customer Refund Reversal"));
+    expect(reversalCsvRow).toBeDefined();
+    expect(reversalCsvRow!.slice(3, 5)).toEqual(["600", ""]);
+  });
+});

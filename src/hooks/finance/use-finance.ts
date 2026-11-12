@@ -166,10 +166,11 @@ export const getExpenseEntryDefaultsQueryOptions = () => ({
 
 // ── Wallets ────────────────────────────────────────────────
 
-export const useWallets = () =>
+export const useWallets = (options?: { enabled?: boolean }) =>
   useQuery({
     queryKey: ["wallets"],
     queryFn: () => getWalletsListFn(),
+    enabled: options?.enabled ?? true,
   });
 
 export const useCreateWallet = () => {

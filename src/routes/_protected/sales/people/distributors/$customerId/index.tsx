@@ -19,6 +19,7 @@ import { getCustomerProfileFn } from "@/server-functions/sales/sales-config-fn";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { updateCustomerFn } from "@/server-functions/sales/customers-fn";
 import { toast } from "sonner";
+import { CustomerCreditSection } from "@/components/sales/customer-credit-section";
 
 const PKR = (v: number) =>
   `PKR ${v.toLocaleString("en-PK", { minimumFractionDigits: 2 })}`;
@@ -100,6 +101,14 @@ function DistributorProfilePage() {
             >
               {customer.customerType}
             </Badge>
+            {Number((customer as any).creditBalance ?? 0) > 0 && (
+              <Badge
+                variant="outline"
+                className="border-emerald-200 text-emerald-700 bg-emerald-50 dark:bg-emerald-950/20 text-xs"
+              >
+                Store Credit: {PKR(Number((customer as any).creditBalance))}
+              </Badge>
+            )}
           </div>
           <p className="text-sm text-muted-foreground mt-1">
             {customer.city || "—"}{" "}
@@ -170,6 +179,11 @@ function DistributorProfilePage() {
           </p>
         </div>
       </div>
+
+      <CustomerCreditSection
+        customerId={customerId}
+        customerName={customer.name}
+      />
 
       {/* Default Margin */}
       <div className="p-4 rounded-xl border bg-card space-y-3">

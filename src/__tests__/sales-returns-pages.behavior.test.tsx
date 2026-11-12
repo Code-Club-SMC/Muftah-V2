@@ -37,6 +37,16 @@ vi.mock("@/server-functions/sales/return-reasons-fn", () => ({
   saveReturnReasonFn: vi.fn(),
 }));
 
+vi.mock("@/server-functions/sales/customer-credit-fn", () => ({
+  getCustomerCreditSummaryFn: vi.fn(),
+  issueCustomerRefundFn: vi.fn(),
+  reverseCustomerRefundFn: vi.fn(),
+}));
+
+vi.mock("@/server-functions/finance-fn", () => ({
+  getWalletsListFn: vi.fn().mockResolvedValue([]),
+}));
+
 vi.mock("@/hooks/use-viewer-access", () => ({
   useViewerAccess: () => ({
     data: mocks.viewerData ?? (mocks.viewerLoading ? undefined : { permissions: mocks.permissions }),
@@ -176,6 +186,16 @@ function clickTab(label: string | RegExp) {
 
 beforeEach(() => {
   vi.resetAllMocks();
+  window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  }));
   mocks.permissions = ["*"];
   mocks.viewerData = undefined;
   mocks.viewerLoading = false;
@@ -547,5 +567,23 @@ describe("SalesReturnDetailPage and timeline", () => {
       "Rs 120",
       "Rs 960",
     ]);
+  });
+
+  it("renders credit note badge, split summary, and print credit note button on completed return with credit note", async () => {
+    mocks.detail.mockResolvedValue(
+      makeDetail({
+        status: "completed",
+        creditNoteNumber: "CN-2026-0001",
+        appliedToInvoiceAmount: "800.00",
+        customerCreditAmount: "400.00",
+        completedAt: new Date("2026-11-02T12:00:00.000Z"),
+      }),
+    );
+
+    mount(<DetailPage />);
+    await screen.findByText("CN-2026-0001");
+    expect(screen.getByText("Rs 800")).toBeTruthy();
+    expect(screen.getByText("Rs 400")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Print credit note/i })).toBeTruthy();
   });
 });

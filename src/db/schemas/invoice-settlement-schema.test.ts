@@ -133,4 +133,10 @@ describe("invoice settlement database contract", () => {
     expect(seed).not.toMatch(/\bDROP\s+TABLE\b/i);
     expect(seed).not.toMatch(/\bALTER\s+TABLE\b/i);
   });
+
+  it("includes credit and excess credit settlement columns", () => {
+    expect(columnNames(customers)).toContain("credit_balance");
+    expect(columnNames(invoices)).toContain("excess_credited_amount");
+    expect(columnNames(slipRecords)).toContain("excess_credited_amount");
+  });
 });

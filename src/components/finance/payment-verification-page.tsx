@@ -123,14 +123,16 @@ function displayDate(value: Date | string | null | undefined) {
 	return value ? format(new Date(value), "dd MMM yyyy, h:mm a") : "—";
 }
 
-function methodLabel(method: PaymentSettlementRow["method"]) {
+function methodLabel(method: PaymentSettlementRow["method"] | string) {
 	switch (method) {
 		case "bank_transfer":
-			return "Bank transfer";
+			return "Bank Transfer";
 		case "cheque":
 			return "Cheque";
 		case "expense_offset":
-			return "Expense offset";
+			return "Expense Offset";
+		case "customer_credit":
+			return "Store Credit";
 		default:
 			return "Cash";
 	}
@@ -414,7 +416,7 @@ export function PaymentVerificationPage() {
 													<span>Reference: {payment.reference}</span>
 												)}
 												<span className="text-muted-foreground">
-													Account: {payment.wallet?.name ?? "Not available"}
+													Account: {payment.method === "customer_credit" ? "Customer Store Credit" : payment.method === "expense_offset" ? "Salary Offset" : (payment.wallet?.name ?? "Not available")}
 												</span>
 											</div>
 										</TableCell>

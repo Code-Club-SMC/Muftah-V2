@@ -7,6 +7,7 @@ import { GenericLoader } from "@/components/custom/generic-loader";
 import { getInvoiceDetailFn } from "@/server-functions/sales/invoice-detail-fn";
 import { CreateReturnDialog } from "@/components/sales/create-return-dialog";
 import { ReturnLifecycleActions } from "@/components/sales/return-lifecycle-actions";
+import { CreditNotePrintDialog } from "@/components/sales/credit-note-print-dialog";
 import { ReturnStatusBadge } from "@/components/sales/returns/return-status";
 import { conditionSummary, requestedUnits, receivedUnits } from "@/lib/sales/returns/return-lifecycle";
 import { getReturnUnitsPerCarton } from "@/lib/sales/returns/refund-pricing";
@@ -83,6 +84,7 @@ function InvoiceDetailContent({ invoiceId }: { invoiceId: string }) {
     id: string;
     returnNumber?: number;
   } | null>(null);
+  const [printCreditNoteReturnId, setPrintCreditNoteReturnId] = useState<string | null>(null);
   const { data } = useQuery<InvoiceDetailData>({
     queryKey: ["invoice-detail", invoiceId],
     queryFn: () => getInvoiceDetailFn({ data: { invoiceId } }),
@@ -213,7 +215,7 @@ function InvoiceDetailContent({ invoiceId }: { invoiceId: string }) {
                           </Badge>
                         </div>
                         <p className="text-xs text-muted-foreground">
-                          Destination: {p.wallet?.name ?? "No account"}
+                          Destination: {p.method === "customer_credit" ? "Customer Store Credit" : p.method === "expense_offset" ? "Salary Offset" : (p.wallet?.name ?? "No account")}
                         </p>
                         {p.reference && <p className="text-xs text-muted-foreground">Reference: {p.reference}</p>}
                         {p.method === "cheque" && (
@@ -332,13 +334,20 @@ function InvoiceDetailContent({ invoiceId }: { invoiceId: string }) {
                       )}
                     >
                       <div className="flex items-center justify-between">
-                        <Link
-                          to="/sales/returns/$returnId"
-                          params={{ returnId: ret.id }}
-                          className="text-sm font-medium hover:underline"
-                        >
-                          Return #{ret.returnNumber}
-                        </Link>
+                        <div className="flex items-center gap-2">
+                          <Link
+                            to="/sales/returns/$returnId"
+                            params={{ returnId: ret.id }}
+                            className="text-sm font-medium hover:underline"
+                          >
+                            Return #{ret.returnNumber}
+                          </Link>
+                          {ret.creditNoteNumber && (
+                            <Badge variant="secondary" className="font-mono text-xs">
+                              {ret.creditNoteNumber}
+                            </Badge>
+                          )}
+                        </div>
                         <ReturnStatusBadge status={ret.status} />
                       </div>
                       <p className="text-xs text-muted-foreground">
@@ -370,6 +379,31 @@ function InvoiceDetailContent({ invoiceId }: { invoiceId: string }) {
                           Refund price set above the invoice price. Reason: {ret.priceOverrideReason}
                         </p>
                       )}
+                      {ret.creditNoteNumber && (
+                        <div className="rounded-md bg-muted/40 px-3 py-2 text-xs space-y-1">
+                          <div className="flex items-center justify-between">
+                            <span className="font-medium text-foreground">Credit Note #{ret.creditNoteNumber}</span>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 px-2 text-xs"
+                              onClick={() => setPrintCreditNoteReturnId(ret.id)}
+                            >
+                              <Printer className="mr-1 size-3" />
+                              Print credit note
+                            </Button>
+                          </div>
+                          <div className="flex items-center justify-between text-muted-foreground">
+                            <span>Applied to invoice:</span>
+                            <span className="font-medium tabular-nums text-foreground">{PKR(Number(ret.appliedToInvoiceAmount ?? 0))}</span>
+                          </div>
+                          <div className="flex items-center justify-between text-muted-foreground">
+                            <span>Transferred to store credit:</span>
+                            <span className="font-medium tabular-nums text-emerald-600">{PKR(Number(ret.customerCreditAmount ?? 0))}</span>
+                          </div>
+                        </div>
+                      )}
                       {!!ret.stockTraces.length && (
                         <div className="rounded-md bg-muted/40 px-3 py-2 space-y-1">
                           <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
@@ -384,16 +418,31 @@ function InvoiceDetailContent({ invoiceId }: { invoiceId: string }) {
                           ))}
                         </div>
                       )}
-                      <ReturnLifecycleActions invoiceId={invoice.id} returnId={ret.id} returnNumber={ret.returnNumber} status={ret.status} items={ret.items.map((line: any) => {
-                        const source = invoice.items.find((item: any) => item.id === line.invoiceItem?.id);
-                        return { id: line.id, label: line.invoiceItem?.pack ?? "Item", approvedUnits: requestedUnits(line, source ? getReturnUnitsPerCarton(source) : 1) };
-                      })} />
+                      <ReturnLifecycleActions
+                        invoiceId={invoice.id}
+                        returnId={ret.id}
+                        returnNumber={ret.returnNumber}
+                        creditNoteNumber={ret.creditNoteNumber}
+                        status={ret.status}
+                        items={ret.items.map((line: any) => {
+                          const source = invoice.items.find((item: any) => item.id === line.invoiceItem?.id);
+                          return { id: line.id, label: line.invoiceItem?.pack ?? "Item", approvedUnits: requestedUnits(line, source ? getReturnUnitsPerCarton(source) : 1) };
+                        })}
+                      />
                     </div>
                   ))}
                 </div>
               )}
             </CardContent>
           </Card>
+
+          <CreditNotePrintDialog
+            open={Boolean(printCreditNoteReturnId)}
+            onOpenChange={(o) => {
+              if (!o) setPrintCreditNoteReturnId(null);
+            }}
+            returnId={printCreditNoteReturnId}
+          />
 
           {/* Timeline */}
           <Card>
@@ -554,6 +603,7 @@ function paymentMethodLabel(method: string) {
   if (method === "bank_transfer") return "Bank Transfer";
   if (method === "cheque") return "Cheque";
   if (method === "expense_offset") return "Expense Offset";
+  if (method === "customer_credit") return "Store Credit";
   return "Cash";
 }
 

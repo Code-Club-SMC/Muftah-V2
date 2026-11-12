@@ -99,6 +99,7 @@ function refreshReceipt(qc: QueryClient, invoiceId: string) {
     "distributor-profile", "shopkeeper-profile", "salesman-summary",
     "reconciliation", "credit-recovery", "slip-lookup", "overdue-slips",
     "distributor-ledger", "shopkeeper-ledger", "salesman-ledger", "salesman-shop-ledger", "reports",
+    "customer-credit",
   ];
   return Promise.all([
     refreshReturn(qc, invoiceId),

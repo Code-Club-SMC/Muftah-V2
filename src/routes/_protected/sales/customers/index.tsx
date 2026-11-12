@@ -170,6 +170,7 @@ function CustomersContent() {
                   <TableHead className="text-[11px] text-right">Total Paid</TableHead>
                   <TableHead className="text-[11px] text-right">Outstanding</TableHead>
                   <TableHead className="text-[11px] text-right">Avg/Kg</TableHead>
+                  <TableHead className="text-[11px] text-right">Store Credit</TableHead>
                   <TableHead className="text-[11px] w-[50px]" />
                 </TableRow>
               </TableHeader>
@@ -259,6 +260,9 @@ const CustomerRow = ({
       </TableCell>
       <TableCell className="text-sm tabular-nums text-right text-muted-foreground">
         {avgPerKg > 0 ? PKR(avgPerKg) : "—"}
+      </TableCell>
+      <TableCell className="text-sm tabular-nums text-right font-medium text-emerald-600">
+        {Number(customer.creditBalance ?? 0) > 0 ? PKR(Number(customer.creditBalance)) : "—"}
       </TableCell>
       <TableCell>
         <Button

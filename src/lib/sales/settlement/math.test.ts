@@ -61,6 +61,20 @@ describe("invoice settlement math", () => {
 		).toBe("paid");
 	});
 
+	it("treats confirmed customer_credit payments as paid settlement without violating positive checks", () => {
+		expect(
+			calculateSettlement(5_000, [
+				{ amount: 1_500, status: "confirmed", method: "customer_credit" },
+				{ amount: 3_500, status: "confirmed", method: "cash" },
+			]),
+		).toMatchObject({
+			paidAmount: 5_000,
+			outstandingAmount: 0,
+			payLaterAmount: 0,
+			paymentStatus: "paid",
+		});
+	});
+
 	it("rejects confirmed plus pending allocation above invoice total", () => {
 		expect(() =>
 			calculateSettlement(100, [
