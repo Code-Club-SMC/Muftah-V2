@@ -80,8 +80,11 @@ export async function moveLotStock(tx: Tx, input: { ref: MaterialRef; lotId: str
     const [total] = await tx.update(materialStock)
       .set({ quantity: sql`${materialStock.quantity} - ${amount}`, updatedAt: new Date() })
       .where(and(eq(materialStock.warehouseId, input.warehouseId), eq(column, input.ref.materialId), gte(materialStock.quantity, amount)))
-      .returning({ id: materialStock.id });
+      .returning({ id: materialStock.id, quantity: materialStock.quantity });
     if (!total) throw new Error("Lot stock disagrees with item stock. Contact support before moving this item.");
+    if (input.sourceType === "purchase_delete" && new Big(total.quantity).lte(0)) {
+      await tx.delete(materialStock).where(eq(materialStock.id, total.id));
+    }
   }
   await tx.insert(materialLotMovements).values({ lotId: input.lotId, warehouseId: input.warehouseId, delta: delta.toFixed(3), sourceType: input.sourceType, sourceId: input.sourceId ?? null });
 }

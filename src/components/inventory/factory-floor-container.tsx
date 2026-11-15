@@ -117,15 +117,15 @@ export const FactoryFloorContainer = () => {
   }
 
   const rawMaterials = factoryFloor.materialStock
-    .filter((s) => s.chemicalId !== null)
+    .filter((s) => s.chemicalId !== null && Number(s.quantity) > 0)
     .map((s) => ({ ...s, warehouse: { name: factoryFloor.name, isActive: factoryFloor.isActive } }));
 
   const packagingMaterials = factoryFloor.materialStock
-    .filter((s) => s.packagingMaterialId !== null && s.packagingMaterial?.type !== "sticker")
+    .filter((s) => s.packagingMaterialId !== null && s.packagingMaterial?.type !== "sticker" && Number(s.quantity) > 0)
     .map((s) => ({ ...s, warehouse: { name: factoryFloor.name, isActive: factoryFloor.isActive } }));
 
   const stickers = factoryFloor.materialStock
-    .filter((s) => s.packagingMaterialId !== null && s.packagingMaterial?.type === "sticker")
+    .filter((s) => s.packagingMaterialId !== null && s.packagingMaterial?.type === "sticker" && Number(s.quantity) > 0)
     .map((s) => ({ ...s, warehouse: { name: factoryFloor.name, isActive: factoryFloor.isActive } }));
 
   const finishedGoods = factoryFloor.finishedGoodsStock.map((fg) => ({
