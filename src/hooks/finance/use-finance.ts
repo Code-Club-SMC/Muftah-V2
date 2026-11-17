@@ -237,6 +237,8 @@ export const useDepositToWallet = () => {
   });
 };
 
+import { invalidateFinanceQueries } from "@/lib/finance/invalidate-finance";
+
 // ── Expenses ───────────────────────────────────────────────
 
 export const useExpenseCategoryDefinitions = () =>
@@ -244,12 +246,7 @@ export const useExpenseCategoryDefinitions = () =>
 
 // Anything that moves money on an expense changes balances, lists, totals, the journal and reports.
 const invalidateExpenseMoney = (queryClient: ReturnType<typeof useQueryClient>) => {
-  queryClient.invalidateQueries({ queryKey: ["wallets"] });
-  queryClient.invalidateQueries({ queryKey: financeExpenseKeys.all });
-  queryClient.invalidateQueries({ queryKey: ["transactions"] });
-  queryClient.invalidateQueries({ queryKey: ["transactions-recent"] });
-  queryClient.invalidateQueries({ queryKey: ["reports", "profit-loss"] });
-  queryClient.invalidateQueries({ queryKey: ["reports", "expenses"] });
+  invalidateFinanceQueries(queryClient);
 };
 
 export const useCreateExpense = () => {

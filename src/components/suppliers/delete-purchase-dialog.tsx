@@ -13,6 +13,7 @@ import { deletePurchaseRecordFn } from "@/server-functions/suppliers/delete-purc
 import { getPurchaseEditStateFn } from "@/server-functions/suppliers/get-purchase-edit-state-fn";
 import { PURCHASE_LOCKED_MESSAGE } from "@/lib/inventory/material-lots";
 import { invalidateStockQueries } from "@/lib/inventory/invalidate-stock";
+import { invalidateFinanceQueries } from "@/lib/finance/invalidate-finance";
 
 type Props = {
   open: boolean;
@@ -61,11 +62,10 @@ export const DeletePurchaseDialog = ({
     mutationFn: deletePurchaseRecordFn,
     onSuccess: async () => {
       await invalidateStockQueries(queryClient);
+      await invalidateFinanceQueries(queryClient);
       toast.success("Purchase deleted successfully");
       queryClient.invalidateQueries({ queryKey: ["supplier"] });
       queryClient.invalidateQueries({ queryKey: ["suppliers"] });
-      queryClient.invalidateQueries({ queryKey: ["wallets"] });
-      queryClient.invalidateQueries({ queryKey: ["expenses"] });
       queryClient.invalidateQueries({ queryKey: ["lab-reports"] });
       queryClient.invalidateQueries({ queryKey: ["chemical-report-purchases"] });
       queryClient.invalidateQueries({ queryKey: ["activity-timeline"] });

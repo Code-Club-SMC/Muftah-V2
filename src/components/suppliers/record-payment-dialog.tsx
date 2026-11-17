@@ -3,6 +3,7 @@ import { ResponsiveDialog } from "@/components/custom/responsive-dialog";
 import { useForm } from "@tanstack/react-form";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { addPaymentFn } from "@/server-functions/suppliers/add-payment-fn";
+import { invalidateFinanceQueries } from "@/lib/finance/invalidate-finance";
 import { toast } from "sonner";
 import {
   Field,
@@ -51,12 +52,11 @@ export const RecordPaymentDialog = ({
 
   const mutate = useMutation({
     mutationFn: addPaymentFn,
-    onSuccess: () => {
+    onSuccess: async () => {
+      await invalidateFinanceQueries(queryClient);
       toast.success("Payment recorded successfully");
       queryClient.invalidateQueries({ queryKey: ["supplier"] });
       queryClient.invalidateQueries({ queryKey: ["suppliers"] });
-      queryClient.invalidateQueries({ queryKey: ["wallets"] });
-      queryClient.invalidateQueries({ queryKey: ["expenses"] });
       queryClient.invalidateQueries({ queryKey: ["activity-timeline"] });
       onOpenChange(false);
     },
