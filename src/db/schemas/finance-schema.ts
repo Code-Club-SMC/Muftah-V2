@@ -2,6 +2,7 @@ import { relations, sql } from "drizzle-orm";
 import {
   type AnyPgColumn,
   boolean,
+  check,
   decimal,
   index,
   integer,
@@ -282,6 +283,43 @@ export const transactions = pgTable(
     reversalUnique: uniqueIndex("transactions_reversal_unique")
       .on(table.reversalOfTransactionId)
       .where(sql`${table.reversalOfTransactionId} is not null`),
+  }),
+);
+
+// --- OTHER INCOME (money in that is not a sale, e.g. empty drums sold) ---
+export const otherIncome = pgTable(
+  "other_income",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => createId()),
+    incomeDate: timestamp("income_date").notNull(),
+    itemName: text("item_name").notNull(),
+    quantity: decimal("quantity", { precision: 12, scale: 3 }).notNull(),
+    unitPrice: decimal("unit_price", { precision: 12, scale: 2 }).notNull(),
+    amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
+    note: text("note"),
+    walletId: text("wallet_id")
+      .notNull()
+      .references(() => wallets.id),
+    transactionId: text("transaction_id")
+      .notNull()
+      .references(() => transactions.id),
+    performedById: text("performed_by_id")
+      .notNull()
+      .references(() => user.id),
+    voidedAt: timestamp("voided_at", { withTimezone: true }),
+    voidedById: text("voided_by_id").references(() => user.id),
+    voidReason: text("void_reason"),
+    voidTransactionId: text("void_transaction_id").references(() => transactions.id),
+    ...timestamps,
+  },
+  (table) => ({
+    dateIdx: index("other_income_date_idx").on(table.incomeDate),
+    positive: check(
+      "other_income_positive",
+      sql`${table.amount} > 0 and ${table.quantity} > 0 and ${table.unitPrice} > 0`,
+    ),
   }),
 );
 
