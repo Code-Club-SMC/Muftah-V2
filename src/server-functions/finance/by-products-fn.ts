@@ -1,19 +1,16 @@
 import { createServerFn } from "@tanstack/react-start";
 import { createId } from "@paralleldrive/cuid2";
 import Big from "big.js";
-import { and, asc, desc, eq, gte, isNull, lte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { user } from "@/db/schemas/auth-schema";
 import { otherIncome, transactions, wallets } from "@/db/schemas/finance-schema";
 import { logActivityQuiet } from "@/lib/activity-logger.server";
 import { formatRupees } from "@/lib/finance/expense-entry";
-import {
-  MAX_OTHER_INCOME_AMOUNT,
-  normalizeItemName,
-  OTHER_INCOME_TX_SOURCE,
-  otherIncomeAmount,
-} from "@/lib/finance/other-income";
+import { BY_PRODUCT_TX_SOURCE, MAX_SALE_AMOUNT, saleAmount } from "@/lib/finance/by-product-sales";
+import { containerKey, normalizeContainerName } from "@/lib/inventory/by-products";
+import { listByProducts, loadItemByProducts, lockByProductMaterial } from "@/lib/inventory/by-products.server";
 import { requireFinanceManageMiddleware, requireFinanceViewMiddleware } from "@/lib/middlewares";
 import { reportDateBounds, reportMonth } from "@/lib/report-dates";
 import { parseExpenseDate, type Tx } from "./expense-writes.server";
@@ -67,7 +64,7 @@ async function moveWalletMoney(
     walletId: input.walletId,
     type: input.type,
     amount: input.amount,
-    source: OTHER_INCOME_TX_SOURCE,
+    source: BY_PRODUCT_TX_SOURCE,
     referenceId: input.referenceId,
     description: input.description,
     performedById: input.performedById,
@@ -75,7 +72,7 @@ async function moveWalletMoney(
   return id;
 }
 
-export const getOtherIncomeFn = createServerFn()
+export const getByProductsFn = createServerFn()
   .middleware([requireFinanceViewMiddleware])
   .inputValidator(z.object({ month: monthSchema }))
   .handler(async ({ data }) => {
@@ -104,40 +101,24 @@ export const getOtherIncomeFn = createServerFn()
     const total = rows
       .filter((row) => row.voidedAt === null)
       .reduce((sum, row) => sum.plus(row.amount), new Big(0));
-    return { rows, total: total.toFixed(2) };
+    return { byProducts: await listByProducts(), rows, total: total.toFixed(2) };
   });
 
-export const getOtherIncomeItemNamesFn = createServerFn()
-  .middleware([requireFinanceViewMiddleware])
-  .handler(async () => {
-    const rows = await db
-      .selectDistinct({ itemName: otherIncome.itemName })
-      .from(otherIncome)
-      .where(isNull(otherIncome.voidedAt))
-      .orderBy(asc(otherIncome.itemName));
-    return rows.map((row) => row.itemName);
-  });
-
-export const createOtherIncomeFn = createServerFn()
+export const createByProductSaleFn = createServerFn()
   .middleware([requireFinanceManageMiddleware])
   .inputValidator(
     z.object({
       incomeDate: z.string().min(1, "Please pick a date"),
-      itemName: z
-        .string()
-        .transform(normalizeItemName)
-        .pipe(z.string().min(1, "Please enter the item").max(120, "Item name is too long")),
-      quantity: z
-        .number()
-        .finite()
-        .positive("Quantity must be above zero")
-        .max(999_999_999)
-        .refine((value) => new Big(value).round(3).eq(value), "Quantity can have at most 3 decimals"),
+      materialType: z.enum(["chemical", "packaging"]),
+      materialId: z.string().min(1, "Please pick the by-product"),
+      containerName: z.string().transform(normalizeContainerName).pipe(z.string().min(1).max(40)),
+      containerSize: z.string().min(1),
+      quantity: z.number().int("Quantity must be a whole number").positive("Quantity must be above zero").max(999_999),
       unitPrice: z
         .number()
         .finite()
         .positive("Price must be above zero")
-        .max(MAX_OTHER_INCOME_AMOUNT)
+        .max(MAX_SALE_AMOUNT)
         .refine((value) => new Big(value).round(2).eq(value), "Price can have at most 2 decimals (paisa)"),
       walletId: z.string().min(1, "Please pick the account"),
       note: z.string().trim().max(500).optional(),
@@ -145,22 +126,30 @@ export const createOtherIncomeFn = createServerFn()
   )
   .handler(async ({ data, context }) => {
     const incomeDate = parseExpenseDate(data.incomeDate);
-    const quantity = new Big(data.quantity);
-    if (!quantity.gt(0)) throw new Error("Quantity must be above zero");
     const unitPrice = new Big(data.unitPrice);
-    if (!unitPrice.gt(0)) throw new Error("Price must be above zero");
-    const amount = otherIncomeAmount(quantity.toFixed(3), unitPrice.toFixed(2));
+    const amount = saleAmount(data.quantity, unitPrice.toFixed(2));
     const userId = context.session.user.id;
     const id = createId();
+    const ref = { materialType: data.materialType, materialId: data.materialId } as const;
+    const key = containerKey(data.containerName, data.containerSize);
 
     return await db.transaction(async (tx) => {
+      await lockByProductMaterial(tx, ref);
+      const byProduct = (await loadItemByProducts(tx, ref)).find(
+        (row) => containerKey(row.containerName, row.containerSize) === key,
+      );
+      if (!byProduct) throw new Error("This by-product is not tracked");
+      if (data.quantity > byProduct.inHand) {
+        throw new Error(`Only ${Math.max(byProduct.inHand, 0)} ${byProduct.label} in hand`);
+      }
+
       const transactionId = await moveWalletMoney(tx, {
         walletId: data.walletId,
         type: "credit",
         amount,
         referenceId: id,
         performedById: userId,
-        description: `Other income: ${data.itemName}`,
+        description: `By-product sale: ${byProduct.label}`,
       });
 
       const [row] = await tx
@@ -168,8 +157,12 @@ export const createOtherIncomeFn = createServerFn()
         .values({
           id,
           incomeDate,
-          itemName: data.itemName,
-          quantity: quantity.toFixed(3),
+          itemName: byProduct.label,
+          chemicalId: ref.materialType === "chemical" ? ref.materialId : null,
+          packagingMaterialId: ref.materialType === "packaging" ? ref.materialId : null,
+          containerName: byProduct.containerName,
+          containerSize: byProduct.containerSize,
+          quantity: data.quantity.toFixed(3),
           unitPrice: unitPrice.toFixed(2),
           amount,
           note: data.note || null,
@@ -182,18 +175,18 @@ export const createOtherIncomeFn = createServerFn()
       logActivityQuiet({
         module: "finance",
         action: "created",
-        entityType: "other_income",
+        entityType: "by_product_sale",
         entityId: id,
         actorId: context.authContext.session.user.id,
         actorName: context.authContext.session.user.name,
-        description: `Recorded other income of ${amount} for ${data.itemName}`,
+        description: `Sold ${data.quantity} ${byProduct.label} for ${amount}`,
       });
 
       return row;
     });
   });
 
-export const voidOtherIncomeFn = createServerFn()
+export const voidByProductSaleFn = createServerFn()
   .middleware([requireFinanceManageMiddleware])
   .inputValidator(
     z.object({
@@ -210,7 +203,7 @@ export const voidOtherIncomeFn = createServerFn()
         .from(otherIncome)
         .where(eq(otherIncome.id, data.id))
         .for("update");
-      if (!current) throw new Error("Income entry not found");
+      if (!current) throw new Error("Sale not found");
       if (current.voidedAt) throw new Error("This entry is already voided");
 
       const voidTransactionId = await moveWalletMoney(tx, {
@@ -219,7 +212,7 @@ export const voidOtherIncomeFn = createServerFn()
         amount: current.amount,
         referenceId: current.id,
         performedById: userId,
-        description: `Void of other income: ${current.itemName}`,
+        description: `Void of by-product sale: ${current.itemName}`,
       });
 
       const [voided] = await tx
@@ -231,11 +224,11 @@ export const voidOtherIncomeFn = createServerFn()
       logActivityQuiet({
         module: "finance",
         action: "deleted",
-        entityType: "other_income",
+        entityType: "by_product_sale",
         entityId: current.id,
         actorId: context.authContext.session.user.id,
         actorName: context.authContext.session.user.name,
-        description: `Voided other income of ${current.amount}: ${data.reason}`,
+        description: `Voided by-product sale of ${current.amount}: ${data.reason}`,
       });
 
       return voided;
