@@ -116,6 +116,9 @@ export const byProductInputSchema = z.object({
   containerSize: z.string().default(""),
 });
 
+/** Forms always send the by-product fields, so their validators use `schema.required(BY_PRODUCT_FORM_FIELDS)`. */
+export const BY_PRODUCT_FORM_FIELDS = { byProductTracked: true, containerName: true, containerSize: true } as const;
+
 export const addChemicalSchema = z.object({
   name: z.string().min(1, "Material name is required"),
   unit: z.enum(["kg", "liters"]),

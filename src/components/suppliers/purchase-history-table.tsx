@@ -71,6 +71,9 @@ export type PurchaseRecord = PurchaseVoidMetadata & {
   notes?: string | null;
   invoiceNumber?: string | null;
   transactionId?: string | null;
+  byProductTracked?: boolean;
+  containerName?: string | null;
+  containerSize?: string | null;
   lastPayment?: any;
 };
 

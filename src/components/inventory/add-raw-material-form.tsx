@@ -10,7 +10,7 @@ import {
   FieldLabel,
 } from "../ui/field";
 import { Input } from "../ui/input";
-import { addChemicalSchema } from "@/lib/validators/validators";
+import { addChemicalSchema, BY_PRODUCT_FORM_FIELDS } from "@/lib/validators/validators";
 import {
   Select,
   SelectContent,
@@ -25,6 +25,8 @@ import { useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-q
 import { getSuppliersFn } from "@/server-functions/suppliers/get-suppliers-fn";
 import { useMemo, useRef, useState } from "react";
 import { Textarea } from "../ui/textarea";
+import { sizeFromPackagingText } from "@/lib/inventory/by-products";
+import { ByProductFields } from "./by-product-fields";
 import { updatePurchaseRecordFn } from "@/server-functions/suppliers/update-purchase-record-fn";
 import { toast } from "sonner";
 import { invalidateStockQueries } from "@/lib/inventory/invalidate-stock";
@@ -118,8 +120,11 @@ export const AddRawMaterialForm = ({
       amountPaid: plainNumber(initialValues?.paidAmount),
       transactionId: initialValues?.transactionId || "",
       bankName: initialValues?.bankName || "",
+      byProductTracked: false,
+      containerName: "",
+      containerSize: "",
     },
-    validators: isEditMode ? undefined : { onSubmit: addChemicalSchema },
+    validators: isEditMode ? undefined : { onSubmit: addChemicalSchema.required(BY_PRODUCT_FORM_FIELDS) },
     onSubmit: async ({ value }) => {
       if (isEditMode) {
         const totalCost = (parseFloat(value.costPerUnit) * parseFloat(value.quantity)).toFixed(2);
@@ -397,6 +402,40 @@ export const AddRawMaterialForm = ({
             </Field>
           )}
         </form.Field>
+
+        <form.Subscribe
+          selector={(state) =>
+            [
+              state.values.byProductTracked,
+              state.values.containerName,
+              state.values.containerSize,
+              state.values.quantity,
+              state.values.unit,
+            ] as const
+          }
+        >
+          {([byProductTracked, containerName, containerSize, quantity, unit]) => (
+            <ByProductFields
+              value={{ byProductTracked, containerName, containerSize }}
+              quantity={quantity}
+              unit={unit || "kg"}
+              onChange={(next) => {
+                // First tick copies the item's own pack type and size when the person has not typed any.
+                const firstTick =
+                  next.byProductTracked && !byProductTracked && !next.containerName && !next.containerSize;
+                form.setFieldValue("byProductTracked", next.byProductTracked);
+                form.setFieldValue(
+                  "containerName",
+                  firstTick ? form.state.values.packagingType || "" : next.containerName,
+                );
+                form.setFieldValue(
+                  "containerSize",
+                  firstTick ? sizeFromPackagingText(form.state.values.packagingSize) : next.containerSize,
+                );
+              }}
+            />
+          )}
+        </form.Subscribe>
 
         <form.Field name="notes">
           {(field) => (
