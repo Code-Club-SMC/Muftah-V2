@@ -134,6 +134,20 @@ export async function deleteItemLots(tx: Tx, ref: MaterialRef) {
   await tx.delete(materialStock).where(eq(stockColumn(ref), ref.materialId));
 }
 
+// Purges an orphaned material whose purchases were deleted and has no remaining stock or usage.
+export async function cleanupOrphanedMaterial(tx: Tx, ref: MaterialRef) {
+  const lots = tx.select({ id: materialLots.id }).from(materialLots).where(eq(lotColumn(ref), ref.materialId));
+  await tx.delete(materialLotMovements).where(inArray(materialLotMovements.lotId, lots));
+  await tx.delete(materialLotStock).where(inArray(materialLotStock.lotId, lots));
+  await tx.delete(materialLots).where(eq(lotColumn(ref), ref.materialId));
+  await tx.delete(materialStock).where(eq(stockColumn(ref), ref.materialId));
+  if (ref.materialType === "chemical") {
+    await tx.delete(chemicals).where(eq(chemicals.id, ref.materialId));
+  } else {
+    await tx.delete(packagingMaterials).where(eq(packagingMaterials.id, ref.materialId));
+  }
+}
+
 // Clears a store's material stock before the store is deleted. Refused while any lot there still holds stock.
 export async function deleteWarehouseLotStock(tx: Tx, warehouseId: string) {
   const [stocked] = await tx.select({ id: materialLotStock.id }).from(materialLotStock)

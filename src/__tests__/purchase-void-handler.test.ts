@@ -18,7 +18,7 @@ vi.mock("@/db", async () => ({
 }));
 vi.mock("@/lib/middlewares", () => ({ requireSuppliersManageMiddleware: {}, requireInventoryManageMiddleware: {} }));
 vi.mock("@/lib/activity-logger.server", () => ({ logActivityQuiet: mocks.log }));
-vi.mock("@/lib/inventory/material-lots.server", () => ({ lockMaterialStock: mocks.lock, purchaseIsUntouched: mocks.untouched, moveLotStock: mocks.move, findOrCreateLot: vi.fn() }));
+vi.mock("@/lib/inventory/material-lots.server", () => ({ lockMaterialStock: mocks.lock, purchaseIsUntouched: mocks.untouched, moveLotStock: mocks.move, findOrCreateLot: vi.fn(), cleanupOrphanedMaterial: vi.fn() }));
 vi.mock("@tanstack/react-start", () => ({ createServerFn: () => {
   let validator: { parse(data: unknown): unknown };
   const builder = { middleware: () => builder,
@@ -56,6 +56,15 @@ function transaction() {
     if (table === "suppliers") return state.supplier ? [state.supplier] : [];
     if (table === "wallets") return [{ id: "cash", balance: String(state.balance), name: "Cash" }];
     if (table === "expenses") return state.expenses.filter(row => !row.voidedAt);
+    if (
+      table === "formula_ingredients" ||
+      table === "mixing_materials_used" ||
+      table === "recipes" ||
+      table === "recipe_packaging" ||
+      table === "packaging_materials_used" ||
+      table === "packaging_materials_used_in_allocation" ||
+      table === "material_lots"
+    ) return [];
     throw new Error(`Unexpected select ${table}`);
   };
   return {
@@ -74,6 +83,10 @@ function transaction() {
       events.push(`update:${name}`);
       if (name === "purchase_records" && state.purchase) Object.assign(state.purchase, values);
       if (name === "chemicals" || name === "packaging_materials") {
+        if ("name" in values && values.name !== undefined) {
+          if (name === "chemicals" && state.purchase?.chemical) state.purchase.chemical.name = String(values.name);
+          if (name === "packaging_materials" && state.purchase?.packagingMaterial) state.purchase.packagingMaterial.name = String(values.name);
+        }
         if ("minimumStockLevel" in values && values.minimumStockLevel !== undefined) minimumWrites.push(values);
         if ("lastSupplierId" in values) lastSupplierWrites.push({ table: name, ...values });
       }
@@ -141,6 +154,31 @@ describe("purchase deletion and supplier audit handler", () => {
       action: "updated",
       entityType: "purchase",
       entityId: "p",
+    }));
+  });
+  it("renaming stock updates chemical name, records activity logs, and avoids double-debiting wallet", async () => {
+    state.purchase!.chemical = { id: "c", name: "MC-001", unit: "kg", lastSupplierId: null };
+    const initialBalance = state.balance;
+    await updatePurchaseRecordFn({
+      data: {
+        id: "p",
+        materialName: "MC-0010",
+        walletId: "cash",
+        paymentStatus: "paid",
+        cost: "7000.00",
+      },
+      context,
+    } as never);
+    expect(state.purchase!.chemical.name).toBe("MC-0010");
+    expect(state.balance).toBe(initialBalance);
+    expect(mocks.log).toHaveBeenCalledWith(expect.objectContaining({
+      module: "inventory",
+      action: "updated",
+      entityType: "chemical",
+      metadata: expect.objectContaining({
+        previousName: "MC-001",
+        newName: "MC-0010",
+      }),
     }));
   });
   it.each(["", "-1", "1junk", "Infinity", "100000000.01"])("rejects malformed purchase-edit threshold %s", async minStock => {

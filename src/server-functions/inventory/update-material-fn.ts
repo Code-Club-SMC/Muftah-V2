@@ -6,6 +6,7 @@ import { lotQuantity } from "@/lib/inventory/material-lots";
 import { packagingMaterialsUsed } from "@/db/schemas/production-schema";
 import { lockMaterialStock, moveLotStock, type Tx } from "@/lib/inventory/material-lots.server";
 import { requireInventoryManageMiddleware } from "@/lib/middlewares";
+import { logActivityQuiet } from "@/lib/activity-logger.server";
 import { z } from "zod";
 import { chemicalStockThresholdSchema, packagingStockThresholdSchema, packagingKindSchema } from "@/lib/validators/validators";
 
@@ -51,7 +52,7 @@ export const updateMaterialFn = createServerFn()
     try {
       const { id, type, data: fields, stock } = data;
 
-      return await db.transaction(async (tx) => {
+      const audit = await db.transaction(async (tx) => {
         // Stock first, so stock from before lots becomes a lot at the old price, not the edited one.
         if (stock) {
           const ref = { materialType: type, materialId: id } as const;
@@ -90,7 +91,11 @@ export const updateMaterialFn = createServerFn()
           }
         }
 
+        let previousName = "";
         if (type === "chemical") {
+          const [current] = await tx.select().from(chemicals).where(eq(chemicals.id, id)).for("update");
+          if (!current) throw new Error("Chemical not found");
+          previousName = current.name;
           await tx
             .update(chemicals)
             .set({
@@ -103,6 +108,7 @@ export const updateMaterialFn = createServerFn()
         } else {
           const [current] = await tx.select().from(packagingMaterials).where(eq(packagingMaterials.id, id)).for("update");
           if (!current) throw new Error("Packaging material not found");
+          previousName = current.name;
           const measuredInKg = fields.measuredInKg ?? current.measuredInKg;
           const materialType = fields.materialType ?? current.type;
           if (measuredInKg !== current.measuredInKg && await kgSwitchLocked(tx, id))
@@ -127,8 +133,30 @@ export const updateMaterialFn = createServerFn()
             .where(eq(packagingMaterials.id, id));
         }
 
-        return { success: true };
+        return { success: true, previousName };
       });
+
+      if (audit.previousName && audit.previousName !== fields.name) {
+        await logActivityQuiet({
+          module: "inventory",
+          action: "updated",
+          entityType: type === "chemical" ? "chemical" : "packaging",
+          entityId: id,
+          entityLabel: fields.name,
+          actorId: context.session.user.id,
+          actorName: context.session.user.name,
+          description: `Renamed ${type === "chemical" ? "chemical" : "packaging material"} from "${audit.previousName}" to "${fields.name}"`,
+          severity: "info",
+          metadata: {
+            materialType: type,
+            materialId: id,
+            previousName: audit.previousName,
+            newName: fields.name,
+          },
+        });
+      }
+
+      return { success: true };
     } catch (error) {
       console.error("Update Error:", error);
       throw new Error(

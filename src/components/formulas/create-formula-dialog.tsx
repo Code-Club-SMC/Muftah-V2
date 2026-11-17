@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -20,6 +20,7 @@ import { getProductsFn } from "@/server-functions/inventory/get-products-fn";
 import { getMaterialsFn } from "@/server-functions/inventory/get-materials-fn";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Textarea } from "@/components/ui/textarea";
+import { ChemicalOption, ChemicalSearchSelect } from "./chemical-search-select";
 
 type Formula = NonNullable<Awaited<ReturnType<typeof getFormulaByIdFn>>>;
 
@@ -44,6 +45,26 @@ export function CreateFormulaDialog({
   });
 
   const chemicals = materialsData?.chemicals || [];
+
+  const availableChemicals: ChemicalOption[] = useMemo(() => {
+    const list: ChemicalOption[] = (chemicals || []).map((c: any) => ({
+      id: c.id,
+      name: c.name,
+      unit: c.unit,
+    }));
+    if (initialFormula?.ingredients) {
+      for (const ing of initialFormula.ingredients) {
+        if (ing.chemical && !list.some((c) => c.id === ing.chemical.id)) {
+          list.push({
+            id: ing.chemical.id,
+            name: ing.chemical.name,
+            unit: ing.chemical.unit,
+          });
+        }
+      }
+    }
+    return list;
+  }, [chemicals, initialFormula]);
 
   const [productId, setProductId] = useState(initialFormula?.productId ?? "");
   const [name, setName] = useState(initialFormula?.name ?? "");
@@ -238,25 +259,15 @@ export function CreateFormulaDialog({
               {ingredients.map((ing, index) => (
                 <div key={index} className="flex items-start gap-4">
                   <div className="flex-1">
-                    <select
-                      required
-                      className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    <ChemicalSearchSelect
                       value={ing.chemicalId}
-                      onChange={(e) => {
+                      onChange={(chemicalId) => {
                         const newIngs = [...ingredients];
-                        newIngs[index].chemicalId = e.target.value;
+                        newIngs[index].chemicalId = chemicalId;
                         setIngredients(newIngs);
                       }}
-                    >
-                      <option value="" disabled>
-                        Select chemical
-                      </option>
-                      {chemicals?.map((c: any) => (
-                        <option key={c.id} value={c.id}>
-                          {c.name} ({c.unit})
-                        </option>
-                      ))}
-                    </select>
+                      chemicals={availableChemicals}
+                    />
                   </div>
                   <div className="w-32">
                     <Input

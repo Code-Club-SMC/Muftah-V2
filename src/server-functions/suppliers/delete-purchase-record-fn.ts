@@ -11,14 +11,15 @@ import {
   packagingMaterials,
   inventoryAuditLog,
 } from "@/db";
-import { chemicalLabReports } from "@/db/schemas/inventory-schema";
+import { chemicalLabReports, recipes, recipePackaging } from "@/db/schemas/inventory-schema";
+import { formulaIngredients, mixingMaterialsUsed, packagingMaterialsUsed } from "@/db/schemas/production-schema";
 import { expenseCategories } from "@/db/schemas/finance-schema";
-import { eq, and, isNull, notInArray, sql } from "drizzle-orm";
+import { eq, and, isNull, notInArray, or, sql } from "drizzle-orm";
 import { requireSuppliersManageMiddleware } from "@/lib/middlewares";
 import { logActivityQuiet } from "@/lib/activity-logger.server";
 import Big from "big.js";
 import { PURCHASE_LOCKED_MESSAGE } from "@/lib/inventory/material-lots";
-import { lockMaterialStock, moveLotStock, purchaseIsUntouched } from "@/lib/inventory/material-lots.server";
+import { cleanupOrphanedMaterial, lockMaterialStock, moveLotStock, purchaseIsUntouched } from "@/lib/inventory/material-lots.server";
 import { planPurchaseRefund } from "@/lib/suppliers/purchase-refund";
 import { loadPurchasePayments } from "@/lib/suppliers/purchase-refund.server";
 import { z } from "zod";
@@ -290,6 +291,39 @@ export const deletePurchaseRecordFn = createServerFn({ method: "POST" })
             .update(packagingMaterials)
             .set({ lastSupplierId: nextSupplierId, updatedAt: new Date() })
             .where(eq(packagingMaterials.id, materialId));
+        }
+      }
+
+      // If no purchases remain for this material, and no usage exists, clean up the orphaned material.
+      if (materialId) {
+        const materialFilter = purchase.materialType === "chemical"
+          ? eq(purchaseRecords.chemicalId, materialId)
+          : eq(purchaseRecords.packagingMaterialId, materialId);
+        const [remainingPurchase] = await tx
+          .select({ id: purchaseRecords.id })
+          .from(purchaseRecords)
+          .where(and(materialFilter, isNull(purchaseRecords.voidedAt)))
+          .limit(1);
+
+        if (!remainingPurchase) {
+          let hasUsage = false;
+          if (purchase.materialType === "chemical") {
+            const [formulaUse] = await tx.select({ id: formulaIngredients.id }).from(formulaIngredients).where(eq(formulaIngredients.chemicalId, materialId)).limit(1);
+            const [mixingUse] = await tx.select({ id: mixingMaterialsUsed.id }).from(mixingMaterialsUsed).where(eq(mixingMaterialsUsed.chemicalId, materialId)).limit(1);
+            const [labReport] = await tx.select({ id: chemicalLabReports.id }).from(chemicalLabReports).where(eq(chemicalLabReports.chemicalId, materialId)).limit(1);
+            hasUsage = !!(formulaUse || mixingUse || labReport);
+          } else {
+            const [recipePackUse] = await tx.select({ id: recipes.id }).from(recipes).where(or(eq(recipes.containerPackagingId, materialId), eq(recipes.cartonPackagingId, materialId))).limit(1);
+            const [recipeExtraUse] = await tx.select({ id: recipePackaging.id }).from(recipePackaging).where(eq(recipePackaging.packagingMaterialId, materialId)).limit(1);
+            const [packingUse] = await tx.select({ id: packagingMaterialsUsed.id }).from(packagingMaterialsUsed).where(eq(packagingMaterialsUsed.materialId, materialId)).limit(1);
+            hasUsage = !!(recipePackUse || recipeExtraUse || packingUse);
+          }
+          if (!hasUsage) {
+            const cleanupRef = purchase.materialType === "chemical"
+              ? ({ materialType: "chemical" as const, materialId })
+              : ({ materialType: "packaging" as const, materialId });
+            await cleanupOrphanedMaterial(tx, cleanupRef);
+          }
         }
       }
 

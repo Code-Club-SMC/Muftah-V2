@@ -132,9 +132,9 @@ export const AddRawMaterialForm = ({
             invoiceNumber: value.invoiceNumber,
             transactionId: value.transactionId,
             materialName: value.name,
-            minStock: value.minimumStockLevel,
+            minStock: value.minimumStockLevel !== "" ? value.minimumStockLevel : undefined,
             paymentStatus: value.paymentStatus,
-            walletId: (value.paymentMethod !== "pay_later" && value.paymentMethod) ? value.paymentMethod : undefined,
+            walletId: undefined,
             supplierName: suppliers?.find((s) => s.id === value.supplierId)?.supplierName,
           },
         });

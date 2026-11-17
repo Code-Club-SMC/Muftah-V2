@@ -149,9 +149,9 @@ export const AddPackagingMaterialForm = ({
             capacity: value.capacity,
             capacityUnit: value.capacityUnit,
             packagingKind: value.packagingKind,
-            minStock: value.minimumStockLevel?.toString(),
+            minStock: value.minimumStockLevel !== "" && value.minimumStockLevel !== undefined ? value.minimumStockLevel.toString() : undefined,
             paymentStatus: value.paymentStatus,
-            walletId: (value.paymentMethod !== "pay_later" && value.paymentMethod) ? value.paymentMethod : undefined,
+            walletId: undefined,
             supplierName: suppliers?.find((s) => s.id === value.supplierId)?.supplierName,
           },
         });
