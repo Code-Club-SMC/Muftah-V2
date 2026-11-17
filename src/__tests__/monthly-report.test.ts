@@ -1,4 +1,5 @@
 import Big from "big.js";
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   addToMonth,
@@ -184,5 +185,52 @@ describe("CSV export", () => {
     expect(lines[0]).toBe("Line,Jul 2026,Aug 2026,Sep 2026,Oct 2026,Nov 2026,Dec 2026,Jan 2027,Feb 2027,Mar 2027,Apr 2027,May 2027,Jun 2027,Total,Share %");
     expect(lines).toContain("SALE");
     expect(lines.find((line) => line.startsWith("Total sale,"))).toContain(",911900.84,");
+  });
+});
+
+const queries = () => readFileSync("src/server-functions/reports/monthly-report-queries.server.ts", "utf8");
+
+describe("monthly report data rules", () => {
+  it("is guarded by reports.view", () => {
+    const source = readFileSync("src/server-functions/reports/monthly-report-fn.ts", "utf8");
+    expect(source.match(/requireReportsViewMiddleware\]/g)?.length).toBe(2);
+  });
+
+  it("leaves voided records out", () => {
+    const source = queries();
+    expect(source).toContain('eq(invoices.status, "saved")');
+    expect(source).toContain("isNull(expenses.voidedAt)");
+    expect(source).toContain("isNull(purchaseRecords.voidedAt)");
+    expect(source).toContain("isNull(otherIncome.voidedAt)");
+  });
+
+  it("takes expense rows from the client's categories, never fixed names", () => {
+    const source = queries();
+    expect(source).toContain("reportExpenseCategories(");
+    for (const name of ["Utility", "Transport", "Maintenance", "Documents", "Rent", "Fuel"]) {
+      expect(source).not.toContain(`"${name}"`);
+    }
+  });
+
+  it("counts salaries only from approved or paid payrolls", () => {
+    expect(queries()).toContain('inArray(payrolls.status, ["approved", "paid"])');
+  });
+
+  it("buckets by Pakistan calendar month", () => {
+    expect(queries()).toContain("reportDateKey(value).slice(0, 7)");
+  });
+});
+
+describe("monthly report page wiring", () => {
+  it("is listed on the Reports hub", () => {
+    expect(readFileSync("src/routes/_protected/reports/index.tsx", "utf8")).toContain('href: "/reports/monthly"');
+  });
+
+  it("prints on one A4 landscape page", () => {
+    expect(readFileSync("src/routes/_protected/reports/monthly/index.tsx", "utf8")).toContain("size: A4 landscape");
+  });
+
+  it("keeps row names fixed while months scroll", () => {
+    expect(readFileSync("src/components/reports/monthly/monthly-report-table.tsx", "utf8")).toContain("sticky left-0");
   });
 });
