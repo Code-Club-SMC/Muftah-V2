@@ -13,6 +13,7 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { user } from "./auth-schema";
+import { chemicals, packagingMaterials } from "./inventory-schema";
 import { createId } from "@paralleldrive/cuid2";
 
 const timestamps = {
@@ -286,7 +287,7 @@ export const transactions = pgTable(
   }),
 );
 
-// --- OTHER INCOME (money in that is not a sale, e.g. empty drums sold) ---
+// --- BY-PRODUCT SALES (empty containers sold; table name kept from "Other Income") ---
 export const otherIncome = pgTable(
   "other_income",
   {
@@ -295,6 +296,11 @@ export const otherIncome = pgTable(
       .$defaultFn(() => createId()),
     incomeDate: timestamp("income_date").notNull(),
     itemName: text("item_name").notNull(),
+    // By-product key of the sale: one material plus container name and size.
+    chemicalId: text("chemical_id").references(() => chemicals.id),
+    packagingMaterialId: text("packaging_material_id").references(() => packagingMaterials.id),
+    containerName: text("container_name").notNull(),
+    containerSize: decimal("container_size", { precision: 12, scale: 3 }).notNull(),
     quantity: decimal("quantity", { precision: 12, scale: 3 }).notNull(),
     unitPrice: decimal("unit_price", { precision: 12, scale: 2 }).notNull(),
     amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
@@ -316,10 +322,18 @@ export const otherIncome = pgTable(
   },
   (table) => ({
     dateIdx: index("other_income_date_idx").on(table.incomeDate),
+    chemicalIdx: index("other_income_chemical_idx").on(table.chemicalId),
+    packagingIdx: index("other_income_packaging_idx").on(table.packagingMaterialId),
     positive: check(
       "other_income_positive",
       sql`${table.amount} > 0 and ${table.quantity} > 0 and ${table.unitPrice} > 0`,
     ),
+    oneMaterial: check(
+      "other_income_one_material",
+      sql`(${table.chemicalId} IS NOT NULL) <> (${table.packagingMaterialId} IS NOT NULL)`,
+    ),
+    wholeQuantity: check("other_income_whole_quantity", sql`${table.quantity} = trunc(${table.quantity})`),
+    containerSizePositive: check("other_income_container_size", sql`${table.containerSize} > 0`),
   }),
 );
 

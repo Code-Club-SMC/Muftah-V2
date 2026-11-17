@@ -197,6 +197,13 @@
       "when": 1794914098568,
       "tag": "0027_wakeful_captain_britain",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1794926142358,
+      "tag": "0028_perfect_angel",
+      "breakpoints": true
     }
   ]
 }
