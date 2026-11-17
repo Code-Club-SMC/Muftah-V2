@@ -26,3 +26,31 @@ describe("other income helpers", () => {
     expect(OTHER_INCOME_TX_SOURCE).toBe("Other Income");
   });
 });
+
+import { readFileSync } from "node:fs";
+
+const fnSource = () => readFileSync("src/server-functions/finance/other-income-fn.ts", "utf8");
+
+describe("other income server functions", () => {
+  it("guards writes with finance.manage and reads with finance.view", () => {
+    const source = fnSource();
+    expect(source.match(/requireFinanceManageMiddleware\]/g)?.length).toBe(2);
+    expect(source.match(/requireFinanceViewMiddleware\]/g)?.length).toBe(2);
+  });
+
+  it("moves money and writes the ledger in one transaction", () => {
+    const source = fnSource();
+    expect(source.match(/db\.transaction\(/g)?.length).toBe(2);
+    expect(source).toContain("source: OTHER_INCOME_TX_SOURCE");
+  });
+
+  it("never deletes an entry and refuses a double void", () => {
+    const source = fnSource();
+    expect(source).not.toContain("delete(otherIncome)");
+    expect(source).toContain("already voided");
+  });
+
+  it("refuses a void that would take the account below zero", () => {
+    expect(fnSource()).toContain("gte(wallets.balance, input.amount)");
+  });
+});
