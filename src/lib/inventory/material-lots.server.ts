@@ -2,7 +2,7 @@
 import Big from "big.js";
 import { and, asc, desc, eq, gt, gte, inArray, ne, sql } from "drizzle-orm";
 import type { db } from "@/db";
-import { chemicals, materialLotMovements, materialLots, materialLotStock, materialStock, packagingMaterials } from "@/db/schemas/inventory-schema";
+import { chemicals, inventoryAuditLog, materialLotMovements, materialLots, materialLotStock, materialStock, packagingMaterials } from "@/db/schemas/inventory-schema";
 import { checkLotPicks, checkOldestFirst, costLotPicks, lotPrice, lotQuantity, purchaseUntouched, type LotBalance, type LotPick, type MaterialRef, type PickedLot } from "./material-lots";
 
 export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -130,6 +130,8 @@ export async function deleteItemLots(tx: Tx, ref: MaterialRef) {
   if (used || stocked) throw new Error("This item has stock history and can't be deleted.");
   await tx.delete(materialLotMovements).where(inArray(materialLotMovements.lotId, lots));
   await tx.delete(materialLotStock).where(inArray(materialLotStock.lotId, lots));
+  // Audit history stays; only its link to the removed lot is cleared.
+  await tx.update(inventoryAuditLog).set({ lotId: null }).where(inArray(inventoryAuditLog.lotId, lots));
   await tx.delete(materialLots).where(eq(lotColumn(ref), ref.materialId));
   await tx.delete(materialStock).where(eq(stockColumn(ref), ref.materialId));
 }
@@ -139,6 +141,8 @@ export async function cleanupOrphanedMaterial(tx: Tx, ref: MaterialRef) {
   const lots = tx.select({ id: materialLots.id }).from(materialLots).where(eq(lotColumn(ref), ref.materialId));
   await tx.delete(materialLotMovements).where(inArray(materialLotMovements.lotId, lots));
   await tx.delete(materialLotStock).where(inArray(materialLotStock.lotId, lots));
+  // Audit history stays; only its link to the removed lot is cleared.
+  await tx.update(inventoryAuditLog).set({ lotId: null }).where(inArray(inventoryAuditLog.lotId, lots));
   await tx.delete(materialLots).where(eq(lotColumn(ref), ref.materialId));
   await tx.delete(materialStock).where(eq(stockColumn(ref), ref.materialId));
   if (ref.materialType === "chemical") {
