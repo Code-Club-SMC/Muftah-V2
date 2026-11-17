@@ -8,6 +8,8 @@ import { z } from "zod";
 import { createId } from "@paralleldrive/cuid2";
 import { lotPrice, lotQuantity, PURCHASE_LOCKED_MESSAGE } from "@/lib/inventory/material-lots";
 import { findOrCreateLot, lockMaterialStock, moveLotStock, purchaseIsUntouched } from "@/lib/inventory/material-lots.server";
+import { byProductColumns } from "@/lib/inventory/by-products";
+import { assertEarnedCoversSold } from "@/lib/inventory/by-products.server";
 
 import { chemicals, packagingMaterials } from "@/db/schemas/inventory-schema";
 import { expenseCategories } from "@/db/schemas/finance-schema";
@@ -82,6 +84,10 @@ const updatePurchaseSchema = z.object({
   paymentStatus: z.enum(["paid", "partial", "unpaid"]).optional(),
   paidAmount: z.string().optional(),
   supplierName: z.string().optional(),
+  // By-product container fields
+  byProductTracked: z.boolean().optional(),
+  containerName: z.string().max(40).optional(),
+  containerSize: z.string().optional(),
 });
 
 export const updatePurchaseRecordFn = createServerFn({ method: "POST" })
@@ -138,6 +144,18 @@ export const updatePurchaseRecordFn = createServerFn({ method: "POST" })
         : { materialType: "packaging" as const, materialId: existingRecord.packagingMaterialId! };
       const newQuantity = data.quantity ? lotQuantity(data.quantity) : new Big(existingRecord.quantity).toFixed(3);
       if (new Big(newQuantity).lte(0)) throw new Error("Quantity must be more than zero");
+      // By-product container: use the edit's values when sent, else keep the saved ones,
+      // and re-check that the (maybe new) quantity is still a whole number of containers.
+      const byProduct = byProductColumns(
+        data.byProductTracked === undefined
+          ? {
+              byProductTracked: existingRecord.byProductTracked,
+              containerName: existingRecord.containerName ?? "",
+              containerSize: existingRecord.containerSize ?? "",
+            }
+          : { byProductTracked: data.byProductTracked, containerName: data.containerName, containerSize: data.containerSize },
+        newQuantity,
+      );
       const newCost = data.cost ?? existingRecord.cost;
       const newPrice = lotPrice(new Big(newCost).div(newQuantity));
       const quantityChanged = !new Big(newQuantity).eq(existingRecord.quantity);
@@ -193,12 +211,14 @@ export const updatePurchaseRecordFn = createServerFn({ method: "POST" })
         cost: new Big(newCost).toFixed(2),
         unitCost: new Big(newCost).div(newQuantity).toFixed(4),
         lotId,
+        ...byProduct,
       };
 
       await tx
         .update(purchaseRecords)
         .set(updateData)
         .where(eq(purchaseRecords.id, data.id));
+      await assertEarnedCoversSold(tx, ref);
 
       // 5. Conditionally create expense and debit wallet
       if (

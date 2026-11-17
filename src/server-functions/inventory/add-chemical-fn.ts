@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { byProductColumns } from "@/lib/inventory/by-products";
 import { logActivityQuiet } from "@/lib/activity-logger.server";
 import {
   db,
@@ -139,6 +140,7 @@ export const addRawMaterialFn = createServerFn()
             materialType: "chemical",
             chemicalId: materialId,
             quantity: data.quantity,
+            ...byProductColumns(data, data.quantity),
             cost: totalCost,
             paidAmount: amountToRecord.toString(),
             unitCost: lot.unitPrice,

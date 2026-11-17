@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { byProductColumns } from "@/lib/inventory/by-products";
 import {
   db,
   packagingMaterials,
@@ -154,6 +155,7 @@ export const addPackagingMaterialFn = createServerFn()
             materialType: "packaging",
             packagingMaterialId: materialId,
             quantity: data.quantity,
+            ...byProductColumns(data, data.quantity),
             cost: totalCost,
             paidAmount: amountToRecord.toString(),
             unitCost: lot.unitPrice,

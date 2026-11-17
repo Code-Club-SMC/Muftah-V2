@@ -21,6 +21,7 @@ import Big from "big.js";
 import { PURCHASE_LOCKED_MESSAGE } from "@/lib/inventory/material-lots";
 import { cleanupOrphanedMaterial, lockMaterialStock, moveLotStock, purchaseIsUntouched } from "@/lib/inventory/material-lots.server";
 import { planPurchaseRefund } from "@/lib/suppliers/purchase-refund";
+import { assertEarnedCoversSold } from "@/lib/inventory/by-products.server";
 import { loadPurchasePayments } from "@/lib/suppliers/purchase-refund.server";
 import { z } from "zod";
 import { packagingUnit } from "@/lib/inventory/material-units";
@@ -251,6 +252,11 @@ export const deletePurchaseRecordFn = createServerFn({ method: "POST" })
       await tx
         .delete(purchaseRecords)
         .where(eq(purchaseRecords.id, purchase.id));
+
+      // Removing this purchase can lower empties earned; refuse if some were already sold.
+      await assertEarnedCoversSold(tx, purchase.materialType === "chemical"
+        ? { materialType: "chemical", materialId: purchase.chemicalId! }
+        : { materialType: "packaging", materialId: purchase.packagingMaterialId! });
 
       // Keep material.lastSupplierId valid if it pointed to this deleted purchase's supplier.
       const materialId = purchase.materialType === "chemical"

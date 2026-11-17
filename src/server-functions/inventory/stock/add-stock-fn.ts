@@ -1,5 +1,6 @@
 import { createId } from "@paralleldrive/cuid2";
 import { createServerFn } from "@tanstack/react-start";
+import { byProductColumns } from "@/lib/inventory/by-products";
 import { logActivityQuiet } from "@/lib/activity-logger.server";
 import { and, eq, sql } from "drizzle-orm";
 import {
@@ -124,6 +125,7 @@ export const addStockFn = createServerFn()
 					packagingMaterialId:
 						data.materialType === "packaging" ? data.materialId : null,
 					quantity: data.quantity,
+					...byProductColumns(data, data.quantity),
 					cost: data.cost,
 					paidAmount: amountToRecord.toString(),
 					unitCost: lot.unitPrice,
