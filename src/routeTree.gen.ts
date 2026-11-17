@@ -48,6 +48,7 @@ import { Route as ProtectedReportsPurchasesIndexRouteImport } from './routes/_pr
 import { Route as ProtectedReportsProfitLossIndexRouteImport } from './routes/_protected/reports/profit-loss/index'
 import { Route as ProtectedReportsProductionLossIndexRouteImport } from './routes/_protected/reports/production-loss/index'
 import { Route as ProtectedReportsOutstandingIndexRouteImport } from './routes/_protected/reports/outstanding/index'
+import { Route as ProtectedReportsMonthlyIndexRouteImport } from './routes/_protected/reports/monthly/index'
 import { Route as ProtectedReportsExpensesIndexRouteImport } from './routes/_protected/reports/expenses/index'
 import { Route as ProtectedReportsCollectionsIndexRouteImport } from './routes/_protected/reports/collections/index'
 import { Route as ProtectedOrderBookerTripsIndexRouteImport } from './routes/_protected/order-booker/trips/index'
@@ -317,6 +318,12 @@ const ProtectedReportsOutstandingIndexRoute =
   ProtectedReportsOutstandingIndexRouteImport.update({
     id: '/outstanding/',
     path: '/outstanding/',
+    getParentRoute: () => ProtectedReportsRouteRoute,
+  } as any)
+const ProtectedReportsMonthlyIndexRoute =
+  ProtectedReportsMonthlyIndexRouteImport.update({
+    id: '/monthly/',
+    path: '/monthly/',
     getParentRoute: () => ProtectedReportsRouteRoute,
   } as any)
 const ProtectedReportsExpensesIndexRoute =
@@ -706,6 +713,7 @@ export interface FileRoutesByFullPath {
   '/order-booker/trips/': typeof ProtectedOrderBookerTripsIndexRoute
   '/reports/collections/': typeof ProtectedReportsCollectionsIndexRoute
   '/reports/expenses/': typeof ProtectedReportsExpensesIndexRoute
+  '/reports/monthly/': typeof ProtectedReportsMonthlyIndexRoute
   '/reports/outstanding/': typeof ProtectedReportsOutstandingIndexRoute
   '/reports/production-loss/': typeof ProtectedReportsProductionLossIndexRoute
   '/reports/profit-loss/': typeof ProtectedReportsProfitLossIndexRoute
@@ -799,6 +807,7 @@ export interface FileRoutesByTo {
   '/order-booker/trips': typeof ProtectedOrderBookerTripsIndexRoute
   '/reports/collections': typeof ProtectedReportsCollectionsIndexRoute
   '/reports/expenses': typeof ProtectedReportsExpensesIndexRoute
+  '/reports/monthly': typeof ProtectedReportsMonthlyIndexRoute
   '/reports/outstanding': typeof ProtectedReportsOutstandingIndexRoute
   '/reports/production-loss': typeof ProtectedReportsProductionLossIndexRoute
   '/reports/profit-loss': typeof ProtectedReportsProfitLossIndexRoute
@@ -896,6 +905,7 @@ export interface FileRoutesById {
   '/_protected/order-booker/trips/': typeof ProtectedOrderBookerTripsIndexRoute
   '/_protected/reports/collections/': typeof ProtectedReportsCollectionsIndexRoute
   '/_protected/reports/expenses/': typeof ProtectedReportsExpensesIndexRoute
+  '/_protected/reports/monthly/': typeof ProtectedReportsMonthlyIndexRoute
   '/_protected/reports/outstanding/': typeof ProtectedReportsOutstandingIndexRoute
   '/_protected/reports/production-loss/': typeof ProtectedReportsProductionLossIndexRoute
   '/_protected/reports/profit-loss/': typeof ProtectedReportsProfitLossIndexRoute
@@ -992,6 +1002,7 @@ export interface FileRouteTypes {
     | '/order-booker/trips/'
     | '/reports/collections/'
     | '/reports/expenses/'
+    | '/reports/monthly/'
     | '/reports/outstanding/'
     | '/reports/production-loss/'
     | '/reports/profit-loss/'
@@ -1085,6 +1096,7 @@ export interface FileRouteTypes {
     | '/order-booker/trips'
     | '/reports/collections'
     | '/reports/expenses'
+    | '/reports/monthly'
     | '/reports/outstanding'
     | '/reports/production-loss'
     | '/reports/profit-loss'
@@ -1181,6 +1193,7 @@ export interface FileRouteTypes {
     | '/_protected/order-booker/trips/'
     | '/_protected/reports/collections/'
     | '/_protected/reports/expenses/'
+    | '/_protected/reports/monthly/'
     | '/_protected/reports/outstanding/'
     | '/_protected/reports/production-loss/'
     | '/_protected/reports/profit-loss/'
@@ -1503,6 +1516,13 @@ declare module '@tanstack/react-router' {
       path: '/outstanding'
       fullPath: '/reports/outstanding/'
       preLoaderRoute: typeof ProtectedReportsOutstandingIndexRouteImport
+      parentRoute: typeof ProtectedReportsRouteRoute
+    }
+    '/_protected/reports/monthly/': {
+      id: '/_protected/reports/monthly/'
+      path: '/monthly'
+      fullPath: '/reports/monthly/'
+      preLoaderRoute: typeof ProtectedReportsMonthlyIndexRouteImport
       parentRoute: typeof ProtectedReportsRouteRoute
     }
     '/_protected/reports/expenses/': {
@@ -1917,6 +1937,7 @@ interface ProtectedReportsRouteRouteChildren {
   ProtectedReportsIndexRoute: typeof ProtectedReportsIndexRoute
   ProtectedReportsCollectionsIndexRoute: typeof ProtectedReportsCollectionsIndexRoute
   ProtectedReportsExpensesIndexRoute: typeof ProtectedReportsExpensesIndexRoute
+  ProtectedReportsMonthlyIndexRoute: typeof ProtectedReportsMonthlyIndexRoute
   ProtectedReportsOutstandingIndexRoute: typeof ProtectedReportsOutstandingIndexRoute
   ProtectedReportsProductionLossIndexRoute: typeof ProtectedReportsProductionLossIndexRoute
   ProtectedReportsProfitLossIndexRoute: typeof ProtectedReportsProfitLossIndexRoute
@@ -1931,6 +1952,7 @@ const ProtectedReportsRouteRouteChildren: ProtectedReportsRouteRouteChildren = {
   ProtectedReportsIndexRoute: ProtectedReportsIndexRoute,
   ProtectedReportsCollectionsIndexRoute: ProtectedReportsCollectionsIndexRoute,
   ProtectedReportsExpensesIndexRoute: ProtectedReportsExpensesIndexRoute,
+  ProtectedReportsMonthlyIndexRoute: ProtectedReportsMonthlyIndexRoute,
   ProtectedReportsOutstandingIndexRoute: ProtectedReportsOutstandingIndexRoute,
   ProtectedReportsProductionLossIndexRoute:
     ProtectedReportsProductionLossIndexRoute,

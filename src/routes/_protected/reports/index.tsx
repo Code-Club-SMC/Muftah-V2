@@ -8,6 +8,7 @@ import {
   Banknote,
   BarChart3,
   Factory,
+  CalendarRange,
 } from "lucide-react";
 import { OfflineReportPendingBanner } from "@/components/reports/offline-report-pending-banner";
 import { useViewerAccess } from "@/hooks/use-viewer-access";
@@ -20,6 +21,12 @@ const reportTypes: {
   icon: typeof BarChart3;
   permission?: PermissionKey;
 }[] = [
+  {
+    title: "Monthly Report",
+    description: "One-page July–June summary: sale, consumption and result per month.",
+    href: "/reports/monthly",
+    icon: CalendarRange,
+  },
   {
     title: "Company Profitability",
     description:
