@@ -120,7 +120,7 @@ describe("buildMonthlyReport", () => {
     const report = buildMonthlyReport(octoberInput());
     const raw = report.consumption.find((line) => line.key === "rawMaterial")!;
     const total = report.consumption.find((line) => line.key === "totalConsumption")!;
-    expect(raw.sharePercent).toBeCloseTo((628040 / 1248180) * 100, 1);
+    expect(raw.sharePercent).toBe(Math.round((628040 / 1248180) * 100));
     expect(total.sharePercent).toBe(100);
   });
 
@@ -185,6 +185,9 @@ describe("CSV export", () => {
     expect(lines[0]).toBe("Line,Jul 2026,Aug 2026,Sep 2026,Oct 2026,Nov 2026,Dec 2026,Jan 2027,Feb 2027,Mar 2027,Apr 2027,May 2027,Jun 2027,Total,Share %");
     expect(lines).toContain("SALE");
     expect(lines.find((line) => line.startsWith("Total sale,"))).toContain(",911900.84,");
+    expect(lines.find((line) => line.startsWith("Raw material,"))?.split(",").at(-1)).toBe(
+      String(Math.round((628040 / 1248180) * 100)),
+    );
   });
 });
 

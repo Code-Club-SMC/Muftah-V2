@@ -100,7 +100,7 @@ export function MonthlyReportTable({
                     <td className="px-2 py-1.5 text-right font-semibold">{show(line.total)}</td>
                     <td className="px-2 py-1.5 text-right text-muted-foreground">
                       {section.showShare && line.sharePercent !== undefined
-                        ? `${Math.round(line.sharePercent)}%`
+                        ? `${line.sharePercent}%`
                         : ""}
                     </td>
                   </tr>

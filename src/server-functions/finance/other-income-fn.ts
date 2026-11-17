@@ -127,17 +127,27 @@ export const createOtherIncomeFn = createServerFn()
         .string()
         .transform(normalizeItemName)
         .pipe(z.string().min(1, "Please enter the item").max(120, "Item name is too long")),
-      quantity: z.number().finite().positive("Quantity must be above zero").max(999_999_999),
-      unitPrice: z.number().finite().positive("Price must be above zero").max(MAX_OTHER_INCOME_AMOUNT),
+      quantity: z
+        .number()
+        .finite()
+        .positive("Quantity must be above zero")
+        .max(999_999_999)
+        .refine((value) => new Big(value).round(3).eq(value), "Quantity can have at most 3 decimals"),
+      unitPrice: z
+        .number()
+        .finite()
+        .positive("Price must be above zero")
+        .max(MAX_OTHER_INCOME_AMOUNT)
+        .refine((value) => new Big(value).round(2).eq(value), "Price can have at most 2 decimals (paisa)"),
       walletId: z.string().min(1, "Please pick the account"),
       note: z.string().trim().max(500).optional(),
     }),
   )
   .handler(async ({ data, context }) => {
     const incomeDate = parseExpenseDate(data.incomeDate);
-    const quantity = new Big(data.quantity).round(3);
+    const quantity = new Big(data.quantity);
     if (!quantity.gt(0)) throw new Error("Quantity must be above zero");
-    const unitPrice = new Big(data.unitPrice).round(2);
+    const unitPrice = new Big(data.unitPrice);
     if (!unitPrice.gt(0)) throw new Error("Price must be above zero");
     const amount = otherIncomeAmount(quantity.toFixed(3), unitPrice.toFixed(2));
     const userId = context.session.user.id;

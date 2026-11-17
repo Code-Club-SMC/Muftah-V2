@@ -217,7 +217,7 @@ function AddOtherIncomeSheet({ open, onOpenChange }: { open: boolean; onOpenChan
               type="number"
               inputMode="decimal"
               min="0"
-              step="any"
+              step="0.001"
               value={quantity}
               onChange={(e) => setQuantity(e.target.value)}
             />

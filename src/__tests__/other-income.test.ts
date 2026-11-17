@@ -50,6 +50,13 @@ describe("other income server functions", () => {
     expect(source).toContain("already voided");
   });
 
+  it("refuses extra decimals instead of rounding them away", () => {
+    const source = fnSource();
+    expect(source).toContain("Quantity can have at most 3 decimals");
+    expect(source).toContain("Price can have at most 2 decimals");
+    expect(source).not.toMatch(/new Big\(data\.(quantity|unitPrice)\)\.round/);
+  });
+
   it("refuses a void that would take the account below zero", () => {
     expect(fnSource()).toContain("gte(wallets.balance, input.amount)");
   });

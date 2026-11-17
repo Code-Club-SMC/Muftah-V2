@@ -178,7 +178,7 @@ export function buildMonthlyReport(input: MonthlyReportInput): MonthlyReport {
   const share = (lineTotal: number) =>
     consumptionTotalLine.total === 0
       ? 0
-      : Number(new Big(lineTotal).div(consumptionTotalLine.total).times(100).round(1).toFixed(1));
+      : Number(new Big(lineTotal).div(consumptionTotalLine.total).times(100).round(0).toFixed(0));
   const consumption = [
     makeLine("rawMaterial", "Raw material", input.rawMaterial),
     makeLine("packing", "Packing", input.packing),
@@ -247,7 +247,7 @@ export function monthlyReportCsv(report: MonthlyReport): string {
         line.label,
         ...line.months.map((value) => (value === null ? "" : value.toFixed(decimals))),
         line.total.toFixed(decimals),
-        line.sharePercent === undefined ? "" : line.sharePercent.toFixed(1),
+        line.sharePercent === undefined ? "" : String(line.sharePercent),
       ]);
     }
   };
