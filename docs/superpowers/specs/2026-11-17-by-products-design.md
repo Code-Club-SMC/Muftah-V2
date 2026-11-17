@@ -57,16 +57,19 @@ New module `src/lib/inventory/by-products.ts`, kept pure so it can be unit teste
 
 Input for one stock item:
 
-- `openingQty`: the item's stock that came from `opening` lot movements (stock that existed before purchases were recorded).
-- `purchases`: non-voided purchases of the item, oldest first by `purchase_date`, then `created_at`. Each has `quantity`, `tracked`, `containerName`, `containerSize`.
-- `usedQty`: total stock used, which is the sum of `-delta` over all lot movements of the item except types `opening`, `purchase`, `purchase_edit`, `purchase_delete`, `transfer_out`, `transfer_in` and `warehouse_close`. Returns such as `mixing_return` and `recovery` are positive deltas, so they lower the total on their own. Never below 0.
+- `inStock`: the item's total stock right now, summed across all stores (`material_stock`).
+- `purchases`: the item's purchases that still exist (voided purchases are deleted rows), oldest first by `purchase_date`, then `created_at`. Each has `quantity`, `tracked`, `containerName`, `containerSize`.
 
 Steps:
 
-1. Take used stock out of `openingQty` first.
-2. Take what is left from each purchase in order, up to that purchase's quantity. Untracked purchases use up their share but give no empties.
-3. For a tracked purchase, empties = `floor(usedFromPurchase / containerSize)`.
+1. Oldest stock is used first, and opening stock (stock that existed before purchases were recorded) is the oldest. So whatever is still in stock belongs to the newest purchases. Hand `inStock` out from the newest purchase back to the oldest, up to each purchase's quantity.
+2. For each purchase, used = quantity − what it was handed. Untracked purchases take their share but give no empties.
+3. For a tracked purchase, empties = `floor(used / containerSize)`.
 4. Add up empties per by-product key.
+
+This gives the same result as taking used stock out oldest first. It also covers every kind of stock-out (mixing, packing, loss adjustments), keeps transfers neutral and lets returns or count-over adjustments lower use, all without reading movement history. Closing a store deletes that store's movement rows, so a count based on movement history would lose used stock.
+
+If stock is added back after empties were sold (for example a count-over adjustment), in hand can show below zero. Sales stay blocked until it is back above zero.
 
 Example: 10 Soda drums of 100kg bought, tracked. 350kg used. 3 empties earned. The 4th drum is half full and does not count.
 
@@ -110,6 +113,6 @@ The income line label changes from "Other income" to "By-products". Numbers, dri
 
 ## Testing
 
-- Unit tests for the counting function: oldest-first order, partial containers, opening stock used first, untracked purchases in between, voided purchases left out, returns lowering use, transfers ignored, two items with the same container kept apart, the same item with two container sizes kept apart.
+- Unit tests for the counting function: oldest-first order, partial containers, opening stock used first, untracked purchases in between, stock added back lowering use, the same item with two container sizes kept apart, and separate keys for two items with the same container.
 - Source-inspection tests: the sale function checks in hand inside the transaction with the advisory lock, and purchase edit/void call the sold-vs-earned guard.
 - Existing other-income and monthly-report tests updated for the rename and the new required by-product fields.
