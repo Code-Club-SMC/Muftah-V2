@@ -18,6 +18,9 @@ const HEADERS = [
   "No. of Punch(s)",
   "Punch Records",
 ];
+// Devices title the sheet "Total Punches", optionally with the report range,
+// e.g. "Total Punches(20261101-20261115)".
+const TITLE = /^Total Punches(?:\s*\(\d{8}-\d{8}\))?$/;
 const MAX_CELL_LENGTH = 4096;
 const MAX_COLUMNS = 32;
 const MAX_SHEET_ROWS = DEVICE_IMPORT_MAX_ROWS + 10;
@@ -461,7 +464,7 @@ function reportRows(
     if (values.every((value) => !value)) continue;
     if (!foundHeaders) {
       if (
-        values[0] === "Total Punches" &&
+        TITLE.test(values[0] ?? "") &&
         values.slice(1).every((value) => !value)
       )
         continue;

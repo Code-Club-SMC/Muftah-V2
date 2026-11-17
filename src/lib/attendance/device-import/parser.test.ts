@@ -121,6 +121,34 @@ describe("device Total Punches parser", () => {
     ]);
   });
 
+  it("accepts a title row that carries the report date range", async () => {
+    const result = await parseDevicePunchReport(
+      encode(
+        "Total Punches(20261101-20261115),,,,,,\r\n" +
+          HEADERS.join(",") +
+          "\r\n110001,Worker,Factory,2026-11-01,Sun,1,07:05\r\n",
+      ),
+    );
+    expect(result.rows[0]).toMatchObject({
+      personId: "110001",
+      date: "2026-11-01",
+      punches: ["07:05"],
+      issues: [],
+    });
+  });
+
+  it("rejects an unrelated title row", async () => {
+    await expect(
+      parseDevicePunchReport(
+        encode(
+          "Monthly Report\r\n" +
+            HEADERS.join(",") +
+            "\r\n110001,Worker,Factory,2026-11-01,Sun,1,07:05\r\n",
+        ),
+      ),
+    ).rejects.toThrow("Report headers must match");
+  });
+
   it("preserves text IDs and decodes numeric Excel date and minute fractions", async () => {
     const result = await parseDevicePunchReport(await workbook());
     expect(result.rows[0]).toMatchObject({
