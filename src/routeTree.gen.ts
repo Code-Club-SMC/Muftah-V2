@@ -66,6 +66,7 @@ import { Route as ProtectedHrPayrollIndexRouteImport } from './routes/_protected
 import { Route as ProtectedHrEmployeesIndexRouteImport } from './routes/_protected/hr/employees/index'
 import { Route as ProtectedHrAttendanceIndexRouteImport } from './routes/_protected/hr/attendance/index'
 import { Route as ProtectedHrApprovalsIndexRouteImport } from './routes/_protected/hr/approvals/index'
+import { Route as ProtectedFinanceOtherIncomeIndexRouteImport } from './routes/_protected/finance/other-income/index'
 import { Route as ProtectedFinanceLedgerIndexRouteImport } from './routes/_protected/finance/ledger/index'
 import { Route as ProtectedFinanceExpensesIndexRouteImport } from './routes/_protected/finance/expenses/index'
 import { Route as ProtectedFinanceAccountsIndexRouteImport } from './routes/_protected/finance/accounts/index'
@@ -425,6 +426,12 @@ const ProtectedHrApprovalsIndexRoute =
     path: '/hr/approvals/',
     getParentRoute: () => ProtectedRouteRoute,
   } as any)
+const ProtectedFinanceOtherIncomeIndexRoute =
+  ProtectedFinanceOtherIncomeIndexRouteImport.update({
+    id: '/finance/other-income/',
+    path: '/finance/other-income/',
+    getParentRoute: () => ProtectedRouteRoute,
+  } as any)
 const ProtectedFinanceLedgerIndexRoute =
   ProtectedFinanceLedgerIndexRouteImport.update({
     id: '/finance/ledger/',
@@ -680,6 +687,7 @@ export interface FileRoutesByFullPath {
   '/finance/accounts/': typeof ProtectedFinanceAccountsIndexRoute
   '/finance/expenses/': typeof ProtectedFinanceExpensesIndexRoute
   '/finance/ledger/': typeof ProtectedFinanceLedgerIndexRoute
+  '/finance/other-income/': typeof ProtectedFinanceOtherIncomeIndexRoute
   '/hr/approvals/': typeof ProtectedHrApprovalsIndexRoute
   '/hr/attendance/': typeof ProtectedHrAttendanceIndexRoute
   '/hr/employees/': typeof ProtectedHrEmployeesIndexRoute
@@ -772,6 +780,7 @@ export interface FileRoutesByTo {
   '/finance/accounts': typeof ProtectedFinanceAccountsIndexRoute
   '/finance/expenses': typeof ProtectedFinanceExpensesIndexRoute
   '/finance/ledger': typeof ProtectedFinanceLedgerIndexRoute
+  '/finance/other-income': typeof ProtectedFinanceOtherIncomeIndexRoute
   '/hr/approvals': typeof ProtectedHrApprovalsIndexRoute
   '/hr/attendance': typeof ProtectedHrAttendanceIndexRoute
   '/hr/employees': typeof ProtectedHrEmployeesIndexRoute
@@ -868,6 +877,7 @@ export interface FileRoutesById {
   '/_protected/finance/accounts/': typeof ProtectedFinanceAccountsIndexRoute
   '/_protected/finance/expenses/': typeof ProtectedFinanceExpensesIndexRoute
   '/_protected/finance/ledger/': typeof ProtectedFinanceLedgerIndexRoute
+  '/_protected/finance/other-income/': typeof ProtectedFinanceOtherIncomeIndexRoute
   '/_protected/hr/approvals/': typeof ProtectedHrApprovalsIndexRoute
   '/_protected/hr/attendance/': typeof ProtectedHrAttendanceIndexRoute
   '/_protected/hr/employees/': typeof ProtectedHrEmployeesIndexRoute
@@ -963,6 +973,7 @@ export interface FileRouteTypes {
     | '/finance/accounts/'
     | '/finance/expenses/'
     | '/finance/ledger/'
+    | '/finance/other-income/'
     | '/hr/approvals/'
     | '/hr/attendance/'
     | '/hr/employees/'
@@ -1055,6 +1066,7 @@ export interface FileRouteTypes {
     | '/finance/accounts'
     | '/finance/expenses'
     | '/finance/ledger'
+    | '/finance/other-income'
     | '/hr/approvals'
     | '/hr/attendance'
     | '/hr/employees'
@@ -1150,6 +1162,7 @@ export interface FileRouteTypes {
     | '/_protected/finance/accounts/'
     | '/_protected/finance/expenses/'
     | '/_protected/finance/ledger/'
+    | '/_protected/finance/other-income/'
     | '/_protected/hr/approvals/'
     | '/_protected/hr/attendance/'
     | '/_protected/hr/employees/'
@@ -1618,6 +1631,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProtectedHrApprovalsIndexRouteImport
       parentRoute: typeof ProtectedRouteRoute
     }
+    '/_protected/finance/other-income/': {
+      id: '/_protected/finance/other-income/'
+      path: '/finance/other-income'
+      fullPath: '/finance/other-income/'
+      preLoaderRoute: typeof ProtectedFinanceOtherIncomeIndexRouteImport
+      parentRoute: typeof ProtectedRouteRoute
+    }
     '/_protected/finance/ledger/': {
       id: '/_protected/finance/ledger/'
       path: '/finance/ledger'
@@ -1955,6 +1975,7 @@ interface ProtectedRouteRouteChildren {
   ProtectedFinanceAccountsIndexRoute: typeof ProtectedFinanceAccountsIndexRoute
   ProtectedFinanceExpensesIndexRoute: typeof ProtectedFinanceExpensesIndexRoute
   ProtectedFinanceLedgerIndexRoute: typeof ProtectedFinanceLedgerIndexRoute
+  ProtectedFinanceOtherIncomeIndexRoute: typeof ProtectedFinanceOtherIncomeIndexRoute
   ProtectedHrApprovalsIndexRoute: typeof ProtectedHrApprovalsIndexRoute
   ProtectedHrAttendanceIndexRoute: typeof ProtectedHrAttendanceIndexRoute
   ProtectedHrEmployeesIndexRoute: typeof ProtectedHrEmployeesIndexRoute
@@ -2035,6 +2056,7 @@ const ProtectedRouteRouteChildren: ProtectedRouteRouteChildren = {
   ProtectedFinanceAccountsIndexRoute: ProtectedFinanceAccountsIndexRoute,
   ProtectedFinanceExpensesIndexRoute: ProtectedFinanceExpensesIndexRoute,
   ProtectedFinanceLedgerIndexRoute: ProtectedFinanceLedgerIndexRoute,
+  ProtectedFinanceOtherIncomeIndexRoute: ProtectedFinanceOtherIncomeIndexRoute,
   ProtectedHrApprovalsIndexRoute: ProtectedHrApprovalsIndexRoute,
   ProtectedHrAttendanceIndexRoute: ProtectedHrAttendanceIndexRoute,
   ProtectedHrEmployeesIndexRoute: ProtectedHrEmployeesIndexRoute,

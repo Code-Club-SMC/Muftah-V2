@@ -54,3 +54,18 @@ describe("other income server functions", () => {
     expect(fnSource()).toContain("gte(wallets.balance, input.amount)");
   });
 });
+describe("other income page wiring", () => {
+  it("adds Other Income to the Finance sidebar", () => {
+    expect(readFileSync("src/lib/constants.ts", "utf8")).toContain('url: "/finance/other-income"');
+  });
+
+  it("lists accounts with balances in Received in", () => {
+    const page = readFileSync("src/components/finance/other-income-page.tsx", "utf8");
+    expect(page).toContain("useWallets()");
+    expect(page).toContain("formatRupees(wallet.balance)");
+  });
+
+  it("refreshes reports and balances after a money change", () => {
+    expect(readFileSync("src/hooks/finance/use-other-income.ts", "utf8")).toContain("invalidateFinanceQueries(queryClient)");
+  });
+});
