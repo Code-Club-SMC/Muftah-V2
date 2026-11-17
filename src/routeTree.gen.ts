@@ -70,6 +70,7 @@ import { Route as ProtectedHrApprovalsIndexRouteImport } from './routes/_protect
 import { Route as ProtectedFinanceOtherIncomeIndexRouteImport } from './routes/_protected/finance/other-income/index'
 import { Route as ProtectedFinanceLedgerIndexRouteImport } from './routes/_protected/finance/ledger/index'
 import { Route as ProtectedFinanceExpensesIndexRouteImport } from './routes/_protected/finance/expenses/index'
+import { Route as ProtectedFinanceByProductsIndexRouteImport } from './routes/_protected/finance/by-products/index'
 import { Route as ProtectedFinanceAccountsIndexRouteImport } from './routes/_protected/finance/accounts/index'
 import { Route as ProtectedDashboardActivityTimelineIndexRouteImport } from './routes/_protected/dashboard/activity-timeline/index'
 import { Route as ProtectedSuppliersSupplierIdDetailsRouteImport } from './routes/_protected/suppliers/$supplierId_.details'
@@ -451,6 +452,12 @@ const ProtectedFinanceExpensesIndexRoute =
     path: '/finance/expenses/',
     getParentRoute: () => ProtectedRouteRoute,
   } as any)
+const ProtectedFinanceByProductsIndexRoute =
+  ProtectedFinanceByProductsIndexRouteImport.update({
+    id: '/finance/by-products/',
+    path: '/finance/by-products/',
+    getParentRoute: () => ProtectedRouteRoute,
+  } as any)
 const ProtectedFinanceAccountsIndexRoute =
   ProtectedFinanceAccountsIndexRouteImport.update({
     id: '/finance/accounts/',
@@ -692,6 +699,7 @@ export interface FileRoutesByFullPath {
   '/suppliers/$supplierId/details': typeof ProtectedSuppliersSupplierIdDetailsRoute
   '/dashboard/activity-timeline/': typeof ProtectedDashboardActivityTimelineIndexRoute
   '/finance/accounts/': typeof ProtectedFinanceAccountsIndexRoute
+  '/finance/by-products/': typeof ProtectedFinanceByProductsIndexRoute
   '/finance/expenses/': typeof ProtectedFinanceExpensesIndexRoute
   '/finance/ledger/': typeof ProtectedFinanceLedgerIndexRoute
   '/finance/other-income/': typeof ProtectedFinanceOtherIncomeIndexRoute
@@ -786,6 +794,7 @@ export interface FileRoutesByTo {
   '/suppliers/$supplierId/details': typeof ProtectedSuppliersSupplierIdDetailsRoute
   '/dashboard/activity-timeline': typeof ProtectedDashboardActivityTimelineIndexRoute
   '/finance/accounts': typeof ProtectedFinanceAccountsIndexRoute
+  '/finance/by-products': typeof ProtectedFinanceByProductsIndexRoute
   '/finance/expenses': typeof ProtectedFinanceExpensesIndexRoute
   '/finance/ledger': typeof ProtectedFinanceLedgerIndexRoute
   '/finance/other-income': typeof ProtectedFinanceOtherIncomeIndexRoute
@@ -884,6 +893,7 @@ export interface FileRoutesById {
   '/_protected/suppliers/$supplierId_/details': typeof ProtectedSuppliersSupplierIdDetailsRoute
   '/_protected/dashboard/activity-timeline/': typeof ProtectedDashboardActivityTimelineIndexRoute
   '/_protected/finance/accounts/': typeof ProtectedFinanceAccountsIndexRoute
+  '/_protected/finance/by-products/': typeof ProtectedFinanceByProductsIndexRoute
   '/_protected/finance/expenses/': typeof ProtectedFinanceExpensesIndexRoute
   '/_protected/finance/ledger/': typeof ProtectedFinanceLedgerIndexRoute
   '/_protected/finance/other-income/': typeof ProtectedFinanceOtherIncomeIndexRoute
@@ -981,6 +991,7 @@ export interface FileRouteTypes {
     | '/suppliers/$supplierId/details'
     | '/dashboard/activity-timeline/'
     | '/finance/accounts/'
+    | '/finance/by-products/'
     | '/finance/expenses/'
     | '/finance/ledger/'
     | '/finance/other-income/'
@@ -1075,6 +1086,7 @@ export interface FileRouteTypes {
     | '/suppliers/$supplierId/details'
     | '/dashboard/activity-timeline'
     | '/finance/accounts'
+    | '/finance/by-products'
     | '/finance/expenses'
     | '/finance/ledger'
     | '/finance/other-income'
@@ -1172,6 +1184,7 @@ export interface FileRouteTypes {
     | '/_protected/suppliers/$supplierId_/details'
     | '/_protected/dashboard/activity-timeline/'
     | '/_protected/finance/accounts/'
+    | '/_protected/finance/by-products/'
     | '/_protected/finance/expenses/'
     | '/_protected/finance/ledger/'
     | '/_protected/finance/other-income/'
@@ -1672,6 +1685,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProtectedFinanceExpensesIndexRouteImport
       parentRoute: typeof ProtectedRouteRoute
     }
+    '/_protected/finance/by-products/': {
+      id: '/_protected/finance/by-products/'
+      path: '/finance/by-products'
+      fullPath: '/finance/by-products/'
+      preLoaderRoute: typeof ProtectedFinanceByProductsIndexRouteImport
+      parentRoute: typeof ProtectedRouteRoute
+    }
     '/_protected/finance/accounts/': {
       id: '/_protected/finance/accounts/'
       path: '/finance/accounts'
@@ -1995,6 +2015,7 @@ interface ProtectedRouteRouteChildren {
   ProtectedSuppliersSupplierIdDetailsRoute: typeof ProtectedSuppliersSupplierIdDetailsRoute
   ProtectedDashboardActivityTimelineIndexRoute: typeof ProtectedDashboardActivityTimelineIndexRoute
   ProtectedFinanceAccountsIndexRoute: typeof ProtectedFinanceAccountsIndexRoute
+  ProtectedFinanceByProductsIndexRoute: typeof ProtectedFinanceByProductsIndexRoute
   ProtectedFinanceExpensesIndexRoute: typeof ProtectedFinanceExpensesIndexRoute
   ProtectedFinanceLedgerIndexRoute: typeof ProtectedFinanceLedgerIndexRoute
   ProtectedFinanceOtherIncomeIndexRoute: typeof ProtectedFinanceOtherIncomeIndexRoute
@@ -2076,6 +2097,7 @@ const ProtectedRouteRouteChildren: ProtectedRouteRouteChildren = {
   ProtectedDashboardActivityTimelineIndexRoute:
     ProtectedDashboardActivityTimelineIndexRoute,
   ProtectedFinanceAccountsIndexRoute: ProtectedFinanceAccountsIndexRoute,
+  ProtectedFinanceByProductsIndexRoute: ProtectedFinanceByProductsIndexRoute,
   ProtectedFinanceExpensesIndexRoute: ProtectedFinanceExpensesIndexRoute,
   ProtectedFinanceLedgerIndexRoute: ProtectedFinanceLedgerIndexRoute,
   ProtectedFinanceOtherIncomeIndexRoute: ProtectedFinanceOtherIncomeIndexRoute,

@@ -1,5 +1,5 @@
 import Big from "big.js";
-import { useId, useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 import { ResponsiveSheet } from "@/components/custom/responsive-sheet";
 import {
@@ -19,27 +19,23 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { useWallets } from "@/hooks/finance/use-finance";
-import {
-  useCreateOtherIncome,
-  useOtherIncome,
-  useOtherIncomeItemNames,
-  useVoidOtherIncome,
-} from "@/hooks/finance/use-other-income";
+import { useByProducts, useCreateByProductSale, useVoidByProductSale } from "@/hooks/finance/use-by-products";
 import { useViewerAccess } from "@/hooks/use-viewer-access";
 import { formatRupees } from "@/lib/finance/expense-entry";
 import { hasPermission } from "@/lib/rbac";
 import { datePickerKey, formatReportDate, reportDateKey } from "@/lib/report-dates";
 import { cn } from "@/lib/utils";
 
-type IncomeRow = NonNullable<ReturnType<typeof useOtherIncome>["data"]>["rows"][number];
+type SaleRow = NonNullable<ReturnType<typeof useByProducts>["data"]>["rows"][number];
+type ByProduct = NonNullable<ReturnType<typeof useByProducts>["data"]>["byProducts"][number];
 
 const MIN_REASON_LENGTH = 3;
 
-export function OtherIncomePage() {
+export function ByProductsPage() {
   const [month, setMonth] = useState(() => reportDateKey(new Date()).slice(0, 7));
   const [adding, setAdding] = useState(false);
-  const [voiding, setVoiding] = useState<IncomeRow | null>(null);
-  const { data, isLoading, error } = useOtherIncome(month);
+  const [voiding, setVoiding] = useState<SaleRow | null>(null);
+  const { data, isLoading, error } = useByProducts(month);
   const { data: access } = useViewerAccess();
   const canManage = hasPermission(access?.permissions ?? [], "finance.manage");
 
@@ -53,20 +49,53 @@ export function OtherIncomePage() {
         </p>
         {canManage && (
           <Button className="ml-auto" onClick={() => setAdding(true)}>
-            + Add income
+            + Record sale
           </Button>
         )}
       </div>
 
+      {data && (
+        data.byProducts.length === 0 ? (
+          <p className="rounded-lg border p-6 text-center text-sm text-muted-foreground">
+            No by-products yet. Tick "By-product" on a purchase to start tracking its containers.
+          </p>
+        ) : (
+          <div className="overflow-x-auto rounded-lg border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>By-product</TableHead>
+                  <TableHead className="text-right">Earned</TableHead>
+                  <TableHead className="text-right">Sold</TableHead>
+                  <TableHead className="text-right">In hand</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {data.byProducts.map((row) => (
+                  <TableRow key={row.key}>
+                    <TableCell>{row.label}</TableCell>
+                    <TableCell className="text-right tabular-nums">{row.earned}</TableCell>
+                    <TableCell className="text-right tabular-nums">{row.sold}</TableCell>
+                    <TableCell className={cn("text-right font-semibold tabular-nums", row.inHand < 0 && "text-destructive")}>
+                      {row.inHand}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )
+      )}
+
       {error ? (
         <p role="alert" className="text-sm text-destructive">
-          Could not load income. {error instanceof Error ? error.message : ""}
+          Could not load by-products. {error instanceof Error ? error.message : ""}
         </p>
       ) : isLoading ? (
         <p role="status" className="text-sm text-muted-foreground">Loading…</p>
       ) : !data || data.rows.length === 0 ? (
         <p className="rounded-lg border p-6 text-center text-sm text-muted-foreground">
-          No other income recorded this month.
+          No by-product sales this month.
         </p>
       ) : (
         <div className="overflow-x-auto rounded-lg border">
@@ -118,23 +147,30 @@ export function OtherIncomePage() {
         </div>
       )}
 
-      <AddOtherIncomeSheet open={adding} onOpenChange={setAdding} />
-      <VoidOtherIncomeDialog row={voiding} onClose={() => setVoiding(null)} />
+      <RecordSaleSheet open={adding} onOpenChange={setAdding} byProducts={data?.byProducts ?? []} />
+      <VoidSaleDialog row={voiding} onClose={() => setVoiding(null)} />
     </div>
   );
 }
 
-function AddOtherIncomeSheet({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
-  const listId = useId();
+function RecordSaleSheet({
+  open,
+  onOpenChange,
+  byProducts,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  byProducts: ByProduct[];
+}) {
   const [date, setDate] = useState(() => datePickerKey(new Date()));
-  const [itemName, setItemName] = useState("");
+  const [key, setKey] = useState("");
   const [quantity, setQuantity] = useState("1");
   const [unitPrice, setUnitPrice] = useState("");
   const [walletId, setWalletId] = useState("");
   const [note, setNote] = useState("");
   const { data: wallets = [] } = useWallets();
-  const { data: itemNames = [] } = useOtherIncomeItemNames();
-  const mutation = useCreateOtherIncome();
+  const mutation = useCreateByProductSale();
+  const selected = byProducts.find((row) => row.key === key);
 
   const amount = (() => {
     try {
@@ -144,11 +180,11 @@ function AddOtherIncomeSheet({ open, onOpenChange }: { open: boolean; onOpenChan
       return null;
     }
   })();
-  const isDirty = itemName !== "" || unitPrice !== "" || note !== "";
+  const isDirty = key !== "" || unitPrice !== "" || note !== "";
 
   const reset = () => {
     setDate(datePickerKey(new Date()));
-    setItemName("");
+    setKey("");
     setQuantity("1");
     setUnitPrice("");
     setWalletId("");
@@ -157,15 +193,21 @@ function AddOtherIncomeSheet({ open, onOpenChange }: { open: boolean; onOpenChan
 
   const save = () => {
     if (mutation.isPending) return;
-    if (!itemName.trim()) return void toast.error("Please enter the item");
-    if (!amount) return void toast.error("Quantity and price must be above zero");
+    if (!selected) return void toast.error("Please pick the by-product");
+    const qty = Number(quantity);
+    if (!Number.isInteger(qty) || qty < 1) return void toast.error("Quantity must be a whole number");
+    if (qty > selected.inHand) return void toast.error(`Only ${selected.inHand} in hand`);
+    if (!amount) return void toast.error("Price must be above zero");
     if (!walletId) return void toast.error("Please pick the account");
     mutation.mutate(
       {
         data: {
           incomeDate: date,
-          itemName,
-          quantity: Number(quantity),
+          materialType: selected.materialType,
+          materialId: selected.materialId,
+          containerName: selected.containerName,
+          containerSize: selected.containerSize,
+          quantity: qty,
           unitPrice: Number(unitPrice),
           walletId,
           note: note.trim() || undefined,
@@ -184,48 +226,48 @@ function AddOtherIncomeSheet({ open, onOpenChange }: { open: boolean; onOpenChan
     <ResponsiveSheet
       open={open}
       onOpenChange={onOpenChange}
-      title="Add income"
-      description="Money received that is not a sale, like empty drums sold."
+      title="Record by-product sale"
+      description="Empty containers sold. You can sell only what is in hand."
       isDirty={isDirty && !mutation.isPending}
     >
       <div className="space-y-4">
         <div className="space-y-2">
-          <Label htmlFor="income-date">Date</Label>
-          <Input id="income-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+          <Label htmlFor="sale-date">Date</Label>
+          <Input id="sale-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="income-item">Item</Label>
-          <Input
-            id="income-item"
-            list={listId}
-            value={itemName}
-            maxLength={120}
-            placeholder="e.g. SLES drum"
-            onChange={(e) => setItemName(e.target.value)}
-          />
-          <datalist id={listId}>
-            {itemNames.map((name) => (
-              <option key={name} value={name} />
-            ))}
-          </datalist>
+          <Label>By-product</Label>
+          <Select value={key} onValueChange={setKey}>
+            <SelectTrigger>
+              <SelectValue placeholder="Pick by-product" />
+            </SelectTrigger>
+            <SelectContent>
+              {byProducts.filter((row) => row.inHand > 0).map((row) => (
+                <SelectItem key={row.key} value={row.key}>
+                  {row.label} · {row.inHand} in hand
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-2">
-            <Label htmlFor="income-qty">Quantity</Label>
+            <Label htmlFor="sale-qty">Quantity</Label>
             <Input
-              id="income-qty"
+              id="sale-qty"
               type="number"
-              inputMode="decimal"
-              min="0"
-              step="0.001"
+              inputMode="numeric"
+              min="1"
+              max={selected?.inHand ?? undefined}
+              step="1"
               value={quantity}
               onChange={(e) => setQuantity(e.target.value)}
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="income-price">Price each</Label>
+            <Label htmlFor="sale-price">Price each</Label>
             <Input
-              id="income-price"
+              id="sale-price"
               type="number"
               inputMode="decimal"
               min="0"
@@ -254,9 +296,9 @@ function AddOtherIncomeSheet({ open, onOpenChange }: { open: boolean; onOpenChan
           </Select>
         </div>
         <div className="space-y-2">
-          <Label htmlFor="income-note">Note</Label>
+          <Label htmlFor="sale-note">Note</Label>
           <Textarea
-            id="income-note"
+            id="sale-note"
             value={note}
             maxLength={500}
             placeholder="e.g. Sold to scrap dealer"
@@ -276,9 +318,9 @@ function AddOtherIncomeSheet({ open, onOpenChange }: { open: boolean; onOpenChan
   );
 }
 
-function VoidOtherIncomeDialog({ row, onClose }: { row: IncomeRow | null; onClose: () => void }) {
+function VoidSaleDialog({ row, onClose }: { row: SaleRow | null; onClose: () => void }) {
   const [reason, setReason] = useState("");
-  const mutation = useVoidOtherIncome();
+  const mutation = useVoidByProductSale();
 
   const confirm = () => {
     if (!row || mutation.isPending) return;
@@ -307,7 +349,7 @@ function VoidOtherIncomeDialog({ row, onClose }: { row: IncomeRow | null; onClos
     >
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Void this income?</AlertDialogTitle>
+          <AlertDialogTitle>Void this sale?</AlertDialogTitle>
           <AlertDialogDescription>
             {row
               ? `${formatRupees(row.amount)} is taken back out of ${row.walletName ?? "its account"}. The entry stays in the list, struck through. This cannot be undone.`
@@ -315,9 +357,9 @@ function VoidOtherIncomeDialog({ row, onClose }: { row: IncomeRow | null; onClos
           </AlertDialogDescription>
         </AlertDialogHeader>
         <div className="space-y-2">
-          <Label htmlFor="income-void-reason">Reason</Label>
+          <Label htmlFor="sale-void-reason">Reason</Label>
           <Textarea
-            id="income-void-reason"
+            id="sale-void-reason"
             value={reason}
             maxLength={500}
             placeholder="e.g. Entered twice by mistake"
