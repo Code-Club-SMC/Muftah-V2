@@ -93,3 +93,42 @@ export function sizeFromPackagingText(text: string | null | undefined): string {
   const match = (text ?? "").trim().match(/^(\d+(?:\.\d+)?)/);
   return match ? match[1] : "";
 }
+
+export type AutoMarkResult =
+  | { ok: true; containerName: string; containerSize: string }
+  | { ok: false; reason: string };
+
+const KG_SUFFIXES = new Set(["kg", "kgs", "kilo", "kilos", "kilogram", "kilograms"]);
+const LITER_SUFFIXES = new Set(["l", "ltr", "ltrs", "lit", "litre", "litres", "liter", "liters"]);
+
+/**
+ * Decides whether an old chemical purchase can be marked as a by-product from the chemical's saved
+ * packaging ("Drum" + "100kg"). Only clean cases pass; anything unclear is left for the admin.
+ */
+export function autoMarkFromPackaging(input: {
+  unit: string | null | undefined;
+  packagingType: string | null | undefined;
+  packagingSize: string | null | undefined;
+  quantity: string;
+}): AutoMarkResult {
+  const containerName = normalizeContainerName(input.packagingType ?? "");
+  if (!containerName || containerName === "Other") return { ok: false, reason: "no packaging type" };
+  if (containerName.length > 40) return { ok: false, reason: "packaging type too long" };
+
+  const match = (input.packagingSize ?? "").trim().match(/^(\d+(?:\.\d+)?)\s*([a-zA-Z]*)\.?$/);
+  if (!match) return { ok: false, reason: `packaging size "${input.packagingSize ?? ""}" not readable` };
+  const [, number, rawSuffix] = match;
+  const suffix = rawSuffix.toLowerCase();
+  const unit = input.unit || "kg";
+  const allowed = unit === "liters" ? LITER_SUFFIXES : KG_SUFFIXES;
+  if (suffix && !allowed.has(suffix)) {
+    return { ok: false, reason: `packaging size "${input.packagingSize}" does not match unit ${unit}` };
+  }
+
+  try {
+    const columns = byProductColumns({ byProductTracked: true, containerName, containerSize: number }, input.quantity);
+    return { ok: true, containerName: columns.containerName!, containerSize: columns.containerSize! };
+  } catch (error) {
+    return { ok: false, reason: (error as Error).message };
+  }
+}

@@ -8,6 +8,7 @@ import {
   earnedEmpties,
   normalizeContainerName,
   sizeFromPackagingText,
+  autoMarkFromPackaging,
   type EmptiesPurchase,
 } from "@/lib/inventory/by-products";
 
@@ -103,5 +104,24 @@ describe("labels", () => {
     expect(sizeFromPackagingText(" 20 L")).toBe("20");
     expect(sizeFromPackagingText("big")).toBe("");
     expect(sizeFromPackagingText(null)).toBe("");
+  });
+});
+
+describe("autoMarkFromPackaging", () => {
+  const base = { unit: "kg", packagingType: "Drum", packagingSize: "100kg", quantity: "1000.000" };
+
+  it("marks clean packaging", () => {
+    expect(autoMarkFromPackaging(base)).toEqual({ ok: true, containerName: "Drum", containerSize: "100.000" });
+    expect(autoMarkFromPackaging({ ...base, packagingSize: "100" })).toMatchObject({ ok: true });
+    expect(autoMarkFromPackaging({ ...base, unit: "liters", packagingSize: "200 L", quantity: "400" }))
+      .toEqual({ ok: true, containerName: "Drum", containerSize: "200.000" });
+  });
+
+  it("skips anything unclear", () => {
+    expect(autoMarkFromPackaging({ ...base, packagingType: "" }).ok).toBe(false);
+    expect(autoMarkFromPackaging({ ...base, packagingType: "Other" }).ok).toBe(false);
+    expect(autoMarkFromPackaging({ ...base, packagingSize: "big" }).ok).toBe(false);
+    expect(autoMarkFromPackaging({ ...base, packagingSize: "200L" }).ok).toBe(false); // liters on a kg item
+    expect(autoMarkFromPackaging({ ...base, quantity: "950" }).ok).toBe(false); // not whole drums
   });
 });
