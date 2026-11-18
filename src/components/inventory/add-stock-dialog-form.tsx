@@ -23,13 +23,15 @@ import { useAddStock } from "@/hooks/stock/use-add-stock";
 import { getMaterialsFn } from "@/server-functions/inventory/get-materials-fn";
 import { getInventoryFn } from "@/server-functions/inventory/get-inventory-fn";
 import { getSuppliersFn } from "@/server-functions/suppliers/get-suppliers-fn";
-import { addStockSchema } from "@/lib/validators/validators";
+import { addStockSchema, BY_PRODUCT_FORM_FIELDS } from "@/lib/validators/validators";
 import { Textarea } from "../ui/textarea";
 import { PurchaseRecord } from "@/components/suppliers/purchase-history-table";
 import { PaymentMethodSelect } from "@/components/suppliers/payment-method-select";
 import Big from "big.js";
 import { useMaterialLots } from "@/hooks/stock/use-material-lots";
 import { packagingUnit } from "@/lib/inventory/material-units";
+import { sizeFromPackagingText } from "@/lib/inventory/by-products";
+import { ByProductFields } from "./by-product-fields";
 import { lotLabel, lotPrice } from "@/lib/inventory/material-lots";
 import type { ChemicalPurchaseRef } from "@/lib/inventory/chemical-report-contract";
 
@@ -150,9 +152,12 @@ export const AddStockForm = ({
       amountPaid: "",
       transactionId: "",
       bankName: "",
+      byProductTracked: false,
+      containerName: (itemToRestock?.chemical as any)?.packagingType || "",
+      containerSize: sizeFromPackagingText((itemToRestock?.chemical as any)?.packagingSize),
     },
     validators: {
-      onSubmit: addStockSchema,
+      onSubmit: addStockSchema.required(BY_PRODUCT_FORM_FIELDS),
     },
     onSubmit: async ({ value }) => {
       await mutate.mutateAsync(
@@ -341,7 +346,14 @@ export const AddStockForm = ({
                   <FieldLabel>Material</FieldLabel>
                   <Select
                     value={field.state.value}
-                    onValueChange={(value) => field.handleChange(value)}
+                    onValueChange={(value) => {
+                      field.handleChange(value);
+                      const chosen = (materials?.chemicals || []).find((c: any) => c.id === value) as any;
+                      if (materialType === "chemical" && chosen) {
+                        form.setFieldValue("containerName", chosen.packagingType || "");
+                        form.setFieldValue("containerSize", sizeFromPackagingText(chosen.packagingSize));
+                      }
+                    }}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Select material" />
@@ -700,6 +712,34 @@ export const AddStockForm = ({
             }}
           />
         </div>
+
+        <form.Subscribe
+          selector={(state) =>
+            [
+              state.values.byProductTracked,
+              state.values.containerName,
+              state.values.containerSize,
+              state.values.quantity,
+            ] as const
+          }
+        >
+          {([byProductTracked, containerName, containerSize, quantity]) => (
+            <ByProductFields
+              value={{ byProductTracked, containerName, containerSize }}
+              quantity={quantity}
+              unit={
+                materialType === "chemical"
+                  ? (activeMaterial as any)?.unit || "kg"
+                  : packagingUnit(activeMaterial as any)
+              }
+              onChange={(next) => {
+                form.setFieldValue("byProductTracked", next.byProductTracked);
+                form.setFieldValue("containerName", next.containerName);
+                form.setFieldValue("containerSize", next.containerSize);
+              }}
+            />
+          )}
+        </form.Subscribe>
 
         {/* Notes */}
         <form.Field name="notes">

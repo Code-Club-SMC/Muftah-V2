@@ -5,6 +5,7 @@ import { useForm } from "@tanstack/react-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { invalidateStockQueries } from "@/lib/inventory/invalidate-stock";
+import { invalidateFinanceQueries } from "@/lib/finance/invalidate-finance";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -13,6 +14,7 @@ import { updatePurchaseRecordFn } from "@/server-functions/suppliers/update-purc
 import { getPurchaseEditStateFn } from "@/server-functions/suppliers/get-purchase-edit-state-fn";
 import { PURCHASE_LOCKED_MESSAGE } from "@/lib/inventory/material-lots";
 import { useEffect } from "react";
+import { ByProductFields } from "@/components/inventory/by-product-fields";
 import {
   Select,
   SelectContent,
@@ -36,6 +38,9 @@ type Props = {
     paymentMethod?: string | null;
     paymentStatus?: string | null;
     paidBy?: string | null;
+    byProductTracked?: boolean;
+    containerName?: string | null;
+    containerSize?: string | null;
     materialType: string;
     chemical?: {
       id: string;
@@ -68,11 +73,11 @@ export const EditPurchaseDialog = ({ open, onOpenChange, purchase }: Props) => {
     mutationFn: updatePurchaseRecordFn,
     onSuccess: async () => {
       await invalidateStockQueries(queryClient);
+      await invalidateFinanceQueries(queryClient);
       toast.success("Purchase record updated successfully");
       queryClient.invalidateQueries({ queryKey: ["supplier"] });
       queryClient.invalidateQueries({ queryKey: ["suppliers"] });
-      queryClient.invalidateQueries({ queryKey: ["wallets"] });
-      queryClient.invalidateQueries({ queryKey: ["expenses"] });
+      queryClient.invalidateQueries({ queryKey: ["activity-timeline"] });
       onOpenChange(false);
     },
     onError: (err) =>
@@ -91,6 +96,9 @@ export const EditPurchaseDialog = ({ open, onOpenChange, purchase }: Props) => {
       invoiceNumber: purchase?.invoiceNumber || "",
       transactionId: purchase?.transactionId || "",
       notes: purchase?.notes || "",
+      byProductTracked: purchase?.byProductTracked ?? false,
+      containerName: purchase?.containerName ?? "",
+      containerSize: plainNumber(purchase?.containerSize),
     },
     onSubmit: async ({ value }) => {
       if (!purchase) return;
@@ -106,6 +114,9 @@ export const EditPurchaseDialog = ({ open, onOpenChange, purchase }: Props) => {
           capacity: value.capacity,
           capacityUnit: value.capacityUnit,
           minStock: value.minStock,
+          byProductTracked: value.byProductTracked,
+          containerName: value.containerName,
+          containerSize: value.containerSize,
         },
       });
     },
@@ -119,6 +130,9 @@ export const EditPurchaseDialog = ({ open, onOpenChange, purchase }: Props) => {
       form.setFieldValue("notes", purchase.notes || "");
       form.setFieldValue("transactionId", purchase.transactionId || "");
       form.setFieldValue("invoiceNumber", purchase.invoiceNumber || "");
+      form.setFieldValue("byProductTracked", purchase.byProductTracked ?? false);
+      form.setFieldValue("containerName", purchase.containerName ?? "");
+      form.setFieldValue("containerSize", plainNumber(purchase.containerSize));
 
       if (purchase.materialType === "packaging" && purchase.packagingMaterial) {
         form.setFieldValue("materialName", purchase.packagingMaterial.name);
@@ -267,6 +281,30 @@ export const EditPurchaseDialog = ({ open, onOpenChange, purchase }: Props) => {
             </Field>
           )}
         </form.Field>
+
+        <form.Subscribe
+          selector={(state) =>
+            [
+              state.values.byProductTracked,
+              state.values.containerName,
+              state.values.containerSize,
+              state.values.quantity,
+            ] as const
+          }
+        >
+          {([byProductTracked, containerName, containerSize, quantity]) => (
+            <ByProductFields
+              value={{ byProductTracked, containerName, containerSize }}
+              quantity={quantity}
+              unit={isChemical ? purchase.chemical?.unit || "kg" : "pcs"}
+              onChange={(next) => {
+                form.setFieldValue("byProductTracked", next.byProductTracked);
+                form.setFieldValue("containerName", next.containerName);
+                form.setFieldValue("containerSize", next.containerSize);
+              }}
+            />
+          )}
+        </form.Subscribe>
 
         <form.Field name="invoiceNumber">
           {(field) => (

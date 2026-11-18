@@ -629,6 +629,9 @@ function SupplierDetailsPage() {
             })() as "paid" | "partial" | "unpaid",
             supplierId: supplier.id,
             warehouseId: factoryFloor?.id,
+            byProductTracked: selectedItem.byProductTracked,
+            containerName: selectedItem.containerName,
+            containerSize: selectedItem.containerSize,
           } : undefined}
         />
       )}
@@ -663,6 +666,9 @@ function SupplierDetailsPage() {
             })() as "paid" | "partial" | "unpaid",
             supplierId: supplier.id,
             warehouseId: factoryFloor?.id,
+            byProductTracked: selectedItem.byProductTracked,
+            containerName: selectedItem.containerName,
+            containerSize: selectedItem.containerSize,
           } : undefined}
         />
       )}

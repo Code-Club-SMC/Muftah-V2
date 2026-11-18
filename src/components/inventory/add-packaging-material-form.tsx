@@ -21,12 +21,14 @@ import {
 import { PaymentMethodSelect } from "@/components/suppliers/payment-method-select";
 import { getInventoryFn } from "@/server-functions/inventory/get-inventory-fn";
 import { useAddPackagingMaterial } from "@/hooks/inventory/use-add-packaging-material";
-import { addPackagingMaterialSchema } from "@/lib/validators/validators";
+import { addPackagingMaterialSchema, BY_PRODUCT_FORM_FIELDS } from "@/lib/validators/validators";
 import { useState, useMemo, useRef } from "react";
 import { cn, plainNumber } from "@/lib/utils";
 import { useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { getSuppliersFn } from "@/server-functions/suppliers/get-suppliers-fn";
 import { Textarea } from "../ui/textarea";
+import { packagingUnit } from "@/lib/inventory/material-units";
+import { ByProductFields } from "./by-product-fields";
 import { updatePurchaseRecordFn } from "@/server-functions/suppliers/update-purchase-record-fn";
 import { toast } from "sonner";
 import { invalidateStockQueries } from "@/lib/inventory/invalidate-stock";
@@ -53,6 +55,9 @@ export type PackagingPurchaseInitialValues = {
   paymentStatus?: "paid" | "partial" | "unpaid";
   supplierId?: string;
   warehouseId?: string;
+  byProductTracked?: boolean;
+  containerName?: string | null;
+  containerSize?: string | null;
 };
 
 type Props = {
@@ -86,6 +91,7 @@ export const AddPackagingMaterialForm = ({
       queryClient.invalidateQueries({ queryKey: ["supplier"] });
       queryClient.invalidateQueries({ queryKey: ["wallets"] });
       queryClient.invalidateQueries({ queryKey: ["expenses"] });
+      queryClient.invalidateQueries({ queryKey: ["activity-timeline"] });
       onSuccess();
     },
     onError: (err: any) => toast.error(err.message || "Failed to update purchase record"),
@@ -131,8 +137,13 @@ export const AddPackagingMaterialForm = ({
       amountPaid: plainNumber(initialValues?.paidAmount),
       transactionId: initialValues?.transactionId || "",
       bankName: initialValues?.bankName || "",
+      byProductTracked: initialValues?.byProductTracked ?? false,
+      containerName: initialValues?.containerName ?? "",
+      containerSize: plainNumber(initialValues?.containerSize),
     },
-    validators: isEditMode ? undefined : { onSubmit: addPackagingMaterialSchema.extend({ packagingKind: addPackagingMaterialSchema.shape.packagingKind.nonoptional() }) },
+    validators: isEditMode ? undefined : { onSubmit: addPackagingMaterialSchema
+      .extend({ packagingKind: addPackagingMaterialSchema.shape.packagingKind.nonoptional() })
+      .required(BY_PRODUCT_FORM_FIELDS) },
     onSubmit: async ({ value }) => {
       if (isEditMode) {
         const totalCost = (parseFloat(value.costPerUnit) * parseFloat(value.quantity)).toFixed(2);
@@ -148,9 +159,12 @@ export const AddPackagingMaterialForm = ({
             capacity: value.capacity,
             capacityUnit: value.capacityUnit,
             packagingKind: value.packagingKind,
-            minStock: value.minimumStockLevel?.toString(),
+            minStock: value.minimumStockLevel !== "" && value.minimumStockLevel !== undefined ? value.minimumStockLevel.toString() : undefined,
             paymentStatus: value.paymentStatus,
-            walletId: (value.paymentMethod !== "pay_later" && value.paymentMethod) ? value.paymentMethod : undefined,
+            walletId: undefined,
+            byProductTracked: value.byProductTracked,
+            containerName: value.byProductTracked ? value.containerName : undefined,
+            containerSize: value.byProductTracked ? value.containerSize : undefined,
             supplierName: suppliers?.find((s) => s.id === value.supplierId)?.supplierName,
           },
         });
@@ -533,6 +547,31 @@ export const AddPackagingMaterialForm = ({
               </Field>
             )}
           </form.Field>
+
+          <form.Subscribe
+            selector={(state) =>
+              [
+                state.values.byProductTracked,
+                state.values.containerName,
+                state.values.containerSize,
+                state.values.quantity,
+                state.values.measuredInKg,
+              ] as const
+            }
+          >
+            {([byProductTracked, containerName, containerSize, quantity, measuredInKg]) => (
+              <ByProductFields
+                value={{ byProductTracked, containerName, containerSize }}
+                quantity={quantity}
+                unit={packagingUnit({ measuredInKg })}
+                onChange={(next) => {
+                  form.setFieldValue("byProductTracked", next.byProductTracked);
+                  form.setFieldValue("containerName", next.containerName);
+                  form.setFieldValue("containerSize", next.containerSize);
+                }}
+              />
+            )}
+          </form.Subscribe>
 
           <form.Field name="notes">
             {(field) => (

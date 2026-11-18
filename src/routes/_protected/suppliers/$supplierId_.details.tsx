@@ -409,6 +409,9 @@ function DetailsPage() {
             })() as "paid" | "partial" | "unpaid",
             supplierId: supplier.id,
             warehouseId: warehouses.find((w) => w.type === "factory_floor")?.id,
+            byProductTracked: selectedItem.byProductTracked,
+            containerName: selectedItem.containerName,
+            containerSize: selectedItem.containerSize,
           } : undefined}
         />
       )}
@@ -443,6 +446,9 @@ function DetailsPage() {
             })() as "paid" | "partial" | "unpaid",
             supplierId: supplier.id,
             warehouseId: warehouses.find((w) => w.type === "factory_floor")?.id,
+            byProductTracked: selectedItem.byProductTracked,
+            containerName: selectedItem.containerName,
+            containerSize: selectedItem.containerSize,
           } : undefined}
         />
       )}

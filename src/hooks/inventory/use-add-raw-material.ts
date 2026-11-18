@@ -14,6 +14,7 @@ export const useAddChemical = () => {
       queryClient.invalidateQueries({ queryKey: ["suppliers"] });
       queryClient.invalidateQueries({ queryKey: ["wallets"] });
       queryClient.invalidateQueries({ queryKey: ["expenses"] });
+      queryClient.invalidateQueries({ queryKey: ["activity-timeline"] });
     },
     onError: (error) => {
       toast.error(error.message || "Failed to add chemical");

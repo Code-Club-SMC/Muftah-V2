@@ -37,8 +37,9 @@ export const SuppliersTable = ({ data }: Props) => {
     onSuccess: () => {
       toast.success("Supplier deleted");
       queryClient.invalidateQueries({ queryKey: ["suppliers"] });
+      queryClient.invalidateQueries({ queryKey: ["activity-timeline"] });
     },
-    onError: () => toast.error("Failed to delete supplier"),
+    onError: (err) => toast.error(err.message || "Failed to delete supplier"),
   });
 
   const columns: ColumnDef<Supplier>[] = [
@@ -140,7 +141,7 @@ export const SuppliersTable = ({ data }: Props) => {
                   <AlertDialogDescription>
                     This will permanently delete the supplier "
                     {supplier.supplierName}". This action requires that the
-                    supplier has no associated active transactions.
+                    supplier has no purchase or payment records.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>

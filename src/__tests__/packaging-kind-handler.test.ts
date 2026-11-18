@@ -15,6 +15,7 @@ vi.mock("@/db", async () => ({
 }));
 vi.mock("@/lib/middlewares", () => ({ requireInventoryManageMiddleware: {}, requireSuppliersManageMiddleware: {} }));
 vi.mock("@/lib/activity-logger.server", () => ({ logActivityQuiet: vi.fn() }));
+vi.mock("@/lib/inventory/by-products.server", () => ({ assertEarnedCoversSold: vi.fn() }));
 vi.mock("@/lib/inventory/material-lots.server", () => ({ lockMaterialStock: vi.fn(), moveLotStock: mocks.move, purchaseIsUntouched: vi.fn(), findOrCreateLot: vi.fn() }));
 vi.mock("@tanstack/react-start", () => ({ createServerFn: () => {
   let validator: { parse(value: unknown): unknown };

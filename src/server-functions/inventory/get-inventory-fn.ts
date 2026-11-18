@@ -62,10 +62,11 @@ export const getInventoryFn = createServerFn()
 
     // Enrich the result with accurate counts
     return Promise.all(warehouseData.map(async (w) => {
-      const reportCoverage = await chemicalReportCoverage(w.materialStock.flatMap(row => row.chemical ? [row.chemical.id] : []), w.id);
+      const materialRows = w.materialStock.filter(row => Number(row.quantity) > 0);
+      const reportCoverage = await chemicalReportCoverage(materialRows.flatMap(row => row.chemical ? [row.chemical.id] : []), w.id);
       return {
       ...w,
-      materialStock: w.materialStock.map(row => ({ ...row, chemical: row.chemical
+      materialStock: materialRows.map(row => ({ ...row, chemical: row.chemical
         ? { ...row.chemical, reportCoverage: reportCoverage[row.chemical.id] } : null })),
       finishedGoodsStock: w.finishedGoodsStock.map((fg) => {
         const stats = statsMap.get(`${w.id}-${fg.recipeId}`) || {

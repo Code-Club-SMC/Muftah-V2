@@ -41,6 +41,7 @@ export const EditSupplierForm = ({ supplier, onSuccess }: Props) => {
       toast.success("Supplier updated successfully");
       queryClient.invalidateQueries({ queryKey: ["suppliers"] });
       queryClient.invalidateQueries({ queryKey: ["supplier", supplier.id] });
+      queryClient.invalidateQueries({ queryKey: ["activity-timeline"] });
       onSuccess();
     },
     onError: (error) => {

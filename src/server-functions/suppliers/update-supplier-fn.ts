@@ -9,8 +9,18 @@ export const updateSupplierFn = createServerFn()
   .middleware([requireSuppliersManageMiddleware])
   .inputValidator(updateSupplierSchema)
   .handler(async ({ data, context }) => {
+    let previousName: string | null = null;
+    let updatedSupplier: typeof suppliers.$inferSelect | undefined;
+
     try {
-      const [updatedSupplier] = await db
+      const [existing] = await db
+        .select({ supplierName: suppliers.supplierName })
+        .from(suppliers)
+        .where(eq(suppliers.id, data.id))
+        .limit(1);
+      previousName = existing?.supplierName ?? null;
+
+      [updatedSupplier] = await db
         .update(suppliers)
         .set({
           supplierName: data.supplierName,
@@ -25,21 +35,36 @@ export const updateSupplierFn = createServerFn()
         })
         .where(eq(suppliers.id, data.id))
         .returning();
-
-      void logActivityQuiet({
-        module: "suppliers",
-        action: "updated",
-        entityType: "supplier",
-        entityLabel: updatedSupplier.supplierName,
-        actorId: context.session.user.id,
-        actorName: context.session.user.name,
-        description: `Updated supplier ${updatedSupplier.supplierName}`,
-        severity: "info",
-      });
-
-      return updatedSupplier;
     } catch (error) {
       console.error("Failed to update supplier:", error);
       throw new Error("Failed to update supplier");
     }
+
+    if (!updatedSupplier) {
+      throw new Error("Supplier not found");
+    }
+
+    await logActivityQuiet({
+      module: "suppliers",
+      action: "updated",
+      entityType: "supplier",
+      entityId: updatedSupplier.id,
+      entityLabel: updatedSupplier.supplierName,
+      actorId: context.session.user.id,
+      actorName: context.session.user.name,
+      description: `Updated supplier ${updatedSupplier.supplierName}`,
+      severity: "info",
+      metadata: {
+        supplierId: updatedSupplier.id,
+        supplierName: updatedSupplier.supplierName,
+        previousSupplierName: previousName,
+        supplierShopName: updatedSupplier.supplierShopName,
+        phone: updatedSupplier.phone,
+        email: updatedSupplier.email,
+        city: updatedSupplier.city,
+        state: updatedSupplier.state,
+      },
+    });
+
+    return updatedSupplier;
   });

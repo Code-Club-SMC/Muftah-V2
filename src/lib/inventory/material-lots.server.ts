@@ -2,7 +2,7 @@
 import Big from "big.js";
 import { and, asc, desc, eq, gt, gte, inArray, ne, sql } from "drizzle-orm";
 import type { db } from "@/db";
-import { chemicals, materialLotMovements, materialLots, materialLotStock, materialStock, packagingMaterials } from "@/db/schemas/inventory-schema";
+import { chemicals, inventoryAuditLog, materialLotMovements, materialLots, materialLotStock, materialStock, packagingMaterials } from "@/db/schemas/inventory-schema";
 import { checkLotPicks, checkOldestFirst, costLotPicks, lotPrice, lotQuantity, purchaseUntouched, type LotBalance, type LotPick, type MaterialRef, type PickedLot } from "./material-lots";
 
 export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -80,8 +80,11 @@ export async function moveLotStock(tx: Tx, input: { ref: MaterialRef; lotId: str
     const [total] = await tx.update(materialStock)
       .set({ quantity: sql`${materialStock.quantity} - ${amount}`, updatedAt: new Date() })
       .where(and(eq(materialStock.warehouseId, input.warehouseId), eq(column, input.ref.materialId), gte(materialStock.quantity, amount)))
-      .returning({ id: materialStock.id });
+      .returning({ id: materialStock.id, quantity: materialStock.quantity });
     if (!total) throw new Error("Lot stock disagrees with item stock. Contact support before moving this item.");
+    if (input.sourceType === "purchase_delete" && new Big(total.quantity).lte(0)) {
+      await tx.delete(materialStock).where(eq(materialStock.id, total.id));
+    }
   }
   await tx.insert(materialLotMovements).values({ lotId: input.lotId, warehouseId: input.warehouseId, delta: delta.toFixed(3), sourceType: input.sourceType, sourceId: input.sourceId ?? null });
 }
@@ -127,8 +130,26 @@ export async function deleteItemLots(tx: Tx, ref: MaterialRef) {
   if (used || stocked) throw new Error("This item has stock history and can't be deleted.");
   await tx.delete(materialLotMovements).where(inArray(materialLotMovements.lotId, lots));
   await tx.delete(materialLotStock).where(inArray(materialLotStock.lotId, lots));
+  // Audit history stays; only its link to the removed lot is cleared.
+  await tx.update(inventoryAuditLog).set({ lotId: null }).where(inArray(inventoryAuditLog.lotId, lots));
   await tx.delete(materialLots).where(eq(lotColumn(ref), ref.materialId));
   await tx.delete(materialStock).where(eq(stockColumn(ref), ref.materialId));
+}
+
+// Purges an orphaned material whose purchases were deleted and has no remaining stock or usage.
+export async function cleanupOrphanedMaterial(tx: Tx, ref: MaterialRef) {
+  const lots = tx.select({ id: materialLots.id }).from(materialLots).where(eq(lotColumn(ref), ref.materialId));
+  await tx.delete(materialLotMovements).where(inArray(materialLotMovements.lotId, lots));
+  await tx.delete(materialLotStock).where(inArray(materialLotStock.lotId, lots));
+  // Audit history stays; only its link to the removed lot is cleared.
+  await tx.update(inventoryAuditLog).set({ lotId: null }).where(inArray(inventoryAuditLog.lotId, lots));
+  await tx.delete(materialLots).where(eq(lotColumn(ref), ref.materialId));
+  await tx.delete(materialStock).where(eq(stockColumn(ref), ref.materialId));
+  if (ref.materialType === "chemical") {
+    await tx.delete(chemicals).where(eq(chemicals.id, ref.materialId));
+  } else {
+    await tx.delete(packagingMaterials).where(eq(packagingMaterials.id, ref.materialId));
+  }
 }
 
 // Clears a store's material stock before the store is deleted. Refused while any lot there still holds stock.

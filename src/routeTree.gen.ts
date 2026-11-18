@@ -48,6 +48,7 @@ import { Route as ProtectedReportsPurchasesIndexRouteImport } from './routes/_pr
 import { Route as ProtectedReportsProfitLossIndexRouteImport } from './routes/_protected/reports/profit-loss/index'
 import { Route as ProtectedReportsProductionLossIndexRouteImport } from './routes/_protected/reports/production-loss/index'
 import { Route as ProtectedReportsOutstandingIndexRouteImport } from './routes/_protected/reports/outstanding/index'
+import { Route as ProtectedReportsMonthlyIndexRouteImport } from './routes/_protected/reports/monthly/index'
 import { Route as ProtectedReportsExpensesIndexRouteImport } from './routes/_protected/reports/expenses/index'
 import { Route as ProtectedReportsCollectionsIndexRouteImport } from './routes/_protected/reports/collections/index'
 import { Route as ProtectedOrderBookerTripsIndexRouteImport } from './routes/_protected/order-booker/trips/index'
@@ -66,8 +67,10 @@ import { Route as ProtectedHrPayrollIndexRouteImport } from './routes/_protected
 import { Route as ProtectedHrEmployeesIndexRouteImport } from './routes/_protected/hr/employees/index'
 import { Route as ProtectedHrAttendanceIndexRouteImport } from './routes/_protected/hr/attendance/index'
 import { Route as ProtectedHrApprovalsIndexRouteImport } from './routes/_protected/hr/approvals/index'
+import { Route as ProtectedFinanceOtherIncomeIndexRouteImport } from './routes/_protected/finance/other-income/index'
 import { Route as ProtectedFinanceLedgerIndexRouteImport } from './routes/_protected/finance/ledger/index'
 import { Route as ProtectedFinanceExpensesIndexRouteImport } from './routes/_protected/finance/expenses/index'
+import { Route as ProtectedFinanceByProductsIndexRouteImport } from './routes/_protected/finance/by-products/index'
 import { Route as ProtectedFinanceAccountsIndexRouteImport } from './routes/_protected/finance/accounts/index'
 import { Route as ProtectedDashboardActivityTimelineIndexRouteImport } from './routes/_protected/dashboard/activity-timeline/index'
 import { Route as ProtectedSuppliersSupplierIdDetailsRouteImport } from './routes/_protected/suppliers/$supplierId_.details'
@@ -318,6 +321,12 @@ const ProtectedReportsOutstandingIndexRoute =
     path: '/outstanding/',
     getParentRoute: () => ProtectedReportsRouteRoute,
   } as any)
+const ProtectedReportsMonthlyIndexRoute =
+  ProtectedReportsMonthlyIndexRouteImport.update({
+    id: '/monthly/',
+    path: '/monthly/',
+    getParentRoute: () => ProtectedReportsRouteRoute,
+  } as any)
 const ProtectedReportsExpensesIndexRoute =
   ProtectedReportsExpensesIndexRouteImport.update({
     id: '/expenses/',
@@ -425,6 +434,12 @@ const ProtectedHrApprovalsIndexRoute =
     path: '/hr/approvals/',
     getParentRoute: () => ProtectedRouteRoute,
   } as any)
+const ProtectedFinanceOtherIncomeIndexRoute =
+  ProtectedFinanceOtherIncomeIndexRouteImport.update({
+    id: '/finance/other-income/',
+    path: '/finance/other-income/',
+    getParentRoute: () => ProtectedRouteRoute,
+  } as any)
 const ProtectedFinanceLedgerIndexRoute =
   ProtectedFinanceLedgerIndexRouteImport.update({
     id: '/finance/ledger/',
@@ -435,6 +450,12 @@ const ProtectedFinanceExpensesIndexRoute =
   ProtectedFinanceExpensesIndexRouteImport.update({
     id: '/finance/expenses/',
     path: '/finance/expenses/',
+    getParentRoute: () => ProtectedRouteRoute,
+  } as any)
+const ProtectedFinanceByProductsIndexRoute =
+  ProtectedFinanceByProductsIndexRouteImport.update({
+    id: '/finance/by-products/',
+    path: '/finance/by-products/',
     getParentRoute: () => ProtectedRouteRoute,
   } as any)
 const ProtectedFinanceAccountsIndexRoute =
@@ -678,8 +699,10 @@ export interface FileRoutesByFullPath {
   '/suppliers/$supplierId/details': typeof ProtectedSuppliersSupplierIdDetailsRoute
   '/dashboard/activity-timeline/': typeof ProtectedDashboardActivityTimelineIndexRoute
   '/finance/accounts/': typeof ProtectedFinanceAccountsIndexRoute
+  '/finance/by-products/': typeof ProtectedFinanceByProductsIndexRoute
   '/finance/expenses/': typeof ProtectedFinanceExpensesIndexRoute
   '/finance/ledger/': typeof ProtectedFinanceLedgerIndexRoute
+  '/finance/other-income/': typeof ProtectedFinanceOtherIncomeIndexRoute
   '/hr/approvals/': typeof ProtectedHrApprovalsIndexRoute
   '/hr/attendance/': typeof ProtectedHrAttendanceIndexRoute
   '/hr/employees/': typeof ProtectedHrEmployeesIndexRoute
@@ -698,6 +721,7 @@ export interface FileRoutesByFullPath {
   '/order-booker/trips/': typeof ProtectedOrderBookerTripsIndexRoute
   '/reports/collections/': typeof ProtectedReportsCollectionsIndexRoute
   '/reports/expenses/': typeof ProtectedReportsExpensesIndexRoute
+  '/reports/monthly/': typeof ProtectedReportsMonthlyIndexRoute
   '/reports/outstanding/': typeof ProtectedReportsOutstandingIndexRoute
   '/reports/production-loss/': typeof ProtectedReportsProductionLossIndexRoute
   '/reports/profit-loss/': typeof ProtectedReportsProfitLossIndexRoute
@@ -770,8 +794,10 @@ export interface FileRoutesByTo {
   '/suppliers/$supplierId/details': typeof ProtectedSuppliersSupplierIdDetailsRoute
   '/dashboard/activity-timeline': typeof ProtectedDashboardActivityTimelineIndexRoute
   '/finance/accounts': typeof ProtectedFinanceAccountsIndexRoute
+  '/finance/by-products': typeof ProtectedFinanceByProductsIndexRoute
   '/finance/expenses': typeof ProtectedFinanceExpensesIndexRoute
   '/finance/ledger': typeof ProtectedFinanceLedgerIndexRoute
+  '/finance/other-income': typeof ProtectedFinanceOtherIncomeIndexRoute
   '/hr/approvals': typeof ProtectedHrApprovalsIndexRoute
   '/hr/attendance': typeof ProtectedHrAttendanceIndexRoute
   '/hr/employees': typeof ProtectedHrEmployeesIndexRoute
@@ -790,6 +816,7 @@ export interface FileRoutesByTo {
   '/order-booker/trips': typeof ProtectedOrderBookerTripsIndexRoute
   '/reports/collections': typeof ProtectedReportsCollectionsIndexRoute
   '/reports/expenses': typeof ProtectedReportsExpensesIndexRoute
+  '/reports/monthly': typeof ProtectedReportsMonthlyIndexRoute
   '/reports/outstanding': typeof ProtectedReportsOutstandingIndexRoute
   '/reports/production-loss': typeof ProtectedReportsProductionLossIndexRoute
   '/reports/profit-loss': typeof ProtectedReportsProfitLossIndexRoute
@@ -866,8 +893,10 @@ export interface FileRoutesById {
   '/_protected/suppliers/$supplierId_/details': typeof ProtectedSuppliersSupplierIdDetailsRoute
   '/_protected/dashboard/activity-timeline/': typeof ProtectedDashboardActivityTimelineIndexRoute
   '/_protected/finance/accounts/': typeof ProtectedFinanceAccountsIndexRoute
+  '/_protected/finance/by-products/': typeof ProtectedFinanceByProductsIndexRoute
   '/_protected/finance/expenses/': typeof ProtectedFinanceExpensesIndexRoute
   '/_protected/finance/ledger/': typeof ProtectedFinanceLedgerIndexRoute
+  '/_protected/finance/other-income/': typeof ProtectedFinanceOtherIncomeIndexRoute
   '/_protected/hr/approvals/': typeof ProtectedHrApprovalsIndexRoute
   '/_protected/hr/attendance/': typeof ProtectedHrAttendanceIndexRoute
   '/_protected/hr/employees/': typeof ProtectedHrEmployeesIndexRoute
@@ -886,6 +915,7 @@ export interface FileRoutesById {
   '/_protected/order-booker/trips/': typeof ProtectedOrderBookerTripsIndexRoute
   '/_protected/reports/collections/': typeof ProtectedReportsCollectionsIndexRoute
   '/_protected/reports/expenses/': typeof ProtectedReportsExpensesIndexRoute
+  '/_protected/reports/monthly/': typeof ProtectedReportsMonthlyIndexRoute
   '/_protected/reports/outstanding/': typeof ProtectedReportsOutstandingIndexRoute
   '/_protected/reports/production-loss/': typeof ProtectedReportsProductionLossIndexRoute
   '/_protected/reports/profit-loss/': typeof ProtectedReportsProfitLossIndexRoute
@@ -961,8 +991,10 @@ export interface FileRouteTypes {
     | '/suppliers/$supplierId/details'
     | '/dashboard/activity-timeline/'
     | '/finance/accounts/'
+    | '/finance/by-products/'
     | '/finance/expenses/'
     | '/finance/ledger/'
+    | '/finance/other-income/'
     | '/hr/approvals/'
     | '/hr/attendance/'
     | '/hr/employees/'
@@ -981,6 +1013,7 @@ export interface FileRouteTypes {
     | '/order-booker/trips/'
     | '/reports/collections/'
     | '/reports/expenses/'
+    | '/reports/monthly/'
     | '/reports/outstanding/'
     | '/reports/production-loss/'
     | '/reports/profit-loss/'
@@ -1053,8 +1086,10 @@ export interface FileRouteTypes {
     | '/suppliers/$supplierId/details'
     | '/dashboard/activity-timeline'
     | '/finance/accounts'
+    | '/finance/by-products'
     | '/finance/expenses'
     | '/finance/ledger'
+    | '/finance/other-income'
     | '/hr/approvals'
     | '/hr/attendance'
     | '/hr/employees'
@@ -1073,6 +1108,7 @@ export interface FileRouteTypes {
     | '/order-booker/trips'
     | '/reports/collections'
     | '/reports/expenses'
+    | '/reports/monthly'
     | '/reports/outstanding'
     | '/reports/production-loss'
     | '/reports/profit-loss'
@@ -1148,8 +1184,10 @@ export interface FileRouteTypes {
     | '/_protected/suppliers/$supplierId_/details'
     | '/_protected/dashboard/activity-timeline/'
     | '/_protected/finance/accounts/'
+    | '/_protected/finance/by-products/'
     | '/_protected/finance/expenses/'
     | '/_protected/finance/ledger/'
+    | '/_protected/finance/other-income/'
     | '/_protected/hr/approvals/'
     | '/_protected/hr/attendance/'
     | '/_protected/hr/employees/'
@@ -1168,6 +1206,7 @@ export interface FileRouteTypes {
     | '/_protected/order-booker/trips/'
     | '/_protected/reports/collections/'
     | '/_protected/reports/expenses/'
+    | '/_protected/reports/monthly/'
     | '/_protected/reports/outstanding/'
     | '/_protected/reports/production-loss/'
     | '/_protected/reports/profit-loss/'
@@ -1492,6 +1531,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProtectedReportsOutstandingIndexRouteImport
       parentRoute: typeof ProtectedReportsRouteRoute
     }
+    '/_protected/reports/monthly/': {
+      id: '/_protected/reports/monthly/'
+      path: '/monthly'
+      fullPath: '/reports/monthly/'
+      preLoaderRoute: typeof ProtectedReportsMonthlyIndexRouteImport
+      parentRoute: typeof ProtectedReportsRouteRoute
+    }
     '/_protected/reports/expenses/': {
       id: '/_protected/reports/expenses/'
       path: '/expenses'
@@ -1618,6 +1664,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProtectedHrApprovalsIndexRouteImport
       parentRoute: typeof ProtectedRouteRoute
     }
+    '/_protected/finance/other-income/': {
+      id: '/_protected/finance/other-income/'
+      path: '/finance/other-income'
+      fullPath: '/finance/other-income/'
+      preLoaderRoute: typeof ProtectedFinanceOtherIncomeIndexRouteImport
+      parentRoute: typeof ProtectedRouteRoute
+    }
     '/_protected/finance/ledger/': {
       id: '/_protected/finance/ledger/'
       path: '/finance/ledger'
@@ -1630,6 +1683,13 @@ declare module '@tanstack/react-router' {
       path: '/finance/expenses'
       fullPath: '/finance/expenses/'
       preLoaderRoute: typeof ProtectedFinanceExpensesIndexRouteImport
+      parentRoute: typeof ProtectedRouteRoute
+    }
+    '/_protected/finance/by-products/': {
+      id: '/_protected/finance/by-products/'
+      path: '/finance/by-products'
+      fullPath: '/finance/by-products/'
+      preLoaderRoute: typeof ProtectedFinanceByProductsIndexRouteImport
       parentRoute: typeof ProtectedRouteRoute
     }
     '/_protected/finance/accounts/': {
@@ -1897,6 +1957,7 @@ interface ProtectedReportsRouteRouteChildren {
   ProtectedReportsIndexRoute: typeof ProtectedReportsIndexRoute
   ProtectedReportsCollectionsIndexRoute: typeof ProtectedReportsCollectionsIndexRoute
   ProtectedReportsExpensesIndexRoute: typeof ProtectedReportsExpensesIndexRoute
+  ProtectedReportsMonthlyIndexRoute: typeof ProtectedReportsMonthlyIndexRoute
   ProtectedReportsOutstandingIndexRoute: typeof ProtectedReportsOutstandingIndexRoute
   ProtectedReportsProductionLossIndexRoute: typeof ProtectedReportsProductionLossIndexRoute
   ProtectedReportsProfitLossIndexRoute: typeof ProtectedReportsProfitLossIndexRoute
@@ -1911,6 +1972,7 @@ const ProtectedReportsRouteRouteChildren: ProtectedReportsRouteRouteChildren = {
   ProtectedReportsIndexRoute: ProtectedReportsIndexRoute,
   ProtectedReportsCollectionsIndexRoute: ProtectedReportsCollectionsIndexRoute,
   ProtectedReportsExpensesIndexRoute: ProtectedReportsExpensesIndexRoute,
+  ProtectedReportsMonthlyIndexRoute: ProtectedReportsMonthlyIndexRoute,
   ProtectedReportsOutstandingIndexRoute: ProtectedReportsOutstandingIndexRoute,
   ProtectedReportsProductionLossIndexRoute:
     ProtectedReportsProductionLossIndexRoute,
@@ -1953,8 +2015,10 @@ interface ProtectedRouteRouteChildren {
   ProtectedSuppliersSupplierIdDetailsRoute: typeof ProtectedSuppliersSupplierIdDetailsRoute
   ProtectedDashboardActivityTimelineIndexRoute: typeof ProtectedDashboardActivityTimelineIndexRoute
   ProtectedFinanceAccountsIndexRoute: typeof ProtectedFinanceAccountsIndexRoute
+  ProtectedFinanceByProductsIndexRoute: typeof ProtectedFinanceByProductsIndexRoute
   ProtectedFinanceExpensesIndexRoute: typeof ProtectedFinanceExpensesIndexRoute
   ProtectedFinanceLedgerIndexRoute: typeof ProtectedFinanceLedgerIndexRoute
+  ProtectedFinanceOtherIncomeIndexRoute: typeof ProtectedFinanceOtherIncomeIndexRoute
   ProtectedHrApprovalsIndexRoute: typeof ProtectedHrApprovalsIndexRoute
   ProtectedHrAttendanceIndexRoute: typeof ProtectedHrAttendanceIndexRoute
   ProtectedHrEmployeesIndexRoute: typeof ProtectedHrEmployeesIndexRoute
@@ -2033,8 +2097,10 @@ const ProtectedRouteRouteChildren: ProtectedRouteRouteChildren = {
   ProtectedDashboardActivityTimelineIndexRoute:
     ProtectedDashboardActivityTimelineIndexRoute,
   ProtectedFinanceAccountsIndexRoute: ProtectedFinanceAccountsIndexRoute,
+  ProtectedFinanceByProductsIndexRoute: ProtectedFinanceByProductsIndexRoute,
   ProtectedFinanceExpensesIndexRoute: ProtectedFinanceExpensesIndexRoute,
   ProtectedFinanceLedgerIndexRoute: ProtectedFinanceLedgerIndexRoute,
+  ProtectedFinanceOtherIncomeIndexRoute: ProtectedFinanceOtherIncomeIndexRoute,
   ProtectedHrApprovalsIndexRoute: ProtectedHrApprovalsIndexRoute,
   ProtectedHrAttendanceIndexRoute: ProtectedHrAttendanceIndexRoute,
   ProtectedHrEmployeesIndexRoute: ProtectedHrEmployeesIndexRoute,

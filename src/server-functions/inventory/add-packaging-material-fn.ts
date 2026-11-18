@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { byProductColumns } from "@/lib/inventory/by-products";
 import {
   db,
   packagingMaterials,
@@ -74,7 +75,7 @@ export const addPackagingMaterialFn = createServerFn()
   .middleware([requireInventoryManageMiddleware])
   .inputValidator(addPackagingMaterialSchema)
   .handler(async ({ data, context }) => {
-    return await db.transaction(async (tx) => {
+    const { response, activity } = await db.transaction(async (tx) => {
       // Validate Warehouse
       const warehouse = await tx.query.warehouses.findFirst({
         where: eq(warehouses.id, data.warehouseId),
@@ -154,6 +155,7 @@ export const addPackagingMaterialFn = createServerFn()
             materialType: "packaging",
             packagingMaterialId: materialId,
             quantity: data.quantity,
+            ...byProductColumns(data, data.quantity),
             cost: totalCost,
             paidAmount: amountToRecord.toString(),
             unitCost: lot.unitPrice,
@@ -273,27 +275,33 @@ export const addPackagingMaterialFn = createServerFn()
         }
       }
 
-      logActivityQuiet({
-        module: "inventory",
-        action: "created",
-        entityType: "packaging",
-        entityLabel: `${finalMaterial.name}${qty > 0 ? ` (${data.quantity} ${unitStr})` : ""}`,
-        actorId: context.authContext.session.user.id,
-        actorName: context.authContext.session.user.name,
-        description: `Created packaging material ${finalMaterial.name}${purchaseDescription}`,
-        metadata: {
-          materialName: finalMaterial.name,
-          materialType: "packaging",
-          initialQuantity: `${data.quantity} ${unitStr}`,
-          unitCost: `PKR ${unitPriceNum.toFixed(2)} / ${unitStr}`,
-          totalCost: totalCostFormatted,
-          amountPaid: paidFormatted,
-          supplier: supplierName,
-          supplierId: data.supplierId,
-          facility: warehouse.name,
+      return {
+        response: finalMaterial,
+        activity: {
+          module: "inventory" as const,
+          action: "created",
+          entityType: "packaging",
+          entityId: finalMaterial.id,
+          entityLabel: `${finalMaterial.name}${qty > 0 ? ` (${data.quantity} ${unitStr})` : ""}`,
+          actorId: context.authContext.session.user.id,
+          actorName: context.authContext.session.user.name,
+          description: `Created packaging material ${finalMaterial.name}${purchaseDescription}`,
+          metadata: {
+            materialName: finalMaterial.name,
+            materialType: "packaging",
+            initialQuantity: `${data.quantity} ${unitStr}`,
+            unitCost: `PKR ${unitPriceNum.toFixed(2)} / ${unitStr}`,
+            totalCost: totalCostFormatted,
+            amountPaid: paidFormatted,
+            supplier: supplierName,
+            supplierId: data.supplierId,
+            facility: warehouse.name,
+          },
         },
-      });
-
-      return finalMaterial;
+      };
     });
+
+    await logActivityQuiet(activity);
+
+    return response;
   });

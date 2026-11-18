@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -20,6 +20,8 @@ import { getProductsFn } from "@/server-functions/inventory/get-products-fn";
 import { getMaterialsFn } from "@/server-functions/inventory/get-materials-fn";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Textarea } from "@/components/ui/textarea";
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { ChemicalOption, ChemicalSearchSelect } from "./chemical-search-select";
 
 type Formula = NonNullable<Awaited<ReturnType<typeof getFormulaByIdFn>>>;
 
@@ -44,6 +46,26 @@ export function CreateFormulaDialog({
   });
 
   const chemicals = materialsData?.chemicals || [];
+
+  const availableChemicals: ChemicalOption[] = useMemo(() => {
+    const list: ChemicalOption[] = (chemicals || []).map((c: any) => ({
+      id: c.id,
+      name: c.name,
+      unit: c.unit,
+    }));
+    if (initialFormula?.ingredients) {
+      for (const ing of initialFormula.ingredients) {
+        if (ing.chemical && !list.some((c) => c.id === ing.chemical.id)) {
+          list.push({
+            id: ing.chemical.id,
+            name: ing.chemical.name,
+            unit: ing.chemical.unit,
+          });
+        }
+      }
+    }
+    return list;
+  }, [chemicals, initialFormula]);
 
   const [productId, setProductId] = useState(initialFormula?.productId ?? "");
   const [name, setName] = useState(initialFormula?.name ?? "");
@@ -114,8 +136,8 @@ export function CreateFormulaDialog({
           {initialFormula ? "Edit Mixing Formula" : "Create Mixing Formula"}
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
+      <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto overflow-x-hidden">
+        <DialogHeader className="pr-8">
           <DialogTitle>
             {initialFormula ? "Edit Mixing Formula" : "Create New Mixing Formula"}
           </DialogTitle>
@@ -124,43 +146,46 @@ export function CreateFormulaDialog({
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={onSubmit} className="space-y-6">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="text-sm font-medium mb-1 block">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium block" htmlFor="formula-name">
                 Mixing Formula Name
               </label>
               <Input
+                id="formula-name"
                 required
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="e.g. Premium Dishwash Base"
               />
             </div>
-            <div>
-              <label className="text-sm font-medium mb-1 block">
+            <div className="space-y-1.5 min-w-0">
+              <label className="text-sm font-medium block" htmlFor="formula-product">
                 Linked Product
               </label>
-              <select
+              <NativeSelect
+                id="formula-product"
+                className="w-full"
                 required
-                className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                 value={productId}
                 onChange={(e) => setProductId(e.target.value)}
               >
-                <option value="" disabled>
+                <NativeSelectOption value="" disabled>
                   Select a product
-                </option>
+                </NativeSelectOption>
                 {products?.map((p: any) => (
-                  <option key={p.id} value={p.id}>
+                  <NativeSelectOption key={p.id} value={p.id}>
                     {p.name}
-                  </option>
+                  </NativeSelectOption>
                 ))}
-              </select>
+              </NativeSelect>
             </div>
-            <div>
-              <label className="text-sm font-medium mb-1 block">
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium block" htmlFor="formula-batch-size">
                 Target Batch Size
               </label>
               <Input
+                id="formula-batch-size"
                 required
                 min="0.01"
                 type="number"
@@ -169,16 +194,16 @@ export function CreateFormulaDialog({
                 onChange={(e) => setBatchSize(e.target.value)}
               />
             </div>
-            <div>
+            <div className="space-y-1.5 min-w-0">
               <label
-                className="text-sm font-medium mb-1 block"
+                className="text-sm font-medium block"
                 htmlFor="formula-bulk-unit"
               >
                 Bulk unit
               </label>
-              <select
+              <NativeSelect
                 id="formula-bulk-unit"
-                className="h-10 w-full rounded-md border bg-background px-3"
+                className="w-full"
                 value={batchUnit}
                 onChange={(event) =>
                   setBatchUnit(
@@ -186,13 +211,13 @@ export function CreateFormulaDialog({
                   )
                 }
               >
-                <option value="kg">Kilograms</option>
-                <option value="liters">Liters</option>
-              </select>
+                <NativeSelectOption value="kg">Kilograms</NativeSelectOption>
+                <NativeSelectOption value="liters">Liters</NativeSelectOption>
+              </NativeSelect>
             </div>
           </div>
 
-          <FieldGroup>
+          <FieldGroup className="gap-4">
             <Field>
               <FieldLabel htmlFor="formula-instructions">
                 Production instructions
@@ -203,6 +228,7 @@ export function CreateFormulaDialog({
                 onChange={(event) =>
                   setProductionInstructions(event.target.value)
                 }
+                placeholder="Step-by-step production instructions..."
               />
             </Field>
             <Field>
@@ -211,13 +237,17 @@ export function CreateFormulaDialog({
                 id="formula-notes"
                 value={notes}
                 onChange={(event) => setNotes(event.target.value)}
+                placeholder="Optional notes or formulation guidelines..."
               />
             </Field>
           </FieldGroup>
 
-          <div className="space-y-4">
+          <div className="space-y-3">
             <div className="flex justify-between items-center">
-              <h3 className="font-semibold text-lg">Ingredients</h3>
+              <div>
+                <h3 className="font-semibold text-base">Ingredients</h3>
+                <p className="text-xs text-muted-foreground">Add chemicals and specify quantity per batch</p>
+              </div>
               <Button
                 type="button"
                 variant="outline"
@@ -229,36 +259,26 @@ export function CreateFormulaDialog({
                   ])
                 }
               >
-                <PlusIcon className="w-4 h-4 mr-2" />
+                <PlusIcon className="w-4 h-4 mr-1.5" />
                 Add Ingredient
               </Button>
             </div>
 
-            <div className="space-y-4">
+            <div className="space-y-2.5">
               {ingredients.map((ing, index) => (
-                <div key={index} className="flex items-start gap-4">
-                  <div className="flex-1">
-                    <select
-                      required
-                      className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                <div key={index} className="flex items-center gap-3">
+                  <div className="flex-1 min-w-0">
+                    <ChemicalSearchSelect
                       value={ing.chemicalId}
-                      onChange={(e) => {
+                      onChange={(chemicalId) => {
                         const newIngs = [...ingredients];
-                        newIngs[index].chemicalId = e.target.value;
+                        newIngs[index].chemicalId = chemicalId;
                         setIngredients(newIngs);
                       }}
-                    >
-                      <option value="" disabled>
-                        Select chemical
-                      </option>
-                      {chemicals?.map((c: any) => (
-                        <option key={c.id} value={c.id}>
-                          {c.name} ({c.unit})
-                        </option>
-                      ))}
-                    </select>
+                      chemicals={availableChemicals}
+                    />
                   </div>
-                  <div className="w-32">
+                  <div className="w-28 sm:w-32 shrink-0">
                     <Input
                       required
                       aria-label={`Ingredient ${index + 1} quantity`}
@@ -278,13 +298,14 @@ export function CreateFormulaDialog({
                     type="button"
                     variant="ghost"
                     size="icon"
+                    className="shrink-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
                     onClick={() => {
                       const newIngs = [...ingredients];
                       newIngs.splice(index, 1);
                       setIngredients(newIngs);
                     }}
                   >
-                    <TrashIcon className="h-4 w-4 text-destructive" />
+                    <TrashIcon className="h-4 w-4" />
                   </Button>
                 </div>
               ))}

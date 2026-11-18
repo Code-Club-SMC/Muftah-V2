@@ -109,6 +109,16 @@ export const addWarehouseSchema = z.object({
   longitude: z.string().min(1, "Longitude is required"),
 });
 
+/** By-product fields on any form that creates a purchase. Defaults keep older callers valid. */
+export const byProductInputSchema = z.object({
+  byProductTracked: z.boolean().default(false),
+  containerName: z.string().max(40).default(""),
+  containerSize: z.string().default(""),
+});
+
+/** Forms always send the by-product fields, so their validators use `schema.required(BY_PRODUCT_FORM_FIELDS)`. */
+export const BY_PRODUCT_FORM_FIELDS = { byProductTracked: true, containerName: true, containerSize: true } as const;
+
 export const addChemicalSchema = z.object({
   name: z.string().min(1, "Material name is required"),
   unit: z.enum(["kg", "liters"]),
@@ -129,6 +139,7 @@ export const addChemicalSchema = z.object({
   transactionId: z.string(),
   bankName: z.string(),
   confirmSimilarName: z.boolean().optional(),
+  ...byProductInputSchema.shape,
 });
 
 export const addPackagingMaterialSchema = z.object({
@@ -157,6 +168,7 @@ export const addPackagingMaterialSchema = z.object({
   transactionId: z.string(),
   bankName: z.string(),
   confirmSimilarName: z.boolean().optional(),
+  ...byProductInputSchema.shape,
 });
 
 export const addProductSchema = z.object({
@@ -195,6 +207,7 @@ export const addStockSchema = z.object({
   amountPaid: z.string(),
   transactionId: z.string(),
   bankName: z.string(),
+  ...byProductInputSchema.shape,
 });
 
 export const transferStockSchema = z

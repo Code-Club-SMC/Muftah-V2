@@ -190,6 +190,11 @@ export const navigations: NavigationItem[] = [
         icon: ExpensesIcon,
       },
       {
+        title: "By-Products",
+        url: "/finance/by-products",
+        icon: ExpensesIcon,
+      },
+      {
         title: "Ledger",
         url: "/finance/ledger",
         icon: LedgerIcon,

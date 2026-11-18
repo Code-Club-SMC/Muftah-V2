@@ -1,5 +1,5 @@
 {
-  "id": "b878f8fd-82f7-467a-8e51-7f8f38e88157",
+  "id": "3676c1f4-32eb-4931-9f6a-c74c3c3d783a",
   "prevId": "debdb8bb-f450-4401-b7bd-4bad6ea8570a",
   "version": "7",
   "dialect": "postgresql",
@@ -1917,6 +1917,204 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.other_income": {
+      "name": "other_income",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "income_date": {
+          "name": "income_date",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "item_name": {
+          "name": "item_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "quantity": {
+          "name": "quantity",
+          "type": "numeric(12, 3)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "unit_price": {
+          "name": "unit_price",
+          "type": "numeric(12, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "amount": {
+          "name": "amount",
+          "type": "numeric(12, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "note": {
+          "name": "note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "wallet_id": {
+          "name": "wallet_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "transaction_id": {
+          "name": "transaction_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "performed_by_id": {
+          "name": "performed_by_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "voided_at": {
+          "name": "voided_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "voided_by_id": {
+          "name": "voided_by_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "void_reason": {
+          "name": "void_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "void_transaction_id": {
+          "name": "void_transaction_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "other_income_date_idx": {
+          "name": "other_income_date_idx",
+          "columns": [
+            {
+              "expression": "income_date",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "other_income_wallet_id_wallets_id_fk": {
+          "name": "other_income_wallet_id_wallets_id_fk",
+          "tableFrom": "other_income",
+          "tableTo": "wallets",
+          "columnsFrom": [
+            "wallet_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "other_income_transaction_id_transactions_id_fk": {
+          "name": "other_income_transaction_id_transactions_id_fk",
+          "tableFrom": "other_income",
+          "tableTo": "transactions",
+          "columnsFrom": [
+            "transaction_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "other_income_performed_by_id_user_id_fk": {
+          "name": "other_income_performed_by_id_user_id_fk",
+          "tableFrom": "other_income",
+          "tableTo": "user",
+          "columnsFrom": [
+            "performed_by_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "other_income_voided_by_id_user_id_fk": {
+          "name": "other_income_voided_by_id_user_id_fk",
+          "tableFrom": "other_income",
+          "tableTo": "user",
+          "columnsFrom": [
+            "voided_by_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "other_income_void_transaction_id_transactions_id_fk": {
+          "name": "other_income_void_transaction_id_transactions_id_fk",
+          "tableFrom": "other_income",
+          "tableTo": "transactions",
+          "columnsFrom": [
+            "void_transaction_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "other_income_positive": {
+          "name": "other_income_positive",
+          "value": "\"other_income\".\"amount\" > 0 and \"other_income\".\"quantity\" > 0 and \"other_income\".\"unit_price\" > 0"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.transactions": {
@@ -15602,44 +15800,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.credit_note_counters": {
-      "name": "credit_note_counters",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "last_number": {
-          "name": "last_number",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "credit_note_counters_last_number_check": {
-          "name": "credit_note_counters_last_number_check",
-          "value": "\"credit_note_counters\".\"last_number\" >= 0"
-        }
-      },
-      "isRLSEnabled": false
-    },
     "public.credit_recovery_attempts": {
       "name": "credit_recovery_attempts",
       "schema": "",
@@ -15765,984 +15925,6 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.customer_credit_lots": {
-      "name": "customer_credit_lots",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "customer_id": {
-          "name": "customer_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "source_type": {
-          "name": "source_type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "source_return_id": {
-          "name": "source_return_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "source_invoice_id": {
-          "name": "source_invoice_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "source_payment_id": {
-          "name": "source_payment_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "credit_note_number": {
-          "name": "credit_note_number",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "original_amount": {
-          "name": "original_amount",
-          "type": "numeric(12, 2)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "remaining_amount": {
-          "name": "remaining_amount",
-          "type": "numeric(12, 2)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "applied_amount": {
-          "name": "applied_amount",
-          "type": "numeric(12, 2)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'0'"
-        },
-        "refunded_amount": {
-          "name": "refunded_amount",
-          "type": "numeric(12, 2)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'0'"
-        },
-        "reclaimed_amount": {
-          "name": "reclaimed_amount",
-          "type": "numeric(12, 2)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'0'"
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "voided_at": {
-          "name": "voided_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "idx_customer_credit_lots_customer_created": {
-          "name": "idx_customer_credit_lots_customer_created",
-          "columns": [
-            {
-              "expression": "customer_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_customer_credit_lots_source_return": {
-          "name": "idx_customer_credit_lots_source_return",
-          "columns": [
-            {
-              "expression": "source_return_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_customer_credit_lots_source_invoice": {
-          "name": "idx_customer_credit_lots_source_invoice",
-          "columns": [
-            {
-              "expression": "source_invoice_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "customer_credit_lots_customer_id_customers_id_fk": {
-          "name": "customer_credit_lots_customer_id_customers_id_fk",
-          "tableFrom": "customer_credit_lots",
-          "tableTo": "customers",
-          "columnsFrom": [
-            "customer_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "customer_credit_lots_source_return_id_sales_returns_id_fk": {
-          "name": "customer_credit_lots_source_return_id_sales_returns_id_fk",
-          "tableFrom": "customer_credit_lots",
-          "tableTo": "sales_returns",
-          "columnsFrom": [
-            "source_return_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "customer_credit_lots_source_invoice_id_invoices_id_fk": {
-          "name": "customer_credit_lots_source_invoice_id_invoices_id_fk",
-          "tableFrom": "customer_credit_lots",
-          "tableTo": "invoices",
-          "columnsFrom": [
-            "source_invoice_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "customer_credit_lots_source_payment_id_payments_id_fk": {
-          "name": "customer_credit_lots_source_payment_id_payments_id_fk",
-          "tableFrom": "customer_credit_lots",
-          "tableTo": "payments",
-          "columnsFrom": [
-            "source_payment_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "customer_credit_lots_amounts_check": {
-          "name": "customer_credit_lots_amounts_check",
-          "value": "\"customer_credit_lots\".\"original_amount\" > 0 and \"customer_credit_lots\".\"remaining_amount\" >= 0 and \"customer_credit_lots\".\"applied_amount\" >= 0 and \"customer_credit_lots\".\"refunded_amount\" >= 0 and \"customer_credit_lots\".\"reclaimed_amount\" >= 0"
-        },
-        "customer_credit_lots_conservation_check": {
-          "name": "customer_credit_lots_conservation_check",
-          "value": "\"customer_credit_lots\".\"voided_at\" is not null or (\"customer_credit_lots\".\"remaining_amount\" + \"customer_credit_lots\".\"applied_amount\" + \"customer_credit_lots\".\"refunded_amount\" + \"customer_credit_lots\".\"reclaimed_amount\" = \"customer_credit_lots\".\"original_amount\")"
-        },
-        "customer_credit_lots_source_type_check": {
-          "name": "customer_credit_lots_source_type_check",
-          "value": "\"customer_credit_lots\".\"source_type\" in ('sales_return', 'payment_overage')"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.customer_credit_movements": {
-      "name": "customer_credit_movements",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "customer_id": {
-          "name": "customer_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "credit_lot_id": {
-          "name": "credit_lot_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "type": {
-          "name": "type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "amount": {
-          "name": "amount",
-          "type": "numeric(12, 2)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "signed_delta": {
-          "name": "signed_delta",
-          "type": "numeric(12, 2)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "balance_after": {
-          "name": "balance_after",
-          "type": "numeric(12, 2)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "sales_return_id": {
-          "name": "sales_return_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "credit_note_number": {
-          "name": "credit_note_number",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "invoice_id": {
-          "name": "invoice_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "payment_id": {
-          "name": "payment_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "refund_id": {
-          "name": "refund_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "wallet_id": {
-          "name": "wallet_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "notes": {
-          "name": "notes",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "performed_by_id": {
-          "name": "performed_by_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "idx_customer_credit_movements_customer": {
-          "name": "idx_customer_credit_movements_customer",
-          "columns": [
-            {
-              "expression": "customer_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "customer_credit_movements_customer_id_customers_id_fk": {
-          "name": "customer_credit_movements_customer_id_customers_id_fk",
-          "tableFrom": "customer_credit_movements",
-          "tableTo": "customers",
-          "columnsFrom": [
-            "customer_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "customer_credit_movements_credit_lot_id_customer_credit_lots_id_fk": {
-          "name": "customer_credit_movements_credit_lot_id_customer_credit_lots_id_fk",
-          "tableFrom": "customer_credit_movements",
-          "tableTo": "customer_credit_lots",
-          "columnsFrom": [
-            "credit_lot_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "customer_credit_movements_sales_return_id_sales_returns_id_fk": {
-          "name": "customer_credit_movements_sales_return_id_sales_returns_id_fk",
-          "tableFrom": "customer_credit_movements",
-          "tableTo": "sales_returns",
-          "columnsFrom": [
-            "sales_return_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "customer_credit_movements_invoice_id_invoices_id_fk": {
-          "name": "customer_credit_movements_invoice_id_invoices_id_fk",
-          "tableFrom": "customer_credit_movements",
-          "tableTo": "invoices",
-          "columnsFrom": [
-            "invoice_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "customer_credit_movements_payment_id_payments_id_fk": {
-          "name": "customer_credit_movements_payment_id_payments_id_fk",
-          "tableFrom": "customer_credit_movements",
-          "tableTo": "payments",
-          "columnsFrom": [
-            "payment_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "customer_credit_movements_refund_id_customer_refunds_id_fk": {
-          "name": "customer_credit_movements_refund_id_customer_refunds_id_fk",
-          "tableFrom": "customer_credit_movements",
-          "tableTo": "customer_refunds",
-          "columnsFrom": [
-            "refund_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "customer_credit_movements_wallet_id_wallets_id_fk": {
-          "name": "customer_credit_movements_wallet_id_wallets_id_fk",
-          "tableFrom": "customer_credit_movements",
-          "tableTo": "wallets",
-          "columnsFrom": [
-            "wallet_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "customer_credit_movements_performed_by_id_user_id_fk": {
-          "name": "customer_credit_movements_performed_by_id_user_id_fk",
-          "tableFrom": "customer_credit_movements",
-          "tableTo": "user",
-          "columnsFrom": [
-            "performed_by_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "customer_credit_movements_amount_check": {
-          "name": "customer_credit_movements_amount_check",
-          "value": "\"customer_credit_movements\".\"amount\" > 0"
-        },
-        "customer_credit_movements_balance_after_check": {
-          "name": "customer_credit_movements_balance_after_check",
-          "value": "\"customer_credit_movements\".\"balance_after\" >= 0"
-        },
-        "customer_credit_movements_type_check": {
-          "name": "customer_credit_movements_type_check",
-          "value": "\"customer_credit_movements\".\"type\" in ('issued', 'applied', 'application_reversed', 'refunded', 'refund_reversed', 'void_reclaimed', 'void_unapplied')"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.customer_credit_payment_allocations": {
-      "name": "customer_credit_payment_allocations",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "payment_id": {
-          "name": "payment_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "credit_lot_id": {
-          "name": "credit_lot_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "amount": {
-          "name": "amount",
-          "type": "numeric(12, 2)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'active'"
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "reversed_at": {
-          "name": "reversed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "idx_credit_payment_alloc_payment": {
-          "name": "idx_credit_payment_alloc_payment",
-          "columns": [
-            {
-              "expression": "payment_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_credit_payment_alloc_lot": {
-          "name": "idx_credit_payment_alloc_lot",
-          "columns": [
-            {
-              "expression": "credit_lot_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "customer_credit_payment_allocations_payment_id_payments_id_fk": {
-          "name": "customer_credit_payment_allocations_payment_id_payments_id_fk",
-          "tableFrom": "customer_credit_payment_allocations",
-          "tableTo": "payments",
-          "columnsFrom": [
-            "payment_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "customer_credit_payment_allocations_credit_lot_id_customer_credit_lots_id_fk": {
-          "name": "customer_credit_payment_allocations_credit_lot_id_customer_credit_lots_id_fk",
-          "tableFrom": "customer_credit_payment_allocations",
-          "tableTo": "customer_credit_lots",
-          "columnsFrom": [
-            "credit_lot_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "credit_payment_alloc_amount_check": {
-          "name": "credit_payment_alloc_amount_check",
-          "value": "\"customer_credit_payment_allocations\".\"amount\" > 0"
-        },
-        "credit_payment_alloc_status_check": {
-          "name": "credit_payment_alloc_status_check",
-          "value": "\"customer_credit_payment_allocations\".\"status\" in ('active', 'reversed')"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.customer_refund_allocations": {
-      "name": "customer_refund_allocations",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "refund_id": {
-          "name": "refund_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "credit_lot_id": {
-          "name": "credit_lot_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "amount": {
-          "name": "amount",
-          "type": "numeric(12, 2)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'active'"
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "reversed_at": {
-          "name": "reversed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "idx_customer_refund_alloc_refund": {
-          "name": "idx_customer_refund_alloc_refund",
-          "columns": [
-            {
-              "expression": "refund_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_customer_refund_alloc_lot": {
-          "name": "idx_customer_refund_alloc_lot",
-          "columns": [
-            {
-              "expression": "credit_lot_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "customer_refund_allocations_refund_id_customer_refunds_id_fk": {
-          "name": "customer_refund_allocations_refund_id_customer_refunds_id_fk",
-          "tableFrom": "customer_refund_allocations",
-          "tableTo": "customer_refunds",
-          "columnsFrom": [
-            "refund_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "customer_refund_allocations_credit_lot_id_customer_credit_lots_id_fk": {
-          "name": "customer_refund_allocations_credit_lot_id_customer_credit_lots_id_fk",
-          "tableFrom": "customer_refund_allocations",
-          "tableTo": "customer_credit_lots",
-          "columnsFrom": [
-            "credit_lot_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "customer_refund_alloc_amount_check": {
-          "name": "customer_refund_alloc_amount_check",
-          "value": "\"customer_refund_allocations\".\"amount\" > 0"
-        },
-        "customer_refund_alloc_status_check": {
-          "name": "customer_refund_alloc_status_check",
-          "value": "\"customer_refund_allocations\".\"status\" in ('active', 'reversed')"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.customer_refunds": {
-      "name": "customer_refunds",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "customer_id": {
-          "name": "customer_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "sales_return_id": {
-          "name": "sales_return_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "credit_note_number": {
-          "name": "credit_note_number",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "wallet_id": {
-          "name": "wallet_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "wallet_transaction_id": {
-          "name": "wallet_transaction_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "amount": {
-          "name": "amount",
-          "type": "numeric(12, 2)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "refund_date": {
-          "name": "refund_date",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "notes": {
-          "name": "notes",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'active'"
-        },
-        "issued_by_id": {
-          "name": "issued_by_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "reversed_by_id": {
-          "name": "reversed_by_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "reversed_at": {
-          "name": "reversed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "reverse_reason": {
-          "name": "reverse_reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "reversal_transaction_id": {
-          "name": "reversal_transaction_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "idx_customer_refunds_customer_date": {
-          "name": "idx_customer_refunds_customer_date",
-          "columns": [
-            {
-              "expression": "customer_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "refund_date",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_customer_refunds_return": {
-          "name": "idx_customer_refunds_return",
-          "columns": [
-            {
-              "expression": "sales_return_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "customer_refunds_customer_id_customers_id_fk": {
-          "name": "customer_refunds_customer_id_customers_id_fk",
-          "tableFrom": "customer_refunds",
-          "tableTo": "customers",
-          "columnsFrom": [
-            "customer_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "customer_refunds_sales_return_id_sales_returns_id_fk": {
-          "name": "customer_refunds_sales_return_id_sales_returns_id_fk",
-          "tableFrom": "customer_refunds",
-          "tableTo": "sales_returns",
-          "columnsFrom": [
-            "sales_return_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "customer_refunds_wallet_id_wallets_id_fk": {
-          "name": "customer_refunds_wallet_id_wallets_id_fk",
-          "tableFrom": "customer_refunds",
-          "tableTo": "wallets",
-          "columnsFrom": [
-            "wallet_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "customer_refunds_wallet_transaction_id_transactions_id_fk": {
-          "name": "customer_refunds_wallet_transaction_id_transactions_id_fk",
-          "tableFrom": "customer_refunds",
-          "tableTo": "transactions",
-          "columnsFrom": [
-            "wallet_transaction_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "customer_refunds_issued_by_id_user_id_fk": {
-          "name": "customer_refunds_issued_by_id_user_id_fk",
-          "tableFrom": "customer_refunds",
-          "tableTo": "user",
-          "columnsFrom": [
-            "issued_by_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "customer_refunds_reversed_by_id_user_id_fk": {
-          "name": "customer_refunds_reversed_by_id_user_id_fk",
-          "tableFrom": "customer_refunds",
-          "tableTo": "user",
-          "columnsFrom": [
-            "reversed_by_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "customer_refunds_reversal_transaction_id_transactions_id_fk": {
-          "name": "customer_refunds_reversal_transaction_id_transactions_id_fk",
-          "tableFrom": "customer_refunds",
-          "tableTo": "transactions",
-          "columnsFrom": [
-            "reversal_transaction_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "customer_refunds_amount_check": {
-          "name": "customer_refunds_amount_check",
-          "value": "\"customer_refunds\".\"amount\" > 0"
-        },
-        "customer_refunds_status_check": {
-          "name": "customer_refunds_status_check",
-          "value": "(\n        (\"customer_refunds\".\"status\" = 'active' and \"customer_refunds\".\"reversed_by_id\" is null and \"customer_refunds\".\"reversed_at\" is null and \"customer_refunds\".\"reverse_reason\" is null and \"customer_refunds\".\"reversal_transaction_id\" is null) or\n        (\"customer_refunds\".\"status\" = 'reversed' and \"customer_refunds\".\"reversed_by_id\" is not null and \"customer_refunds\".\"reversed_at\" is not null and nullif(btrim(\"customer_refunds\".\"reverse_reason\"), '') is not null and \"customer_refunds\".\"reversal_transaction_id\" is not null)\n      )"
-        }
-      },
       "isRLSEnabled": false
     },
     "public.discount_rules": {
@@ -18349,11 +17531,11 @@
         },
         "payments_method_status_check": {
           "name": "payments_method_status_check",
-          "value": "(\n        (\"payments\".\"method\" in ('cash', 'expense_offset', 'customer_credit') and \"payments\".\"status\" in ('confirmed', 'reversed')) or\n        (\"payments\".\"method\" = 'bank_transfer' and \"payments\".\"status\" in ('pending', 'confirmed', 'cancelled', 'reversed')) or\n        (\"payments\".\"method\" = 'cheque' and \"payments\".\"status\" in ('pending', 'confirmed', 'returned', 'cancelled', 'reversed'))\n      )"
+          "value": "(\n        (\"payments\".\"method\" in ('cash', 'expense_offset') and \"payments\".\"status\" in ('confirmed', 'reversed')) or\n        (\"payments\".\"method\" = 'bank_transfer' and \"payments\".\"status\" in ('pending', 'confirmed', 'cancelled', 'reversed')) or\n        (\"payments\".\"method\" = 'cheque' and \"payments\".\"status\" in ('pending', 'confirmed', 'returned', 'cancelled', 'reversed'))\n      )"
         },
         "payments_method_details_check": {
           "name": "payments_method_details_check",
-          "value": "(\n        (\"payments\".\"method\" in ('expense_offset', 'customer_credit') or \"payments\".\"wallet_id\" is not null) and\n        (\"payments\".\"method\" <> 'bank_transfer' or nullif(btrim(\"payments\".\"reference\"), '') is not null) and\n        (\"payments\".\"method\" <> 'cheque' or (\n          nullif(btrim(\"payments\".\"cheque_number\"), '') is not null and\n          nullif(btrim(\"payments\".\"cheque_bank\"), '') is not null and\n          \"payments\".\"cheque_date\" is not null\n        ))\n      )"
+          "value": "(\n        (\"payments\".\"method\" = 'expense_offset' or \"payments\".\"wallet_id\" is not null) and\n        (\"payments\".\"method\" <> 'bank_transfer' or nullif(btrim(\"payments\".\"reference\"), '') is not null) and\n        (\"payments\".\"method\" <> 'cheque' or (\n          nullif(btrim(\"payments\".\"cheque_number\"), '') is not null and\n          nullif(btrim(\"payments\".\"cheque_bank\"), '') is not null and\n          \"payments\".\"cheque_date\" is not null\n        ))\n      )"
         },
         "payments_confirmation_check": {
           "name": "payments_confirmation_check",
@@ -19486,32 +18668,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "credit_note_number": {
-          "name": "credit_note_number",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "credit_note_issued_at": {
-          "name": "credit_note_issued_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "applied_to_invoice_amount": {
-          "name": "applied_to_invoice_amount",
-          "type": "numeric(12, 2)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'0'"
-        },
-        "customer_credit_amount": {
-          "name": "customer_credit_amount",
-          "type": "numeric(12, 2)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'0'"
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp",
@@ -19584,22 +18740,6 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "uq_sales_returns_credit_note_number": {
-          "name": "uq_sales_returns_credit_note_number",
-          "columns": [
-            {
-              "expression": "credit_note_number",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"sales_returns\".\"credit_note_number\" is not null",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -19714,16 +18854,7 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {
-        "sales_returns_credit_split_nonnegative_check": {
-          "name": "sales_returns_credit_split_nonnegative_check",
-          "value": "\"sales_returns\".\"applied_to_invoice_amount\" >= 0 and \"sales_returns\".\"customer_credit_amount\" >= 0"
-        },
-        "sales_returns_completion_credit_note_check": {
-          "name": "sales_returns_completion_credit_note_check",
-          "value": "\"sales_returns\".\"status\" not in ('completed', 'voided') or (nullif(btrim(\"sales_returns\".\"credit_note_number\"), '') is not null and \"sales_returns\".\"applied_to_invoice_amount\" + \"sales_returns\".\"customer_credit_amount\" = \"sales_returns\".\"total_amount\")"
-        }
-      },
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.salesmen": {
@@ -19834,13 +18965,6 @@
         },
         "returned_amount": {
           "name": "returned_amount",
-          "type": "numeric(12, 2)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'0'"
-        },
-        "excess_credited_amount": {
-          "name": "excess_credited_amount",
           "type": "numeric(12, 2)",
           "primaryKey": false,
           "notNull": true,
@@ -20064,7 +19188,7 @@
       "checkConstraints": {
         "slip_records_settlement_amounts_check": {
           "name": "slip_records_settlement_amounts_check",
-          "value": "\"slip_records\".\"invoice_amount\" >= 0 and \"slip_records\".\"paid_amount\" >= 0 and \"slip_records\".\"returned_amount\" >= 0 and \"slip_records\".\"excess_credited_amount\" >= 0 and \"slip_records\".\"outstanding_amount\" >= 0 and \"slip_records\".\"paid_amount\" + \"slip_records\".\"returned_amount\" - \"slip_records\".\"excess_credited_amount\" + \"slip_records\".\"outstanding_amount\" = \"slip_records\".\"invoice_amount\""
+          "value": "\"slip_records\".\"invoice_amount\" >= 0 and \"slip_records\".\"paid_amount\" >= 0 and \"slip_records\".\"returned_amount\" >= 0 and \"slip_records\".\"paid_amount\" + \"slip_records\".\"returned_amount\" + \"slip_records\".\"outstanding_amount\" = \"slip_records\".\"invoice_amount\""
         }
       },
       "isRLSEnabled": false
@@ -20143,13 +19267,6 @@
         },
         "outstanding_amount": {
           "name": "outstanding_amount",
-          "type": "numeric(12, 2)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'0'"
-        },
-        "credit_balance": {
-          "name": "credit_balance",
           "type": "numeric(12, 2)",
           "primaryKey": false,
           "notNull": true,
@@ -20258,12 +19375,7 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {
-        "customers_credit_balance_nonnegative_check": {
-          "name": "customers_credit_balance_nonnegative_check",
-          "value": "\"customers\".\"credit_balance\" >= 0"
-        }
-      },
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.invoice_items": {
@@ -20641,13 +19753,6 @@
           "notNull": true,
           "default": "'0'"
         },
-        "excess_credited_amount": {
-          "name": "excess_credited_amount",
-          "type": "numeric(12, 2)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'0'"
-        },
         "outstanding_amount": {
           "name": "outstanding_amount",
           "type": "numeric(12, 2)",
@@ -20973,13 +20078,9 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
-        "invoices_excess_credited_amount_nonnegative_check": {
-          "name": "invoices_excess_credited_amount_nonnegative_check",
-          "value": "\"invoices\".\"excess_credited_amount\" >= 0"
-        },
         "invoices_settlement_amounts_check": {
           "name": "invoices_settlement_amounts_check",
-          "value": "\"invoices\".\"paid_amount\" >= 0 and \"invoices\".\"returned_amount\" >= 0 and \"invoices\".\"excess_credited_amount\" >= 0 and \"invoices\".\"outstanding_amount\" >= 0 and \"invoices\".\"paid_amount\" + \"invoices\".\"returned_amount\" - \"invoices\".\"excess_credited_amount\" + \"invoices\".\"outstanding_amount\" = \"invoices\".\"total_price\""
+          "value": "\"invoices\".\"paid_amount\" >= 0 and \"invoices\".\"returned_amount\" >= 0 and \"invoices\".\"paid_amount\" + \"invoices\".\"returned_amount\" + \"invoices\".\"outstanding_amount\" = \"invoices\".\"total_price\""
         },
         "invoices_source_check": {
           "name": "invoices_source_check",

@@ -86,10 +86,9 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("purchase edits and deletes with
       expect(await locked(p2.id)).toBe(false);
       await remove(p2.id);
       expect((await lotAt("112.00")).quantity).toBe("30.000");
-      expect(await record(p2.id)).toMatchObject({ quantity: "50.000", voidReason: "Duplicate supplier entry", voidRefundAmount: "0.00" });
-      expect((await record(p2.id)).voidedAt).not.toBeNull();
-      await expect(remove(p2.id)).rejects.toThrow("already voided");
-      await expect(edit(p2.id, { cost: "6000" })).rejects.toThrow("voided");
+      expect(await record(p2.id)).toBeUndefined();
+      await expect(remove(p2.id)).rejects.toThrow("Purchase record not found");
+      await expect(edit(p2.id, { cost: "6000" })).rejects.toThrow("Purchase record not found");
     } finally {
       // Switched off so suites running in parallel still find their own single active floor.
       await db.update(warehouses).set({ isActive: false }).where(eq(warehouses.id, floor.id));

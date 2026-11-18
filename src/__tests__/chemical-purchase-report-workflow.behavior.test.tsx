@@ -436,8 +436,10 @@ describe("purchase certificate workflow", () => {
       within(voided).queryByRole("button", { name: "Edit report" }),
     ).toBeNull();
     expect(
-      within(voided).queryByRole("button", { name: "Delete report" }),
-    ).toBeNull();
+      within(voided).getByRole("button", { name: "Delete report" }),
+    ).toBeTruthy();
+    fireEvent.click(within(voided).getByRole("button", { name: "Delete report" }));
+    expect(screen.getByRole("alertdialog")).toBeTruthy();
     expect(screen.getByText("Certificates for purchase p2")).toBeTruthy();
     expect(screen.getByText("1/1 passed")).toBeTruthy();
   });

@@ -125,7 +125,9 @@ export const getFactoryFloorStockFn = createServerFn()
       statsMap.set(stat.recipeId, stat);
     });
 
-    const materialRows = factoryFloor.materialStock;
+    const materialRows = factoryFloor.materialStock.filter(
+      (row) => row.quantity === undefined || Number(row.quantity) > 0,
+    );
     const reportCoverage = await chemicalReportCoverage(materialRows.flatMap(row => row.chemical ? [row.chemical.id] : []), factoryFloor.id);
     return {
       ...factoryFloor,

@@ -10,7 +10,7 @@ vi.mock("@/server-functions/finance-fn", () => ({ getWalletsListFn: vi.fn() }));
 
 const purchase = { id: "p1", materialType: "chemical", cost: "7000", quantity: "100" };
 
-function open(state: { stockLocked: boolean; refund: { paid: string; walletId: string | null } }) {
+function open(state: { stockLocked: boolean; alreadyVoided?: boolean; hasLabReports?: boolean; refund: { paid: string; walletId: string | null } }) {
   const client = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity, retry: false } } });
   client.setQueryData(["purchase-edit-state", "p1"], state);
   client.setQueryData(["wallets"], [
@@ -26,7 +26,7 @@ function open(state: { stockLocked: boolean; refund: { paid: string; walletId: s
   return { client, ...view };
 }
 
-describe("Void purchase refund", () => {
+describe("Delete purchase refund", () => {
   afterEach(() => {
     cleanup();
     deleteFn.mockClear();
@@ -36,7 +36,7 @@ describe("Void purchase refund", () => {
     open({ stockLocked: false, refund: { paid: "7000.00", walletId: "cash" } });
     await waitFor(() => expect(screen.getByLabelText("Refund amount (PKR)")).toBeTruthy());
     expect((screen.getByLabelText("Refund amount (PKR)") as HTMLInputElement).value).toBe("7000.00");
-    fireEvent.click(screen.getByRole("button", { name: "Void purchase" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete purchase" }));
     await waitFor(() => expect(deleteFn).toHaveBeenCalled());
     expect(deleteFn.mock.calls[0][0]).toEqual({ data: { id: "p1", reason: "Duplicate supplier entry", refundWalletId: "cash", refundAmount: "7000.00" } });
   });
@@ -46,23 +46,23 @@ describe("Void purchase refund", () => {
     await waitFor(() => expect(screen.getByLabelText("Refund amount (PKR)")).toBeTruthy());
     fireEvent.change(screen.getByLabelText("Refund amount (PKR)"), { target: { value: "6500" } });
     expect(screen.getByText(/500 will stay in expenses as not refunded/)).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Void purchase" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete purchase" }));
     await waitFor(() => expect(deleteFn).toHaveBeenCalled());
     expect(deleteFn.mock.calls[0][0]).toEqual({ data: { id: "p1", reason: "Duplicate supplier entry", refundWalletId: "cash", refundAmount: "6500" } });
   });
 
-  it("blocks voiding when the amount is more than was paid", async () => {
+  it("blocks deleting when the amount is more than was paid", async () => {
     open({ stockLocked: false, refund: { paid: "7000.00", walletId: "cash" } });
     await waitFor(() => expect(screen.getByLabelText("Refund amount (PKR)")).toBeTruthy());
     fireEvent.change(screen.getByLabelText("Refund amount (PKR)"), { target: { value: "7500" } });
-    expect((screen.getByRole("button", { name: "Void purchase" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Delete purchase" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("shows no refund section for an unpaid purchase", async () => {
     open({ stockLocked: false, refund: { paid: "0.00", walletId: null } });
-    await waitFor(() => expect(screen.getByRole("button", { name: "Void purchase" })).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole("button", { name: "Delete purchase" })).toBeTruthy());
     expect(screen.queryByLabelText("Refund amount (PKR)")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Void purchase" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete purchase" }));
     await waitFor(() => expect(deleteFn).toHaveBeenCalled());
     expect(deleteFn.mock.calls[0][0]).toEqual({ data: { id: "p1", reason: "Duplicate supplier entry" } });
   });
@@ -70,7 +70,7 @@ describe("Void purchase refund", () => {
   it("requires a nonblank reason", () => {
     open({ stockLocked: false, refund: { paid: "0.00", walletId: null } });
     fireEvent.change(screen.getByLabelText("Reason"), { target: { value: "   " } });
-    const button = screen.getByRole("button", { name: "Void purchase" }) as HTMLButtonElement;
+    const button = screen.getByRole("button", { name: "Delete purchase" }) as HTMLButtonElement;
     expect(button.disabled).toBe(true);
     fireEvent.click(button);
     expect(deleteFn).not.toHaveBeenCalled();
@@ -78,8 +78,25 @@ describe("Void purchase refund", () => {
 
   it("keeps used stock blocked even with a valid reason", () => {
     open({ stockLocked: true, refund: { paid: "0.00", walletId: null } });
-    expect((screen.getByRole("button", { name: "Void purchase" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Delete purchase" }) as HTMLButtonElement).disabled).toBe(true);
     expect(deleteFn).not.toHaveBeenCalled();
+  });
+
+  it("blocks deleting when lab reports are attached and explains why", () => {
+    open({ stockLocked: false, hasLabReports: true, refund: { paid: "7000.00", walletId: "cash" } });
+    expect(screen.getByText(/chemical lab report\(s\) attached/)).toBeTruthy();
+    expect(screen.queryByLabelText("Refund amount (PKR)")).toBeNull();
+    expect((screen.getByRole("button", { name: "Delete purchase" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(deleteFn).not.toHaveBeenCalled();
+  });
+
+  it("allows permanently deleting an already-voided record without refund inputs", async () => {
+    open({ stockLocked: false, alreadyVoided: true, refund: { paid: "0.00", walletId: null } });
+    expect(screen.getByText(/Stock and wallet refunds were already handled when it was voided/i)).toBeTruthy();
+    expect(screen.queryByLabelText("Refund amount (PKR)")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Delete purchase" }));
+    await waitFor(() => expect(deleteFn).toHaveBeenCalled());
+    expect(deleteFn.mock.calls[0][0]).toEqual({ data: { id: "p1", reason: "Duplicate supplier entry" } });
   });
 
   it("resets reason and refund inputs when switching purchases or reopening", () => {
@@ -97,6 +114,6 @@ describe("Void purchase refund", () => {
     rerender(renderDialog(false, "p2"));
     rerender(renderDialog(true, "p2"));
     expect((screen.getByLabelText("Reason") as HTMLTextAreaElement).value).toBe("");
-    expect((screen.getByRole("button", { name: "Void purchase" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Delete purchase" }) as HTMLButtonElement).disabled).toBe(true);
   });
 });

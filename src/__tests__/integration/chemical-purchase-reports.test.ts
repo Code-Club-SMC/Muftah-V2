@@ -77,7 +77,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("purchase certificate ownership 
     expect(coverage["no-data"]).toEqual({ purchaseCount: 0, missingPurchaseCount: 0, reportCount: 0 });
   });
 
-  it("rejects missing/mismatched/voided ownership and reassignment while retaining voided certificates for history", async () => {
+  it("blocks deleting a purchase while reports are attached and allows unblocking via report deletion", async () => {
     const f = await fixture();
     const [other] = await db.insert(chemicals).values({ name: randomUUID() }).returning();
     await expect(f.create("missing")).rejects.toThrow(/not found/);
@@ -85,16 +85,29 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("purchase certificate ownership 
     await expect(getLabReportsFn({ data: { chemicalId: other.id, purchaseId: f.first.id } })).rejects.toThrow(/belong/);
     const report = await f.create(f.first.id);
     await expect(updateLabReportFn({ data: { reportId: report.id, purchaseId: f.second.id, ...details("x") } } as never)).rejects.toThrow();
-    await deletePurchaseRecordFn({ data: { id: f.first.id, reason: "Duplicate delivery" }, context: f.context } as never);
+
+    // Deleting purchase while report is attached is blocked both at app and FK level.
+    await expect(deletePurchaseRecordFn({ data: { id: f.first.id, reason: "Duplicate delivery" }, context: f.context } as never)).rejects.toThrow(/lab report/i);
+    await expect(db.delete(purchaseRecords).where(eq(purchaseRecords.id, f.first.id))).rejects.toThrow();
+
+    // Legacy voided purchase keeps create/update blocked, but allows deleting report and then permanently deleting the purchase.
+    await db.update(purchaseRecords).set({
+      voidedAt: new Date(),
+      voidedById: f.actor.id,
+      voidReason: "Legacy duplicate",
+      voidRefundAmount: "0.00",
+      voidSnapshot: { materialName: f.chemical.name, unit: "kg", supplierName: f.supplier.supplierName },
+    }).where(eq(purchaseRecords.id, f.first.id));
     await expect(f.create(f.first.id)).rejects.toThrow(/voided/);
     await expect(updateLabReportFn({ data: { reportId: report.id, ...details("changed") } })).rejects.toThrow(/voided/);
-    await expect(deleteLabReportFn({ data: { reportId: report.id } })).rejects.toThrow(/voided/);
-    expect(await getLabReportsFn({ data: { chemicalId: f.chemical.id, purchaseId: f.first.id } })).toMatchObject([{ id: report.id, purchase: { voidReason: "Duplicate delivery" } }]);
-    expect((await chemicalReportCoverage([f.chemical.id]))[f.chemical.id]).toEqual({ purchaseCount: 1, missingPurchaseCount: 1, reportCount: 1 });
+    await expect(deletePurchaseRecordFn({ data: { id: f.first.id, reason: "Cleanup" }, context: f.context } as never)).rejects.toThrow(/lab report/i);
+
+    await deleteLabReportFn({ data: { reportId: report.id } });
+    await deletePurchaseRecordFn({ data: { id: f.first.id, reason: "Cleanup" }, context: f.context } as never);
+    expect(await db.select().from(purchaseRecords).where(eq(purchaseRecords.id, f.first.id))).toHaveLength(0);
+    expect((await chemicalReportCoverage([f.chemical.id]))[f.chemical.id]).toEqual({ purchaseCount: 1, missingPurchaseCount: 1, reportCount: 0 });
     const purchases = await getChemicalReportPurchasesFn({ data: { chemicalId: f.chemical.id } });
-    expect(purchases).toHaveLength(2);
-    expect(purchases.find(p => p.purchaseId === f.first.id)).toMatchObject({ reportCount: 1, voidedAt: expect.any(Date) });
-    // The FK protects retained purchase ownership independently of ordinary app deletes.
-    await expect(db.delete(purchaseRecords).where(eq(purchaseRecords.id, f.first.id))).rejects.toThrow();
+    expect(purchases).toHaveLength(1);
+    expect(purchases[0].purchaseId).toBe(f.second.id);
   });
 });

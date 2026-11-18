@@ -1,6 +1,6 @@
 import { createId } from "@paralleldrive/cuid2";
 import { isNull, relations, sql } from "drizzle-orm";
-import { check, decimal, index, jsonb, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { boolean, check, decimal, index, jsonb, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 import { warehouses, chemicals, materialLots, packagingMaterials, chemicalLabReports } from "./inventory-schema";
 import { suppliers } from "./core-suppliers";
 import { user } from "./auth-schema";
@@ -77,6 +77,10 @@ export const purchaseRecords = pgTable(
     transactionId: text("transaction_id"),
     paidBy: text("paid_by"),
     notes: text("notes"),
+    // By-product tracking: the containers this purchase came in become sellable empties once used.
+    byProductTracked: boolean("by_product_tracked").notNull().default(false),
+    containerName: text("container_name"),
+    containerSize: decimal("container_size", { precision: 12, scale: 3 }),
     voidedAt: timestamp("voided_at", { withTimezone: true }),
     voidedById: text("voided_by_id").references(() => user.id),
     voidReason: text("void_reason"),
@@ -104,6 +108,12 @@ export const purchaseRecords = pgTable(
         AND ${t.voidRefundAmount} IS NOT NULL AND ${t.voidSnapshot} IS NOT NULL
         AND ((${t.voidRefundAmount} = 0 AND ${t.voidRefundWalletId} IS NULL)
           OR (${t.voidRefundAmount} > 0 AND ${t.voidRefundWalletId} IS NOT NULL)))
+    )`),
+    byProductContainer: check("purchase_by_product_container", sql`(
+      (${t.byProductTracked} = false AND ${t.containerName} IS NULL AND ${t.containerSize} IS NULL)
+      OR
+      (${t.byProductTracked} = true AND ${t.containerName} IS NOT NULL AND length(btrim(${t.containerName})) BETWEEN 1 AND 40
+        AND ${t.containerSize} > 0 AND mod(${t.quantity}, ${t.containerSize}) = 0)
     )`),
   }),
 );

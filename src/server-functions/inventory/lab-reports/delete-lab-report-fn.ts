@@ -15,7 +15,7 @@ export const deleteLabReportFn = createServerFn({ method: "POST" })
     .inputValidator(deleteLabReportSchema)
     .handler(async ({ data }) => {
       return db.transaction(async tx => {
-        await lockOwnedLabReport(tx, data.reportId);
+        await lockOwnedLabReport(tx, data.reportId, { allowVoided: true });
         await tx
             .delete(chemicalLabReports)
             .where(eq(chemicalLabReports.id, data.reportId));
