@@ -131,8 +131,8 @@ describe.runIf(integrationEnabled)(
       await db.insert(finishedGoodsStock).values({
         warehouseId,
         recipeId,
-        quantityCartons: 1,
-        quantityContainers: 0,
+        quantityCartons: 0,
+        quantityContainers: 12,
         weightedAverageCostPerPack: "50.0000",
         weightedAverageCostPerCarton: "600.0000",
         totalInventoryValue: "600.00",
