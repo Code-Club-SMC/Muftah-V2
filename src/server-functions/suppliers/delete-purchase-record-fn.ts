@@ -13,7 +13,7 @@ import {
 } from "@/db";
 import { chemicalLabReports, recipes, recipePackaging } from "@/db/schemas/inventory-schema";
 import { formulaIngredients, mixingMaterialsUsed, packagingMaterialsUsed } from "@/db/schemas/production-schema";
-import { expenseCategories } from "@/db/schemas/finance-schema";
+import { expenseCategories, otherIncome } from "@/db/schemas/finance-schema";
 import { eq, and, isNull, notInArray, or, sql } from "drizzle-orm";
 import { requireSuppliersManageMiddleware } from "@/lib/middlewares";
 import { logActivityQuiet } from "@/lib/activity-logger.server";
@@ -312,13 +312,17 @@ export const deletePurchaseRecordFn = createServerFn({ method: "POST" })
           .limit(1);
 
         if (!remainingPurchase) {
-          let hasUsage = false;
-          if (purchase.materialType === "chemical") {
+          // By-product sales (even voided ones) still point at the material.
+          const [byProductSale] = await tx.select({ id: otherIncome.id }).from(otherIncome)
+            .where(purchase.materialType === "chemical" ? eq(otherIncome.chemicalId, materialId) : eq(otherIncome.packagingMaterialId, materialId))
+            .limit(1);
+          let hasUsage = !!byProductSale;
+          if (!hasUsage && purchase.materialType === "chemical") {
             const [formulaUse] = await tx.select({ id: formulaIngredients.id }).from(formulaIngredients).where(eq(formulaIngredients.chemicalId, materialId)).limit(1);
             const [mixingUse] = await tx.select({ id: mixingMaterialsUsed.id }).from(mixingMaterialsUsed).where(eq(mixingMaterialsUsed.chemicalId, materialId)).limit(1);
             const [labReport] = await tx.select({ id: chemicalLabReports.id }).from(chemicalLabReports).where(eq(chemicalLabReports.chemicalId, materialId)).limit(1);
             hasUsage = !!(formulaUse || mixingUse || labReport);
-          } else {
+          } else if (!hasUsage) {
             const [recipePackUse] = await tx.select({ id: recipes.id }).from(recipes).where(or(eq(recipes.containerPackagingId, materialId), eq(recipes.cartonPackagingId, materialId))).limit(1);
             const [recipeExtraUse] = await tx.select({ id: recipePackaging.id }).from(recipePackaging).where(eq(recipePackaging.packagingMaterialId, materialId)).limit(1);
             const [packingUse] = await tx.select({ id: packagingMaterialsUsed.id }).from(packagingMaterialsUsed).where(eq(packagingMaterialsUsed.materialId, materialId)).limit(1);

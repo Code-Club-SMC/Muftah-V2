@@ -31,7 +31,7 @@ export const deleteMaterialFn = createServerFn()
       console.error("Delete Error:", error);
       if (error instanceof Error && error.message.includes("stock history")) throw error;
       throw new Error(
-        "Failed to delete material. It might be in use by recipes or production runs.",
+        "Failed to delete material. It might be in use by recipes, production runs or by-product sales.",
       );
     }
   });

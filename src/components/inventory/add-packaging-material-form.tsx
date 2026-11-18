@@ -55,6 +55,9 @@ export type PackagingPurchaseInitialValues = {
   paymentStatus?: "paid" | "partial" | "unpaid";
   supplierId?: string;
   warehouseId?: string;
+  byProductTracked?: boolean;
+  containerName?: string | null;
+  containerSize?: string | null;
 };
 
 type Props = {
@@ -134,9 +137,9 @@ export const AddPackagingMaterialForm = ({
       amountPaid: plainNumber(initialValues?.paidAmount),
       transactionId: initialValues?.transactionId || "",
       bankName: initialValues?.bankName || "",
-      byProductTracked: false,
-      containerName: "",
-      containerSize: "",
+      byProductTracked: initialValues?.byProductTracked ?? false,
+      containerName: initialValues?.containerName ?? "",
+      containerSize: plainNumber(initialValues?.containerSize),
     },
     validators: isEditMode ? undefined : { onSubmit: addPackagingMaterialSchema
       .extend({ packagingKind: addPackagingMaterialSchema.shape.packagingKind.nonoptional() })
@@ -159,6 +162,9 @@ export const AddPackagingMaterialForm = ({
             minStock: value.minimumStockLevel !== "" && value.minimumStockLevel !== undefined ? value.minimumStockLevel.toString() : undefined,
             paymentStatus: value.paymentStatus,
             walletId: undefined,
+            byProductTracked: value.byProductTracked,
+            containerName: value.byProductTracked ? value.containerName : undefined,
+            containerSize: value.byProductTracked ? value.containerSize : undefined,
             supplierName: suppliers?.find((s) => s.id === value.supplierId)?.supplierName,
           },
         });

@@ -64,7 +64,8 @@ function transaction() {
       table === "recipe_packaging" ||
       table === "packaging_materials_used" ||
       table === "packaging_materials_used_in_allocation" ||
-      table === "material_lots"
+      table === "material_lots" ||
+      table === "other_income"
     ) return [];
     throw new Error(`Unexpected select ${table}`);
   };
