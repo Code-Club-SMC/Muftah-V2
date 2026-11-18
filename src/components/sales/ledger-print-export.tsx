@@ -75,19 +75,33 @@ export function LedgerPrintExport({
     return `${fmtPKR(Math.abs(v))} ${v > 0 ? "Cr" : "Dr"}`;
   };
 
+  const escapeHtml = (value: unknown): string =>
+    String(value ?? "").replace(
+      /[&<>"']/g,
+      (c) =>
+        ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] || c,
+    );
+
   const getDebitAmount = (entry: LedgerEntry) => {
     if (entry.type === "return") {
       return entry.eventKind === "return" ? entry.amount : 0;
     }
+    if (entry.type === "refund") {
+      return entry.eventKind === "refund_reversal" ? entry.amount : 0;
+    }
     if (entry.type === "payment") {
+      if (entry.isStoreCreditApplied || entry.method === "customer_credit") return 0;
       return entry.amount;
     }
     return 0;
   };
 
-  const getCreditAmount = (entry: LedgerEntry) =>
-    entry.type === "invoice" ? entry.totalPrice
-      : entry.type === "return" && entry.eventKind === "void" ? entry.amount : 0;
+  const getCreditAmount = (entry: LedgerEntry) => {
+    if (entry.type === "invoice") return entry.totalPrice;
+    if (entry.type === "return" && entry.eventKind === "void") return entry.amount;
+    if (entry.type === "refund" && entry.eventKind === "refund") return entry.amount;
+    return 0;
+  };
 
   const resolveExportEntries = async (exportType: ExportMode) => {
     if (!loadEntriesForExport) {
@@ -120,7 +134,10 @@ export function LedgerPrintExport({
         .map((entry) => {
           const isInvoice = entry.type === "invoice";
           const isReturn = entry.type === "return";
+          const isRefund = entry.type === "refund";
           const pay = entry.type === "payment" ? entry : null;
+          const isStoreCreditApplied =
+            Boolean(pay?.isStoreCreditApplied) || pay?.method === "customer_credit";
 
           const debitAmount = getDebitAmount(entry);
           const creditAmount = getCreditAmount(entry);
@@ -144,15 +161,23 @@ export function LedgerPrintExport({
             ? `Sales Invoice #${entry.invoiceNumber}`
             : isReturn
               ? `Sales Return${entry.eventKind === "void" ? " Void" : ""} #${entry.returnNumber}`
-              : pay?.method === "cheque"
-                ? `Payment (Cheque #${pay.chequeNumber || "—"}${pay.chequeBank ? ` · ${pay.chequeBank}` : ""})`
-                : `Payment (${methodLabel}${pay?.walletName ? ` · ${pay.walletName}` : ""})`;
+              : isRefund
+                ? `${entry.eventKind === "refund_reversal" ? "Customer Refund Reversal" : "Customer Refund"}${entry.walletName ? ` (${escapeHtml(entry.walletName)})` : ""}`
+                : isStoreCreditApplied
+                  ? "Store Credit Applied"
+                  : pay?.method === "cheque"
+                    ? `Payment (Cheque #${escapeHtml(pay.chequeNumber || "—")}${pay.chequeBank ? ` · ${escapeHtml(pay.chequeBank)}` : ""})`
+                    : `Payment (${escapeHtml(methodLabel)}${pay?.walletName ? ` · ${escapeHtml(pay.walletName)}` : ""})`;
 
           const subDesc = isInvoice
-            ? `${entry.warehouseName ? `${entry.warehouseName} · ` : ""}Paid Amount: ${fmtPKR(entry.paidAmount)} · Returned Amount: ${fmtPKR(entry.returnedAmount)} · Outstanding Amount: ${fmtPKR(entry.outstandingAmount)}`
+            ? `${entry.warehouseName ? `${escapeHtml(entry.warehouseName)} · ` : ""}Paid Amount: ${fmtPKR(entry.paidAmount)} · Returned Amount: ${fmtPKR(entry.returnedAmount)} · Outstanding Amount: ${fmtPKR(entry.outstandingAmount)}`
             : isReturn
-              ? `Invoice #${entry.invoiceNumber} · Reason: ${entry.reason}${entry.condition ? ` · Condition: ${entry.condition}` : ""}`
-              : `Invoice #${entry.invoiceNumber}${entry.reference ? ` · Ref: ${entry.reference}` : ""}${displayNotes ? ` · ${displayNotes}` : ""}`;
+              ? `Invoice #${entry.invoiceNumber} · Reason: ${escapeHtml(entry.reason)}${entry.condition ? ` · Condition: ${escapeHtml(entry.condition)}` : ""}${entry.creditNoteNumber ? ` · CN: ${escapeHtml(entry.creditNoteNumber)}` : ""}`
+              : isRefund
+                ? `${entry.creditNoteNumber ? `CN: ${escapeHtml(entry.creditNoteNumber)} · ` : ""}${entry.reverseReason ? `Reason: ${escapeHtml(entry.reverseReason)}` : escapeHtml(entry.notes ?? "")}`
+                : isStoreCreditApplied
+                  ? `Invoice #${pay?.invoiceNumber} · Settled from Store Credit (${fmtPKR(pay?.amount ?? 0)} applied; no cash movement)`
+                  : `Invoice #${pay?.invoiceNumber}${pay?.reference ? ` · Ref: ${escapeHtml(pay.reference)}` : ""}${displayNotes ? ` · ${escapeHtml(displayNotes)}` : ""}`;
 
           const desc = `<div style="font-weight:600;color:#1e293b;">${titleDesc}</div><div style="font-size:10px;color:#64748b;margin-top:1px;">${subDesc}</div>`;
 
@@ -160,7 +185,9 @@ export function LedgerPrintExport({
             ? entry.invoiceNumber
             : isReturn
               ? `${entry.eventKind === "void" ? "VOID" : "RET"}-${entry.returnNumber ?? "—"}`
-              : (pay?.reference || pay?.chequeNumber || (pay ? `REC-${pay.id.slice(-6).toUpperCase()}` : "—"));
+              : isRefund
+                ? (entry.creditNoteNumber ? `REF-${entry.creditNoteNumber}` : `REF-${entry.id.slice(-6).toUpperCase()}`)
+                : (pay?.reference || pay?.chequeNumber || (pay ? `REC-${pay.id.slice(-6).toUpperCase()}` : "—"));
 
           const creditStyle = isReturn
             ? "color:#b45309;font-weight:600;"
@@ -371,13 +398,19 @@ export function LedgerPrintExport({
       const rows = exportEntries.map((entry) => {
         const isInvoice = entry.type === "invoice";
         const isReturn = entry.type === "return";
+        const isRefund = entry.type === "refund";
         const pay = entry.type === "payment" ? entry : null;
+        const isStoreCreditApplied =
+          Boolean(pay?.isStoreCreditApplied) || pay?.method === "customer_credit";
+
         const date = format(new Date(entry.date), "dd-MMM-yyyy");
         const vrNo = isInvoice
           ? entry.invoiceNumber
           : isReturn
             ? `${entry.eventKind === "void" ? "VOID" : "RET"}-${entry.returnNumber ?? ""}`
-            : (pay?.reference || pay?.chequeNumber || (pay ? `REC-${pay.id.slice(-6).toUpperCase()}` : "—"));
+            : isRefund
+              ? (entry.creditNoteNumber ? `REF-${entry.creditNoteNumber}` : `REF-${entry.id.slice(-6).toUpperCase()}`)
+              : (pay?.reference || pay?.chequeNumber || (pay ? `REC-${pay.id.slice(-6).toUpperCase()}` : "—"));
         const digitalMatch = pay?.notes?.match(/^\[(.*?)\]/);
         const provider = digitalMatch ? digitalMatch[1] : null;
         const displayNotes = (digitalMatch && pay?.notes)
@@ -392,15 +425,19 @@ export function LedgerPrintExport({
         const desc = isInvoice
           ? `Sales Invoice #${entry.invoiceNumber} (Paid Amount: ${fmtPKR(entry.paidAmount)}, Returned Amount: ${fmtPKR(entry.returnedAmount)}, Outstanding Amount: ${fmtPKR(entry.outstandingAmount)})`
           : isReturn
-            ? `Sales Return${entry.eventKind === "void" ? " Void" : ""} #${entry.returnNumber} (Invoice ${entry.invoiceNumber}) - ${entry.reason}`
-            : pay?.method === "cheque"
-              ? `Payment (Cheque #${pay.chequeNumber || "—"} · ${pay.chequeBank || "—"}) for Invoice ${entry.invoiceNumber}${pay.reference ? ` Ref: ${pay.reference}` : ""}${displayNotes ? ` · ${displayNotes}` : ""}`
-              : `Payment (${methodLabel}${pay?.walletName ? ` · ${pay.walletName}` : ""}) for Invoice ${entry.invoiceNumber}${entry.reference ? ` Ref: ${entry.reference}` : ""}${displayNotes ? ` · ${displayNotes}` : ""}`;
+            ? `Sales Return${entry.eventKind === "void" ? " Void" : ""} #${entry.returnNumber} (Invoice ${entry.invoiceNumber}) - ${entry.reason}${entry.creditNoteNumber ? ` · CN: ${entry.creditNoteNumber}` : ""}`
+            : isRefund
+              ? `${entry.eventKind === "refund_reversal" ? "Customer Refund Reversal" : "Customer Refund"}${entry.walletName ? ` (${entry.walletName})` : ""}${entry.creditNoteNumber ? ` · CN: ${entry.creditNoteNumber}` : ""}${entry.reverseReason ? ` · Reason: ${entry.reverseReason}` : (entry.notes ? ` · ${entry.notes}` : "")}`
+              : isStoreCreditApplied
+                ? `Store Credit Applied for Invoice ${pay?.invoiceNumber} (${fmtPKR(pay?.amount ?? 0)} applied; no cash movement)`
+                : pay?.method === "cheque"
+                  ? `Payment (Cheque #${pay.chequeNumber || "—"} · ${pay.chequeBank || "—"}) for Invoice ${pay?.invoiceNumber}${pay?.reference ? ` Ref: ${pay.reference}` : ""}${displayNotes ? ` · ${displayNotes}` : ""}`
+                  : `Payment (${methodLabel}${pay?.walletName ? ` · ${pay.walletName}` : ""}) for Invoice ${pay?.invoiceNumber}${pay?.reference ? ` Ref: ${pay.reference}` : ""}${displayNotes ? ` · ${displayNotes}` : ""}`;
         const debit = getDebitAmount(entry) > 0 ? String(getDebitAmount(entry)) : "";
         const credit = getCreditAmount(entry) > 0 ? String(getCreditAmount(entry)) : "";
         const balance = formatBalance(entry.runningBalance);
-        const status = isInvoice || isReturn ? entry.status : "";
-        const remarks = isInvoice ? (entry.remarks || "") : (entry.notes || "");
+        const status = isInvoice || isReturn ? entry.status : isRefund ? (entry.eventKind === "refund_reversal" ? "reversed" : "active") : "";
+        const remarks = isInvoice ? (entry.remarks || "") : isRefund ? (entry.reverseReason || entry.notes || "") : (pay?.notes || "");
 
         const baseRow = [date, vrNo, desc, debit, credit, balance, status, remarks];
 

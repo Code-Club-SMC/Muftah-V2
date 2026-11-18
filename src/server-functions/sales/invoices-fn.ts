@@ -1466,9 +1466,13 @@ export const updateInvoiceFn = createServerFn()
           ...(hasNewPayments
             ? {
                 totalPrice: totalPayable.toString(),
-                outstandingAmount: roundMoney(
-                  totalPayable - Number(existing.paidAmount),
-                ).toString(),
+                outstandingAmount: Math.max(
+                  0,
+                  totalPayable -
+                    Number(existing.paidAmount) -
+                    Number(existing.returnedAmount) +
+                    Number(existing.excessCreditedAmount ?? 0),
+                ).toFixed(2),
                 paymentDueDate: data.paymentDueDate ?? null,
               }
             : {}),

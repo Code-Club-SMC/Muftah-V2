@@ -39,6 +39,8 @@ docker compose up -d                         # Start PostgreSQL on port 5433
 
 **API routes** are minimal: `/api/health` (Railway health check), `/api/auth/$` (Better Auth catch-all), `/api/internal/bootstrap-admin` (super admin bootstrapping).
 
+**Non-production Order Booker personal routes (do not touch):** The self-service Order Booker Portal routes (`/order-booker`, `/order-booker/orders`, `/order-booker/trips`, `/order-booker/commission`, `/order-booker/recoveries` under `src/routes/_protected/order-booker/`, plus `src/server-functions/sales/order-booker-self-service-fn.ts`, `src/hooks/sales/use-order-booker-self-service.ts`, and `src/components/order-booker/`) are NOT for production. Do not modify, wire new features into, or factor them into production workflows. Only back-office Sales routes (`/sales/*`) are production.
+
 ## Generated migrations are immutable
 
 - **Manual changes to generated migrations are strictly prohibited.** This includes generated SQL, snapshots, and `meta/_journal.json` under `src/db/migrations/`.

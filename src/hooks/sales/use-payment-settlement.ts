@@ -54,6 +54,13 @@ const relatedQueryKeys = [
 	["reconciliation"],
 	["wallets"],
 	["transactions"],
+	["customer-credit"],
+	["distributor-profile"],
+	["shopkeeper-profile"],
+	["distributor-ledger"],
+	["shopkeeper-ledger"],
+	["salesman-ledger"],
+	["salesman-shop-ledger"],
 ] as const;
 
 function useSettlementInvalidation() {

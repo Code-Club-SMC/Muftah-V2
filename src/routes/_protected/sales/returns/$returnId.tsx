@@ -1,7 +1,9 @@
+import { useState } from "react";
 import { createFileRoute, Link, useParams } from "@tanstack/react-router";
 import { format } from "date-fns";
-import { AlertTriangle, ArrowLeft } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Printer } from "lucide-react";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -13,6 +15,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { CreditNotePrintDialog } from "@/components/sales/credit-note-print-dialog";
 import { ReturnActions } from "@/components/sales/returns/return-actions";
 import { ReturnProgress, ReturnStatusBadge } from "@/components/sales/returns/return-status";
 import { useSalesReturnDetail, type SalesReturnDetail } from "@/hooks/sales/use-sales-returns";
@@ -72,6 +75,7 @@ function SalesReturnDetailPage() {
   const { data: viewer, isLoading: viewerLoading } = useViewerAccess();
   const canView = !!viewer && hasPermission(viewer.permissions, "sales.view");
   const { data, isLoading, isError, error, refetch } = useSalesReturnDetail(canView ? returnId : null);
+  const [printOpen, setPrintOpen] = useState(false);
 
   if (viewer && !canView) {
     return (
@@ -129,6 +133,11 @@ function SalesReturnDetailPage() {
           <div className="flex items-center gap-2">
             <h1 className="text-2xl font-semibold">Return #{data.returnNumber}</h1>
             <ReturnStatusBadge status={data.status} />
+            {inspected && data.creditNoteNumber && (
+              <Badge variant="secondary" className="font-mono">
+                {data.creditNoteNumber}
+              </Badge>
+            )}
           </div>
           <p className="text-sm text-muted-foreground">
             {data.customer?.name} · Invoice{" "}
@@ -141,7 +150,15 @@ function SalesReturnDetailPage() {
             </Link>
           </p>
         </div>
-        <ReturnActions salesReturn={data} />
+        <div className="flex flex-wrap items-center gap-2">
+          {inspected && Boolean(data.creditNoteNumber) && (
+            <Button type="button" variant="outline" size="sm" onClick={() => setPrintOpen(true)}>
+              <Printer className="mr-1.5 size-4" />
+              Print credit note
+            </Button>
+          )}
+          <ReturnActions salesReturn={data} />
+        </div>
       </div>
 
       <ReturnProgress status={data.status} />
@@ -236,6 +253,34 @@ function SalesReturnDetailPage() {
                 <span className="text-muted-foreground">Customer balance now: </span>
                 <span className="tabular-nums">{formatRupees(data.customer?.outstandingAmount ?? "0")}</span>
               </p>
+              {inspected && Boolean(data.creditNoteNumber) && (
+                <div className="space-y-1.5 pt-2 border-t">
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Applied to invoice:</span>
+                    <span className="font-medium tabular-nums">
+                      {formatRupees(data.appliedToInvoiceAmount ?? 0)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Transferred to store credit:</span>
+                    <span className="font-medium tabular-nums text-emerald-600">
+                      {formatRupees(data.customerCreditAmount ?? 0)}
+                    </span>
+                  </div>
+                  {!!data.refunds?.length && (
+                    <div className="mt-2 space-y-1 rounded-md bg-muted/40 px-3 py-2">
+                      <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                        Customer refunds
+                      </p>
+                      {data.refunds.map((refund: any) => (
+                        <p key={refund.id} className="text-xs text-muted-foreground">
+                          {format(new Date(refund.refundDate), "dd MMM yyyy")} · {formatRupees(refund.amount)} from {refund.wallet?.name ?? "Account"} ({refund.status})
+                        </p>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
               {data.priceOverride && (
                 <p className="flex gap-2 rounded-md bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
                   <AlertTriangle className="size-4 shrink-0" />
@@ -282,6 +327,11 @@ function SalesReturnDetailPage() {
           </Card>
         </div>
       </div>
+      <CreditNotePrintDialog
+        open={printOpen}
+        onOpenChange={setPrintOpen}
+        returnId={data.id}
+      />
     </div>
   );
 }

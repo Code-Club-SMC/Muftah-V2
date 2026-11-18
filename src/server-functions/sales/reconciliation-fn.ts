@@ -2,7 +2,8 @@ import { createServerFn } from "@tanstack/react-start";
 import { db } from "@/db";
 import { createId } from "@paralleldrive/cuid2";
 import { invoices, customers } from "@/db/schemas/sales-schema";
-import { payments, slipRecords, invoiceTimelineEvents } from "@/db/schemas/sales-erp-schema";
+import { payments, slipRecords, invoiceTimelineEvents, customerRefunds } from "@/db/schemas/sales-erp-schema";
+import { summarizeDailyClosingBuckets } from "@/lib/sales/settlement/contracts";
 import { recordRecoveryPayment } from "./settlement-service";
 import {
   requireSalesManageMiddleware,
@@ -43,6 +44,7 @@ export const lookupSlipFn = createServerFn()
             mobileNumber: true,
             customerType: true,
             outstandingAmount: true,
+            creditBalance: true,
           },
         },
         salesman: { columns: { id: true, name: true } },
@@ -94,6 +96,7 @@ export const lookupSlipFn = createServerFn()
 
     return {
       ...slip,
+      customerCreditBalance: Number(slip.customer?.creditBalance ?? 0),
       pendingAmount,
       unallocatedAmount,
     };
@@ -159,9 +162,13 @@ export const reconcileSlipFn = createServerFn()
       .object({
         slipId: z.string().min(1),
         amount: z.number().positive("Amount must be positive"),
-        method: z.enum(["cash", "bank_transfer", "cheque", "expense_offset"]).default("cash"),
+        method: z.enum(["cash", "bank_transfer", "cheque", "expense_offset", "customer_credit"]).default("cash"),
         walletId: z.string().optional(),
-        reference: z.string().trim().min(1).optional(),
+        reference: z
+          .string()
+          .trim()
+          .transform((val) => (val.length > 0 ? val : undefined))
+          .optional(),
         chequeNumber: z.string().trim().min(1).optional(),
         chequeBank: z.string().trim().min(1).optional(),
         chequeDate: z.coerce.date().optional(),
@@ -173,7 +180,7 @@ export const reconcileSlipFn = createServerFn()
         expenseEmployeeId: z.string().optional(),
       })
       .superRefine((row, ctx) => {
-        if (row.method !== "expense_offset" && !row.walletId) {
+        if (row.method !== "expense_offset" && row.method !== "customer_credit" && !row.walletId) {
           ctx.addIssue({
             code: "custom",
             path: ["walletId"],
@@ -246,7 +253,7 @@ export const reconcileSlipFn = createServerFn()
         } : {
           method: data.method,
           amount: data.amount,
-          walletId: data.walletId!,
+          walletId: data.method === "customer_credit" ? undefined : data.walletId!,
           reference: data.reference,
           chequeNumber: data.chequeNumber,
           chequeBank: data.chequeBank,
@@ -433,6 +440,7 @@ export const getOpenSlipsForRecoveryFn = createServerFn()
             name: true,
             city: true,
             mobileNumber: true,
+            creditBalance: true,
           },
         },
         salesman: { columns: { id: true, name: true } },
@@ -468,6 +476,7 @@ export const getOpenSlipsForRecoveryFn = createServerFn()
         customerId: s.customerId,
         customerName: s.customer?.name ?? "—",
         customerCity: s.customer?.city ?? null,
+        customerCreditBalance: Number(s.customer?.creditBalance ?? 0),
         salesmanName: s.salesman?.name ?? "—",
         invoiceDate: s.invoice?.date,
         paymentDueDate: s.invoice?.paymentDueDate,
@@ -500,9 +509,13 @@ export const batchReconcileSlipsFn = createServerFn()
             }),
           )
           .min(1, "At least one item required"),
-        method: z.enum(["cash", "bank_transfer", "cheque"]).default("cash"),
-        walletId: z.string().min(1, "Destination account is required"),
-        reference: z.string().trim().min(1).optional(),
+        method: z.enum(["cash", "bank_transfer", "cheque", "customer_credit"]).default("cash"),
+        walletId: z.string().optional(),
+        reference: z
+          .string()
+          .trim()
+          .transform((val) => (val.length > 0 ? val : undefined))
+          .optional(),
         chequeNumber: z.string().trim().min(1).optional(),
         chequeBank: z.string().trim().min(1).optional(),
         chequeDate: z.coerce.date().optional(),
@@ -512,6 +525,16 @@ export const batchReconcileSlipsFn = createServerFn()
         instantVerify: z.boolean().optional(),
       })
       .superRefine((row, ctx) => {
+        if (
+          row.method !== "customer_credit" &&
+          (!row.walletId || row.walletId.trim().length === 0)
+        ) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["walletId"],
+            message: "Destination account is required",
+          });
+        }
         if (row.method === "bank_transfer" && !row.reference) {
           ctx.addIssue({
             code: "custom",
@@ -570,7 +593,7 @@ export const batchReconcileSlipsFn = createServerFn()
           payment: {
             method: data.method,
             amount: item.amount,
-            walletId: data.walletId,
+            walletId: data.method === "customer_credit" ? undefined : data.walletId,
             reference: data.reference,
             chequeNumber: data.chequeNumber,
             chequeBank: data.chequeBank,
@@ -632,21 +655,19 @@ export const getDailyClosingSummaryFn = createServerFn()
       },
     });
 
-    const totalCash = todayPayments
-      .filter((p) => p.method === "cash")
-      .reduce((sum, p) => sum + Number(p.amount), 0);
+    const todayRefunds = await db.query.customerRefunds.findMany({
+      where: and(
+        gte(customerRefunds.refundDate, dayStart),
+        lte(customerRefunds.refundDate, dayEnd),
+        eq(customerRefunds.status, "active"),
+      ),
+      with: {
+        customer: { columns: { name: true } },
+        wallet: { columns: { name: true } },
+      },
+    });
 
-    const totalBankTransfer = todayPayments
-      .filter((p) => p.method === "bank_transfer")
-      .reduce((sum, p) => sum + Number(p.amount), 0);
-
-    const totalCheque = todayPayments
-      .filter((p) => p.method === "cheque")
-      .reduce((sum, p) => sum + Number(p.amount), 0);
-
-    const totalExpenseOffset = todayPayments
-      .filter((p) => p.method === "expense_offset")
-      .reduce((sum, p) => sum + Number(p.amount), 0);
+    const buckets = summarizeDailyClosingBuckets(todayPayments, todayRefunds);
 
     // Slips issued today
     const todaySlips = await db.query.slipRecords.findMany({
@@ -670,12 +691,14 @@ export const getDailyClosingSummaryFn = createServerFn()
     return {
       date: targetDate.toISOString().split("T")[0],
       payments: todayPayments,
-      totalCollected:
-        totalCash + totalBankTransfer + totalCheque + totalExpenseOffset,
-      totalCash,
-      totalBankTransfer,
-      totalCheque,
-      totalExpenseOffset,
+      refunds: todayRefunds,
+      totalCollected: buckets.totalCollected,
+      totalCash: buckets.totalCash,
+      totalBankTransfer: buckets.totalBankTransfer,
+      totalCheque: buckets.totalCheque,
+      totalExpenseOffset: buckets.totalExpenseOffset,
+      totalCreditApplied: buckets.totalCreditApplied,
+      totalCustomerRefunds: buckets.totalCustomerRefunds,
       slipsIssuedToday: todaySlips.length,
       slipsClosedToday: closedToday.length,
       closedSlips: closedToday,

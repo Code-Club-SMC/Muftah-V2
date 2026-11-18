@@ -12,7 +12,7 @@ export const stockTransferInputSchema = z.object({
 
 export const invoicePaymentInputSchema = z
   .object({
-    method: z.enum(["cash", "bank_transfer", "cheque", "expense_offset"]),
+    method: z.enum(["cash", "bank_transfer", "cheque", "expense_offset", "customer_credit"]),
     amount: z.number().positive(),
     walletId: z.string().optional(),
     reference: z.string().trim().min(1).optional(),
@@ -27,7 +27,11 @@ export const invoicePaymentInputSchema = z
     expenseEmployeeId: z.string().optional(),
   })
   .superRefine((row, ctx) => {
-    if (row.method !== "expense_offset" && (!row.walletId || row.walletId.trim().length === 0)) {
+    if (
+      row.method !== "expense_offset" &&
+      row.method !== "customer_credit" &&
+      (!row.walletId || row.walletId.trim().length === 0)
+    ) {
       ctx.addIssue({
         code: "custom",
         path: ["walletId"],

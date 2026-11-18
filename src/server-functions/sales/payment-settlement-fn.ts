@@ -69,9 +69,10 @@ export const getPendingPaymentVerificationFn = createServerFn()
 			data.view === "pending"
 				? and(
 						statusCondition,
-						// Cash and expense offsets never enter verification.
+						// Cash, expense offsets, and customer credits never enter verification.
 						ne(payments.method, "cash"),
 						ne(payments.method, "expense_offset"),
+						ne(payments.method, "customer_credit"),
 					)
 				: statusCondition;
 

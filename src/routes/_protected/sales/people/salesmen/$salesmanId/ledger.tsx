@@ -269,6 +269,7 @@ function SalesmanLedgerPage() {
                 <SelectItem value="invoice">Invoices Only</SelectItem>
                 <SelectItem value="payment">Payments Only</SelectItem>
                 <SelectItem value="return">Returns Only</SelectItem>
+                <SelectItem value="refund">Refunds Only</SelectItem>
               </SelectContent>
             </Select>
         </div>
@@ -438,6 +439,29 @@ function SummaryCard({
 function LedgerTableRow({ entry }: { entry: LedgerEntry }) {
   const isInvoice = entry.type === "invoice";
   const isReturn = entry.type === "return";
+  const isRefund = entry.type === "refund";
+  const pay = entry.type === "payment" ? entry : null;
+  const isCreditApplied =
+    entry.type === "payment" &&
+    (Boolean(entry.isStoreCreditApplied) || entry.method === "customer_credit");
+
+  const debitAmount =
+    isInvoice
+      ? entry.totalPrice
+      : isReturn && entry.eventKind === "void"
+        ? entry.amount
+        : isRefund && entry.eventKind === "refund"
+          ? entry.amount
+          : null;
+
+  const creditAmount =
+    isReturn && entry.eventKind === "return"
+      ? entry.amount
+      : isRefund && entry.eventKind === "refund_reversal"
+        ? entry.amount
+        : pay && !isCreditApplied
+          ? pay.amount
+          : null;
 
   return (
     <TableRow>
@@ -453,6 +477,15 @@ function LedgerTableRow({ entry }: { entry: LedgerEntry }) {
           <Badge variant="outline" className="text-[10px] gap-1 text-amber-700 border-amber-300">
             {entry.eventKind === "void" ? <ArrowUpRight className="size-3" /> : <ArrowDownLeft className="size-3" />}
             Return{entry.eventKind === "void" ? " Void" : ""}
+          </Badge>
+        ) : isRefund ? (
+          <Badge variant="outline" className="text-[10px] gap-1 text-rose-700 border-rose-300">
+            {entry.eventKind === "refund_reversal" ? <ArrowDownLeft className="size-3" /> : <ArrowUpRight className="size-3" />}
+            {entry.eventKind === "refund_reversal" ? "Refund Reversal" : "Refund"}
+          </Badge>
+        ) : isCreditApplied ? (
+          <Badge variant="outline" className="text-[10px] gap-1 text-emerald-700 border-emerald-300">
+            Store Credit
           </Badge>
         ) : (
           <Badge variant="outline" className="text-[10px] gap-1 text-emerald-600 border-emerald-200">
@@ -474,15 +507,46 @@ function LedgerTableRow({ entry }: { entry: LedgerEntry }) {
             <div className="text-xs text-muted-foreground">
               Invoice #{entry.invoiceNumber} · {entry.reason}
             </div>
+            {entry.creditNoteNumber && (
+              <div>
+                <Badge variant="outline" className="border-amber-300 text-amber-700 bg-amber-50 dark:bg-amber-950/20 text-[10px] font-mono">
+                  CN: {entry.creditNoteNumber}
+                </Badge>
+              </div>
+            )}
+          </div>
+        ) : isRefund ? (
+          <div className="space-y-1">
+            <div className="font-medium text-rose-700 dark:text-rose-400">
+              {entry.eventKind === "refund_reversal" ? "Customer Refund Reversal" : "Customer Refund"}
+              {entry.walletName && <span className="text-muted-foreground font-normal"> · {entry.walletName}</span>}
+            </div>
+            <div className="text-xs text-muted-foreground flex flex-wrap items-center gap-1">
+              {entry.creditNoteNumber && (
+                <Badge variant="outline" className="border-rose-300 text-rose-700 bg-rose-50 dark:bg-rose-950/20 text-[10px] font-mono">
+                  CN: {entry.creditNoteNumber}
+                </Badge>
+              )}
+              {entry.reverseReason ? <span>Reason: {entry.reverseReason}</span> : entry.notes ? <span>{entry.notes}</span> : null}
+            </div>
+          </div>
+        ) : isCreditApplied ? (
+          <div className="space-y-1">
+            <span className="flex items-center gap-1 font-medium text-emerald-700 dark:text-emerald-400">
+              Store Credit Applied
+            </span>
+            <div className="text-[10px] text-muted-foreground">
+              Invoice #{pay?.invoiceNumber} · {formatPKR(pay?.amount ?? 0, false)} applied (no cash movement)
+            </div>
           </div>
         ) : (
           <div className="space-y-1">
             <span className="flex items-center gap-1">
               <ArrowDownLeft className="size-3 text-emerald-500" />
-              {entry.reference || entry.method}
+              {pay?.reference || pay?.method}
             </span>
             <div className="text-[10px] text-muted-foreground">
-              Invoice #{entry.invoiceNumber}
+              Invoice #{pay?.invoiceNumber}
             </div>
           </div>
         )}
@@ -494,25 +558,25 @@ function LedgerTableRow({ entry }: { entry: LedgerEntry }) {
         </span>
       </TableCell>
       <TableCell className="text-sm text-right tabular-nums">
-        {isInvoice || (isReturn && entry.eventKind === "void") ? (
+        {debitAmount !== null ? (
           <span className="text-rose-600 font-medium flex items-center justify-end gap-1">
             <ArrowUpRight className="size-3" />
-            {formatPKR(isInvoice ? entry.totalPrice : entry.amount, false)}
+            {formatPKR(debitAmount, false)}
           </span>
         ) : (
           <span className="text-muted-foreground">—</span>
         )}
       </TableCell>
       <TableCell className="text-sm text-right tabular-nums">
-        {!isInvoice && (!isReturn || entry.eventKind === "return") ? (
+        {creditAmount !== null ? (
           <span
             className={cn(
               "font-medium flex items-center justify-end gap-1",
-              isReturn ? "text-amber-600" : "text-emerald-600",
+              isReturn ? "text-amber-600" : isRefund ? "text-rose-600" : "text-emerald-600",
             )}
           >
             <ArrowDownLeft className="size-3" />
-            {formatPKR(entry.amount, false)}
+            {formatPKR(creditAmount, false)}
           </span>
         ) : (
           <span className="text-muted-foreground">—</span>

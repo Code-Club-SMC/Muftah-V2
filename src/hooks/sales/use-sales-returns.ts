@@ -9,7 +9,7 @@ import {
   getSalesReturnDetailFn,
 } from "@/server-functions/sales/sales-returns-fn";
 import { getReturnReasonsFn, saveReturnReasonFn } from "@/server-functions/sales/return-reasons-fn";
-import type { ReturnTab } from "@/lib/sales/returns/return-lifecycle";
+import { parseVoidBlockedByRefundError, type ReturnTab } from "@/lib/sales/returns/return-lifecycle";
 import { toast } from "sonner";
 import { invalidateStockQueries } from "@/lib/inventory/invalidate-stock";
 import type { OptionalFetcher } from "@tanstack/react-start";
@@ -99,6 +99,7 @@ function refreshReceipt(qc: QueryClient, invoiceId: string) {
     "distributor-profile", "shopkeeper-profile", "salesman-summary",
     "reconciliation", "credit-recovery", "slip-lookup", "overdue-slips",
     "distributor-ledger", "shopkeeper-ledger", "salesman-ledger", "salesman-shop-ledger", "reports",
+    "customer-credit",
   ];
   return Promise.all([
     refreshReturn(qc, invoiceId),
@@ -188,7 +189,7 @@ export function useVoidSalesReturn(invoiceId: string) {
       await refreshReceipt(qc, invoiceId);
     },
     onError: async error => {
-      toast.error(error.message || "Failed to void receipt");
+      toast.error(parseVoidBlockedByRefundError(error)?.displayMessage || error.message || "Failed to void receipt");
       await refreshReturn(qc, invoiceId);
     },
   });

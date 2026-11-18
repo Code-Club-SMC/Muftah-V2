@@ -217,6 +217,52 @@ describe("production migration integration", () => {
     );
   });
 
+  it("adds Phase 4 credit notes, store credit lots, customer refunds, and expanded settlement checks", () => {
+    for (const table of [
+      "credit_note_counters",
+      "customer_credit_lots",
+      "customer_credit_payment_allocations",
+      "customer_refunds",
+      "customer_refund_allocations",
+      "customer_credit_movements",
+    ]) {
+      expect(forwardSql).toContain(`CREATE TABLE "${table}"`);
+    }
+
+    expectColumns("sales_returns", {
+      credit_note_number: "text",
+      credit_note_issued_at: "timestamp",
+      applied_to_invoice_amount: "numeric(12, 2) DEFAULT '0' NOT NULL",
+      customer_credit_amount: "numeric(12, 2) DEFAULT '0' NOT NULL",
+    });
+    expectColumns("slip_records", {
+      excess_credited_amount: "numeric(12, 2) DEFAULT '0' NOT NULL",
+    });
+    expectColumns("customers", {
+      credit_balance: "numeric(12, 2) DEFAULT '0' NOT NULL",
+    });
+    expectColumns("invoices", {
+      excess_credited_amount: "numeric(12, 2) DEFAULT '0' NOT NULL",
+    });
+
+    expect(forwardSql).toContain(
+      'CREATE UNIQUE INDEX "uq_sales_returns_credit_note_number"',
+    );
+
+    for (const constraint of [
+      "payments_method_status_check",
+      "payments_method_details_check",
+      "slip_records_settlement_amounts_check",
+      "invoices_settlement_amounts_check",
+      "customers_credit_balance_nonnegative_check",
+      "invoices_excess_credited_amount_nonnegative_check",
+      "sales_returns_credit_split_nonnegative_check",
+      "sales_returns_completion_credit_note_check",
+    ]) {
+      expect(forwardSql).toContain(`ADD CONSTRAINT "${constraint}" CHECK`);
+    }
+  });
+
   it("preserves all baseline tables and column definitions except the approved new-return status default", () => {
     const previous = readSnapshot(baseline.entries.at(-1)!.idx);
     const latest = readSnapshot(journal.entries.at(-1)!.idx);
@@ -239,7 +285,9 @@ describe("production migration integration", () => {
     const sql = forwardSql
       .replace(/\/\*[\s\S]*?\*\//g, "")
       .replace(/--[^\n]*/g, "");
-    expect(sql).not.toMatch(/\b(?:DROP|TRUNCATE)\b/i);
+    expect(sql).not.toMatch(
+      /\b(?:DROP\s+(?:TABLE|COLUMN|INDEX|SCHEMA|VIEW|TYPE|DATABASE)|TRUNCATE)\b/i,
+    );
     expect(sql).not.toMatch(
       /\b(?:INSERT\s+INTO|DELETE\s+FROM|MERGE\s+INTO)\b/i,
     );
@@ -251,10 +299,63 @@ describe("production migration integration", () => {
       .map((statement) => statement.trim())
       .filter(Boolean);
     expect(statements.length).toBeGreaterThan(0);
-    for (const statement of statements) {
+
+    const allowedCheckConstraintReplacements = new Set([
+      "payments.payments_method_status_check",
+      "payments.payments_method_details_check",
+      "slip_records.slip_records_settlement_amounts_check",
+      "invoices.invoices_settlement_amounts_check",
+    ]);
+    const droppedConstraints = new Set<string>();
+    const readdedConstraints = new Set<string>();
+
+    for (let i = 0; i < statements.length; i++) {
+      const statement = statements[i];
+      const dropMatch = statement.match(
+        /^ALTER TABLE "([^"]+)" DROP CONSTRAINT "([^"]+)"$/,
+      );
+
+      if (dropMatch) {
+        const [, table, constraint] = dropMatch;
+        const key = `${table}.${constraint}`;
+        expect(
+          allowedCheckConstraintReplacements.has(key),
+          `Unexpected DROP CONSTRAINT statement: ${statement}`,
+        ).toBe(true);
+
+        const hasSubsequentAdd = statements
+          .slice(i + 1)
+          .some((subsequentStatement) =>
+            new RegExp(
+              `^ALTER TABLE "${table}" ADD CONSTRAINT "${constraint}" CHECK\\b`,
+            ).test(subsequentStatement),
+          );
+        expect(
+          hasSubsequentAdd,
+          `Expected subsequent ADD CONSTRAINT ... CHECK for ${key}`,
+        ).toBe(true);
+
+        droppedConstraints.add(key);
+        continue;
+      }
+
       expect(statement).toMatch(
         /^(?:CREATE TABLE |CREATE (?:UNIQUE )?INDEX |ALTER TABLE "[^"]+" ADD (?:COLUMN|CONSTRAINT) |ALTER TABLE "sales_returns" ALTER COLUMN "status" SET DEFAULT 'requested'$)/,
       );
+
+      const addMatch = statement.match(
+        /^ALTER TABLE "([^"]+)" ADD CONSTRAINT "([^"]+)" CHECK\b/,
+      );
+      if (addMatch) {
+        const key = `${addMatch[1]}.${addMatch[2]}`;
+        if (allowedCheckConstraintReplacements.has(key)) {
+          expect(droppedConstraints.has(key)).toBe(true);
+          readdedConstraints.add(key);
+        }
+      }
     }
+
+    expect(droppedConstraints).toEqual(allowedCheckConstraintReplacements);
+    expect(readdedConstraints).toEqual(droppedConstraints);
   });
 });

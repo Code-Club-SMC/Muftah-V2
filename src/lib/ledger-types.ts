@@ -51,6 +51,7 @@ export interface LedgerPaymentEntry {
   date: Date;
   reference: string | null;
   method: string;
+  isStoreCreditApplied?: boolean;
   amount: number;
   notes: string | null;
   runningBalance: number;
@@ -70,6 +71,7 @@ export interface LedgerReturnEntry {
   id: string;
   date: Date;
   returnNumber: number;
+  creditNoteNumber?: string | null;
   invoiceId: string;
   invoiceNumber: string;
   amount: number;
@@ -81,13 +83,33 @@ export interface LedgerReturnEntry {
   customerName?: string | null;
 }
 
+export interface LedgerRefundEntry {
+  type: "refund";
+  eventKind: "refund" | "refund_reversal";
+  id: string;
+  date: Date;
+  amount: number;
+  creditNoteNumber?: string | null;
+  walletName?: string | null;
+  notes?: string | null;
+  reverseReason?: string | null;
+  runningBalance: number;
+  customerName?: string | null;
+}
+
 export type LedgerEntry =
   | LedgerInvoiceEntry
   | LedgerPaymentEntry
-  | LedgerReturnEntry;
+  | LedgerReturnEntry
+  | LedgerRefundEntry;
 
 export type LedgerExportType = "view" | "print" | "csv" | "pdf";
-export type LedgerTypeFilter = "all" | "invoice" | "payment" | "return";
+export type LedgerTypeFilter =
+  | "all"
+  | "invoice"
+  | "payment"
+  | "return"
+  | "refund";
 
 export interface LedgerSummary {
   openingBalance: number;
@@ -106,7 +128,32 @@ export interface LedgerCustomerInfo {
   city?: string | null;
   mobileNumber?: string | null;
   outstandingAmount?: string | number | null;
+  creditBalance?: string | number | null;
   customerType?: string | null;
+}
+
+export function computeChronologicalLedgerStep(
+  currentBalance: number,
+  event:
+    | { type: "invoice"; totalPrice: number }
+    | { type: "payment"; method: string; amount: number }
+    | { type: "return"; eventKind: "return" | "void"; amount: number }
+    | { type: "refund"; eventKind: "refund" | "refund_reversal"; amount: number },
+): number {
+  const round = (v: number) => Math.round(v * 100) / 100;
+  if (event.type === "invoice") return round(currentBalance + event.totalPrice);
+  if (event.type === "return") {
+    return event.eventKind === "return"
+      ? round(currentBalance - event.amount)
+      : round(currentBalance + event.amount);
+  }
+  if (event.type === "refund") {
+    return event.eventKind === "refund"
+      ? round(currentBalance + event.amount)
+      : round(currentBalance - event.amount);
+  }
+  if (event.method === "customer_credit") return round(currentBalance);
+  return round(currentBalance - event.amount);
 }
 
 export interface DistributorLedgerResponse {

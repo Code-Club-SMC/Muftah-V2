@@ -18,6 +18,13 @@ import {
 } from "@/lib/sales/settlement/math";
 import { moneyString, roundMoney } from "@/lib/sales/settlement/money";
 import { and, eq, isNotNull, sql } from "drizzle-orm";
+import {
+	applyCustomerCreditToPayment,
+	issuePaymentOverageCredit,
+	reclaimInvoiceReturnCreditForPaymentReversal,
+	reclaimPaymentOverageCredit,
+	restoreCustomerCreditForReversedPayment,
+} from "./customer-credit-service";
 import { recordInvoiceTimelineEvent } from "./invoice-timeline-log";
 
 export type SalesTransaction = Parameters<
@@ -146,6 +153,25 @@ function preparePayment(input: RecoveryPaymentInput): PreparedPayment {
 		};
 	}
 
+	if (input.method === "customer_credit") {
+		return {
+			method: input.method,
+			amount,
+			walletId: null,
+			reference: cleanOptional(input.reference),
+			chequeNumber: null,
+			chequeBank: null,
+			chequeDate: null,
+			expenseType: null,
+			expenseEmployeeId: null,
+			paymentDate: input.paymentDate,
+			sourceRecordId: cleanOptional(input.sourceRecordId),
+			allocationGroupId: cleanOptional(input.allocationGroupId),
+			notes: cleanOptional(input.notes),
+			instantVerify: true,
+		};
+	}
+
 	const walletId = cleanOptional(input.walletId);
 	const reference = cleanOptional(input.reference);
 	const chequeNumber = cleanOptional(input.chequeNumber);
@@ -181,7 +207,9 @@ function preparePayment(input: RecoveryPaymentInput): PreparedPayment {
 }
 
 function initialStatus(method: PaymentMethod): PaymentStatus {
-	return method === "cash" || method === "expense_offset"
+	return method === "cash" ||
+		method === "expense_offset" ||
+		method === "customer_credit"
 		? "confirmed"
 		: "pending";
 }
@@ -236,17 +264,17 @@ async function getReceivedReturnAmount(
 			eq(salesReturns.status, "completed"),
 			isNotNull(salesReturns.completedAt),
 		),
-		columns: { totalAmount: true },
+		columns: { appliedToInvoiceAmount: true },
 	});
 	return roundMoney(
-		rows.reduce((sum, row) => sum + Number(row.totalAmount), 0),
+		rows.reduce((sum, row) => sum + Number(row.appliedToInvoiceAmount), 0),
 	);
 }
 
 async function assertWalletType(
 	tx: SalesTransaction,
 	walletId: string,
-	method: Exclude<PaymentMethod, "expense_offset">,
+	method: Exclude<PaymentMethod, "expense_offset" | "customer_credit">,
 ): Promise<void> {
 	const wallet = await tx.query.wallets.findFirst({
 		where: eq(wallets.id, walletId),
@@ -269,7 +297,7 @@ async function creditWalletForPayment(
 	payment: PaymentRecord,
 	actorId: string,
 ): Promise<void> {
-	if (payment.method === "expense_offset") return;
+	if (payment.method === "expense_offset" || payment.method === "customer_credit") return;
 	if (!payment.walletId || !payment.effectiveDate) {
 		throw new Error("Confirmed payment is missing account information");
 	}
@@ -361,6 +389,16 @@ async function insertPayment(
 		})
 		.returning();
 	if (!payment) throw new Error("Payment could not be recorded");
+	if (prepared.method === "customer_credit") {
+		await applyCustomerCreditToPayment(tx, {
+			customerId: invoice.customerId,
+			paymentId: payment.id,
+			invoiceId: invoice.id,
+			amount: prepared.amount,
+			performedById: actorId,
+			notes: prepared.notes ?? `Applied to Invoice #${invoice.invoiceNumber ?? invoice.id}`,
+		});
+	}
 	return payment;
 }
 
@@ -369,7 +407,13 @@ async function validatePreparedWallets(
 	preparedPayments: PreparedPayment[],
 ): Promise<void> {
 	for (const payment of preparedPayments) {
-		if (payment.method === "expense_offset" || !payment.walletId) continue;
+		if (
+			payment.method === "expense_offset" ||
+			payment.method === "customer_credit" ||
+			!payment.walletId
+		) {
+			continue;
+		}
 		await assertWalletType(tx, payment.walletId, payment.method);
 	}
 }
@@ -402,17 +446,43 @@ async function assertProposedSettlement(
 	const proposed = newPayments.map((payment) => ({
 		amount: payment.amount,
 		method: payment.method,
-		status: payment.instantVerify ? "confirmed" : initialStatus(payment.method),
+		status:
+			payment.instantVerify || payment.method === "customer_credit"
+				? ("confirmed" as const)
+				: initialStatus(payment.method),
 	}));
 	const returnedAmount = await getReceivedReturnAmount(tx, invoice.id);
 	const netReceivable = roundMoney(
-		Number(invoice.totalPrice) - returnedAmount,
+		Math.max(0, Number(invoice.totalPrice) - returnedAmount),
 	);
-	const totals = calculateSettlement(netReceivable, [
-		...existing,
-		...proposed,
-	]);
-	assertSettlementDueDate(totals, invoice.paymentDueDate);
+	const existingTotals = calculateSettlement(netReceivable, existing, {
+		allowCreditBalance: true,
+	});
+	const remainingCapacity = roundMoney(
+		Math.max(
+			0,
+			netReceivable - existingTotals.paidAmount - existingTotals.pendingAmount,
+		),
+	);
+	const proposedTotal = roundMoney(
+		proposed.reduce((sum, item) => sum + item.amount, 0),
+	);
+	if (proposedTotal > remainingCapacity) {
+		throw new Error("Payments cannot exceed invoice total");
+	}
+	const combinedTotals = calculateSettlement(
+		netReceivable,
+		[...existing, ...proposed],
+		{ allowCreditBalance: true },
+	);
+	assertSettlementDueDate(
+		{
+			...combinedTotals,
+			outstandingAmount: Math.max(0, combinedTotals.outstandingAmount),
+			payLaterAmount: Math.max(0, combinedTotals.payLaterAmount),
+		},
+		invoice.paymentDueDate,
+	);
 }
 
 export async function recalculateInvoiceSettlement(
@@ -421,15 +491,16 @@ export async function recalculateInvoiceSettlement(
 	options?: {
 		totalPrice?: number;
 		paymentDueDate?: Date | null;
+		actorId?: string;
+		sourcePaymentId?: string | null;
+		reason?: string;
+		allowUnapplyOverageOnReturnVoid?: boolean;
 	},
 ): Promise<SettlementTotals> {
 	const invoice = await lockInvoice(tx, invoiceId);
 	const totalPrice = options?.totalPrice ?? Number(invoice.totalPrice);
 	const returnedAmount = await getReceivedReturnAmount(tx, invoice.id);
-	const netReceivable = roundMoney(totalPrice - returnedAmount);
-	if (netReceivable < 0) {
-		throw new Error("Returned Amount cannot exceed invoice total");
-	}
+	const netReceivable = roundMoney(Math.max(0, totalPrice - returnedAmount));
 	const paymentDueDate =
 		options && "paymentDueDate" in options
 			? options.paymentDueDate
@@ -437,11 +508,52 @@ export async function recalculateInvoiceSettlement(
 	const paymentTotals = calculateSettlement(
 		netReceivable,
 		await listSettlementPayments(tx, invoice.id),
-		// A received return may leave existing payments above the reduced receivable.
 		{ allowCreditBalance: true },
 	);
-	const totals: SettlementTotals = { ...paymentTotals, totalPrice };
+
+	const storedOutstanding = roundMoney(Math.max(0, paymentTotals.outstandingAmount));
+	const desiredExcess = roundMoney(Math.max(0, -paymentTotals.outstandingAmount));
+	const storedPayLater = roundMoney(
+		Math.max(0, storedOutstanding - paymentTotals.pendingAmount),
+	);
+	const totals: SettlementTotals = {
+		...paymentTotals,
+		totalPrice,
+		outstandingAmount: storedOutstanding,
+		payLaterAmount: storedPayLater,
+	};
 	assertSettlementDueDate(totals, paymentDueDate);
+
+	const previousExcess = roundMoney(invoice.excessCreditedAmount ?? 0);
+	const excessDelta = roundMoney(desiredExcess - previousExcess);
+
+	if (excessDelta > 0) {
+		await issuePaymentOverageCredit(tx, {
+			customerId: invoice.customerId,
+			sourceInvoiceId: invoice.id,
+			sourcePaymentId: options?.sourcePaymentId ?? null,
+			amount: excessDelta,
+			performedById: options?.actorId ?? invoice.performedById,
+		});
+	} else if (excessDelta < 0) {
+		await reclaimPaymentOverageCredit(tx, {
+			invoiceId: invoice.id,
+			customerId: invoice.customerId,
+			reclaimAmount: roundMoney(-excessDelta),
+			reason: options?.reason ?? "Invoice settlement changed",
+			performedById: options?.actorId ?? invoice.performedById,
+			allowUnapplyApplied: options?.allowUnapplyOverageOnReturnVoid ?? false,
+			recalculateInvoice: async (affectedInvoiceId) => {
+				await recalculateInvoiceSettlement(tx, affectedInvoiceId, {
+					actorId: options?.actorId,
+					reason: options?.reason,
+				});
+			},
+			recordTimeline: async (params) => {
+				await recordInvoiceTimelineEvent(params as any, tx);
+			},
+		});
+	}
 
 	const paidDelta = roundMoney(totals.paidAmount - Number(invoice.paidAmount));
 	const outstandingDelta = roundMoney(
@@ -457,6 +569,7 @@ export async function recalculateInvoiceSettlement(
 			...(options && "paymentDueDate" in options ? { paymentDueDate } : {}),
 			paidAmount: moneyString(totals.paidAmount),
 			returnedAmount: moneyString(returnedAmount),
+			excessCreditedAmount: moneyString(desiredExcess),
 			outstandingAmount: moneyString(totals.outstandingAmount),
 			paymentStatus: totals.paymentStatus,
 		})
@@ -468,6 +581,7 @@ export async function recalculateInvoiceSettlement(
 			invoiceAmount: moneyString(totals.totalPrice),
 			paidAmount: moneyString(totals.paidAmount),
 			returnedAmount: moneyString(returnedAmount),
+			excessCreditedAmount: moneyString(desiredExcess),
 			outstandingAmount: moneyString(totals.outstandingAmount),
 			status:
 				totals.outstandingAmount <= 0
@@ -477,8 +591,7 @@ export async function recalculateInvoiceSettlement(
 						: "open",
 			reconciledAt: totals.outstandingAmount <= 0 ? new Date() : null,
 			recoveryStatus: totals.outstandingAmount <= 0 ? null : undefined,
-			recoveryAssignedToId:
-				totals.outstandingAmount <= 0 ? null : undefined,
+			recoveryAssignedToId: totals.outstandingAmount <= 0 ? null : undefined,
 			nextFollowUpDate: totals.outstandingAmount <= 0 ? null : undefined,
 			lastFollowUpDate: totals.outstandingAmount <= 0 ? null : undefined,
 			escalationLevel: totals.outstandingAmount <= 0 ? 0 : undefined,
@@ -551,7 +664,9 @@ export async function createInitialPayments(
 		);
 	}
 
-	await recalculateInvoiceSettlement(tx, invoice.id);
+	await recalculateInvoiceSettlement(tx, invoice.id, {
+		actorId: input.actorId,
+	});
 	return created;
 }
 
@@ -617,7 +732,9 @@ export async function addPaymentsToInvoice(
 		);
 	}
 
-	await recalculateInvoiceSettlement(tx, invoice.id);
+	await recalculateInvoiceSettlement(tx, invoice.id, {
+		actorId: input.actorId,
+	});
 	return created;
 }
 
@@ -646,7 +763,9 @@ export async function recordRecoveryPayment(
 		await creditWalletForPayment(tx, payment, input.actorId);
 	}
 
-	await recalculateInvoiceSettlement(tx, invoice.id);
+	await recalculateInvoiceSettlement(tx, invoice.id, {
+		actorId: input.actorId,
+	});
 	await recordInvoiceTimelineEvent(
 		{
 			invoiceId: invoice.id,
@@ -704,7 +823,10 @@ export async function confirmPendingPayment(
 	if (!changed) throw new Error("Payment is no longer pending");
 
 	await creditWalletForPayment(tx, changed, input.actorId);
-	await recalculateInvoiceSettlement(tx, changed.invoiceId);
+	await recalculateInvoiceSettlement(tx, changed.invoiceId, {
+		actorId: input.actorId,
+		sourcePaymentId: changed.id,
+	});
 	await recordInvoiceTimelineEvent(
 		{
 			invoiceId: changed.invoiceId,
@@ -759,7 +881,10 @@ export async function resolvePendingPayment(
 			.set({ paymentDueDate: input.paymentDueDate })
 			.where(eq(invoices.id, changed.invoiceId));
 	}
-	await recalculateInvoiceSettlement(tx, changed.invoiceId);
+	await recalculateInvoiceSettlement(tx, changed.invoiceId, {
+		actorId: input.actorId,
+		reason,
+	});
 
 	await recordInvoiceTimelineEvent(
 		{
@@ -802,7 +927,7 @@ export async function reverseConfirmedPayment(
 			"Expense offsets must be reversed from the linked expense workflow",
 		);
 	}
-	await lockInvoice(tx, current.invoiceId);
+	const invoice = await lockInvoice(tx, current.invoiceId);
 	const now = new Date();
 	const [changed] = await tx
 		.update(payments)
@@ -818,7 +943,15 @@ export async function reverseConfirmedPayment(
 		.returning();
 	if (!changed) throw new Error("Payment is no longer confirmed");
 
-	if (changed.method !== "expense_offset") {
+	if (changed.method === "customer_credit") {
+		await restoreCustomerCreditForReversedPayment(tx, {
+			paymentId: changed.id,
+			invoiceId: changed.invoiceId,
+			customerId: changed.customerId,
+			performedById: input.actorId,
+			reason,
+		});
+	} else if (changed.method !== "expense_offset") {
 		const originalMovement = await tx.query.transactions.findFirst({
 			where: and(
 				eq(transactions.referenceId, changed.id),
@@ -845,6 +978,17 @@ export async function reverseConfirmedPayment(
 			reversalOfTransactionId: originalMovement.id,
 			performedById: input.actorId,
 		});
+
+		const previousExcess = roundMoney(invoice.excessCreditedAmount ?? 0);
+		const reopenPortion = roundMoney(
+			Math.max(0, roundMoney(changed.amount) - previousExcess),
+		);
+		await reclaimInvoiceReturnCreditForPaymentReversal(tx, {
+			invoiceId: changed.invoiceId,
+			customerId: changed.customerId,
+			reopenNeeded: reopenPortion,
+			performedById: input.actorId,
+		});
 	}
 
 	if (input.paymentDueDate) {
@@ -853,7 +997,10 @@ export async function reverseConfirmedPayment(
 			.set({ paymentDueDate: input.paymentDueDate })
 			.where(eq(invoices.id, changed.invoiceId));
 	}
-	await recalculateInvoiceSettlement(tx, changed.invoiceId);
+	await recalculateInvoiceSettlement(tx, changed.invoiceId, {
+		actorId: input.actorId,
+		reason,
+	});
 
 	await recordInvoiceTimelineEvent(
 		{

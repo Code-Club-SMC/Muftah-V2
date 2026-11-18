@@ -34,6 +34,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PrintExportToolbar } from "@/components/sales/ledger-print-export";
+import { CustomerCreditSection } from "@/components/sales/customer-credit-section";
 
 const PKR = (v: number) =>
   `PKR ${v.toLocaleString("en-PK", { minimumFractionDigits: 2 })}`;
@@ -206,17 +207,18 @@ function CustomerLedgerPage() {
                 ...(paymentsData?.data || []).filter((p: any) => p.status === "confirmed").map((p: any) => ({
                   type: "payment" as const,
                   date: p.effectiveDate,
-                  description: `Payment (${p.method})`,
+                  description: p.method === "customer_credit" ? "Store Credit Applied" : `Payment (${p.method})`,
                   warehouse: "—",
                   total: 0,
                   paymentAmount: Number(p.amount),
+                  isStoreCreditApplied: p.method === "customer_credit",
                 })),
               ].sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
               let balance = 0;
               return raw.map((entry: any) => {
                 if (entry.type === "invoice") {
                   balance += entry.total;
-                } else {
+                } else if (!entry.isStoreCreditApplied) {
                   balance = Math.max(0, balance - (entry.paymentAmount || 0));
                 }
                 return { ...entry, balance };
@@ -313,6 +315,12 @@ function CustomerLedgerPage() {
           </AlertDescription>
         </Alert>
       )}
+
+      {/* ── Store Credit & Refunds Section ── */}
+      <CustomerCreditSection
+        customerId={customerId}
+        customerName={customer.name}
+      />
 
       {/* ── Date range picker ── */}
       <div className="flex flex-wrap items-end gap-3">

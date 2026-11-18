@@ -28,7 +28,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Banknote, Building2, Receipt, CheckCircle2, User } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Banknote, Building2, Receipt, CheckCircle2, User, AlertCircle } from "lucide-react";
 import { getOpenSlipsForRecoveryFn, batchReconcileSlipsFn } from "@/server-functions/sales/reconciliation-fn";
 import { useWallets } from "@/hooks/finance/use-finance";
 import { useGetOrderBookers } from "@/hooks/sales/use-sales-people";
@@ -41,7 +42,9 @@ type OpenSlip = Awaited<ReturnType<typeof getOpenSlipsForRecoveryFn>>["slips"][n
 interface RecoveryEntry {
   slipId: string;
   slipNumber: string;
+  customerId: string;
   customerName: string;
+  customerCreditBalance: number;
   outstandingAmount: number;
   recoveryAmount: number;
 }
@@ -49,7 +52,7 @@ interface RecoveryEntry {
 export function BatchRecoveriesDialog() {
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState<Map<string, RecoveryEntry>>(new Map());
-  const [method, setMethod] = useState<"cash" | "bank_transfer">("cash");
+  const [method, setMethod] = useState<"cash" | "bank_transfer" | "customer_credit">("cash");
   const [reference, setReference] = useState("");
   const [notes, setNotes] = useState("");
   const [orderBookerId, setOrderBookerId] = useState<string>("");
@@ -70,18 +73,24 @@ export function BatchRecoveriesDialog() {
 
   const slips = slipsData?.slips ?? [];
   const eligibleWallets = useMemo(
-    () =>
-      wallets.filter((wallet) =>
+    () => {
+      if (method === "customer_credit") return [];
+      return wallets.filter((wallet) =>
         method === "cash" ? wallet.type === "cash" : wallet.type === "bank",
-      ),
+      );
+    },
     [method, wallets],
   );
 
   useEffect(() => {
+    if (method === "customer_credit") {
+      setWalletId("");
+      return;
+    }
     if (!eligibleWallets.some((wallet) => wallet.id === walletId)) {
       setWalletId(eligibleWallets[0]?.id ?? "");
     }
-  }, [eligibleWallets, walletId]);
+  }, [eligibleWallets, walletId, method]);
 
   // Clear selected slips when order booker filter changes
   useEffect(() => {
@@ -96,6 +105,31 @@ export function BatchRecoveriesDialog() {
     return sum;
   }, [selected]);
 
+  const customerCreditAllocations = useMemo(() => {
+    const map = new Map<string, { customerName: string; requested: number; available: number }>();
+    selected.forEach((entry) => {
+      const existing = map.get(entry.customerId) ?? {
+        customerName: entry.customerName,
+        requested: 0,
+        available: entry.customerCreditBalance,
+      };
+      existing.requested += entry.recoveryAmount;
+      map.set(entry.customerId, existing);
+    });
+    return map;
+  }, [selected]);
+
+  const overAllocatedCustomers = useMemo(() => {
+    if (method !== "customer_credit") return [];
+    const list: Array<{ customerName: string; requested: number; available: number }> = [];
+    customerCreditAllocations.forEach((info) => {
+      if (info.requested > info.available) {
+        list.push(info);
+      }
+    });
+    return list;
+  }, [customerCreditAllocations, method]);
+
   const { mutateAsync: batchReconcile, isPending } = useMutation({
     mutationFn: batchReconcileSlipsFn,
     onSuccess: (result) => {
@@ -106,6 +140,12 @@ export function BatchRecoveriesDialog() {
       qc.invalidateQueries({ queryKey: ["open-slips-for-recovery"] });
       qc.invalidateQueries({ queryKey: ["overdue-slips"] });
       qc.invalidateQueries({ queryKey: ["daily-closing"] });
+      qc.invalidateQueries({ queryKey: ["customer-credit"] });
+      qc.invalidateQueries({ queryKey: ["customers"] });
+      qc.invalidateQueries({ queryKey: ["distributor-profile"] });
+      qc.invalidateQueries({ queryKey: ["shopkeeper-profile"] });
+      qc.invalidateQueries({ queryKey: ["distributor-ledger"] });
+      qc.invalidateQueries({ queryKey: ["shopkeeper-ledger"] });
       setSelected(new Map());
       setOpen(false);
     },
@@ -121,7 +161,9 @@ export function BatchRecoveriesDialog() {
         next.set(slip.id, {
           slipId: slip.id,
           slipNumber: slip.slipNumber,
+          customerId: slip.customerId,
           customerName: slip.customerName,
+          customerCreditBalance: Number((slip as any).customerCreditBalance ?? 0),
           outstandingAmount: slip.outstandingAmount,
           recoveryAmount: slip.outstandingAmount,
         });
@@ -153,7 +195,9 @@ export function BatchRecoveriesDialog() {
         next.set(s.id, {
           slipId: s.id,
           slipNumber: s.slipNumber,
+          customerId: s.customerId,
           customerName: s.customerName,
+          customerCreditBalance: Number((s as any).customerCreditBalance ?? 0),
           outstandingAmount: s.outstandingAmount,
           recoveryAmount: s.outstandingAmount,
         });
@@ -167,7 +211,13 @@ export function BatchRecoveriesDialog() {
       toast.error("Select at least one slip");
       return;
     }
-    if (!walletId) {
+    if (method === "customer_credit" && overAllocatedCustomers.length > 0) {
+      toast.error(
+        `Cannot record recovery: Store credit exceeds available credit for ${overAllocatedCustomers.map((c) => c.customerName).join(", ")}.`,
+      );
+      return;
+    }
+    if (method !== "customer_credit" && !walletId) {
       toast.error("Select a destination account");
       return;
     }
@@ -185,7 +235,7 @@ export function BatchRecoveriesDialog() {
       data: {
         items,
         method,
-        walletId: walletId || undefined,
+        walletId: method === "customer_credit" ? undefined : walletId || undefined,
         reference: reference || undefined,
         notes: notes || undefined,
       },
@@ -236,7 +286,7 @@ export function BatchRecoveriesDialog() {
           <div className="grid grid-cols-2 gap-3 p-3 rounded-lg border bg-muted/30">
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-muted-foreground">Method</label>
-              <Select value={method} onValueChange={(v) => setMethod(v as "cash" | "bank_transfer")}>
+              <Select value={method} onValueChange={(v) => setMethod(v as "cash" | "bank_transfer" | "customer_credit")}>
                 <SelectTrigger className="h-9">
                   <SelectValue />
                 </SelectTrigger>
@@ -253,24 +303,32 @@ export function BatchRecoveriesDialog() {
                       Bank Transfer
                     </span>
                   </SelectItem>
+                  <SelectItem value="customer_credit">
+                    <span className="flex items-center gap-2">
+                      <Receipt className="size-3.5 text-purple-500" />
+                      Store Credit
+                    </span>
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">Deposit Account</label>
-              <Select value={walletId} onValueChange={setWalletId}>
-                <SelectTrigger className="h-9">
-                  <SelectValue placeholder="Select account" />
-                </SelectTrigger>
-                <SelectContent>
-                  {eligibleWallets.map((w) => (
-                    <SelectItem key={w.id} value={w.id}>
-                      {w.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            {method !== "customer_credit" && (
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Deposit Account</label>
+                <Select value={walletId} onValueChange={setWalletId}>
+                  <SelectTrigger className="h-9">
+                    <SelectValue placeholder="Select account" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {eligibleWallets.map((w) => (
+                      <SelectItem key={w.id} value={w.id}>
+                        {w.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-muted-foreground">
                 {method === "bank_transfer" ? "Bank Reference" : "Reference (optional)"}
@@ -278,7 +336,7 @@ export function BatchRecoveriesDialog() {
               <Input
                 value={reference}
                 onChange={(e) => setReference(e.target.value)}
-                placeholder="Cheque / Tx ID"
+                placeholder={method === "customer_credit" ? "Memo (optional)" : "Cheque / Tx ID"}
                 className="h-9"
               />
             </div>
@@ -292,6 +350,22 @@ export function BatchRecoveriesDialog() {
               />
             </div>
           </div>
+
+          {overAllocatedCustomers.length > 0 && (
+            <div className="flex gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive">
+              <AlertCircle className="mt-0.5 size-4 shrink-0" />
+              <div>
+                <p className="font-semibold">Store Credit Over-allocated</p>
+                <ul className="mt-1 list-disc list-inside space-y-0.5">
+                  {overAllocatedCustomers.map((c) => (
+                    <li key={c.customerName}>
+                      {c.customerName}: Allocated {PKR(c.requested)} exceeds available credit {PKR(c.available)}.
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          )}
 
           {/* Slips table */}
           <div className="rounded-lg border overflow-hidden">
@@ -334,6 +408,7 @@ export function BatchRecoveriesDialog() {
                   slips.map((slip) => {
                     const isSelected = selected.has(slip.id);
                     const entry = selected.get(slip.id);
+                    const slipCredit = Number((slip as any).customerCreditBalance ?? 0);
                     return (
                       <TableRow key={slip.id} className={isSelected ? "bg-emerald-50 dark:bg-emerald-950/20" : ""}>
                         <TableCell>
@@ -343,7 +418,14 @@ export function BatchRecoveriesDialog() {
                           />
                         </TableCell>
                         <TableCell className="font-mono text-xs">{slip.slipNumber}</TableCell>
-                        <TableCell className="text-sm">{slip.customerName}</TableCell>
+                        <TableCell className="text-sm">
+                          <span>{slip.customerName}</span>
+                          {slipCredit > 0 && (
+                            <Badge variant="secondary" className="ml-2 text-[10px]">
+                              Credit: {PKR(slipCredit)}
+                            </Badge>
+                          )}
+                        </TableCell>
                         <TableCell className="text-sm text-muted-foreground">
                           {slip.orderBookerName ?? "—"}
                         </TableCell>
@@ -399,7 +481,7 @@ export function BatchRecoveriesDialog() {
             </Button>
             <Button
               onClick={handleSubmit}
-              disabled={selected.size === 0 || isPending}
+              disabled={selected.size === 0 || isPending || (method === "customer_credit" && overAllocatedCustomers.length > 0)}
               className="gap-2"
             >
               {isPending ? (

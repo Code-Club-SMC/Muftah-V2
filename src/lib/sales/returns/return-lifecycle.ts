@@ -1,4 +1,6 @@
 import Big from "big.js";
+import { formatIndianStyle, formatPakistaniNumber } from "@/lib/currency-format";
+import { roundMoney } from "../settlement/money";
 
 // Client-safe rules for the sales return lifecycle. No database access here.
 
@@ -211,4 +213,70 @@ export function returnMoneyEvents(row: {
     events.push({ kind: "void", date: row.voidedAt, amount, cost: -costOf("void") });
   }
   return events;
+}
+
+export function formatCreditNoteNumber(sequence: number): string {
+  if (!Number.isInteger(sequence) || sequence <= 0) {
+    throw new Error("Credit note sequence must be a positive integer");
+  }
+  return `CN-${String(sequence).padStart(4, "0")}`;
+}
+
+export function computeReturnCreditSplit(
+  returnTotal: number,
+  preReturnOpenBalance: number,
+): { appliedToInvoiceAmount: number; customerCreditAmount: number } {
+  const total = roundMoney(Math.max(0, returnTotal));
+  const open = roundMoney(Math.max(0, preReturnOpenBalance));
+  const appliedToInvoiceAmount = roundMoney(Math.min(total, open));
+  const customerCreditAmount = roundMoney(new Big(total).minus(appliedToInvoiceAmount).toNumber());
+  return { appliedToInvoiceAmount, customerCreditAmount };
+}
+
+export const VOID_BLOCKED_BY_REFUND = "VOID_BLOCKED_BY_REFUND";
+
+export function formatVoidBlockedByRefundError(params: {
+  refundedAmount: number;
+  customerId: string;
+  customerName: string;
+  customerType: string;
+}): Error {
+  const payload = JSON.stringify({
+    code: VOID_BLOCKED_BY_REFUND,
+    refundedAmount: roundMoney(params.refundedAmount),
+    customerId: params.customerId,
+    customerName: params.customerName,
+    customerType: params.customerType,
+  });
+  return new Error(
+    `${VOID_BLOCKED_BY_REFUND}:${payload}:Rs ${formatIndianStyle(roundMoney(params.refundedAmount))} of this return's credit was already refunded. Reverse the refund on ${params.customerName}'s page before voiding.`,
+  );
+}
+
+export function parseVoidBlockedByRefundError(error: unknown): {
+  refundedAmount: number;
+  customerId: string;
+  customerName: string;
+  customerType: string;
+  displayMessage: string;
+} | null {
+  if (!(error instanceof Error)) return null;
+  const marker = `${VOID_BLOCKED_BY_REFUND}:`;
+  const idx = error.message.indexOf(marker);
+  if (idx === -1) return null;
+  const rest = error.message.slice(idx + marker.length);
+  const splitIdx = rest.indexOf("}:");
+  if (splitIdx === -1) return null;
+  try {
+    const parsed = JSON.parse(rest.slice(0, splitIdx + 1));
+    return {
+      refundedAmount: Number(parsed.refundedAmount),
+      customerId: String(parsed.customerId),
+      customerName: String(parsed.customerName),
+      customerType: String(parsed.customerType ?? "retailer"),
+      displayMessage: rest.slice(splitIdx + 2),
+    };
+  } catch {
+    return null;
+  }
 }

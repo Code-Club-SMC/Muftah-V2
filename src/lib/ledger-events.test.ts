@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { generateDistributorLedgerFn } from "@/server-functions/sales/ledger-fn";
+import { computeChronologicalLedgerStep } from "@/lib/ledger-types";
 
 const fixture = vi.hoisted(() => ({ returns: [] as any[] }));
 vi.mock("@tanstack/react-start", () => ({ createServerFn: () => {
@@ -20,6 +21,7 @@ vi.mock("@/db", () => ({ db: {
     invoices: { findMany: async (query: any) => query.columns ? [{ totalPrice: "1000" }] : [] },
     payments: { findMany: async (query: any) => query.columns ? [{ amount: "100" }] : [] },
     salesReturns: { findMany: async () => fixture.returns },
+    customerRefunds: { findMany: async () => [] },
     slipRecords: { findMany: async () => [] },
   },
 } }));
@@ -69,3 +71,29 @@ describe("ledger receipt/void events", () => {
     expect((await read({ ...query, sortOrder: "desc", includeFullEntries: true })).entries.map((entry: any) => entry.id)).toEqual(["r1:void", "r1:return"]);
   });
 });
+
+describe("Phase 4 store credit ledger balance deltas", () => {
+  it("does not double-subtract when customer_credit settles a second invoice, and recovers balance on cash refund", () => {
+    let bal = 0;
+    bal = computeChronologicalLedgerStep(bal, { type: "invoice", totalPrice: 10000 });
+    expect(bal).toBe(10000);
+    bal = computeChronologicalLedgerStep(bal, { type: "payment", method: "cash", amount: 10000 });
+    expect(bal).toBe(0);
+    bal = computeChronologicalLedgerStep(bal, { type: "return", eventKind: "return", amount: 4000 });
+    expect(bal).toBe(-4000);
+    // Applying store credit toward invoice #2 (Rs 6,000) keeps balance = -4000 + 6000 = +2000 (not -2000)
+    bal = computeChronologicalLedgerStep(bal, { type: "invoice", totalPrice: 6000 });
+    expect(bal).toBe(2000);
+    bal = computeChronologicalLedgerStep(bal, { type: "payment", method: "customer_credit", amount: 4000 });
+    expect(bal).toBe(2000);
+  });
+
+  it("moves negative balance toward zero on cash refund and back down on refund reversal", () => {
+    let bal = -4000;
+    bal = computeChronologicalLedgerStep(bal, { type: "refund", eventKind: "refund", amount: 4000 });
+    expect(bal).toBe(0);
+    bal = computeChronologicalLedgerStep(bal, { type: "refund", eventKind: "refund_reversal", amount: 4000 });
+    expect(bal).toBe(-4000);
+  });
+});
+

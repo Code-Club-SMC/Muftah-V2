@@ -19,7 +19,7 @@ import { customers, invoices, invoiceItems } from "./sales-schema";
 import { products, recipes, warehouses } from "./inventory-schema";
 import { user } from "./auth-schema";
 import { employees } from "./hr-schema";
-import { wallets } from "./finance-schema";
+import { transactions, wallets } from "./finance-schema";
 
 const timestamps = {
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -160,7 +160,7 @@ export const payments = pgTable(
       .references(() => invoices.id),
     amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
     method: text("method", {
-      enum: ["cash", "bank_transfer", "cheque", "expense_offset"],
+      enum: ["cash", "bank_transfer", "cheque", "expense_offset", "customer_credit"],
     }).notNull(),
     status: text("status", {
       enum: ["pending", "confirmed", "returned", "cancelled", "reversed"],
@@ -197,7 +197,7 @@ export const payments = pgTable(
     methodStatusCheck: check(
       "payments_method_status_check",
       sql`(
-        (${table.method} in ('cash', 'expense_offset') and ${table.status} in ('confirmed', 'reversed')) or
+        (${table.method} in ('cash', 'expense_offset', 'customer_credit') and ${table.status} in ('confirmed', 'reversed')) or
         (${table.method} = 'bank_transfer' and ${table.status} in ('pending', 'confirmed', 'cancelled', 'reversed')) or
         (${table.method} = 'cheque' and ${table.status} in ('pending', 'confirmed', 'returned', 'cancelled', 'reversed'))
       )`,
@@ -205,7 +205,7 @@ export const payments = pgTable(
     methodDetailsCheck: check(
       "payments_method_details_check",
       sql`(
-        (${table.method} = 'expense_offset' or ${table.walletId} is not null) and
+        (${table.method} in ('expense_offset', 'customer_credit') or ${table.walletId} is not null) and
         (${table.method} <> 'bank_transfer' or nullif(btrim(${table.reference}), '') is not null) and
         (${table.method} <> 'cheque' or (
           nullif(btrim(${table.chequeNumber}), '') is not null and
@@ -268,6 +268,12 @@ export const slipRecords = pgTable("slip_records", {
   returnedAmount: decimal("returned_amount", { precision: 12, scale: 2 })
     .notNull()
     .default("0"),
+  excessCreditedAmount: decimal("excess_credited_amount", {
+    precision: 12,
+    scale: 2,
+  })
+    .notNull()
+    .default("0"),
   outstandingAmount: decimal("outstanding_amount", {
     precision: 12,
     scale: 2,
@@ -291,7 +297,7 @@ export const slipRecords = pgTable("slip_records", {
   invoiceUnique: uniqueIndex("slip_records_invoice_unique").on(table.invoiceId),
   settlementAmountsCheck: check(
     "slip_records_settlement_amounts_check",
-    sql`${table.invoiceAmount} >= 0 and ${table.paidAmount} >= 0 and ${table.returnedAmount} >= 0 and ${table.paidAmount} + ${table.returnedAmount} + ${table.outstandingAmount} = ${table.invoiceAmount}`,
+    sql`${table.invoiceAmount} >= 0 and ${table.paidAmount} >= 0 and ${table.returnedAmount} >= 0 and ${table.excessCreditedAmount} >= 0 and ${table.outstandingAmount} >= 0 and ${table.paidAmount} + ${table.returnedAmount} - ${table.excessCreditedAmount} + ${table.outstandingAmount} = ${table.invoiceAmount}`,
   ),
 }));
 
@@ -570,7 +576,7 @@ export const discountRulesRelations = relations(
   })
 );
 
-export const paymentsRelations = relations(payments, ({ one }) => ({
+export const paymentsRelations = relations(payments, ({ one, many }) => ({
   customer: one(customers, {
     fields: [payments.customerId],
     references: [customers.id],
@@ -598,6 +604,7 @@ export const paymentsRelations = relations(payments, ({ one }) => ({
     references: [user.id],
     relationName: "paymentResolvedBy",
   }),
+  creditAllocations: many(customerCreditPaymentAllocations),
 }));
 
 export const slipRecordsRelations = relations(slipRecords, ({ one, many }) => ({
@@ -751,12 +758,31 @@ export const salesReturns = pgTable("sales_returns", {
   voidedById: text("voided_by_id").references(() => user.id),
   voidedAt: timestamp("voided_at"),
   voidReason: text("void_reason"),
+  creditNoteNumber: text("credit_note_number"),
+  creditNoteIssuedAt: timestamp("credit_note_issued_at"),
+  appliedToInvoiceAmount: decimal("applied_to_invoice_amount", { precision: 12, scale: 2 })
+    .notNull()
+    .default("0"),
+  customerCreditAmount: decimal("customer_credit_amount", { precision: 12, scale: 2 })
+    .notNull()
+    .default("0"),
   ...timestamps,
 }, (table) => ({
   invoiceIdx: index("idx_sales_returns_invoice").on(table.invoiceId),
   customerIdx: index("idx_sales_returns_customer").on(table.customerId),
   statusIdx: index("idx_sales_returns_status").on(table.status),
   reasonIdx: index("idx_sales_returns_reason").on(table.reasonId),
+  creditNoteNumberUnique: uniqueIndex("uq_sales_returns_credit_note_number")
+    .on(table.creditNoteNumber)
+    .where(sql`${table.creditNoteNumber} is not null`),
+  creditSplitNonNegativeCheck: check(
+    "sales_returns_credit_split_nonnegative_check",
+    sql`${table.appliedToInvoiceAmount} >= 0 and ${table.customerCreditAmount} >= 0`,
+  ),
+  completionCreditNoteCheck: check(
+    "sales_returns_completion_credit_note_check",
+    sql`${table.status} not in ('completed', 'voided') or (nullif(btrim(${table.creditNoteNumber}), '') is not null and ${table.appliedToInvoiceAmount} + ${table.customerCreditAmount} = ${table.totalAmount})`,
+  ),
 }));
 
 export const salesReturnItems = pgTable("sales_return_items", {
@@ -823,6 +849,236 @@ export const salesReturnStockTraces = pgTable("sales_return_stock_traces", {
   warehouseIdx: index("idx_return_stock_traces_warehouse").on(table.warehouseId),
   destinationIdx: index("idx_return_stock_traces_destination").on(table.destination),
 }));
+
+export const creditNoteCounters = pgTable(
+  "credit_note_counters",
+  {
+    id: text("id").primaryKey(),
+    lastNumber: integer("last_number").notNull().default(0),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    lastNumberCheck: check("credit_note_counters_last_number_check", sql`${table.lastNumber} >= 0`),
+  }),
+);
+
+export const customerCreditLots = pgTable(
+  "customer_credit_lots",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => createId()),
+    customerId: text("customer_id")
+      .notNull()
+      .references(() => customers.id, { onDelete: "restrict" }),
+    sourceType: text("source_type", { enum: ["sales_return", "payment_overage"] }).notNull(),
+    sourceReturnId: text("source_return_id").references(() => salesReturns.id, {
+      onDelete: "restrict",
+    }),
+    sourceInvoiceId: text("source_invoice_id")
+      .notNull()
+      .references(() => invoices.id, { onDelete: "restrict" }),
+    sourcePaymentId: text("source_payment_id").references(() => payments.id, {
+      onDelete: "restrict",
+    }),
+    creditNoteNumber: text("credit_note_number"),
+    originalAmount: decimal("original_amount", { precision: 12, scale: 2 }).notNull(),
+    remainingAmount: decimal("remaining_amount", { precision: 12, scale: 2 }).notNull(),
+    appliedAmount: decimal("applied_amount", { precision: 12, scale: 2 }).notNull().default("0"),
+    refundedAmount: decimal("refunded_amount", { precision: 12, scale: 2 }).notNull().default("0"),
+    reclaimedAmount: decimal("reclaimed_amount", { precision: 12, scale: 2 }).notNull().default("0"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    voidedAt: timestamp("voided_at", { withTimezone: true }),
+  },
+  (table) => ({
+    customerCreatedIdx: index("idx_customer_credit_lots_customer_created").on(
+      table.customerId,
+      table.createdAt,
+      table.id,
+    ),
+    sourceReturnIdx: index("idx_customer_credit_lots_source_return").on(table.sourceReturnId),
+    sourceInvoiceIdx: index("idx_customer_credit_lots_source_invoice").on(table.sourceInvoiceId),
+    amountsCheck: check(
+      "customer_credit_lots_amounts_check",
+      sql`${table.originalAmount} > 0 and ${table.remainingAmount} >= 0 and ${table.appliedAmount} >= 0 and ${table.refundedAmount} >= 0 and ${table.reclaimedAmount} >= 0`,
+    ),
+    conservationCheck: check(
+      "customer_credit_lots_conservation_check",
+      sql`${table.voidedAt} is not null or (${table.remainingAmount} + ${table.appliedAmount} + ${table.refundedAmount} + ${table.reclaimedAmount} = ${table.originalAmount})`,
+    ),
+    sourceTypeCheck: check(
+      "customer_credit_lots_source_type_check",
+      sql`${table.sourceType} in ('sales_return', 'payment_overage')`,
+    ),
+  }),
+);
+
+export const customerCreditPaymentAllocations = pgTable(
+  "customer_credit_payment_allocations",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => createId()),
+    paymentId: text("payment_id")
+      .notNull()
+      .references(() => payments.id, { onDelete: "restrict" }),
+    creditLotId: text("credit_lot_id")
+      .notNull()
+      .references(() => customerCreditLots.id, { onDelete: "restrict" }),
+    amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
+    status: text("status", { enum: ["active", "reversed"] }).notNull().default("active"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    reversedAt: timestamp("reversed_at", { withTimezone: true }),
+  },
+  (table) => ({
+    paymentIdx: index("idx_credit_payment_alloc_payment").on(table.paymentId),
+    lotIdx: index("idx_credit_payment_alloc_lot").on(table.creditLotId),
+    amountCheck: check("credit_payment_alloc_amount_check", sql`${table.amount} > 0`),
+    statusCheck: check(
+      "credit_payment_alloc_status_check",
+      sql`${table.status} in ('active', 'reversed')`,
+    ),
+  }),
+);
+
+export const customerRefunds = pgTable(
+  "customer_refunds",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => createId()),
+    customerId: text("customer_id")
+      .notNull()
+      .references(() => customers.id, { onDelete: "restrict" }),
+    salesReturnId: text("sales_return_id").references(() => salesReturns.id, {
+      onDelete: "restrict",
+    }),
+    creditNoteNumber: text("credit_note_number"),
+    walletId: text("wallet_id")
+      .notNull()
+      .references(() => wallets.id, { onDelete: "restrict" }),
+    walletTransactionId: text("wallet_transaction_id")
+      .notNull()
+      .references(() => transactions.id, { onDelete: "restrict" }),
+    amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
+    refundDate: timestamp("refund_date", { withTimezone: true }).notNull(),
+    notes: text("notes"),
+    status: text("status", { enum: ["active", "reversed"] }).notNull().default("active"),
+    issuedById: text("issued_by_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "restrict" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    reversedById: text("reversed_by_id").references(() => user.id, { onDelete: "restrict" }),
+    reversedAt: timestamp("reversed_at", { withTimezone: true }),
+    reverseReason: text("reverse_reason"),
+    reversalTransactionId: text("reversal_transaction_id").references(() => transactions.id, {
+      onDelete: "restrict",
+    }),
+  },
+  (table) => ({
+    customerDateIdx: index("idx_customer_refunds_customer_date").on(
+      table.customerId,
+      table.refundDate,
+    ),
+    salesReturnIdx: index("idx_customer_refunds_return").on(table.salesReturnId),
+    amountCheck: check("customer_refunds_amount_check", sql`${table.amount} > 0`),
+    statusCheck: check(
+      "customer_refunds_status_check",
+      sql`(
+        (${table.status} = 'active' and ${table.reversedById} is null and ${table.reversedAt} is null and ${table.reverseReason} is null and ${table.reversalTransactionId} is null) or
+        (${table.status} = 'reversed' and ${table.reversedById} is not null and ${table.reversedAt} is not null and nullif(btrim(${table.reverseReason}), '') is not null and ${table.reversalTransactionId} is not null)
+      )`,
+    ),
+  }),
+);
+
+export const customerRefundAllocations = pgTable(
+  "customer_refund_allocations",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => createId()),
+    refundId: text("refund_id")
+      .notNull()
+      .references(() => customerRefunds.id, { onDelete: "restrict" }),
+    creditLotId: text("credit_lot_id")
+      .notNull()
+      .references(() => customerCreditLots.id, { onDelete: "restrict" }),
+    amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
+    status: text("status", { enum: ["active", "reversed"] }).notNull().default("active"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    reversedAt: timestamp("reversed_at", { withTimezone: true }),
+  },
+  (table) => ({
+    refundIdx: index("idx_customer_refund_alloc_refund").on(table.refundId),
+    lotIdx: index("idx_customer_refund_alloc_lot").on(table.creditLotId),
+    amountCheck: check("customer_refund_alloc_amount_check", sql`${table.amount} > 0`),
+    statusCheck: check(
+      "customer_refund_alloc_status_check",
+      sql`${table.status} in ('active', 'reversed')`,
+    ),
+  }),
+);
+
+export const customerCreditMovements = pgTable(
+  "customer_credit_movements",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => createId()),
+    customerId: text("customer_id")
+      .notNull()
+      .references(() => customers.id, { onDelete: "restrict" }),
+    creditLotId: text("credit_lot_id").references(() => customerCreditLots.id, {
+      onDelete: "restrict",
+    }),
+    type: text("type", {
+      enum: [
+        "issued",
+        "applied",
+        "application_reversed",
+        "refunded",
+        "refund_reversed",
+        "void_reclaimed",
+        "void_unapplied",
+      ],
+    }).notNull(),
+    amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
+    signedDelta: decimal("signed_delta", { precision: 12, scale: 2 }).notNull(),
+    balanceAfter: decimal("balance_after", { precision: 12, scale: 2 }).notNull(),
+    salesReturnId: text("sales_return_id").references(() => salesReturns.id, {
+      onDelete: "restrict",
+    }),
+    creditNoteNumber: text("credit_note_number"),
+    invoiceId: text("invoice_id").references(() => invoices.id, { onDelete: "restrict" }),
+    paymentId: text("payment_id").references(() => payments.id, { onDelete: "restrict" }),
+    refundId: text("refund_id").references(() => customerRefunds.id, {
+      onDelete: "restrict",
+    }),
+    walletId: text("wallet_id").references(() => wallets.id, { onDelete: "restrict" }),
+    notes: text("notes"),
+    performedById: text("performed_by_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "restrict" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    customerCreatedIdx: index("idx_customer_credit_movements_customer").on(
+      table.customerId,
+      table.createdAt,
+      table.id,
+    ),
+    amountCheck: check("customer_credit_movements_amount_check", sql`${table.amount} > 0`),
+    balanceAfterCheck: check(
+      "customer_credit_movements_balance_after_check",
+      sql`${table.balanceAfter} >= 0`,
+    ),
+    typeCheck: check(
+      "customer_credit_movements_type_check",
+      sql`${table.type} in ('issued', 'applied', 'application_reversed', 'refunded', 'refund_reversed', 'void_reclaimed', 'void_unapplied')`,
+    ),
+  }),
+);
 
 export const salesPerformanceLogsRelations = relations(salesPerformanceLogs, ({ one }) => ({
   employee: one(employees, {
@@ -921,6 +1177,8 @@ export const salesReturnsRelations = relations(salesReturns, ({ one, many }) => 
   }),
   items: many(salesReturnItems),
   stockTraces: many(salesReturnStockTraces),
+  creditLots: many(customerCreditLots),
+  refunds: many(customerRefunds),
 }));
 
 export const salesReturnItemsRelations = relations(salesReturnItems, ({ one, many }) => ({
@@ -965,6 +1223,125 @@ export const salesReturnStockTracesRelations = relations(salesReturnStockTraces,
     references: [recipes.id],
   }),
 }));
+
+export const customerCreditLotsRelations = relations(customerCreditLots, ({ one, many }) => ({
+  customer: one(customers, {
+    fields: [customerCreditLots.customerId],
+    references: [customers.id],
+  }),
+  sourceReturn: one(salesReturns, {
+    fields: [customerCreditLots.sourceReturnId],
+    references: [salesReturns.id],
+  }),
+  sourceInvoice: one(invoices, {
+    fields: [customerCreditLots.sourceInvoiceId],
+    references: [invoices.id],
+  }),
+  sourcePayment: one(payments, {
+    fields: [customerCreditLots.sourcePaymentId],
+    references: [payments.id],
+  }),
+  paymentAllocations: many(customerCreditPaymentAllocations),
+  refundAllocations: many(customerRefundAllocations),
+}));
+
+export const customerCreditPaymentAllocationsRelations = relations(
+  customerCreditPaymentAllocations,
+  ({ one }) => ({
+    payment: one(payments, {
+      fields: [customerCreditPaymentAllocations.paymentId],
+      references: [payments.id],
+    }),
+    creditLot: one(customerCreditLots, {
+      fields: [customerCreditPaymentAllocations.creditLotId],
+      references: [customerCreditLots.id],
+    }),
+  }),
+);
+
+export const customerRefundsRelations = relations(customerRefunds, ({ one, many }) => ({
+  customer: one(customers, {
+    fields: [customerRefunds.customerId],
+    references: [customers.id],
+  }),
+  salesReturn: one(salesReturns, {
+    fields: [customerRefunds.salesReturnId],
+    references: [salesReturns.id],
+  }),
+  wallet: one(wallets, {
+    fields: [customerRefunds.walletId],
+    references: [wallets.id],
+  }),
+  walletTransaction: one(transactions, {
+    fields: [customerRefunds.walletTransactionId],
+    references: [transactions.id],
+  }),
+  reversalTransaction: one(transactions, {
+    fields: [customerRefunds.reversalTransactionId],
+    references: [transactions.id],
+  }),
+  issuedBy: one(user, {
+    fields: [customerRefunds.issuedById],
+    references: [user.id],
+  }),
+  reversedBy: one(user, {
+    fields: [customerRefunds.reversedById],
+    references: [user.id],
+  }),
+  allocations: many(customerRefundAllocations),
+}));
+
+export const customerRefundAllocationsRelations = relations(
+  customerRefundAllocations,
+  ({ one }) => ({
+    refund: one(customerRefunds, {
+      fields: [customerRefundAllocations.refundId],
+      references: [customerRefunds.id],
+    }),
+    creditLot: one(customerCreditLots, {
+      fields: [customerRefundAllocations.creditLotId],
+      references: [customerCreditLots.id],
+    }),
+  }),
+);
+
+export const customerCreditMovementsRelations = relations(
+  customerCreditMovements,
+  ({ one }) => ({
+    customer: one(customers, {
+      fields: [customerCreditMovements.customerId],
+      references: [customers.id],
+    }),
+    creditLot: one(customerCreditLots, {
+      fields: [customerCreditMovements.creditLotId],
+      references: [customerCreditLots.id],
+    }),
+    salesReturn: one(salesReturns, {
+      fields: [customerCreditMovements.salesReturnId],
+      references: [salesReturns.id],
+    }),
+    invoice: one(invoices, {
+      fields: [customerCreditMovements.invoiceId],
+      references: [invoices.id],
+    }),
+    payment: one(payments, {
+      fields: [customerCreditMovements.paymentId],
+      references: [payments.id],
+    }),
+    refund: one(customerRefunds, {
+      fields: [customerCreditMovements.refundId],
+      references: [customerRefunds.id],
+    }),
+    wallet: one(wallets, {
+      fields: [customerCreditMovements.walletId],
+      references: [wallets.id],
+    }),
+    performedBy: one(user, {
+      fields: [customerCreditMovements.performedById],
+      references: [user.id],
+    }),
+  }),
+);
 
 export const invoiceTimelineEventsRelations = relations(invoiceTimelineEvents, ({ one }) => ({
   invoice: one(invoices, {

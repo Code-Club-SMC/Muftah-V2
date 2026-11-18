@@ -118,6 +118,12 @@ export const {
   salesReturnItems,
   salesReturnStockTraces,
   invoiceTimelineEvents,
+  creditNoteCounters,
+  customerCreditLots,
+  customerCreditPaymentAllocations,
+  customerRefunds,
+  customerRefundAllocations,
+  customerCreditMovements,
 } = salesErpSchema;
 export const { wallets, expenses, transactions } = financeSchema;
 export const { supplierPayments, purchaseRecords } = supplierSchema;

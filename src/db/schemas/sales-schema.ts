@@ -50,50 +50,65 @@ export const invoiceNumberCounters = pgTable(
 );
 
 // --- CUSTOMERS ---
-export const customers = pgTable("customers", {
-  id: text("id")
-    .primaryKey()
-    .$defaultFn(() => createId()),
-  sNo: serial("s_no"),
-  name: text("name").notNull(),
-  address: text("address"),
-  cnic: text("cnic"),
-  city: text("city"),
-  state: text("state"),
-  bankAccount: text("bank_account"),
-  mobileNumber: text("mobile_number"),
-  totalSale: decimal("total_sale", { precision: 12, scale: 2 }).default("0"),
-  totalPaidAmount: decimal("total_paid_amount", { precision: 12, scale: 2 })
-    .notNull()
-    .default("0"),
-  outstandingAmount: decimal("outstanding_amount", {
-    precision: 12,
-    scale: 2,
-  })
-    .notNull()
-    .default("0"),
-  weightSaleKg: decimal("weight_sale_kg", { precision: 12, scale: 3 }).default(
-    "0",
-  ),
-  expenses: decimal("expenses", { precision: 12, scale: 2 }).default("0"),
-  averagePerKg: decimal("average_per_kg", { precision: 12, scale: 2 }).default(
-    "0",
-  ),
-  averageKgWithExpense: decimal("average_kg_with_expense", {
-    precision: 12,
-    scale: 2,
-  }).default("0"),
-  expenseAverage: decimal("expense_average", {
-    precision: 12,
-    scale: 2,
-  }).default("0"),
-  customerType: text("customer_type").notNull().default("retailer"), // "distributor" | "retailer" | "shopkeeper" | "wholesaler"
-  salesmanId: text("salesman_id").references(() => salesmen.id),
-  defaultMargin: decimal("default_margin", { precision: 5, scale: 2 }).default("0"), // distributor default margin %
-  creditLimit: decimal("credit_limit", { precision: 12, scale: 2 }).default("0"),
-  creditHold: boolean("credit_hold").default(false),
-  ...timestamps,
-});
+export const customers = pgTable(
+  "customers",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => createId()),
+    sNo: serial("s_no"),
+    name: text("name").notNull(),
+    address: text("address"),
+    cnic: text("cnic"),
+    city: text("city"),
+    state: text("state"),
+    bankAccount: text("bank_account"),
+    mobileNumber: text("mobile_number"),
+    totalSale: decimal("total_sale", { precision: 12, scale: 2 }).default("0"),
+    totalPaidAmount: decimal("total_paid_amount", { precision: 12, scale: 2 })
+      .notNull()
+      .default("0"),
+    outstandingAmount: decimal("outstanding_amount", {
+      precision: 12,
+      scale: 2,
+    })
+      .notNull()
+      .default("0"),
+    creditBalance: decimal("credit_balance", {
+      precision: 12,
+      scale: 2,
+    })
+      .notNull()
+      .default("0"),
+    weightSaleKg: decimal("weight_sale_kg", { precision: 12, scale: 3 }).default(
+      "0",
+    ),
+    expenses: decimal("expenses", { precision: 12, scale: 2 }).default("0"),
+    averagePerKg: decimal("average_per_kg", { precision: 12, scale: 2 }).default(
+      "0",
+    ),
+    averageKgWithExpense: decimal("average_kg_with_expense", {
+      precision: 12,
+      scale: 2,
+    }).default("0"),
+    expenseAverage: decimal("expense_average", {
+      precision: 12,
+      scale: 2,
+    }).default("0"),
+    customerType: text("customer_type").notNull().default("retailer"), // "distributor" | "retailer" | "shopkeeper" | "wholesaler"
+    salesmanId: text("salesman_id").references(() => salesmen.id),
+    defaultMargin: decimal("default_margin", { precision: 5, scale: 2 }).default("0"), // distributor default margin %
+    creditLimit: decimal("credit_limit", { precision: 12, scale: 2 }).default("0"),
+    creditHold: boolean("credit_hold").default(false),
+    ...timestamps,
+  },
+  (table) => ({
+    creditBalanceNonNegativeCheck: check(
+      "customers_credit_balance_nonnegative_check",
+      sql`${table.creditBalance} >= 0`,
+    ),
+  }),
+);
 
 // --- INVOICES ---
 export const invoices = pgTable(
@@ -115,6 +130,12 @@ export const invoices = pgTable(
       .notNull()
       .default("0"),
     returnedAmount: decimal("returned_amount", { precision: 12, scale: 2 })
+      .notNull()
+      .default("0"),
+    excessCreditedAmount: decimal("excess_credited_amount", {
+      precision: 12,
+      scale: 2,
+    })
       .notNull()
       .default("0"),
     outstandingAmount: decimal("outstanding_amount", {
@@ -175,9 +196,13 @@ export const invoices = pgTable(
     offlineSalesSlotUnique: uniqueIndex("invoices_offline_sales_slot_unique")
       .on(table.offlineSalesSlotId)
       .where(sql`${table.offlineSalesSlotId} is not null`),
+    excessCreditedNonNegativeCheck: check(
+      "invoices_excess_credited_amount_nonnegative_check",
+      sql`${table.excessCreditedAmount} >= 0`,
+    ),
     settlementAmountsCheck: check(
       "invoices_settlement_amounts_check",
-      sql`${table.paidAmount} >= 0 and ${table.returnedAmount} >= 0 and ${table.paidAmount} + ${table.returnedAmount} + ${table.outstandingAmount} = ${table.totalPrice}`,
+      sql`${table.paidAmount} >= 0 and ${table.returnedAmount} >= 0 and ${table.excessCreditedAmount} >= 0 and ${table.outstandingAmount} >= 0 and ${table.paidAmount} + ${table.returnedAmount} - ${table.excessCreditedAmount} + ${table.outstandingAmount} = ${table.totalPrice}`,
     ),
     sourceCheck: check(
       "invoices_source_check",

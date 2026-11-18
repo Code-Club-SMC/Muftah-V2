@@ -955,7 +955,13 @@ export async function postInvoice(
     data.payments.map((payment) => ({
       amount: payment.amount,
       method: payment.method,
-      status: payment.method === "cash" ? "confirmed" : "pending",
+      status:
+        payment.method === "cash" ||
+        payment.method === "expense_offset" ||
+        payment.method === "customer_credit" ||
+        payment.instantVerify
+          ? "confirmed"
+          : "pending",
     })),
   );
   assertSettlementDueDate(settlementPreview, data.paymentDueDate);

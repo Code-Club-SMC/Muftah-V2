@@ -83,6 +83,9 @@ export const useCreateInvoice = () => {
       queryClient.invalidateQueries({ queryKey: invoicesKeys.all });
       queryClient.invalidateQueries({ queryKey: ["orders"] });
       queryClient.invalidateQueries({ queryKey: ["customers"] });
+      queryClient.invalidateQueries({ queryKey: ["customer-credit"] });
+      queryClient.invalidateQueries({ queryKey: ["distributor-profile"] });
+      queryClient.invalidateQueries({ queryKey: ["shopkeeper-profile"] });
     },
     onError: (error: any) => {
       toast.error(error.message || "Failed to create invoice");
@@ -118,6 +121,9 @@ export const useUpdateInvoice = () => {
       queryClient.invalidateQueries({ queryKey: invoicesKeys.all });
       queryClient.invalidateQueries({ queryKey: invoicesKeys.detail(variables.id) });
       queryClient.invalidateQueries({ queryKey: ["customers"] });
+      queryClient.invalidateQueries({ queryKey: ["customer-credit"] });
+      queryClient.invalidateQueries({ queryKey: ["distributor-profile"] });
+      queryClient.invalidateQueries({ queryKey: ["shopkeeper-profile"] });
     },
     onError: (error: any) => {
       toast.error(error.message || "Failed to update invoice");

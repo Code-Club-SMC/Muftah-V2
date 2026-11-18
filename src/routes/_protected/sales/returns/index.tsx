@@ -240,6 +240,9 @@ function SalesReturnsPage() {
                     >
                       #{row.returnNumber}
                     </Link>
+                    {row.creditNoteNumber && (
+                      <div className="font-mono text-[11px] text-muted-foreground">{row.creditNoteNumber}</div>
+                    )}
                   </TableCell>
                   <TableCell className="whitespace-nowrap text-sm">
                     {format(new Date(row.createdAt), "dd MMM yyyy")}

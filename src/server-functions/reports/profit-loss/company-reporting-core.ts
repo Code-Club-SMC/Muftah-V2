@@ -51,6 +51,10 @@ const FINANCE_EXPENSE_SOURCES = [
   "Expense Offset",
   "TA/DA Reimbursement",
 ] as const;
+const FINANCE_CUSTOMER_REFUND_SOURCES = [
+  "Customer Refund",
+  "Customer Refund Reversal",
+] as const;
 
 type ProfitStatusKey = "profit" | "loss" | "break_even" | "no_activity";
 
@@ -272,6 +276,7 @@ export interface FinanceReconciliation {
   manualAdjustments: number;
   openingBalances: number;
   otherMovements: number;
+  customerRefundOutflows?: number;
   bridgeDifference: number;
   bridgeRows: FinanceReconciliationRow[];
 }
@@ -1473,6 +1478,13 @@ async function buildFinanceReconciliation(
     (source) => source === "Manual Adjustment",
   );
   const openingBalances = sumBySource((source) => source === "Opening Balance");
+  const customerRefundOutflows = roundCurrency(
+    -sumBySource((source) =>
+      FINANCE_CUSTOMER_REFUND_SOURCES.includes(
+        source as (typeof FINANCE_CUSTOMER_REFUND_SOURCES)[number],
+      ),
+    ),
+  );
   const otherMovements = roundCurrency(
     inRange
       .filter(
@@ -1482,6 +1494,9 @@ async function buildFinanceReconciliation(
           ) &&
           !FINANCE_EXPENSE_SOURCES.includes(
             row.source as (typeof FINANCE_EXPENSE_SOURCES)[number],
+          ) &&
+          !FINANCE_CUSTOMER_REFUND_SOURCES.includes(
+            row.source as (typeof FINANCE_CUSTOMER_REFUND_SOURCES)[number],
           ) &&
           !row.source.startsWith("Payroll") &&
           row.source !== "Advance Payment" &&
@@ -1565,6 +1580,14 @@ async function buildFinanceReconciliation(
         "Salary advances reduce wallet balance but are not operating expenses in this report.",
     },
     {
+      type: "customer_refunds",
+      label: "Less Customer Store-Credit Refunds",
+      amount: Math.abs(customerRefundOutflows),
+      direction: customerRefundOutflows >= 0 ? "negative" : "positive",
+      description:
+        "Cash/bank payouts returning overpaid or returned customer store credit (balance-sheet settlement, not an operating expense).",
+    },
+    {
       type: "manual_and_opening",
       label: "Manual / Opening Balance Adjustments",
       amount: manualAdjustments + openingBalances + otherMovements,
@@ -1613,6 +1636,7 @@ async function buildFinanceReconciliation(
     manualAdjustments,
     openingBalances,
     otherMovements,
+    customerRefundOutflows,
     bridgeDifference,
     bridgeRows,
   } satisfies FinanceReconciliation;
@@ -1665,6 +1689,7 @@ export async function getCompanyReportData(input?: {
           manualAdjustments: 0,
           openingBalances: 0,
           otherMovements: 0,
+          customerRefundOutflows: 0,
           bridgeDifference: 0,
           bridgeRows: [],
         } satisfies FinanceReconciliation);

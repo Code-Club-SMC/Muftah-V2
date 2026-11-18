@@ -709,7 +709,13 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("reachable two-phase invoice mut
           nextFollowUpDate: new Date("2026-03-02"), escalationLevel: 2 }).where(eq(slipRecords.invoiceId, invoice.id));
         await receiveReturn(f, salesReturn);
         await tx.update(salesReturns).set({ completedAt: new Date("2026-03-01T12:00:00Z") }).where(eq(salesReturns.id, salesReturn.id));
-        expect(Number((await savedInvoice())!.outstandingAmount)).toBe(800 - paid);
+        const completedReturn = (await tx.query.salesReturns.findFirst({ where: eq(salesReturns.id, salesReturn.id) }))!;
+        expect(Number((await savedInvoice())!.outstandingAmount)).toBe(Math.max(0, 800 - paid));
+        expect(Number((await savedInvoice())!.returnedAmount)).toBe(Math.min(200, 1000 - paid));
+        expect(Number((await savedInvoice())!.excessCreditedAmount)).toBe(0);
+        expect(Number(completedReturn.appliedToInvoiceAmount)).toBe(Math.min(200, 1000 - paid));
+        expect(Number(completedReturn.customerCreditAmount)).toBe(Math.max(0, paid - 800));
+        expect(Number((await tx.query.customers.findFirst({ where: eq(customers.id, f.customer.id) }))!.creditBalance)).toBe(Math.max(0, paid - 800));
         if (paid >= 900) {
           const slip = (await savedSlip())!;
           expect([slip.status, slip.recoveryStatus, slip.recoveryAssignedToId, slip.nextFollowUpDate, slip.escalationLevel]).toEqual(["closed", null, null, null, 0]);
@@ -728,12 +734,15 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("reachable two-phase invoice mut
         await invoke(voidSalesReturnFn, { returnId: salesReturn.id, reason: "Wrong invoice received" }, f.actor.id);
         await tx.update(salesReturns).set({ voidedAt: new Date("2026-04-01T12:00:00Z") }).where(eq(salesReturns.id, salesReturn.id));
         expect(Number((await savedInvoice())!.outstandingAmount)).toBe(1000 - paid);
+        expect(Number((await savedInvoice())!.excessCreditedAmount)).toBe(0);
         expect((await savedSlip())!.status).toBe(paid === 1000 ? "closed" : "partially_recovered");
         expect((await savedInvoice())!.totalPrice).toBe("1000.00");
         expect((await savedSlip())!.invoiceAmount).toBe("1000.00");
         const voided = (await tx.query.salesReturns.findFirst({ where: eq(salesReturns.id, salesReturn.id) }))!;
         expect([voided.completedAt, voided.receivedById, voided.totalAmount]).toEqual([receipt.completedAt, receipt.receivedById, receipt.totalAmount]);
-        expect(Number((await tx.query.customers.findFirst({ where: eq(customers.id, f.customer.id) }))!.outstandingAmount)).toBe(1000 - paid);
+        const customerAfterVoid = (await tx.query.customers.findFirst({ where: eq(customers.id, f.customer.id) }))!;
+        expect(Number(customerAfterVoid.outstandingAmount)).toBe(1000 - paid);
+        expect(Number(customerAfterVoid.creditBalance)).toBe(0);
         expect(await tx.select().from(payments).where(eq(payments.invoiceId, invoice.id))).toEqual(originalPayments);
         expect(await tx.select().from(transactions).where(eq(transactions.walletId, wallet.id))).toEqual(originalMovements);
         expect((await tx.query.wallets.findFirst({ where: eq(wallets.id, wallet.id) }))!.balance).toBe(`${paid}.00`);

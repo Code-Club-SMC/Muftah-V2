@@ -104,6 +104,23 @@ export const CustomersTable = () => {
         );
       },
     },
+    {
+      accessorKey: "creditBalance",
+      header: "Store Credit",
+      cell: ({ row }) => {
+        const val = Number((row.original as any).creditBalance ?? 0);
+        return val > 0 ? (
+          <Badge
+            variant="outline"
+            className="border-emerald-200 text-emerald-700 bg-emerald-50 dark:bg-emerald-950/20 tabular-nums font-semibold text-xs"
+          >
+            {PKR(val)}
+          </Badge>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        );
+      },
+    },
   ];
 
   return (

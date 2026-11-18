@@ -18,6 +18,7 @@ export function OverdrawConfirmDialog({
   balanceAfter,
   onConfirm,
   pending,
+  descriptionLabel = "expense",
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -26,6 +27,7 @@ export function OverdrawConfirmDialog({
   balanceAfter: string;
   onConfirm: () => void;
   pending: boolean;
+  descriptionLabel?: string;
 }) {
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
@@ -33,7 +35,7 @@ export function OverdrawConfirmDialog({
         <AlertDialogHeader>
           <AlertDialogTitle>This account will go below zero</AlertDialogTitle>
           <AlertDialogDescription>
-            {`${walletName} has ${formatRupees(balance)} now and will be ${formatRupees(balanceAfter)} after this expense. Save anyway?`}
+            {`${walletName} has ${formatRupees(balance)} now and will be ${formatRupees(balanceAfter)} after this ${descriptionLabel}. Save anyway?`}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
