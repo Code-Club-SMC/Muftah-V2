@@ -5,7 +5,9 @@ import { db } from "@/db";
 import {
   attendance,
   compensatoryCashOuts,
+  compensatoryLedger,
   employees,
+  attendanceTimeExceptions,
 } from "@/db/schemas/hr-schema";
 import { requireHrManageMiddleware, requireHrViewMiddleware } from "@/lib/middlewares";
 import {
@@ -26,13 +28,13 @@ const hoursSchema = z
   .transform((value) => Math.round(value * 100) / 100);
 
 /**
- * Spend banked hours on a short present day (undertime or lateness).
+ * Spend banked hours on a short present day (undertime, or rejected late/early minutes).
  * Payroll adds the covered hours to the day's worked hours. Passing 0 removes the cover.
  */
 export const applyCompensatoryCoverFn = createServerFn({ method: "POST" })
   .middleware([requireHrManageMiddleware])
   .inputValidator(z.object({ attendanceId: z.string().min(1), hours: hoursSchema }))
-  .handler(async ({ data }) =>
+  .handler(async ({ data, context }) =>
     db.transaction(async (tx) => {
       await lockAttendancePayrollWrites(tx);
       const row = await tx.query.attendance.findFirst({
@@ -50,7 +52,12 @@ export const applyCompensatoryCoverFn = createServerFn({ method: "POST" })
         throw new Error("Banked hours can only cover a present day that is short.");
 
       const currentCover = Number(row.compensatoryHoursUsed || "0");
+      const timeExceptions = await tx.query.attendanceTimeExceptions.findMany({
+        where: eq(attendanceTimeExceptions.attendanceId, row.id),
+        columns: { kind: true, minutes: true, status: true },
+      });
       const limit = maxCoverHours({
+        timeExceptions,
         standardHours: getOvertimeStandardDutyHours(row.date, employee),
         dutyHours: Number(row.dutyHours || "0"),
         balance: Number(employee.compensatoryHoursBalance || "0"),
@@ -65,6 +72,12 @@ export const applyCompensatoryCoverFn = createServerFn({ method: "POST" })
         row.employeeId,
         row.compensatoryHoursUsed,
         data.hours.toFixed(2),
+        {
+          kind: "bank_cover",
+          attendanceId: row.id,
+          attendanceDate: row.date,
+          actorId: context.session.user.id,
+        },
       );
       const [updated] = await tx
         .update(attendance)
@@ -74,6 +87,29 @@ export const applyCompensatoryCoverFn = createServerFn({ method: "POST" })
       return updated;
     }),
   );
+
+/** Every change to the employee's banked hours, newest first. */
+export const listCompensatoryLedgerFn = createServerFn()
+  .middleware([requireHrViewMiddleware])
+  .inputValidator(z.object({ employeeId: z.string().min(1) }))
+  .handler(async ({ data }) => {
+    const rows = await db.query.compensatoryLedger.findMany({
+      where: eq(compensatoryLedger.employeeId, data.employeeId),
+      orderBy: [desc(compensatoryLedger.createdAt), desc(compensatoryLedger.id)],
+      limit: 500,
+      with: { actor: { columns: { name: true } } },
+    });
+    return rows.map((row) => ({
+      id: row.id,
+      createdAt: row.createdAt.toISOString(),
+      changeHours: Number(row.changeHours),
+      balanceAfter: Number(row.balanceAfter),
+      reason: row.reason,
+      attendanceDate: row.attendanceDate,
+      note: row.note,
+      actorName: row.actor?.name ?? null,
+    }));
+  });
 
 export const listCompensatoryCashOutsFn = createServerFn()
   .middleware([requireHrViewMiddleware])
@@ -124,7 +160,6 @@ export const createCompensatoryCashOutFn = createServerFn({ method: "POST" })
             : "Enter the hours to cash out.",
         );
 
-      await adjustCompensatoryReservation(tx, data.employeeId, "0", hours.toFixed(2));
       const [created] = await tx
         .insert(compensatoryCashOuts)
         .values({
@@ -136,6 +171,12 @@ export const createCompensatoryCashOutFn = createServerFn({ method: "POST" })
           createdBy: context.session.user.id,
         })
         .returning();
+      await adjustCompensatoryReservation(tx, data.employeeId, "0", hours.toFixed(2), {
+        kind: "cash_out",
+        cashOutId: created.id,
+        note: data.kind === "final_settlement" ? "Final settlement" : data.notes || null,
+        actorId: context.session.user.id,
+      });
       return created;
     }),
   );
@@ -144,7 +185,7 @@ export const createCompensatoryCashOutFn = createServerFn({ method: "POST" })
 export const cancelCompensatoryCashOutFn = createServerFn({ method: "POST" })
   .middleware([requireHrManageMiddleware])
   .inputValidator(z.object({ id: z.string().min(1) }))
-  .handler(async ({ data }) =>
+  .handler(async ({ data, context }) =>
     db.transaction(async (tx) => {
       await lockAttendancePayrollWrites(tx);
       const cashOut = await tx.query.compensatoryCashOuts.findFirst({
@@ -167,7 +208,11 @@ export const cancelCompensatoryCashOutFn = createServerFn({ method: "POST" })
         throw new Error(
           "This cash-out is already in a payslip. Regenerate or delete that payslip first.",
         );
-      await adjustCompensatoryReservation(tx, cashOut.employeeId, cashOut.hours, "0");
+      await adjustCompensatoryReservation(tx, cashOut.employeeId, cashOut.hours, "0", {
+        kind: "cash_out",
+        cashOutId: cashOut.id,
+        actorId: context.session.user.id,
+      });
       return cancelled;
     }),
   );

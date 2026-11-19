@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
-import { attendance, employees } from "@/db/schemas/hr-schema";
+import { attendance, compensatoryLedger, employees } from "@/db/schemas/hr-schema";
 
 const mock = vi.hoisted(() => ({
   db: { transaction: vi.fn(), query: {} as Record<string, unknown>, select: vi.fn(), update: vi.fn(), insert: vi.fn(), execute: vi.fn() },
@@ -11,7 +11,7 @@ vi.mock("@/db", () => ({ db: mock.db }));
 vi.mock("@tanstack/react-start", () => ({ createServerFn: () => {
   let validator: { parse: (input: unknown) => unknown } | ((input: unknown) => unknown);
   return { middleware() { return this; }, inputValidator(schema: typeof validator) { validator = schema; return this; },
-    handler(callback: (input: unknown) => unknown) { return (input: { data: unknown }) => callback({ ...input, data: typeof validator === "function" ? validator(input.data) : validator.parse(input.data) }); } };
+    handler(callback: (input: unknown) => unknown) { return (input: { data: unknown }) => callback({ context: { session: { user: { id: "hr", name: "HR" } } }, ...input, data: typeof validator === "function" ? validator(input.data) : validator.parse(input.data) }); } };
 } }));
 vi.mock("@/lib/middlewares", () => ({ requireHrManageMiddleware: {}, requireHrViewMiddleware: {} }));
 vi.mock("@/lib/activity-logger.server", () => ({ logActivityQuiet: vi.fn() }));
@@ -33,6 +33,7 @@ import { recomputeAttendanceRow } from "@/lib/attendance/recompute-server";
 type Row = Record<string, any>;
 let employee: Row;
 let records: Row[];
+let ledger: Row[];
 const dialect = new PgDialect();
 function matches(row: Row, where?: SQL) {
   if (!where) return true;
@@ -61,6 +62,7 @@ function input(overrides: Row = {}) {
 beforeEach(() => {
   vi.clearAllMocks(); mock.finalized = false; mock.events = [];
   employee = { id: "emp", firstName: "Test", lastName: "Employee", restDays: [0], standardDutyHours: 8, shifts: [{ start: "09:00", end: "17:00" }], compensatoryHoursBalance: "8", annualLeaveAllowance: 14 };
+  ledger = [];
   records = [{ id: "leave", employeeId: "emp", date: "2026-10-13", status: "leave", leaveType: "compensatory", leaveApprovalStatus: "pending", isApprovedLeave: false, compensatoryHoursUsed: "8", dutyHours: "0" }];
   mock.db.transaction.mockImplementation(async (callback) => callback(mock.db));
   mock.db.execute.mockImplementation(async () => { mock.events.push("employee-lock"); });
@@ -69,6 +71,7 @@ beforeEach(() => {
     employees: { findFirst: async () => employee, findMany: async () => [employee] },
     attendancePunches: { findFirst: async () => undefined },
     orderBookers: { findFirst: async () => undefined },
+    compensatoryLedger: { findFirst: async () => ledger[0] },
   };
   mock.db.select.mockImplementation(() => ({ from: (table: unknown) => {
     const chain = { innerJoin: () => chain, where: async (where: SQL) => table === attendance ? records.filter(row => matches(row, where)).map(row => ({ ...row, standardDutyHours: employee.standardDutyHours, restDays: employee.restDays, shifts: employee.shifts })) : [] };
@@ -87,11 +90,38 @@ beforeEach(() => {
     }
     return { returning: async () => targets, then: (resolve: (value: unknown) => unknown) => resolve(targets) };
   } }) }));
-  mock.db.insert.mockImplementation(() => ({ values: (values: Row) => ({ onConflictDoUpdate: ({ set }: { set: Row }) => {
+  mock.db.insert.mockImplementation((table) => table === compensatoryLedger ? ({ values: (values: Row) => {
+    const entry = { id: `ledger-${ledger.length}`, ...values };
+    ledger.push(entry);
+    return { returning: async () => [entry], then: (resolve: (value: unknown) => unknown) => resolve([entry]) };
+  } }) : ({ values: (values: Row) => ({ onConflictDoUpdate: ({ set }: { set: Row }) => {
     let target = records.find(row => row.employeeId === values.employeeId && row.date === values.date);
     if (target) Object.assign(target, set); else { target = { id: "new", ...values }; records.push(target); }
     return { returning: async () => [target], then: (resolve: (value: unknown) => unknown) => resolve([target]) };
   } }) }));
+});
+
+describe("comp-off bank history", () => {
+  it("records an opening balance, then each change with who, which day and the new balance", async () => {
+    Object.assign(records[0], { date: "2026-10-11", status: "present", dutyHours: "8", overtimeHours: "8", overtimeStatus: "pending", compensatoryHoursUsed: "0", leaveType: null });
+    await convert({ data: { employeeId: "emp", attendanceIds: ["leave"] } });
+    expect(ledger).toMatchObject([
+      { reason: "opening_balance", changeHours: "8.00", balanceAfter: "8.00" },
+      { reason: "overtime_converted", changeHours: "8.00", balanceAfter: "16.00", attendanceId: "leave", attendanceDate: "2026-10-11", actorId: "hr" },
+    ]);
+  });
+
+  it("records a comp leave reservation and its release on rejection", async () => {
+    records = [];
+    employee.compensatoryHoursBalance = "8";
+    await save({ data: input() });
+    await decide({ data: { id: records[0].id, status: "rejected" }, context });
+    expect(ledger.map(({ reason, changeHours, balanceAfter }) => ({ reason, changeHours, balanceAfter }))).toEqual([
+      { reason: "opening_balance", changeHours: "8.00", balanceAfter: "8.00" },
+      { reason: "comp_leave_reserved", changeHours: "-8.00", balanceAfter: "0.00" },
+      { reason: "comp_leave_released", changeHours: "8.00", balanceAfter: "8.00" },
+    ]);
+  });
 });
 
 describe("leave policy mutation behavior", () => {

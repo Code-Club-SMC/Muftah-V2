@@ -36,8 +36,9 @@ describe("comp-off cash-outs in payroll", () => {
 
 describe("comp-off bank server rules", () => {
   it("takes hours from the balance when a cash-out is recorded and refunds on cancel", () => {
-    expect(BANK).toContain('adjustCompensatoryReservation(tx, data.employeeId, "0", hours.toFixed(2))');
-    expect(BANK).toContain('adjustCompensatoryReservation(tx, cashOut.employeeId, cashOut.hours, "0")');
+    expect(BANK).toContain('adjustCompensatoryReservation(tx, data.employeeId, "0", hours.toFixed(2), {');
+    expect(BANK).toContain('adjustCompensatoryReservation(tx, cashOut.employeeId, cashOut.hours, "0", {');
+    expect(BANK).toContain('kind: "cash_out"');
   });
 
   it("settles the whole balance on final settlement", () => {
@@ -53,7 +54,7 @@ describe("comp-off bank server rules", () => {
 
   it("recomputation keeps cover capped to the new shortfall and refunds the rest", () => {
     expect(RECOMPUTE).toContain("compensatoryHoursUsed: keptCompUsed > 0 ? keptCompUsed.toFixed(2) : \"0\"");
-    expect(RECOMPUTE).toContain("refundCompensatoryHours(tx, employeeId, previousCompUsed - keptCompUsed)");
+    expect(RECOMPUTE).toContain("refundCompensatoryHours(tx, employeeId, previousCompUsed - keptCompUsed, {");
     // Deleting a present row with no punches left must refund its cover too.
     const deleteAt = RECOMPUTE.indexOf(".delete(attendance)");
     expect(RECOMPUTE.lastIndexOf("refundCompensatoryHours(", deleteAt)).toBeGreaterThan(-1);

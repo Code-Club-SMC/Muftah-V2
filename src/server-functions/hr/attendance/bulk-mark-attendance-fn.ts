@@ -24,7 +24,7 @@ export const bulkMarkAttendanceFn = createServerFn()
         path: ["leaveType"],
       }),
   )
-  .handler(async ({ data }) => {
+  .handler(async ({ data, context }) => {
     const { employeeIds, date, status, leaveType } = data;
 
     // 1. Fetch employees to get their standardHours
@@ -80,7 +80,13 @@ export const bulkMarkAttendanceFn = createServerFn()
           assertWorkingLeaveDate(date, employee.restDays, existingAttendance?.status);
         }
         if (Number(existingAttendance?.compensatoryHoursUsed || "0") > 0) {
-          await adjustCompensatoryReservation(tx, employeeId, existingAttendance?.compensatoryHoursUsed, "0");
+          await adjustCompensatoryReservation(tx, employeeId, existingAttendance?.compensatoryHoursUsed, "0", {
+            kind: existingAttendance?.status === "leave" ? "comp_leave" : "bank_cover",
+            attendanceId: existingAttendance?.id ?? null,
+            attendanceDate: date,
+            note: "Bulk attendance marking",
+            actorId: context.session.user.id,
+          });
         }
         
         await tx

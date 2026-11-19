@@ -7,7 +7,7 @@ function isRestDay(date: string, restDays: unknown) {
   return configuredRestDays.includes(dayOfWeek);
 }
 
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import {
   attendance,
   attendancePunches,
@@ -21,6 +21,7 @@ import { calculateTotalShiftHours } from "./time";
 import { toPKTDate } from "./time";
 import { computeAttendanceFromPunches } from "./recompute";
 import { syncAttendanceTimeExceptions } from "./time-exceptions.server";
+import { changeCompensatoryBalance } from "./compensatory-reservation.server";
 
 export type AttendanceTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 export type RecomputedAttendanceRow = typeof attendance.$inferSelect | null;
@@ -70,14 +71,10 @@ async function refundCompensatoryHours(
   tx: AttendanceTx,
   employeeId: string,
   hours: number,
+  audit: { attendanceId: string | null; attendanceDate: string; note: string },
 ) {
   if (!Number.isFinite(hours) || hours <= 0.0001) return;
-  await tx
-    .update(employees)
-    .set({
-      compensatoryHoursBalance: sql`COALESCE(${employees.compensatoryHoursBalance}, 0) + ${hours.toFixed(2)}`,
-    })
-    .where(eq(employees.id, employeeId));
+  await changeCompensatoryBalance(tx, employeeId, hours, "auto_refund", audit);
 }
 
 export async function recomputeAttendanceRow(
@@ -120,6 +117,11 @@ export async function recomputeAttendanceRow(
         tx,
         employeeId,
         Number(existingAttendance.compensatoryHoursUsed || "0"),
+        {
+          attendanceId: null,
+          attendanceDate,
+          note: "All punches removed for this day",
+        },
       );
       await tx
         .delete(attendance)
@@ -246,7 +248,14 @@ export async function recomputeAttendanceRow(
   };
 
   // Clearing or capping the persisted hours above makes repeated recomputation idempotent.
-  await refundCompensatoryHours(tx, employeeId, previousCompUsed - keptCompUsed);
+  await refundCompensatoryHours(tx, employeeId, previousCompUsed - keptCompUsed, {
+    attendanceId: existingAttendance?.id ?? null,
+    attendanceDate,
+    note:
+      existingAttendance?.status === "present"
+        ? "Punches changed, so the day needs less cover"
+        : "Day turned present from punches",
+  });
 
   const [upserted] = await tx
     .insert(attendance)

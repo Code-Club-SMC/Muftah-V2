@@ -294,7 +294,13 @@ export const bulkMarkAttendanceRangeFn = createServerFn()
             assertWorkingLeaveDate(dateStr, emp.restDays, previous?.status);
           }
           if (previous && Number(previous.compensatoryHoursUsed || "0") > 0) {
-            await adjustCompensatoryReservation(tx, emp.id, previous.compensatoryHoursUsed, "0");
+            await adjustCompensatoryReservation(tx, emp.id, previous.compensatoryHoursUsed, "0", {
+              kind: previous.status === "leave" ? "comp_leave" : "bank_cover",
+              attendanceId: previous.id,
+              attendanceDate: dateStr,
+              note: "Bulk attendance marking",
+              actorId: context.session.user.id,
+            });
           }
           changedDates.set(emp.id, [
             ...(changedDates.get(emp.id) ?? []),

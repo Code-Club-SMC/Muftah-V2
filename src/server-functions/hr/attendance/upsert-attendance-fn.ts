@@ -61,7 +61,7 @@ function normalizeSubmittedHours(value?: string | null): string | null {
 export const upsertAttendanceFn = createServerFn()
   .middleware([requireHrManageMiddleware])
   .inputValidator(upsertAttendanceSchema)
-  .handler(async ({ data }) => {
+  .handler(async ({ data, context }) => {
     const { employeeId, date, ...rest } = data;
 
     return await db.transaction(async (tx) => {
@@ -133,9 +133,17 @@ export const upsertAttendanceFn = createServerFn()
       const usesPunchDrivenPresentRow = !isFieldWorker && rest.status === "present" && hasPunches;
       // Punch recomputation refunds reserved hours itself, including banked cover on present rows.
       if (!usesPunchDrivenPresentRow) {
+        const previousHours = Number(previousAttendance?.compensatoryHoursUsed || "0");
         await adjustCompensatoryReservation(tx, employeeId,
           previousAttendance?.compensatoryHoursUsed ?? "0",
-          compensatoryHoursUsed);
+          compensatoryHoursUsed, {
+            // Taking hours is always a comp leave; returning them undoes whatever the day held.
+            kind: Number(compensatoryHoursUsed) > previousHours || previousAttendance?.status === "leave"
+              ? "comp_leave" : "bank_cover",
+            attendanceId: previousAttendance?.id ?? null,
+            attendanceDate: date,
+            actorId: context.session.user.id,
+          });
       }
 
       if (employee.isOrderBooker) {
