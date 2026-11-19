@@ -46,6 +46,8 @@ export type DeviceImportRowPreview = {
   messages: string[];
   newPunchCount: number;
   dutyHours: string | null;
+  /** A working day with no report row and no saved attendance for this employee. */
+  missingDay?: boolean;
 };
 
 export type DeviceImportStatus = "preview" | "completed" | "undone";

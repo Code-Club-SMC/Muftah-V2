@@ -5,6 +5,7 @@ import {
   cancelCompensatoryCashOutFn,
   createCompensatoryCashOutFn,
   listCompensatoryCashOutsFn,
+  listCompensatoryLedgerFn,
 } from "@/server-functions/hr/attendance/compensatory-bank-fn";
 
 const BANK_QUERY_KEYS = [
@@ -26,6 +27,14 @@ function useInvalidateBank() {
       queryClient.invalidateQueries({ queryKey });
   };
 }
+
+// Nested under the attendance-log key: every mutation that moves bank hours
+// already invalidates that log, so the history refreshes with it.
+export const useCompensatoryLedger = (employeeId: string) =>
+  useQuery({
+    queryKey: ["employee-attendance-log", "comp-ledger", employeeId],
+    queryFn: () => listCompensatoryLedgerFn({ data: { employeeId } }),
+  });
 
 export const useCompensatoryCashOuts = (employeeId: string) =>
   useQuery({

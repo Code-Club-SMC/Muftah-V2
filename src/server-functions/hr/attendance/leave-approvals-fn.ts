@@ -109,7 +109,13 @@ export const processLeaveApprovalFn = createServerFn()
             const compensatoryHoursUsed = status === "rejected" && leave.leaveType === "compensatory"
                 ? "0" : leave.compensatoryHoursUsed;
             if (leave.leaveType === "compensatory") {
-                await adjustCompensatoryReservation(tx, leave.employeeId, leave.compensatoryHoursUsed, compensatoryHoursUsed);
+                await adjustCompensatoryReservation(tx, leave.employeeId, leave.compensatoryHoursUsed, compensatoryHoursUsed, {
+                    kind: "comp_leave",
+                    attendanceId: leave.id,
+                    attendanceDate: leave.date,
+                    note: `Leave ${status}`,
+                    actorId: context.session.user.id,
+                });
             }
 
             let paidApproval = status === "approved";

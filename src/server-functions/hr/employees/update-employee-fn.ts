@@ -5,6 +5,8 @@ import { salesmen, orderBookers, drivers } from "@/db/schemas/sales-erp-schema";
 import { and, eq, ne } from "drizzle-orm";
 import { updateEmployeeSchema } from "@/lib/validators/hr-validators";
 import { requireHrManageMiddleware } from "@/lib/middlewares";
+import { changeCompensatoryBalance } from "@/lib/attendance/compensatory-reservation.server";
+import { lockEmployeePunchWrites } from "@/server-functions/hr/attendance/punch-write-lock";
 
 function isEmployeeCodeUniqueViolation(error: unknown): boolean {
   return (
@@ -82,7 +84,6 @@ export const updateEmployeeFn = createServerFn()
             isDriver: updateData.isDriver ?? false,
             allowanceConfig: updateData.allowanceConfig,
             annualLeaveAllowance: updateData.annualLeaveAllowance ?? 14,
-            compensatoryHoursBalance: updateData.compensatoryHoursBalance !== undefined ? updateData.compensatoryHoursBalance.toString() : "0",
             basicSalaryDeductionPolicyOverrideEnabled:
               updateData.basicSalaryDeductionPolicyOverrideEnabled ?? false,
             basicSalaryDeductionPolicyOverride:
@@ -92,6 +93,20 @@ export const updateEmployeeFn = createServerFn()
           })
           .where(eq(employees.id, id))
           .returning();
+
+        // A hand-edited comp-off balance goes through the bank so it shows in its history.
+        if (updateData.compensatoryHoursBalance !== undefined) {
+          const change =
+            Number(updateData.compensatoryHoursBalance) -
+            Number(existing.compensatoryHoursBalance || "0");
+          if (Math.abs(change) >= 0.005) {
+            await lockEmployeePunchWrites(tx, id);
+            await changeCompensatoryBalance(tx, id, change, "manual_adjustment", {
+              note: "Edited on the employee profile",
+              actorId: context.session.user.id,
+            });
+          }
+        }
 
         // Record salary revision if salary or allowances changed
         if (salaryChanged) {

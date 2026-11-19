@@ -20,6 +20,48 @@ describe("maxCoverHours", () => {
   });
 });
 
+describe("maxCoverHours with late/early items", () => {
+  it("covers rejected late minutes", () => {
+    expect(
+      maxCoverHours({
+        standardHours: 8,
+        dutyHours: 7.5,
+        balance: 8,
+        currentCover: 0,
+        timeExceptions: [{ kind: "late", minutes: 30, status: "rejected" }],
+      }),
+    ).toBe(0.5);
+  });
+
+  it("offers nothing for excused or pending minutes that cost no pay", () => {
+    for (const status of ["approved_excused", "approved_official", "pending"] as const)
+      expect(
+        maxCoverHours({
+          standardHours: 8,
+          dutyHours: 7.5,
+          balance: 8,
+          currentCover: 0,
+          timeExceptions: [{ kind: "early", minutes: 30, status }],
+        }),
+      ).toBe(0);
+  });
+
+  it("covers rejected minutes plus unexplained undertime", () => {
+    expect(
+      maxCoverHours({
+        standardHours: 8,
+        dutyHours: 6,
+        balance: 8,
+        currentCover: 0,
+        timeExceptions: [
+          { kind: "late", minutes: 30, status: "approved_excused" },
+          { kind: "early", minutes: 60, status: "rejected" },
+        ],
+      }),
+    ).toBe(1.5);
+  });
+});
+
 describe("compCashOutAmount", () => {
   it("pays hours at the overtime rate, rounded to paisa", () => {
     expect(compCashOutAmount(12, 312.5)).toBe(3750);

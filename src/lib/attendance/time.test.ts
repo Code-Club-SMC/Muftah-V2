@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { toPKTDate, toPKTTime } from "./time";
+import { shortestShiftHours, toPKTDate, toPKTTime } from "./time";
 
 describe("PKT time helpers", () => {
   it("converts UTC timestamps to Pakistan date and time", () => {
@@ -17,3 +17,24 @@ describe("PKT time helpers", () => {
   });
 });
 
+
+describe("shortestShiftHours", () => {
+  it("returns null when no shift is scheduled", () => {
+    expect(shortestShiftHours(null)).toBeNull();
+    expect(shortestShiftHours([])).toBeNull();
+    expect(shortestShiftHours([{ start: "09:00", end: "09:00" }])).toBeNull();
+  });
+
+  it("wraps overnight shifts past midnight", () => {
+    expect(shortestShiftHours([{ start: "22:00", end: "06:00" }])).toBe(8);
+  });
+
+  it("uses the shortest of several shifts", () => {
+    expect(
+      shortestShiftHours([
+        { start: "09:00", end: "13:00" },
+        { start: "14:00", end: "20:30" },
+      ]),
+    ).toBe(4);
+  });
+});

@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { findPayrollCycleGaps, payrollCycleForDate } from "./coverage";
+import {
+  findMissingWorkingDays,
+  findPayrollCycleGaps,
+  payrollCycleForDate,
+} from "./coverage";
 
 const days = (start: string, end: string) => {
   const out: string[] = [];
@@ -58,5 +62,51 @@ describe("payroll cycle coverage", () => {
     expect(gap.missingRanges).toEqual([
       { start: "2026-10-21", end: "2026-10-23" },
     ]);
+  });
+});
+
+describe("missing working days", () => {
+  // 2026-10-04 is a Sunday.
+  const base = {
+    fromDate: "2026-10-03",
+    toDate: "2026-10-06",
+    today: "2026-11-19",
+  };
+
+  it("lists working days with nothing recorded, skipping rest days", () => {
+    expect(
+      findMissingWorkingDays({
+        ...base,
+        employees: [{ id: "ali", joiningDate: "2026-01-01", restDays: [0] }],
+        covered: new Map([["ali", new Set(["2026-10-05"])]]),
+      }),
+    ).toEqual([
+      { employeeId: "ali", date: "2026-10-03" },
+      { employeeId: "ali", date: "2026-10-06" },
+    ]);
+  });
+
+  it("lists an employee missing from the whole report", () => {
+    expect(
+      findMissingWorkingDays({
+        ...base,
+        employees: [{ id: "sara", joiningDate: "2026-01-01", restDays: [0, 6] }],
+        covered: new Map(),
+      }),
+    ).toEqual([
+      { employeeId: "sara", date: "2026-10-05" },
+      { employeeId: "sara", date: "2026-10-06" },
+    ]);
+  });
+
+  it("skips dates before joining and today onwards", () => {
+    expect(
+      findMissingWorkingDays({
+        ...base,
+        today: "2026-10-06",
+        employees: [{ id: "new", joiningDate: "2026-10-05", restDays: [0] }],
+        covered: new Map(),
+      }),
+    ).toEqual([{ employeeId: "new", date: "2026-10-05" }]);
   });
 });

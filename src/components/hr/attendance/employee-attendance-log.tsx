@@ -46,6 +46,11 @@ import { hasPermission } from "@/lib/rbac";
 import { useApplyCompensatoryCover } from "@/hooks/hr/use-compensatory-bank";
 import { maxCoverHours } from "@/lib/attendance/compensatory-bank";
 import { CompensatoryBankPanel } from "./compensatory-bank-panel";
+import { useConvertOvertimeToCompOff } from "@/hooks/hr/use-convert-overtime";
+import {
+  COMP_OFF_NO_SHIFT_MESSAGE,
+  shortestShiftHours,
+} from "@/lib/attendance/time";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -143,6 +148,9 @@ export const EmployeeAttendanceLog = ({
   const overtime = useProcessOvertime();
   const leave = useProcessLeaveApproval();
   const cover = useApplyCompensatoryCover();
+  const convert = useConvertOvertimeToCompOff();
+  // Pending overtime days HR picked to convert together into comp-off hours.
+  const [compOffIds, setCompOffIds] = useState<string[]>([]);
 
   const today = new Date();
   const currentMonth = month || format(today, "yyyy-MM");
@@ -260,8 +268,22 @@ export const EmployeeAttendanceLog = ({
           ),
   );
   const editRow = tableRows.find((row) => row.dateStr === editDate);
-  const busy = overtime.isPending || leave.isPending || cover.isPending;
+  const busy =
+    overtime.isPending || leave.isPending || cover.isPending || convert.isPending;
   const bankBalance = Number(employee.compensatoryHoursBalance ?? 0);
+  // Drop picks that are no longer pending (approved, rejected or reloaded).
+  const compOffRecords = records.filter(
+    (r: any) =>
+      compOffIds.includes(r.id) &&
+      r.overtimeStatus === "pending" &&
+      r.overtimeCompensationMethod !== "comp_off" &&
+      Number(r.overtimeHours || "0") > 0,
+  );
+  const compOffHours = compOffRecords.reduce(
+    (sum: number, r: any) => sum + Number(r.overtimeHours || "0"),
+    0,
+  );
+  const compOffMinimum = shortestShiftHours(employee.shifts);
 
   // ── Columns ────────────────────────────────────────────────────────────
   const columns: ColumnDef<DayRow>[] = [
@@ -475,11 +497,32 @@ export const EmployeeAttendanceLog = ({
                 >
                   Reject OT
                 </Button>
+                <Button
+                  size="sm"
+                  variant={compOffIds.includes(record.id) ? "secondary" : "ghost"}
+                  disabled={busy}
+                  aria-pressed={compOffIds.includes(record.id)}
+                  onClick={() =>
+                    setCompOffIds((current) =>
+                      current.includes(record.id)
+                        ? current.filter((id) => id !== record.id)
+                        : [...current, record.id],
+                    )
+                  }
+                >
+                  {compOffIds.includes(record.id) ? "✓ Comp off" : "Comp off"}
+                </Button>
               </>
             )}
-            {record && has("undertime") && !row.original.isRestDay && (() => {
+            {record &&
+              record.status === "present" &&
+              !row.original.isRestDay &&
+              // Open or broken punch days are not really short yet.
+              !has("missing_checkout") &&
+              !has("missing_checkin") && (() => {
               const currentCover = Number(record.compensatoryHoursUsed || "0");
               const coverable = maxCoverHours({
+                timeExceptions: record.timeExceptions ?? [],
                 standardHours: row.original.standardDutyHours,
                 dutyHours: Number(record.dutyHours || "0"),
                 balance: bankBalance,
@@ -750,6 +793,56 @@ export const EmployeeAttendanceLog = ({
           Amber = HR must decide. Red = reduces pay. Grey = for information.
         </p>
       </section>
+
+      {/* ── Comp-off selection ───────────────────────────────────────────── */}
+      {compOffRecords.length > 0 && (
+        <div className="flex flex-col gap-3 rounded-lg border border-indigo-500/30 bg-indigo-500/5 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="text-sm">
+            <p className="font-semibold">
+              {compOffRecords.length}{" "}
+              {compOffRecords.length === 1 ? "overtime day" : "overtime days"} selected for comp off
+            </p>
+            {compOffMinimum === null ? (
+              <p className="text-rose-600 dark:text-rose-500">
+                {COMP_OFF_NO_SHIFT_MESSAGE}
+              </p>
+            ) : (
+              <p className="tabular-nums text-muted-foreground">
+                {compOffHours.toFixed(2)}h of {compOffMinimum}h needed for one comp-off day
+                {compOffHours < compOffMinimum &&
+                  ` · select ${(compOffMinimum - compOffHours).toFixed(2)}h more`}
+              </p>
+            )}
+          </div>
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={busy}
+              onClick={() => setCompOffIds([])}
+            >
+              Clear
+            </Button>
+            <Button
+              size="sm"
+              disabled={
+                busy || compOffMinimum === null || compOffHours < compOffMinimum
+              }
+              onClick={() =>
+                convert.mutate(
+                  {
+                    employeeId,
+                    attendanceIds: compOffRecords.map((r: any) => r.id),
+                  },
+                  { onSuccess: () => setCompOffIds([]) },
+                )
+              }
+            >
+              Convert {compOffHours.toFixed(2)}h to Comp Off
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* ── Attendance DataTable ─────────────────────────────────────────── */}
       <DataTable

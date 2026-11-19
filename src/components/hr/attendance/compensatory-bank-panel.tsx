@@ -18,8 +18,13 @@ import { Input } from "@/components/ui/input";
 import {
   useCancelCompensatoryCashOut,
   useCompensatoryCashOuts,
+  useCompensatoryLedger,
   useCreateCompensatoryCashOut,
 } from "@/hooks/hr/use-compensatory-bank";
+import { COMPENSATORY_LEDGER_REASON_LABELS } from "@/lib/attendance/compensatory-ledger";
+import { cn } from "@/lib/utils";
+
+const HISTORY_PREVIEW = 8;
 
 type Props = {
   employeeId: string;
@@ -36,6 +41,10 @@ export function CompensatoryBankPanel({ employeeId, balance, canManage }: Props)
   const inputId = useId();
   const [hours, setHours] = useState("");
   const cashOuts = useCompensatoryCashOuts(employeeId);
+  const ledger = useCompensatoryLedger(employeeId);
+  const [showAllHistory, setShowAllHistory] = useState(false);
+  const history = ledger.data ?? [];
+  const visibleHistory = showAllHistory ? history : history.slice(0, HISTORY_PREVIEW);
   const create = useCreateCompensatoryCashOut();
   const cancel = useCancelCompensatoryCashOut();
   const busy = create.isPending || cancel.isPending;
@@ -175,6 +184,76 @@ export function CompensatoryBankPanel({ employeeId, balance, canManage }: Props)
           })}
         </ul>
       )}
+
+      <div className="flex flex-col gap-2">
+        <h4 className="text-sm font-semibold">Bank history</h4>
+        {ledger.isLoading ? (
+          <p className="text-xs text-muted-foreground">Loading history...</p>
+        ) : ledger.isError ? (
+          <p className="text-xs text-destructive">
+            Unable to load bank history. {ledger.error.message}
+          </p>
+        ) : history.length === 0 ? (
+          <p className="text-xs text-muted-foreground">
+            {balance > 0
+              ? `No changes recorded yet. The current ${balance}h was banked before history started; the next change records it as the opening balance.`
+              : "No changes recorded yet."}
+          </p>
+        ) : (
+          <>
+            <ul className="flex flex-col divide-y rounded-lg border text-sm">
+              {visibleHistory.map((entry) => (
+                <li
+                  key={entry.id}
+                  className="flex flex-wrap items-center justify-between gap-2 px-3 py-2"
+                >
+                  <div className="min-w-0">
+                    <p className="font-medium">
+                      {COMPENSATORY_LEDGER_REASON_LABELS[entry.reason]}
+                      {entry.attendanceDate
+                        ? ` · ${format(new Date(`${entry.attendanceDate}T12:00:00`), "dd MMM yyyy")}`
+                        : ""}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {format(new Date(entry.createdAt), "dd MMM yyyy, h:mm a")} ·{" "}
+                      {entry.actorName ?? "System"}
+                      {entry.note ? ` · ${entry.note}` : ""}
+                    </p>
+                  </div>
+                  <div className="text-right tabular-nums">
+                    <p
+                      className={cn(
+                        "font-semibold",
+                        entry.changeHours >= 0
+                          ? "text-emerald-700 dark:text-emerald-400"
+                          : "text-rose-700 dark:text-rose-400",
+                      )}
+                    >
+                      {entry.changeHours >= 0 ? "+" : "−"}
+                      {Math.abs(entry.changeHours).toFixed(2)}h
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Balance {entry.balanceAfter.toFixed(2)}h
+                    </p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+            {history.length > HISTORY_PREVIEW && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="self-start"
+                onClick={() => setShowAllHistory((value) => !value)}
+              >
+                {showAllHistory
+                  ? "Show recent changes only"
+                  : `Show all ${history.length} changes`}
+              </Button>
+            )}
+          </>
+        )}
+      </div>
     </section>
   );
 }

@@ -156,7 +156,7 @@ export function DeviceImportSheet({ open, onOpenChange }: Props) {
 
   const displayPreview = (result: DeviceImportPreview) => {
     const unknownIds = result.rows
-      .filter((row) => !row.employeeId)
+      .filter((row) => !row.employeeId && !row.missingDay)
       .map((row) => row.personId);
     setMappingPersonIds((current) => [
       ...new Set(
@@ -306,6 +306,7 @@ export function DeviceImportSheet({ open, onOpenChange }: Props) {
   };
 
   const rows = preview?.rows ?? [];
+  const reportRowCount = rows.filter((row) => !row.missingDay).length;
   const reviewCount = rows.filter((row) => needsAttention(row.status)).length;
   const newPunchCount = rows.reduce(
     (count, row) => count + (row.status === "blocked" ? 0 : row.newPunchCount),
@@ -316,7 +317,9 @@ export function DeviceImportSheet({ open, onOpenChange }: Props) {
     ...new Map(
       rows
         .filter(
-          (row) => !row.employeeId || mappingPersonIds.includes(row.personId),
+          (row) =>
+            !row.missingDay &&
+            (!row.employeeId || mappingPersonIds.includes(row.personId)),
         )
         .map((row) => [row.personId, row]),
     ).values(),
@@ -455,7 +458,7 @@ export function DeviceImportSheet({ open, onOpenChange }: Props) {
                       Report rows
                     </dt>
                     <dd className="text-2xl font-semibold tabular-nums">
-                      {rows.length}
+                      {reportRowCount}
                     </dd>
                   </div>
                   <div>
@@ -909,7 +912,9 @@ export function DeviceImportSheet({ open, onOpenChange }: Props) {
                           >
                             <TableCell>
                               <p>
-                                #{row.rowNumber} · {row.personId}
+                                {row.missingDay
+                                  ? "Not in report"
+                                  : `#${row.rowNumber} · ${row.personId}`}
                               </p>
                               <p className="text-muted-foreground">
                                 {row.employeeName ??

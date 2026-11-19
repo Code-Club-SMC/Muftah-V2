@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { recomputeAttendanceRow, type AttendanceTx } from "../recompute-server";
-import { employees } from "@/db/schemas/hr-schema";
+import { compensatoryLedger, employees } from "@/db/schemas/hr-schema";
 
 describe("device attendance recomputation", () => {
   it("clears compensatory usage and refunds once across repeated recomputation", async () => {
@@ -12,6 +12,7 @@ describe("device attendance recomputation", () => {
       overtimeHours: "0",
     };
     const refund = vi.fn();
+    const history: Record<string, unknown>[] = [];
     const tx = {
       query: {
         employees: {
@@ -27,6 +28,7 @@ describe("device attendance recomputation", () => {
         },
         attendance: { findFirst: async () => ({ ...row }) },
         attendanceTimeExceptions: { findMany: async () => [] },
+        compensatoryLedger: { findFirst: async () => history[0] },
         attendancePunches: {
           findMany: async () => [
             {
@@ -46,7 +48,12 @@ describe("device attendance recomputation", () => {
         expect(table).toBe(employees);
         return { set: () => ({ where: refund }) };
       },
-      insert: () => ({
+      insert: (table: unknown) => table === compensatoryLedger ? {
+        values: (values: Record<string, unknown>) => {
+          history.push(values);
+          return { returning: async () => [values] };
+        },
+      } : ({
         values: () => ({
           onConflictDoUpdate: ({ set }: { set: Record<string, unknown> }) => ({
             returning: async () => {
@@ -61,6 +68,9 @@ describe("device attendance recomputation", () => {
     await recomputeAttendanceRow(tx, "emp", "2026-10-13");
     await recomputeAttendanceRow(tx, "emp", "2026-10-13");
     expect(refund).toHaveBeenCalledTimes(1);
+    expect(history).toMatchObject([
+      { reason: "auto_refund", changeHours: "8.00", attendanceDate: "2026-10-13", actorId: null },
+    ]);
     expect(row).toMatchObject({
       status: "present",
       dutyHours: "8.00",

@@ -699,6 +699,49 @@ export const compensatoryCashOuts = pgTable("compensatory_cash_outs", {
   payslipIdx: index("idx_comp_cash_outs_payslip").on(table.paidInPayslipId),
 }));
 
+// --- COMP-OFF BANK HISTORY ---
+// One row per change to an employee's banked comp-off hours, newest balance in balance_after.
+// Rows are only ever inserted; a reversal is a new row with the opposite sign.
+export const COMPENSATORY_LEDGER_REASONS = [
+  "opening_balance",
+  "overtime_converted",
+  "comp_leave_reserved",
+  "comp_leave_released",
+  "bank_cover_applied",
+  "bank_cover_removed",
+  "cash_out",
+  "cash_out_cancelled",
+  "auto_refund",
+  "manual_adjustment",
+] as const;
+
+export const compensatoryLedger = pgTable("compensatory_ledger", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => createId()),
+
+  employeeId: text("employee_id")
+    .notNull()
+    .references(() => employees.id, { onDelete: "cascade" }),
+
+  /** Signed: positive adds to the bank, negative takes from it. */
+  changeHours: decimal("change_hours", { precision: 6, scale: 2 }).notNull(),
+  balanceAfter: decimal("balance_after", { precision: 6, scale: 2 }).notNull(),
+  reason: text("reason", { enum: COMPENSATORY_LEDGER_REASONS }).notNull(),
+
+  attendanceId: text("attendance_id").references(() => attendance.id, { onDelete: "set null" }),
+  attendanceDate: date("attendance_date"),
+  cashOutId: text("cash_out_id").references(() => compensatoryCashOuts.id, { onDelete: "set null" }),
+  note: text("note"),
+
+  /** Null when the system made the change (for example punches were edited). */
+  actorId: text("actor_id").references(() => user.id, { onDelete: "set null" }),
+
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  employeeCreatedIdx: index("idx_comp_ledger_employee_created").on(table.employeeId, table.createdAt),
+}));
+
 // --- BRADFORD FACTOR AUDIT LOG ---
 export const bradfordAuditLog = pgTable("bradford_audit_log", {
   id: text("id")
@@ -970,5 +1013,16 @@ export const compensatoryCashOutRelations = relations(compensatoryCashOuts, ({ o
   payslip: one(payslips, {
     fields: [compensatoryCashOuts.paidInPayslipId],
     references: [payslips.id],
+  }),
+}));
+
+export const compensatoryLedgerRelations = relations(compensatoryLedger, ({ one }) => ({
+  employee: one(employees, {
+    fields: [compensatoryLedger.employeeId],
+    references: [employees.id],
+  }),
+  actor: one(user, {
+    fields: [compensatoryLedger.actorId],
+    references: [user.id],
   }),
 }));
