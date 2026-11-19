@@ -4,7 +4,7 @@ import { requireHrManageMiddleware } from "@/lib/middlewares";
 import { createServerFn } from "@tanstack/react-start";
 import { eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
-import { differenceInMinutes, parse } from "date-fns";
+import { COMP_OFF_NO_SHIFT_MESSAGE, shortestShiftHours } from "@/lib/attendance/time";
 import { invalidateDeviceAttendanceChanges, lockAttendancePayrollWrites } from "@/lib/attendance/device-import/payroll.server";
 import { lockEmployeePunchWrites } from "./punch-write-lock";
 import { buildOvertimeRequestSummary, getOvertimeStandardDutyHours } from "@/lib/attendance/overtime-request";
@@ -30,21 +30,10 @@ export const convertOvertimeToCompOffFn = createServerFn({ method: "POST" })
         throw new Error("Employee not found");
       }
 
-      // 2. Calculate minimum shift length dynamically
-      let minShiftLengthHours = employee.standardDutyHours;
-      if (employee.shifts && employee.shifts.length > 0) {
-        let minMinutes = Infinity;
-        for (const shift of employee.shifts) {
-          const start = parse(shift.start, "HH:mm", new Date());
-          const end = parse(shift.end, "HH:mm", new Date());
-          const diff = differenceInMinutes(end, start);
-          if (diff > 0 && diff < minMinutes) {
-            minMinutes = diff;
-          }
-        }
-        if (minMinutes !== Infinity) {
-          minShiftLengthHours = minMinutes / 60;
-        }
+      // 2. One comp-off day is worth the employee's shortest scheduled shift.
+      const minShiftLengthHours = shortestShiftHours(employee.shifts);
+      if (minShiftLengthHours === null) {
+        throw new Error(COMP_OFF_NO_SHIFT_MESSAGE);
       }
 
       // 3. Fetch selected attendance records
@@ -78,7 +67,7 @@ export const convertOvertimeToCompOffFn = createServerFn({ method: "POST" })
       // 5. Validation Check
       if (totalOvertimeHours < minShiftLengthHours) {
         throw new Error(
-          `Insufficient overtime hours. You have selected ${totalOvertimeHours} hours, but a minimum of ${minShiftLengthHours} hours (one shift) is required to convert.`,
+          `Insufficient overtime hours. You have selected ${totalOvertimeHours} hours, but one shift for this employee is ${minShiftLengthHours} hours. Select more overtime days to reach it.`,
         );
       }
 

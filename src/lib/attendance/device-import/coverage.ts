@@ -75,3 +75,37 @@ export function findPayrollCycleGaps(input: {
   }
   return gaps;
 }
+
+export type MissingWorkingDay = { employeeId: string; date: string };
+
+/**
+ * Finds working days inside the report's date range where an employee has no
+ * punch, no planned punch and no saved attendance. Rest days, dates before
+ * joining, and today or later are skipped.
+ */
+export function findMissingWorkingDays(input: {
+  employees: { id: string; joiningDate: string; restDays: unknown }[];
+  fromDate: string;
+  toDate: string;
+  today: string;
+  covered: Map<string, Set<string>>;
+}): MissingWorkingDay[] {
+  const missing: MissingWorkingDay[] = [];
+  for (const employee of input.employees) {
+    const restDays = Array.isArray(employee.restDays)
+      ? employee.restDays.filter((day): day is number => Number.isInteger(day))
+      : [0];
+    const covered = input.covered.get(employee.id);
+    for (
+      let date = input.fromDate;
+      date <= input.toDate && date < input.today;
+      date = shiftDate(date, 1)
+    ) {
+      if (date < employee.joiningDate || covered?.has(date)) continue;
+      const dayOfWeek = new Date(`${date}T12:00:00Z`).getUTCDay();
+      if (restDays.includes(dayOfWeek)) continue;
+      missing.push({ employeeId: employee.id, date });
+    }
+  }
+  return missing;
+}

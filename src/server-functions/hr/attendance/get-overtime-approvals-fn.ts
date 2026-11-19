@@ -5,7 +5,7 @@ import { requireHrViewMiddleware } from "@/lib/middlewares";
 import { and, desc, eq, gt, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { buildOvertimeRequestSummary } from "@/lib/attendance/overtime-request";
-import { calculateTotalShiftHours } from "@/lib/attendance/time";
+import { calculateTotalShiftHours, shortestShiftHours } from "@/lib/attendance/time";
 
 export const getOvertimeApprovalsFn = createServerFn()
     .middleware([requireHrViewMiddleware])
@@ -71,6 +71,7 @@ export const getOvertimeApprovalsFn = createServerFn()
                 workedDutyHours: summary.workedDutyHours,
                 suggestedOvertimeHours: summary.suggestedOvertimeHours,
                 isOvertimeRequestStale: summary.state === "stale",
+                compOffMinimumHours: shortestShiftHours(r.shifts as any),
                 overtimeRequestWarning: summary.warning,
             };
         });

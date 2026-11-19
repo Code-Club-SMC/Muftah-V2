@@ -23,7 +23,11 @@ import {
   lockAttendancePayrollWrites,
 } from "./payroll.server";
 import { nowPKTDate, toPKTDate, toPKTTime } from "../time";
-import { findPayrollCycleGaps, payrollCyclesForDates } from "./coverage";
+import {
+  findMissingWorkingDays,
+  findPayrollCycleGaps,
+  payrollCyclesForDates,
+} from "./coverage";
 import {
   DEVICE_IMPORT_MAX_BYTES,
   type DeviceImportPreview,
@@ -284,7 +288,100 @@ async function buildPlans(
   }
   const reportDates = [
     ...new Set(batch.report.rows.flatMap((r) => (r.date ? [r.date] : []))),
-  ];
+  ].sort();
+  if (reportDates.length) {
+    const fromDate = reportDates[0];
+    const toDate = reportDates.at(-1)!;
+    const punchStaff = staff.filter(
+      (e) =>
+        (e.status === "active" || e.status === "on_leave") &&
+        !e.isDriver &&
+        !e.isSalesman &&
+        !e.isOrderBooker &&
+        e.joiningDate <= toDate,
+    );
+    const staffIds = punchStaff.map((e) => e.id);
+    const lockedRanges = await tx.query.payrolls.findMany({
+      columns: { startDate: true, endDate: true },
+      where: and(
+        lte(payrolls.startDate, toDate),
+        gte(payrolls.endDate, fromDate),
+        inArray(payrolls.status, ["approved", "paid"]),
+      ),
+    });
+    const [savedDays, savedPunches] = staffIds.length
+      ? await Promise.all([
+          tx.query.attendance.findMany({
+            columns: { employeeId: true, date: true },
+            where: and(
+              inArray(attendance.employeeId, staffIds),
+              gte(attendance.date, fromDate),
+              lte(attendance.date, toDate),
+            ),
+          }),
+          tx.query.attendancePunches.findMany({
+            columns: { employeeId: true, attendanceDate: true },
+            where: and(
+              inArray(attendancePunches.employeeId, staffIds),
+              gte(attendancePunches.attendanceDate, fromDate),
+              lte(attendancePunches.attendanceDate, toDate),
+            ),
+          }),
+        ])
+      : [[], []];
+    const covered = new Map<string, Set<string>>();
+    const cover = (employeeId: string, date: string | null) => {
+      if (!date) return;
+      const dates = covered.get(employeeId) ?? new Set<string>();
+      dates.add(date);
+      covered.set(employeeId, dates);
+    };
+    for (const day of savedDays) cover(day.employeeId, day.date);
+    for (const punch of savedPunches)
+      cover(punch.employeeId, punch.attendanceDate);
+    for (const row of results.values()) {
+      if (!row.employeeId) continue;
+      cover(row.employeeId, row.date);
+      for (const date of row.attendanceDates ?? []) cover(row.employeeId, date);
+    }
+    const missing = findMissingWorkingDays({
+      employees: punchStaff,
+      fromDate,
+      toDate,
+      today: nowPKTDate(),
+      covered,
+    });
+    let nextRowNumber =
+      Math.max(0, ...batch.report.rows.map((r) => r.rowNumber)) + 1;
+    const unlocked = missing.filter(
+      ({ date }) =>
+        !lockedRanges.some((p) => p.startDate <= date && p.endDate >= date),
+    );
+    for (const { employeeId, date } of unlocked.sort(
+      (a, b) =>
+        a.date.localeCompare(b.date) ||
+        a.employeeId.localeCompare(b.employeeId),
+    )) {
+      const employee = byId.get(employeeId)!;
+      const rowNumber = nextRowNumber++;
+      results.set(rowNumber, {
+        rowNumber,
+        personId: linkedPeople.get(employeeId) ?? "",
+        personName: "",
+        employeeId,
+        employeeName: name(employee),
+        date,
+        punchTimes: [],
+        status: "needs_review",
+        messages: [
+          "No punches on this working day. Mark the day absent, leave or another status.",
+        ],
+        newPunchCount: 0,
+        dutyHours: null,
+        missingDay: true,
+      });
+    }
+  }
   const cycles = payrollCyclesForDates(reportDates);
   const recorded = cycles.length
     ? await tx.query.attendance.findMany({

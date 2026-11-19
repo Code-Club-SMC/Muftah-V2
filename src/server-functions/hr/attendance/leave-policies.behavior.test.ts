@@ -60,7 +60,7 @@ function input(overrides: Row = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks(); mock.finalized = false; mock.events = [];
-  employee = { id: "emp", firstName: "Test", lastName: "Employee", restDays: [0], standardDutyHours: 8, compensatoryHoursBalance: "8", annualLeaveAllowance: 14 };
+  employee = { id: "emp", firstName: "Test", lastName: "Employee", restDays: [0], standardDutyHours: 8, shifts: [{ start: "09:00", end: "17:00" }], compensatoryHoursBalance: "8", annualLeaveAllowance: 14 };
   records = [{ id: "leave", employeeId: "emp", date: "2026-10-13", status: "leave", leaveType: "compensatory", leaveApprovalStatus: "pending", isApprovedLeave: false, compensatoryHoursUsed: "8", dutyHours: "0" }];
   mock.db.transaction.mockImplementation(async (callback) => callback(mock.db));
   mock.db.execute.mockImplementation(async () => { mock.events.push("employee-lock"); });
@@ -157,6 +157,20 @@ describe("leave policy mutation behavior", () => {
     expect(records[0]).toMatchObject({ overtimeCompensationMethod: "comp_off", overtimeStatus: "approved" });
     await expect(convert({ data })).rejects.toThrow("already converted");
     expect(Number(employee.compensatoryHoursBalance)).toBe(16);
+  });
+
+  it("refuses comp-off conversion when the employee has no shift schedule instead of assuming eight hours", async () => {
+    Object.assign(records[0], { date: "2026-10-11", status: "present", dutyHours: "8", overtimeHours: "8", overtimeStatus: "pending", compensatoryHoursUsed: "0", leaveType: null });
+    employee.shifts = [];
+    await expect(convert({ data: { employeeId: "emp", attendanceIds: ["leave"] } })).rejects.toThrow("No shift schedule is defined");
+    expect(Number(employee.compensatoryHoursBalance)).toBe(8);
+    expect(mock.db.update).not.toHaveBeenCalled();
+  });
+
+  it("measures one comp-off day from an overnight shift that crosses midnight", async () => {
+    Object.assign(records[0], { date: "2026-10-11", status: "present", dutyHours: "6", overtimeHours: "6", overtimeStatus: "pending", compensatoryHoursUsed: "0", leaveType: null });
+    employee.shifts = [{ start: "22:00", end: "06:00" }];
+    await expect(convert({ data: { employeeId: "emp", attendanceIds: ["leave"] } })).rejects.toThrow("one shift for this employee is 8 hours");
   });
 
   it("refuses banking eight overtime hours from an ordinary eight-hour working day", async () => {

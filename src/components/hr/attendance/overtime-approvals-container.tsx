@@ -20,6 +20,8 @@ import { DataTable } from "@/components/custom/data-table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { Checkbox } from "@/components/ui/checkbox";
+import { COMP_OFF_NO_SHIFT_MESSAGE } from "@/lib/attendance/time";
 import { motion, Variants } from "framer-motion";
 import {
   AlertDialog,
@@ -55,7 +57,7 @@ type FilterStatus = "pending" | "approved" | "rejected" | "all";
 
 type ConfirmAction = {
   id: string;
-  status: "approved" | "rejected" | "comp_off";
+  status: "approved" | "rejected";
   employeeName: string;
   date: string;
   hours: string;
@@ -64,6 +66,8 @@ type ConfirmAction = {
 export function OvertimeApprovalsContainer() {
   const [status, setStatus] = useState<FilterStatus>("pending");
   const [confirmAction, setConfirmAction] = useState<ConfirmAction>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [confirmCompOff, setConfirmCompOff] = useState(false);
 
   const { data } = useSuspenseQuery({
     queryKey: ["overtime-approvals", status],
@@ -76,13 +80,42 @@ export function OvertimeApprovalsContainer() {
 
   const handleProcess = (
     id: string,
-    newStatus: "approved" | "rejected" | "pending" | "comp_off",
+    newStatus: "approved" | "rejected" | "pending",
   ) => {
-    if (newStatus === "comp_off") {
-      convertOT.mutate({ employeeId: records.find(r => r.id === id)?.employeeId || "", attendanceIds: [id] });
-    } else {
-      mutateOT.mutate({ id, status: newStatus });
-    }
+    mutateOT.mutate({ id, status: newStatus });
+  };
+
+  // Comp-off converts several pending days of one employee together.
+  const selectedRecords = records.filter(
+    (r) => selectedIds.includes(r.id) && r.overtimeStatus === "pending",
+  );
+  const selectedEmployee = selectedRecords[0] ?? null;
+  const selectedHours = selectedRecords.reduce(
+    (sum, r) => sum + (Number(r.overtimeHours) || 0),
+    0,
+  );
+  const compOffMinimum: number | null =
+    selectedEmployee?.compOffMinimumHours ?? null;
+  const canConvert =
+    selectedRecords.length > 0 &&
+    compOffMinimum !== null &&
+    selectedHours >= compOffMinimum;
+
+  const toggleSelected = (id: string, checked: boolean) =>
+    setSelectedIds((current) =>
+      checked ? [...current, id] : current.filter((value) => value !== id),
+    );
+
+  const confirmConvert = () => {
+    if (!selectedEmployee || !canConvert) return;
+    convertOT.mutate(
+      {
+        employeeId: selectedEmployee.employeeId,
+        attendanceIds: selectedRecords.map((r) => r.id),
+      },
+      { onSuccess: () => setSelectedIds([]) },
+    );
+    setConfirmCompOff(false);
   };
 
   const confirmProcess = () => {
@@ -93,6 +126,32 @@ export function OvertimeApprovalsContainer() {
 
   const columns = useMemo<ColumnDef<any>[]>(
     () => [
+      {
+        id: "select",
+        header: "",
+        cell: ({ row }) => {
+          const r = row.original;
+          if (r.overtimeStatus !== "pending") return null;
+          const otherEmployee =
+            !!selectedEmployee && selectedEmployee.employeeId !== r.employeeId;
+          const disabled = r.isOvertimeRequestStale || otherEmployee;
+          return (
+            <Checkbox
+              checked={selectedIds.includes(r.id)}
+              disabled={disabled}
+              onCheckedChange={(checked) => toggleSelected(r.id, checked === true)}
+              aria-label={`Select ${r.firstName} ${r.lastName} on ${r.date} for comp off`}
+              title={
+                r.isOvertimeRequestStale
+                  ? "Cannot convert stale OT request"
+                  : otherEmployee
+                    ? "Comp off converts one employee at a time"
+                    : "Select for comp off"
+              }
+            />
+          );
+        },
+      },
       {
         accessorKey: "employeeCode",
         header: "Code",
@@ -274,24 +333,6 @@ export function OvertimeApprovalsContainer() {
                   >
                     <X className="size-4" />
                   </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-8 px-2.5 rounded-none shadow-none border-indigo-500/30 text-indigo-600 hover:bg-indigo-500/10 hover:text-indigo-700 dark:hover:text-indigo-400 bg-indigo-500/5"
-                    onClick={() =>
-                      setConfirmAction({
-                        id: row.original.id,
-                        status: "comp_off",
-                        employeeName: `${row.original.firstName} ${row.original.lastName}`,
-                        date: row.original.date,
-                        hours: row.original.overtimeHours,
-                      })
-                    }
-                    disabled={mutateOT.isPending || convertOT.isPending || isStale}
-                    title={isStale ? "Cannot convert stale OT request" : "Convert to Comp Off"}
-                  >
-                    <FileClock className="size-4" />
-                  </Button>
                 </>
               ) : (
                 <Button
@@ -309,7 +350,7 @@ export function OvertimeApprovalsContainer() {
         },
       },
     ],
-    [mutateOT.isPending],
+    [mutateOT.isPending, selectedIds, selectedEmployee],
   );
 
   // Reusable sleek tab trigger classes
@@ -359,7 +400,10 @@ export function OvertimeApprovalsContainer() {
       <motion.div variants={itemVariants}>
         <Tabs
           value={status}
-          onValueChange={(v) => setStatus(v as FilterStatus)}
+          onValueChange={(v) => {
+            setStatus(v as FilterStatus);
+            setSelectedIds([]);
+          }}
           className="w-full"
         >
           {/* The Tabs Header */}
@@ -453,6 +497,47 @@ export function OvertimeApprovalsContainer() {
                 />
               </div>
             ) : (
+              <>
+              {selectedEmployee && (
+                <div className="flex flex-col gap-3 border-b border-border bg-indigo-500/5 p-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="text-sm">
+                    <p className="font-semibold text-foreground">
+                      {selectedRecords.length} {selectedRecords.length === 1 ? "day" : "days"} selected for{" "}
+                      {selectedEmployee.firstName} {selectedEmployee.lastName}
+                    </p>
+                    {compOffMinimum === null ? (
+                      <p className="text-rose-600 dark:text-rose-500">
+                        {COMP_OFF_NO_SHIFT_MESSAGE}
+                      </p>
+                    ) : (
+                      <p className="text-muted-foreground tabular-nums">
+                        {selectedHours.toFixed(2)}h of {compOffMinimum}h needed for one comp-off day
+                        {selectedHours < compOffMinimum &&
+                          ` · select ${(compOffMinimum - selectedHours).toFixed(2)}h more`}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="rounded-none"
+                      onClick={() => setSelectedIds([])}
+                    >
+                      Clear
+                    </Button>
+                    <Button
+                      size="sm"
+                      className="rounded-none bg-indigo-600 hover:bg-indigo-700"
+                      disabled={!canConvert || convertOT.isPending || mutateOT.isPending}
+                      onClick={() => setConfirmCompOff(true)}
+                    >
+                      <FileClock className="size-4" />
+                      Convert to Comp Off
+                    </Button>
+                  </div>
+                </div>
+              )}
               <DataTable
                 columns={columns}
                 data={records}
@@ -461,6 +546,7 @@ export function OvertimeApprovalsContainer() {
                 pageSize={10}
                 className="border-none shadow-none rounded-none"
               />
+              </>
             )}
           </TabsContent>
         </Tabs>
@@ -475,17 +561,13 @@ export function OvertimeApprovalsContainer() {
             <AlertDialogTitle>
               {confirmAction?.status === "approved"
                 ? "Approve overtime?"
-                : confirmAction?.status === "comp_off"
-                  ? "Convert to Comp Off?"
-                  : "Reject overtime?"}
+                : "Reject overtime?"}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {confirmAction &&
                 (confirmAction.status === "approved"
                   ? `Approve ${confirmAction.hours}h overtime for ${confirmAction.employeeName} on ${format(parseISO(confirmAction.date), "dd MMM yyyy")}. This will lock the entry for payroll.`
-                  : confirmAction.status === "comp_off"
-                    ? `Convert ${confirmAction.hours}h overtime for ${confirmAction.employeeName} into Compensatory Leave. They can use this later for Shift Offs or Full Leaves.`
-                    : `Reject ${confirmAction.hours}h overtime for ${confirmAction.employeeName} on ${format(parseISO(confirmAction.date), "dd MMM yyyy")}. The request can be resubmitted later.`)}
+                  : `Reject ${confirmAction.hours}h overtime for ${confirmAction.employeeName} on ${format(parseISO(confirmAction.date), "dd MMM yyyy")}. The request can be resubmitted later.`)}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -494,16 +576,36 @@ export function OvertimeApprovalsContainer() {
             </AlertDialogCancel>
             <AlertDialogAction
               onClick={confirmProcess}
-              disabled={mutateOT.isPending || convertOT.isPending}
+              disabled={mutateOT.isPending}
               className={
                 confirmAction?.status === "approved"
                   ? "bg-emerald-600 hover:bg-emerald-700"
-                  : confirmAction?.status === "comp_off"
-                    ? "bg-indigo-600 hover:bg-indigo-700"
-                    : "bg-rose-600 hover:bg-rose-700"
+                  : "bg-rose-600 hover:bg-rose-700"
               }
             >
-              {confirmAction?.status === "approved" ? "Approve" : confirmAction?.status === "comp_off" ? "Convert" : "Reject"}
+              {confirmAction?.status === "approved" ? "Approve" : "Reject"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={confirmCompOff} onOpenChange={setConfirmCompOff}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Convert to Comp Off?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {selectedEmployee &&
+                `Convert ${selectedHours.toFixed(2)}h overtime from ${selectedRecords.length} ${selectedRecords.length === 1 ? "day" : "days"} for ${selectedEmployee.firstName} ${selectedEmployee.lastName} into Compensatory Leave. They can use this later for Shift Offs or Full Leaves.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmConvert}
+              disabled={!canConvert || convertOT.isPending}
+              className="bg-indigo-600 hover:bg-indigo-700"
+            >
+              Convert
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

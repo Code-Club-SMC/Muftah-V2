@@ -37,6 +37,30 @@ export function nowPKTDate(): string {
   return toPKTDate(new Date());
 }
 
+export const COMP_OFF_NO_SHIFT_MESSAGE =
+  "No shift schedule is defined for this employee, so the hours for one comp-off day can't be calculated. Add a shift schedule to the employee first.";
+
+/**
+ * Length in hours of the employee's shortest scheduled shift, which is what one
+ * comp-off day is worth. Overnight shifts wrap past midnight. Returns null when
+ * no valid shift is scheduled, so callers never guess a default.
+ */
+export function shortestShiftHours(
+  shifts?: { start: string; end: string }[] | null,
+): number | null {
+  let shortest = Infinity;
+  for (const s of shifts ?? []) {
+    if (!s?.start || !s?.end) continue;
+    const [sh, sm] = s.start.split(":").map(Number);
+    const [eh, em] = s.end.split(":").map(Number);
+    if ([sh, sm, eh, em].some((n) => !Number.isFinite(n))) continue;
+    let diff = eh * 60 + em - (sh * 60 + sm);
+    if (diff < 0) diff += 24 * 60;
+    if (diff > 0 && diff < shortest) shortest = diff;
+  }
+  return shortest === Infinity ? null : Math.round((shortest / 60) * 100) / 100;
+}
+
 export function calculateTotalShiftHours(
   shifts?: { start: string; end: string }[] | null,
 ): number {
