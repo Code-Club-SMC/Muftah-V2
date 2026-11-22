@@ -191,7 +191,7 @@ export const PayslipView = ({
         }))
         .filter((e) => e.value > 0);
 
-    const earnings: { label: string; value: number }[] = [
+    const earnings: { label: string; value: number; qty?: string }[] = [
         { label: "Basic Salary", value: toN(payslip.basicSalary) },
         ...dynamicAllowances,
         ...(toN(payslip.overtimeAmount) > 0
@@ -201,7 +201,11 @@ export const PayslipView = ({
             ? [{ label: `Comp-off Cash-out (${toN(payslip.compCashOutHours)}h)`, value: toN(payslip.compCashOutAmount) }]
             : []),
         ...(toN(payslip.nightShiftAllowanceAmount) > 0
-            ? [{ label: "Night Shift Allowance", value: toN(payslip.nightShiftAllowanceAmount) }]
+            ? [{
+                label: "Night Shift Allowance",
+                value: toN(payslip.nightShiftAllowanceAmount),
+                qty: payslip.nightShiftsCount ? String(payslip.nightShiftsCount) : undefined,
+            }]
             : []),
         ...(toN(payslip.incentiveAmount) > 0
             ? [{ label: "Incentive", value: toN(payslip.incentiveAmount) }]
@@ -263,7 +267,7 @@ export const PayslipView = ({
             const d = deductions[i];
             earningRows.push(
                 e
-                    ? `<td class="ecell">${e.label}</td><td class="ecell tc"></td><td class="ecell tr bdr">${fmt(e.value)}</td>`
+                    ? `<td class="ecell">${e.label}</td><td class="ecell tc">${e.qty ?? ""}</td><td class="ecell tr bdr">${fmt(e.value)}</td>`
                     : `<td class="ecell"></td><td class="ecell"></td><td class="ecell bdr"></td>`
             );
             deductRows.push(
@@ -622,7 +626,7 @@ body { font-family: Arial, sans-serif; font-size:11px; color:#111; background:#f
                                 return (
                                     <tr key={i}>
                                         <td style={eCell}>{earning?.label ?? ""}</td>
-                                        <td style={{ ...eCell, textAlign: "center" }}></td>
+                                        <td style={{ ...eCell, textAlign: "center" }}>{earning?.qty ?? ""}</td>
                                         <td style={eCellR}>{earning ? fmt(earning.value) : ""}</td>
                                         <td style={dCell}>{ded?.label ?? ""}</td>
                                         <td style={{ ...dCell, textAlign: "center" }}></td>
