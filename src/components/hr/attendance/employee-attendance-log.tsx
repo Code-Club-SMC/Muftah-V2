@@ -215,6 +215,10 @@ export const EmployeeAttendanceLog = ({
       }, 0)
       .toFixed(2),
     daysPresent: records.filter((r: any) => r.status === "present").length,
+    // Same rule payroll uses for the night shift allowance.
+    nightShifts: records.filter(
+      (r: any) => r.status === "present" && r.isNightShift,
+    ).length,
   };
 
   // ── Table rows ─────────────────────────────────────────────────────────
@@ -708,6 +712,12 @@ export const EmployeeAttendanceLog = ({
           <span className="text-muted-foreground">Comp-off bank: </span>
           <span className="font-semibold tabular-nums">
             {Number(employee.compensatoryHoursBalance ?? 0)}h
+          </span>
+        </span>
+        <span>
+          <span className="text-muted-foreground">Night shifts: </span>
+          <span className="font-semibold tabular-nums">
+            {stats.nightShifts}
           </span>
         </span>
         <span>
