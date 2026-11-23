@@ -501,21 +501,23 @@ export const EmployeeAttendanceLog = ({
                 >
                   Reject OT
                 </Button>
-                <Button
-                  size="sm"
-                  variant={compOffIds.includes(record.id) ? "secondary" : "ghost"}
-                  disabled={busy}
-                  aria-pressed={compOffIds.includes(record.id)}
-                  onClick={() =>
-                    setCompOffIds((current) =>
-                      current.includes(record.id)
-                        ? current.filter((id) => id !== record.id)
-                        : [...current, record.id],
-                    )
-                  }
-                >
-                  {compOffIds.includes(record.id) ? "✓ Comp off" : "Comp off"}
-                </Button>
+                {record.overtimeCompensationMethod !== "comp_off" && (
+                  <Button
+                    size="sm"
+                    variant={compOffIds.includes(record.id) ? "secondary" : "ghost"}
+                    disabled={busy}
+                    aria-pressed={compOffIds.includes(record.id)}
+                    onClick={() =>
+                      setCompOffIds((current) =>
+                        current.includes(record.id)
+                          ? current.filter((id) => id !== record.id)
+                          : [...current, record.id],
+                      )
+                    }
+                  >
+                    {compOffIds.includes(record.id) ? "✓ Comp off" : "Comp off"}
+                  </Button>
+                )}
               </>
             )}
             {record &&

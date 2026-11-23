@@ -71,7 +71,11 @@ beforeEach(() => {
     employees: { findFirst: async () => employee, findMany: async () => [employee] },
     attendancePunches: { findFirst: async () => undefined },
     orderBookers: { findFirst: async () => undefined },
-    compensatoryLedger: { findFirst: async () => ledger[0] },
+    compensatoryLedger: {
+      findFirst: async () => ledger[0],
+      findMany: async ({ where }: { where?: SQL } = {}) =>
+        where ? ledger.filter((row) => matches(row, where)) : ledger,
+    },
   };
   mock.db.select.mockImplementation(() => ({ from: (table: unknown) => {
     const chain = { innerJoin: () => chain, where: async (where: SQL) => table === attendance ? records.filter(row => matches(row, where)).map(row => ({ ...row, standardDutyHours: employee.standardDutyHours, restDays: employee.restDays, shifts: employee.shifts })) : [] };
@@ -176,7 +180,19 @@ describe("leave policy mutation behavior", () => {
     await expect(convert({ data })).rejects.toThrow("already converted");
     expect(mock.db.update.mock.calls.length).toBe(writes);
     expect(mock.events.slice(0, 2)).toEqual(["payroll-lock", "employee-lock"]);
-    await expect(overtime({ data: { id: "leave", status: "rejected" } })).rejects.toThrow("already been credited");
+    await overtime({ data: { id: "leave", status: "rejected" } });
+    expect(records[0]).toMatchObject({ overtimeCompensationMethod: "payout", overtimeStatus: "rejected" });
+    expect(Number(employee.compensatoryHoursBalance)).toBe(8);
+  });
+
+  it("refuses rejecting comp-off overtime when employee already spent the compensatory hours", async () => {
+    Object.assign(records[0], { status: "present", dutyHours: "16", overtimeHours: "8", overtimeStatus: "pending", compensatoryHoursUsed: "0", leaveType: null });
+    const data = { employeeId: "emp", attendanceIds: ["leave"] };
+    await convert({ data });
+    expect(records[0]).toMatchObject({ overtimeCompensationMethod: "comp_off", overtimeStatus: "approved" });
+    // Employee spent compensatory hours so balance dropped to 0
+    employee.compensatoryHoursBalance = "0.00";
+    await expect(overtime({ data: { id: "leave", status: "rejected" } })).rejects.toThrow("already used them");
   });
 
   it("converts eight worked rest-day hours to eight bank hours exactly once", async () => {

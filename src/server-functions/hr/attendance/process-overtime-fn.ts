@@ -1,12 +1,13 @@
 import { createServerFn } from "@tanstack/react-start";
 import { db } from "@/db";
-import { attendance, employees } from "@/db/schemas/hr-schema";
+import { attendance, compensatoryLedger, employees } from "@/db/schemas/hr-schema";
 import { requireHrManageMiddleware } from "@/lib/middlewares";
-import { eq } from "drizzle-orm";
+import { and, eq, or } from "drizzle-orm";
 import { z } from "zod";
 import { buildOvertimeRequestSummary, getOvertimeStandardDutyHours } from "@/lib/attendance/overtime-request";
 import { invalidateDeviceAttendanceChanges, lockAttendancePayrollWrites } from "@/lib/attendance/device-import/payroll.server";
 import { lockEmployeePunchWrites } from "./punch-write-lock";
+import { changeCompensatoryBalance } from "@/lib/attendance/compensatory-reservation.server";
 
 export const processOvertimeFn = createServerFn()
     .middleware([requireHrManageMiddleware])
@@ -16,7 +17,7 @@ export const processOvertimeFn = createServerFn()
             status: z.enum(["approved", "rejected", "pending"]),
         })
     )
-    .handler(async ({ data: { id, status } }) => {
+    .handler(async ({ data: { id, status }, context }) => {
       return await db.transaction(async (tx) => {
         await lockAttendancePayrollWrites(tx);
         const [row] = await tx
@@ -41,8 +42,67 @@ export const processOvertimeFn = createServerFn()
         }
         await lockEmployeePunchWrites(tx, row.employeeId);
         await invalidateDeviceAttendanceChanges(tx, row.employeeId, [row.date]);
+
         if (row.overtimeCompensationMethod === "comp_off" && status !== "approved") {
-            throw new Error("Converted overtime cannot change approval because compensatory hours have already been credited.");
+            const compEntries = await tx.query.compensatoryLedger.findMany({
+                where: and(
+                    eq(compensatoryLedger.employeeId, row.employeeId),
+                    or(
+                        eq(compensatoryLedger.attendanceId, row.id),
+                        and(
+                            eq(compensatoryLedger.attendanceDate, row.date),
+                            eq(compensatoryLedger.reason, "overtime_converted"),
+                        ),
+                    ),
+                ),
+            });
+
+            const creditedHours = compEntries
+                .filter((e) => e.reason === "overtime_converted")
+                .reduce((sum, e) => sum + Number(e.changeHours), 0);
+
+            const reversedHours = compEntries
+                .filter(
+                    (e) =>
+                        (e.reason === "manual_adjustment" || e.reason === "auto_refund") &&
+                        Number(e.changeHours) < 0 &&
+                        (e.note?.includes("comp-off revoked") || e.note?.includes("Comp-off revoked")),
+                )
+                .reduce((sum, e) => sum + Math.abs(Number(e.changeHours)), 0);
+
+            const netHoursToRevoke = Number((creditedHours - reversedHours).toFixed(2));
+
+            if (netHoursToRevoke > 0) {
+                const employee = await tx.query.employees.findFirst({
+                    where: eq(employees.id, row.employeeId),
+                    columns: { compensatoryHoursBalance: true },
+                });
+                const currentBalance = Number(employee?.compensatoryHoursBalance || "0");
+
+                if (currentBalance < netHoursToRevoke) {
+                    throw new Error(
+                        `Cannot ${status === "rejected" ? "reject" : "reset"} this overtime: ` +
+                        `${netHoursToRevoke} compensatory hours were credited, but the employee has already used them ` +
+                        `(available balance: ${currentBalance}h). Adjust the employee's compensatory leave balance first.`,
+                    );
+                }
+
+                await changeCompensatoryBalance(
+                    tx,
+                    row.employeeId,
+                    -netHoursToRevoke,
+                    "manual_adjustment",
+                    {
+                        attendanceId: row.id,
+                        attendanceDate: row.date,
+                        actorId: (context as any)?.session?.user?.id ?? null,
+                        note:
+                            status === "rejected"
+                                ? "Comp-off revoked (overtime rejected)"
+                                : "Comp-off revoked (overtime reset to pending)",
+                    },
+                );
+            }
         }
 
         if (status === "approved") {
@@ -62,7 +122,11 @@ export const processOvertimeFn = createServerFn()
 
         const [updated] = await tx
             .update(attendance)
-            .set({ overtimeStatus: status, updatedAt: new Date() })
+            .set({
+                overtimeStatus: status,
+                overtimeCompensationMethod: status === "approved" ? row.overtimeCompensationMethod : "payout",
+                updatedAt: new Date(),
+            })
             .where(eq(attendance.id, id))
             .returning();
 
