@@ -164,14 +164,15 @@ export async function deleteWarehouseLotStock(tx: Tx, warehouseId: string) {
 
 // True while the purchase's lot in its store still holds everything bought since the purchase.
 // Purchases from before lots have no lot and count as touched.
-export async function purchaseIsUntouched(tx: Tx, purchase: { id: string; lotId: string | null; warehouseId: string }) {
+export async function purchaseIsUntouched(tx: Tx, purchase: { id: string; lotId: string | null; warehouseId: string; quantity: string }) {
   if (!purchase.lotId) return false;
   // The purchase's own credit on its current lot: the original purchase, or the latest
   // purchase_edit credit if an edit moved it to this lot.
-  const [own] = await tx.select({ createdAt: materialLotMovements.createdAt, id: materialLotMovements.id }).from(materialLotMovements)
+  const [own] = await tx.select({ createdAt: materialLotMovements.createdAt, delta: materialLotMovements.delta }).from(materialLotMovements)
     .where(and(eq(materialLotMovements.lotId, purchase.lotId), eq(materialLotMovements.warehouseId, purchase.warehouseId), inArray(materialLotMovements.sourceType, ["purchase", "purchase_edit"]), eq(materialLotMovements.sourceId, purchase.id), sql`${materialLotMovements.delta} > 0`))
     .orderBy(desc(materialLotMovements.createdAt)).limit(1);
-  if (!own) return false;
+  // A smaller credit means only the unused part was moved here by a late price correction.
+  if (!own || !new Big(own.delta).eq(purchase.quantity)) return false;
   const movements = await tx.select({ delta: materialLotMovements.delta, sourceType: materialLotMovements.sourceType }).from(materialLotMovements)
     .where(and(eq(materialLotMovements.lotId, purchase.lotId), eq(materialLotMovements.warehouseId, purchase.warehouseId), gte(materialLotMovements.createdAt, own.createdAt)))
     .orderBy(asc(materialLotMovements.createdAt), asc(materialLotMovements.id));

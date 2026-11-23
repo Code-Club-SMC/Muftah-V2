@@ -7,8 +7,8 @@ import { logActivityQuiet } from "@/lib/activity-logger.server";
 import { z } from "zod";
 import { createId } from "@paralleldrive/cuid2";
 import { lotPrice, lotQuantity, PURCHASE_LOCKED_MESSAGE } from "@/lib/inventory/material-lots";
-import { findOrCreateLot, moveLotStock, purchaseIsUntouched } from "@/lib/inventory/material-lots.server";
-import { followEditedPurchase, lockMaterialEverywhere } from "@/lib/inventory/material-price.server";
+import { moveLotStock, purchaseIsUntouched } from "@/lib/inventory/material-lots.server";
+import { followEditedPurchase, lockMaterialEverywhere, lotForPurchase, repriceUnusedStock } from "@/lib/inventory/material-price.server";
 import { byProductColumns } from "@/lib/inventory/by-products";
 import { assertEarnedCoversSold } from "@/lib/inventory/by-products.server";
 
@@ -139,7 +139,7 @@ export const updatePurchaseRecordFn = createServerFn({ method: "POST" })
         }
       }
 
-      // 2. Move lot stock if quantity or price changed. Only allowed while the purchase is untouched.
+      // 2. Move lot stock if quantity or price changed. The quantity only changes while the purchase is untouched.
       const ref = existingRecord.materialType === "chemical"
         ? { materialType: "chemical" as const, materialId: existingRecord.chemicalId! }
         : { materialType: "packaging" as const, materialId: existingRecord.packagingMaterialId! };
@@ -162,17 +162,18 @@ export const updatePurchaseRecordFn = createServerFn({ method: "POST" })
       const quantityChanged = !new Big(newQuantity).eq(existingRecord.quantity);
       const priceChanged = newPrice !== lotPrice(existingRecord.unitCost);
       let lotId = existingRecord.lotId;
-      if (quantityChanged || priceChanged) await lockMaterialEverywhere(tx, ref, [existingRecord.warehouseId]);
-      if (quantityChanged || (priceChanged && existingRecord.lotId)) {
+      if (quantityChanged || priceChanged) {
+        await lockMaterialEverywhere(tx, ref, [existingRecord.warehouseId]);
         const untouched = await purchaseIsUntouched(tx, existingRecord);
         if (quantityChanged && !untouched) throw new Error(PURCHASE_LOCKED_MESSAGE);
         if (untouched) {
-          const target = await findOrCreateLot(tx, ref, newPrice);
+          const target = await lotForPurchase(tx, ref, existingRecord, newPrice);
           await moveLotStock(tx, { ref, lotId: existingRecord.lotId!, warehouseId: existingRecord.warehouseId, delta: `-${new Big(existingRecord.quantity).toFixed(3)}`, sourceType: "purchase_edit", sourceId: existingRecord.id });
           await moveLotStock(tx, { ref, lotId: target.id, warehouseId: existingRecord.warehouseId, delta: newQuantity, sourceType: "purchase_edit", sourceId: existingRecord.id });
           lotId = target.id;
+        } else {
+          lotId = await repriceUnusedStock(tx, ref, existingRecord, newPrice);
         }
-        // Not untouched and only the price changed: the bill changes, the lot price does not.
       }
 
       if (existingRecord.materialType === "chemical" && existingRecord.chemicalId) {

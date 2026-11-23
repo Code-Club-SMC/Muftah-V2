@@ -1,6 +1,6 @@
 import { and, desc, inArray, isNotNull, isNull, or, sql, type SQL } from "drizzle-orm";
 import { db } from "@/db";
-import { materialLotStock, materialLots, materialStock } from "@/db/schemas/inventory-schema";
+import { materialLotMovements, materialLotStock, materialLots, materialStock } from "@/db/schemas/inventory-schema";
 import { purchaseRecords, supplierPayments } from "@/db/schemas/supplier-schema";
 import { reportDateBounds } from "@/lib/report-dates";
 
@@ -89,13 +89,26 @@ function materialFilter(
   return parts.length ? or(...parts) : undefined;
 }
 
+type Reader = Pick<typeof db, "select">;
+
+/**
+ * What a purchase put into the lot it is in now. Less than its quantity when its price was
+ * corrected after some was used: only the unused part moved to the new lot.
+ */
+// Names are spelled out because Drizzle drops table names in one-table selects, which would break the link.
+const putInLot = sql<string>`coalesce((
+  select sum(moved.delta) from ${materialLotMovements} moved
+  where moved.lot_id = ${purchaseRecords}.lot_id and moved.source_id = ${purchaseRecords}.id
+    and moved.source_type in ('purchase', 'purchase_edit')
+), ${purchaseRecords}.quantity)`;
+
 /**
  * Stock left for purchases made before lots existed (they have no lot).
  *
  * Their stock is whatever the material holds beyond what lot purchases still
  * claim. It is used from the oldest purchase first, so the newest keeps it.
  */
-async function legacyStockLeft(records: PurchaseRow[]) {
+async function legacyStockLeft(reader: Reader, records: PurchaseRow[]) {
   const legacy = records.filter((r) => !r.voidedAt && !r.lotId && materialKey(r));
   if (!legacy.length) return new Map<string, number>();
   const chemicalIds = [...new Set(legacy.flatMap((r) => (r.chemicalId ? [r.chemicalId] : [])))];
@@ -104,7 +117,7 @@ async function legacyStockLeft(records: PurchaseRow[]) {
   ];
 
   const [stock, lotStock, lotBought, newerLegacy] = await Promise.all([
-    db
+    reader
       .select({
         chemicalId: materialStock.chemicalId,
         packagingMaterialId: materialStock.packagingMaterialId,
@@ -113,7 +126,7 @@ async function legacyStockLeft(records: PurchaseRow[]) {
       .from(materialStock)
       .where(materialFilter(materialStock, chemicalIds, packagingIds))
       .groupBy(materialStock.chemicalId, materialStock.packagingMaterialId),
-    db
+    reader
       .select({
         lotId: materialLots.id,
         chemicalId: materialLots.chemicalId,
@@ -124,15 +137,15 @@ async function legacyStockLeft(records: PurchaseRow[]) {
       .leftJoin(materialLotStock, sql`${materialLotStock.lotId} = ${materialLots.id}`)
       .where(materialFilter(materialLots, chemicalIds, packagingIds))
       .groupBy(materialLots.id),
-    db
+    reader
       .select({
         lotId: purchaseRecords.lotId,
-        quantity: sql<string>`coalesce(sum(${purchaseRecords.quantity}), 0)`,
+        quantity: sql<string>`coalesce(sum(${putInLot}), 0)`,
       })
       .from(purchaseRecords)
       .where(and(isNull(purchaseRecords.voidedAt), isNotNull(purchaseRecords.lotId), materialFilter(purchaseRecords, chemicalIds, packagingIds)))
       .groupBy(purchaseRecords.lotId),
-    db
+    reader
       .select({
         id: purchaseRecords.id,
         newer: sql<string>`coalesce(sum(${purchaseRecords.quantity}) over (
@@ -172,20 +185,18 @@ async function legacyStockLeft(records: PurchaseRow[]) {
 }
 
 /**
- * Adds how much of each purchase is still in stock, and its latest payment.
+ * How much of each purchase is still in stock.
  *
  * Purchases at the same price share a lot. Stock used from a lot is taken
  * from its oldest purchases first, so a purchase keeps whatever lot stock is
  * left after the newer purchases in that lot have claimed theirs. Purchases
  * from before lots get theirs from the material's stock outside lot purchases.
  */
-export async function withStockLeft<T extends PurchaseRow>(records: T[]) {
+export async function purchaseStockLeft(reader: Reader, records: PurchaseRow[]) {
   const lotIds = [...new Set(records.flatMap((r) => (r.lotId ? [r.lotId] : [])))];
-  const purchaseIds = records.map((r) => r.id);
-
-  const [lotTotals, newerInLot, payments, legacyLeft] = await Promise.all([
+  const [lotTotals, newerInLot, legacyLeft] = await Promise.all([
     lotIds.length
-      ? db
+      ? reader
           .select({
             lotId: materialLotStock.lotId,
             quantity: sql<string>`coalesce(sum(${materialLotStock.quantity}), 0)`,
@@ -195,10 +206,11 @@ export async function withStockLeft<T extends PurchaseRow>(records: T[]) {
           .groupBy(materialLotStock.lotId)
       : [],
     lotIds.length
-      ? db
+      ? reader
           .select({
             id: purchaseRecords.id,
-            newer: sql<string>`coalesce(sum(${purchaseRecords.quantity}) over (
+            own: putInLot,
+            newer: sql<string>`coalesce(sum(${putInLot}) over (
               partition by ${purchaseRecords.lotId}
               order by ${purchaseRecords.purchaseDate} desc, ${purchaseRecords.createdAt} desc, ${purchaseRecords.id} desc
               rows between unbounded preceding and 1 preceding
@@ -207,29 +219,42 @@ export async function withStockLeft<T extends PurchaseRow>(records: T[]) {
           .from(purchaseRecords)
           .where(and(isNull(purchaseRecords.voidedAt), inArray(purchaseRecords.lotId, lotIds)))
       : [],
+    legacyStockLeft(reader, records),
+  ]);
+
+  const lotTotal = new Map(lotTotals.map((l) => [l.lotId, parseFloat(l.quantity)]));
+  const inLot = new Map(newerInLot.map((p) => [p.id, p]));
+  return new Map<string, number | null>(
+    records.map((r) => {
+      if (r.voidedAt) return [r.id, 0];
+      if (!r.lotId) return [r.id, legacyLeft.get(r.id) ?? null];
+      const row = inLot.get(r.id);
+      return [
+        r.id,
+        Math.min(
+          parseFloat(row?.own ?? r.quantity),
+          Math.max(0, (lotTotal.get(r.lotId) ?? 0) - parseFloat(row?.newer ?? "0")),
+        ),
+      ];
+    }),
+  );
+}
+
+/** Adds how much of each purchase is still in stock, and its latest payment. */
+export async function withStockLeft<T extends PurchaseRow>(records: T[]) {
+  const purchaseIds = records.map((r) => r.id);
+  const [left, payments] = await Promise.all([
+    purchaseStockLeft(db, records),
     purchaseIds.length
       ? db.query.supplierPayments.findMany({
           where: inArray(supplierPayments.purchaseId, purchaseIds),
           orderBy: [desc(supplierPayments.paymentDate), desc(supplierPayments.createdAt)],
         })
       : [],
-    legacyStockLeft(records),
   ]);
-
-  const lotTotal = new Map(lotTotals.map((l) => [l.lotId, parseFloat(l.quantity)]));
-  const newer = new Map(newerInLot.map((p) => [p.id, parseFloat(p.newer)]));
-
-  return records.map((r) => {
-    const stockLeft = r.voidedAt ? 0 : r.lotId
-      ? Math.min(
-          parseFloat(r.quantity),
-          Math.max(0, (lotTotal.get(r.lotId) ?? 0) - (newer.get(r.id) ?? 0)),
-        )
-      : (legacyLeft.get(r.id) ?? null);
-    return {
-      ...r,
-      stockLeft,
-      lastPayment: payments.find((p) => p.purchaseId === r.id) ?? null,
-    };
-  });
+  return records.map((r) => ({
+    ...r,
+    stockLeft: left.get(r.id) ?? null,
+    lastPayment: payments.find((p) => p.purchaseId === r.id) ?? null,
+  }));
 }

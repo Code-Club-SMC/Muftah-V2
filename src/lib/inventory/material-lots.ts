@@ -10,7 +10,7 @@ export type LotBalance = { lotId: string; unitPrice: string; quantity: string; f
 export type PickedLot = { lotId: string; quantity: string; unitPrice: string; totalCost: string };
 
 export const PURCHASE_LOCKED_MESSAGE =
-  "Some of this stock has already been used or moved, so the quantity and price can't change. Old batch costs would become wrong.";
+  "Some of this stock has already been used or moved, so the quantity can't change and the purchase can't be deleted. Old batch costs would become wrong.";
 
 export const lotPickSchema = z.object({
   lotId: z.string().min(1),

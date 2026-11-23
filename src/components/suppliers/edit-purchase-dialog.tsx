@@ -61,7 +61,7 @@ type Props = {
 
 export const EditPurchaseDialog = ({ open, onOpenChange, purchase }: Props) => {
   const queryClient = useQueryClient();
-  // Once some of the bought stock is used or moved, only the bill can change.
+  // Once some of the bought stock is used or moved, the quantity is fixed.
   const editState = useQuery({
     queryKey: ["purchase-edit-state", purchase?.id],
     queryFn: () => getPurchaseEditStateFn({ data: { id: purchase!.id } }),
@@ -172,7 +172,7 @@ export const EditPurchaseDialog = ({ open, onOpenChange, purchase }: Props) => {
       >
         {stockLocked ? (
           <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
-            {PURCHASE_LOCKED_MESSAGE} You can still correct the bill total.
+            {PURCHASE_LOCKED_MESSAGE} You can still correct the bill total: stock not used yet takes the new price, and batches already made keep their cost.
           </p>
         ) : null}
 

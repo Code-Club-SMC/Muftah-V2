@@ -53,7 +53,7 @@ async function fixture() {
 }
 
 describe.skipIf(!process.env.TEST_DATABASE_URL)("purchase edits and deletes with lots", () => {
-  it("allows quantity and price edits until the stock is used, then only the bill", async () => {
+  it("allows quantity and price edits until the stock is used, then only the price of what is left", async () => {
     const { floor, soda, ref, buy, edit, remove, locked, record, lotAt } = await fixture();
     try {
       const p1 = await buy("11500", "100"); // Rs 115
@@ -78,8 +78,13 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("purchase edits and deletes with
 
       await edit(p1.id, { quantity: "90", cost: "10000" });
       expect((await record(p1.id)).cost).toBe("10000.00");
-      expect((await record(p1.id)).lotId).toBe(lot112.id);
-      expect(await lotAt("112.00")).toEqual({ id: lot112.id, quantity: "30.000" });
+      const lot111 = await lotAt("111.11");
+      expect((await record(p1.id)).lotId).toBe(lot111.id);
+      expect(lot111.quantity).toBe("30.000"); // 60 of the 90 stay used at Rs 112
+      expect(await lotAt("112.00")).toEqual({ id: lot112.id, quantity: "0.000" });
+      expect(await locked(p1.id)).toBe(true);
+      await expect(edit(p1.id, { quantity: "30", cost: "3000" })).rejects.toThrow(PURCHASE_LOCKED_MESSAGE);
+      await edit(p1.id, { quantity: "90", cost: "10080" }); // back to Rs 112
 
       const p2 = await buy("5600", "50"); // Rs 112, joins the same lot
       expect((await lotAt("112.00")).quantity).toBe("80.000");
