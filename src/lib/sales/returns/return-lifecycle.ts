@@ -194,23 +194,33 @@ export function allocateReturnCost(basis: ReturnCostBasis, unitsBefore: number, 
   return total.times(unitsBefore + units).div(basis.dispatchedUnits).round(2).minus(before).toFixed(2);
 }
 
-export type ReturnMoneyEvent = { kind: "return" | "void"; date: Date; amount: number; cost: number };
+export type ReturnMoneyEvent = { kind: "return" | "void"; date: Date; amount: number; cost: number; writeOff: number };
 
 export function returnMoneyEvents(row: {
   status: string;
   totalAmount: string | number;
   completedAt: Date | null;
   voidedAt: Date | null;
-  stockTraces: Array<{ kind: string; totalCost: string | number }>;
+  stockTraces: Array<{ kind: string; totalCost: string | number; writeOffAmount?: string | number | null }>;
 }): ReturnMoneyEvent[] {
   if (!row.completedAt || (row.status !== "completed" && row.status !== "voided")) return [];
   const amount = Number(row.totalAmount);
-  const costOf = (kind: string) =>
-    row.stockTraces.filter((trace) => trace.kind === kind).reduce((sum, trace) => sum + Number(trace.totalCost), 0);
-  const events: ReturnMoneyEvent[] = [{ kind: "return", date: row.completedAt, amount, cost: costOf("receive") }];
+  const sumOf = (kind: string, field: "totalCost" | "writeOffAmount") =>
+    row.stockTraces
+      .filter((trace) => trace.kind === kind)
+      .reduce((sum, trace) => sum + Number(trace[field] ?? 0), 0);
+  const events: ReturnMoneyEvent[] = [
+    { kind: "return", date: row.completedAt, amount, cost: sumOf("receive", "totalCost"), writeOff: sumOf("receive", "writeOffAmount") },
+  ];
   if (row.status === "voided" && row.voidedAt) {
-    // Void traces are stored negative; the reversal's cost is the value taken back out.
-    events.push({ kind: "void", date: row.voidedAt, amount, cost: -costOf("void") });
+    // Void traces are stored negative; the reversal carries the amounts taken back out.
+    events.push({
+      kind: "void",
+      date: row.voidedAt,
+      amount,
+      cost: -sumOf("void", "totalCost"),
+      writeOff: -sumOf("void", "writeOffAmount"),
+    });
   }
   return events;
 }

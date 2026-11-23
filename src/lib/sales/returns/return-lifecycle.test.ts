@@ -136,16 +136,19 @@ describe("return lifecycle rules", () => {
     const completedAt = new Date("2026-10-05T10:00:00Z");
     const voidedAt = new Date("2026-11-02T09:00:00Z");
     const traces = [
-      { kind: "receive", totalCost: "30.00" },
-      { kind: "void", totalCost: "-28.50" },
+      { kind: "receive", totalCost: "30.00", writeOffAmount: "20.00" },
+      { kind: "void", totalCost: "-30.00", writeOffAmount: "-18.00" },
     ];
     expect(returnMoneyEvents({ status: "approved", totalAmount: "100.00", completedAt: null, voidedAt: null, stockTraces: [] })).toEqual([]);
     expect(returnMoneyEvents({ status: "completed", totalAmount: "100.00", completedAt, voidedAt: null, stockTraces: traces.slice(0, 1) }))
-      .toEqual([{ kind: "return", date: completedAt, amount: 100, cost: 30 }]);
+      .toEqual([{ kind: "return", date: completedAt, amount: 100, cost: 30, writeOff: 20 }]);
     expect(returnMoneyEvents({ status: "voided", totalAmount: "100.00", completedAt, voidedAt, stockTraces: traces })).toEqual([
-      { kind: "return", date: completedAt, amount: 100, cost: 30 },
-      { kind: "void", date: voidedAt, amount: 100, cost: 28.5 },
+      { kind: "return", date: completedAt, amount: 100, cost: 30, writeOff: 20 },
+      { kind: "void", date: voidedAt, amount: 100, cost: 30, writeOff: 18 },
     ]);
+    // Traces written before phase 5 have no write-off.
+    expect(returnMoneyEvents({ status: "completed", totalAmount: "50.00", completedAt, voidedAt: null, stockTraces: [{ kind: "receive", totalCost: "10.00" }] }))
+      .toEqual([{ kind: "return", date: completedAt, amount: 50, cost: 10, writeOff: 0 }]);
   });
 });
 
