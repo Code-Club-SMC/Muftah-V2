@@ -13,6 +13,7 @@ import {
 import { z } from "zod";
 import { db } from "@/db";
 import { formulas } from "@/db/schemas/production-schema";
+import { ingredientsCost } from "@/lib/production/cost-estimate";
 import { requireManufacturingViewMiddleware } from "@/lib/middlewares";
 import {
   productionDateFields,
@@ -92,7 +93,8 @@ export const getFormulasFn = createServerFn()
     });
 
     return {
-      formulas: dataList,
+      // From today's chemical prices, not the total saved with the formula.
+      formulas: dataList.map((formula) => ({ ...formula, estimatedIngredientsCost: ingredientsCost(formula.ingredients).toFixed(2) })),
       totalCount,
       kpis: {
         total: totalCount,

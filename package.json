@@ -24,6 +24,7 @@
     "db:seed:master": "tsx --env-file=.env src/db/seed-master-data.ts",
     "db:seed:distributor-ledger": "tsx --env-file=.env src/db/seed-distributor-ledger.ts",
     "db:seed:mega": "tsx --env-file=.env scripts/seed.ts",
+    "db:sync:material-prices": "tsx --env-file=.env src/db/sync-material-prices.ts",
     "db:backfill:by-products": "tsx --env-file=.env src/db/backfill-by-products.ts",
     "db:studio": "drizzle-kit studio --config=drizzle.config.ts",
     "format": "prettier",

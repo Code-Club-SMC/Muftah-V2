@@ -7,7 +7,8 @@ import { logActivityQuiet } from "@/lib/activity-logger.server";
 import { z } from "zod";
 import { createId } from "@paralleldrive/cuid2";
 import { lotPrice, lotQuantity, PURCHASE_LOCKED_MESSAGE } from "@/lib/inventory/material-lots";
-import { findOrCreateLot, lockMaterialStock, moveLotStock, purchaseIsUntouched } from "@/lib/inventory/material-lots.server";
+import { findOrCreateLot, moveLotStock, purchaseIsUntouched } from "@/lib/inventory/material-lots.server";
+import { followEditedPurchase, lockMaterialEverywhere } from "@/lib/inventory/material-price.server";
 import { byProductColumns } from "@/lib/inventory/by-products";
 import { assertEarnedCoversSold } from "@/lib/inventory/by-products.server";
 
@@ -159,10 +160,10 @@ export const updatePurchaseRecordFn = createServerFn({ method: "POST" })
       const newCost = data.cost ?? existingRecord.cost;
       const newPrice = lotPrice(new Big(newCost).div(newQuantity));
       const quantityChanged = !new Big(newQuantity).eq(existingRecord.quantity);
-      const priceChanged = !existingRecord.lotId || newPrice !== lotPrice(existingRecord.unitCost);
+      const priceChanged = newPrice !== lotPrice(existingRecord.unitCost);
       let lotId = existingRecord.lotId;
+      if (quantityChanged || priceChanged) await lockMaterialEverywhere(tx, ref, [existingRecord.warehouseId]);
       if (quantityChanged || (priceChanged && existingRecord.lotId)) {
-        await lockMaterialStock(tx, [existingRecord.warehouseId], [ref]);
         const untouched = await purchaseIsUntouched(tx, existingRecord);
         if (quantityChanged && !untouched) throw new Error(PURCHASE_LOCKED_MESSAGE);
         if (untouched) {
@@ -219,6 +220,7 @@ export const updatePurchaseRecordFn = createServerFn({ method: "POST" })
         .set(updateData)
         .where(eq(purchaseRecords.id, data.id));
       await assertEarnedCoversSold(tx, ref);
+      if (priceChanged) await followEditedPurchase(tx, ref, existingRecord.id, newPrice);
 
       // 5. Conditionally create expense and debit wallet
       if (

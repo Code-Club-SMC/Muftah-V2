@@ -24,6 +24,8 @@ export const useUpdateFormula = () => {
     mutationFn: updateFormulaFn,
     onSuccess: (data) => {
       toast.success("Mixing Formula updated successfully");
+      // Pack cost estimates come from the formula.
+      for (const key of ["recipes", "recipe", "products", "item-detail"]) queryClient.invalidateQueries({ queryKey: [key] });
       queryClient.invalidateQueries({ queryKey: ["formulas"] });
       queryClient.invalidateQueries({ queryKey: ["formula", data.id] });
       queryClient.invalidateQueries({ queryKey: ["mixing-runs"] });

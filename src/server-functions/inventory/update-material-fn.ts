@@ -4,7 +4,8 @@ import Big from "big.js";
 import { db, packagingMaterials, chemicals, materialStock, materialLots, inventoryAuditLog, materialAdjustments } from "@/db";
 import { lotQuantity } from "@/lib/inventory/material-lots";
 import { packagingMaterialsUsed } from "@/db/schemas/production-schema";
-import { lockMaterialStock, moveLotStock, type Tx } from "@/lib/inventory/material-lots.server";
+import { moveLotStock, type Tx } from "@/lib/inventory/material-lots.server";
+import { lockMaterialEverywhere } from "@/lib/inventory/material-price.server";
 import { requireInventoryManageMiddleware } from "@/lib/middlewares";
 import { logActivityQuiet } from "@/lib/activity-logger.server";
 import { z } from "zod";
@@ -16,7 +17,8 @@ const updateMaterialSchema = z.object({
   data: z.object({
     name: z.string().min(1),
     unit: z.string().optional(),
-    costPerUnit: z.string().min(1),
+    // Left out when the price was not edited, so an old form cannot undo a newer purchase price.
+    costPerUnit: z.string().min(1).optional(),
     minimumStockLevel: z.union([z.string(), z.number()]),
     materialType: z.string().optional(), // Maps to 'type' in packaging_materials
     packagingKind: packagingKindSchema,
@@ -54,12 +56,12 @@ export const updateMaterialFn = createServerFn()
 
       const audit = await db.transaction(async (tx) => {
         // Stock first, so stock from before lots becomes a lot at the old price, not the edited one.
+        const ref = { materialType: type, materialId: id } as const;
+        if (stock || fields.costPerUnit !== undefined) await lockMaterialEverywhere(tx, ref);
         if (stock) {
-          const ref = { materialType: type, materialId: id } as const;
           const [row] = await tx.select().from(materialStock).where(eq(materialStock.id, stock.stockId));
           if (!row || (type === "chemical" ? row.chemicalId : row.packagingMaterialId) !== id)
             throw new Error("Stock record not found for this item");
-          await lockMaterialStock(tx, [row.warehouseId], [ref]);
           const [current] = await tx.select({ quantity: materialStock.quantity }).from(materialStock)
             .where(eq(materialStock.id, row.id));
           const delta = new Big(lotQuantity(stock.quantity, "Stock quantity")).minus(current.quantity);
@@ -128,7 +130,7 @@ export const updateMaterialFn = createServerFn()
               capacityUnit: fields.capacityUnit || null,
               measuredInKg,
               weightPerPack: weightPerPack || null,
-              ...(measuredInKg ? { pricePerKg: fields.costPerUnit } : {}),
+              ...(measuredInKg ? { pricePerKg: fields.costPerUnit ?? current.costPerUnit } : {}),
             })
             .where(eq(packagingMaterials.id, id));
         }

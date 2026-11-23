@@ -8,6 +8,7 @@ import {
   recipes,
   stockTransfers,
 } from "@/db";
+import { withLiveEstimates } from "@/lib/production/cost-estimate.server";
 import { requireInventoryViewMiddleware } from "@/lib/middlewares";
 import { packagingUnit } from "@/lib/inventory/material-units";
 
@@ -141,7 +142,7 @@ export const getItemDetailPaginatedFn = createServerFn()
         name: result.name,
         productName: result.product?.name,
         containersPerCarton: result.containersPerCarton,
-        estimatedCostPerContainer: result.estimatedCostPerContainer,
+        estimatedCostPerContainer: (await withLiveEstimates(db, [result]))[0].estimatedCostPerContainer,
         minimumStockLevel: result.minimumStockLevel,
         totalCartons,
         totalContainers,

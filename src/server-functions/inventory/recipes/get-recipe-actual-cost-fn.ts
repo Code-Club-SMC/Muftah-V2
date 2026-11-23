@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { finishedGoodsStock, recipes } from "@/db/schemas/inventory-schema";
 import { eq, and } from "drizzle-orm";
 import { z } from "zod";
+import { withLiveEstimates } from "@/lib/production/cost-estimate.server";
 import { requireSalesViewMiddleware } from "@/lib/middlewares";
 
 export const getRecipeActualCostFn = createServerFn()
@@ -46,12 +47,13 @@ export const getRecipeActualCostFn = createServerFn()
     const recipe = await db.query.recipes.findFirst({
       where: eq(recipes.id, data.recipeId),
       columns: {
-        estimatedCostPerContainer: true,
+        id: true,
         containersPerCarton: true,
       },
     });
 
-    const costPerPack = Number(recipe?.estimatedCostPerContainer || 0);
+    const [live] = await withLiveEstimates(db, recipe ? [recipe] : []);
+    const costPerPack = Number(live?.estimatedCostPerContainer ?? 0);
     const containersPerCarton = recipe?.containersPerCarton || 1;
 
     return {

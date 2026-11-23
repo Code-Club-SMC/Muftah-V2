@@ -3,6 +3,7 @@ import { z } from "zod";
 import { db } from "@/db";
 import { formulas, formulaIngredients } from "@/db/schemas/production-schema";
 import { chemicals } from "@/db/schemas/inventory-schema";
+import { ingredientsCost } from "@/lib/production/cost-estimate";
 import { requireManufacturingManageMiddleware } from "@/lib/middlewares";
 import { inArray } from "drizzle-orm";
 
@@ -38,13 +39,10 @@ export const createFormulaFn = createServerFn()
         : [];
 
       // Calculate ingredients cost
-      const estimatedIngredientsCost = data.ingredients.reduce((total, ing) => {
-        const material = chemicalsData.find((m) => m.id === ing.chemicalId);
-        if (!material) return total;
-        const costPerUnit = parseFloat(material.costPerUnit?.toString() || "0");
-        const quantity = ing.quantityPerBatch;
-        return total + costPerUnit * quantity;
-      }, 0);
+      const estimatedIngredientsCost = ingredientsCost(data.ingredients.map((ing) => ({
+        quantityPerBatch: ing.quantityPerBatch,
+        chemical: chemicalsData.find((m) => m.id === ing.chemicalId),
+      })));
 
       // Create the formula
       const [formula] = await tx

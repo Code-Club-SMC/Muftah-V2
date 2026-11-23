@@ -19,7 +19,8 @@ import { requireSuppliersManageMiddleware } from "@/lib/middlewares";
 import { logActivityQuiet } from "@/lib/activity-logger.server";
 import Big from "big.js";
 import { PURCHASE_LOCKED_MESSAGE } from "@/lib/inventory/material-lots";
-import { cleanupOrphanedMaterial, lockMaterialStock, moveLotStock, purchaseIsUntouched } from "@/lib/inventory/material-lots.server";
+import { cleanupOrphanedMaterial, moveLotStock, purchaseIsUntouched } from "@/lib/inventory/material-lots.server";
+import { lockMaterialEverywhere, revertRemovedPurchase } from "@/lib/inventory/material-price.server";
 import { planPurchaseRefund } from "@/lib/suppliers/purchase-refund";
 import { assertEarnedCoversSold } from "@/lib/inventory/by-products.server";
 import { loadPurchasePayments } from "@/lib/suppliers/purchase-refund.server";
@@ -94,10 +95,11 @@ export const deletePurchaseRecordFn = createServerFn({ method: "POST" })
           ? { materialType: "chemical" as const, materialId: purchase.chemicalId! }
           : { materialType: "packaging" as const, materialId: purchase.packagingMaterialId! };
 
-        await lockMaterialStock(tx, [purchase.warehouseId], [ref]);
+        await lockMaterialEverywhere(tx, ref, [purchase.warehouseId]);
         if (!(await purchaseIsUntouched(tx, purchase))) {
           throw new Error(PURCHASE_LOCKED_MESSAGE);
         }
+        await revertRemovedPurchase(tx, ref, purchase.id);
 
         const [attachedReport] = await tx
           .select({ id: chemicalLabReports.id })

@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { recipes } from "@/db/schemas/inventory-schema";
+import { withLiveEstimates } from "@/lib/production/cost-estimate.server";
 import { requireManufacturingViewMiddleware } from "@/lib/middlewares";
 import { z } from "zod";
 
@@ -37,5 +38,6 @@ export const getRecipeFn = createServerFn()
       throw new Error("Packaging Format not found");
     }
 
-    return result;
+    const [live] = await withLiveEstimates(db, [result]);
+    return live;
   });

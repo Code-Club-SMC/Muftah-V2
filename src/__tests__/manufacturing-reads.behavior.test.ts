@@ -65,7 +65,7 @@ function sql(query: { where: ReturnType<typeof vi.fn> }) {
 describe("paginated manufacturing read handlers", () => {
   beforeEach(() => {
     mocks.queries.length = 0;
-    mocks.formulaRead.mockReset().mockResolvedValue([{ id: "formula-11" }]);
+    mocks.formulaRead.mockReset().mockResolvedValue([{ id: "formula-11", estimatedIngredientsCost: "2199.60", ingredients: [{ quantityPerBatch: "12", chemical: { costPerUnit: "175" } }] }]);
     mocks.select.mockReset().mockImplementation((fields) => {
       const isCount = "count" in fields || "value" in fields;
       const result = isCount
@@ -160,7 +160,7 @@ describe("paginated manufacturing read handlers", () => {
       pageSize: 10,
     });
     expect(result).toMatchObject({
-      formulas: [{ id: "formula-11" }],
+      formulas: [{ id: "formula-11", estimatedIngredientsCost: "2100.00", ingredients: [{ quantityPerBatch: "12", chemical: { costPerUnit: "175" } }] }],
       totalCount: 11,
       kpis: { total: 11, active: 3, inactive: 8, products: 2 },
     });

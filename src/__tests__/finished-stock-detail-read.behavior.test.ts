@@ -3,6 +3,7 @@ const mocks = vi.hoisted(() => ({ recipe: vi.fn(), packaging: vi.fn(), transfers
 vi.mock("@/db", async () => ({ ...await import("@/db/schemas/inventory-schema"), db: {
   query: { recipes: { findFirst: mocks.recipe }, packagingMaterials: { findFirst: mocks.packaging }, stockTransfers: { findMany: mocks.transfers } }, select: mocks.select,
 } }));
+vi.mock("@/lib/production/cost-estimate.server", () => ({ withLiveEstimates: async (_reader: unknown, rows: object[]) => rows }));
 vi.mock("@/lib/middlewares", () => ({ requireInventoryViewMiddleware: {} }));
 vi.mock("@tanstack/react-start", () => ({ createServerFn: () => {
   let validator: any;

@@ -1,17 +1,13 @@
 import { mixingRuns, packagingAllocations, mixingMaterialsUsed, packagingMaterialsUsed } from "@/db/schemas/production-schema";
 import { createServerFn } from "@tanstack/react-start";
+import { materialStockValue } from "@/lib/inventory/material-price.server";
 import { requireDashboardViewMiddleware } from "@/lib/middlewares";
 import { z } from "zod";
 import { db } from "@/db";
 import { invoices } from "@/db/schemas/sales-schema";
 import {
-
-  materialStock,
   finishedGoodsStock,
-  chemicals,
-  packagingMaterials,
   recipes,
-
 } from "@/db/schemas/inventory-schema";
 import { payslips, payrolls, employees } from "@/db/schemas/hr-schema";
 import { expenses } from "@/db/schemas/finance-schema";
@@ -185,19 +181,9 @@ export const getDashboardStatsFn = createServerFn()
         ))
         .then((r) => r[0]),
 
-      db
-        .select({ value: sql<string>`coalesce(sum(${materialStock.quantity}::numeric * ${chemicals.costPerUnit}::numeric), 0)` })
-        .from(materialStock)
-        .leftJoin(chemicals, eq(materialStock.chemicalId, chemicals.id))
-        .where(sql`${materialStock.chemicalId} is not null`)
-        .then((r) => r[0]),
+      materialStockValue(db, "chemical"),
 
-      db
-        .select({ value: sql<string>`coalesce(sum(${materialStock.quantity}::numeric * ${packagingMaterials.costPerUnit}::numeric), 0)` })
-        .from(materialStock)
-        .leftJoin(packagingMaterials, eq(materialStock.packagingMaterialId, packagingMaterials.id))
-        .where(sql`${materialStock.packagingMaterialId} is not null`)
-        .then((r) => r[0]),
+      materialStockValue(db, "packaging"),
 
       db
         .select({

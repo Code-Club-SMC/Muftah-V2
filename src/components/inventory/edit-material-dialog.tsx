@@ -84,7 +84,7 @@ export const EditMaterialDialog = ({
             data: {
               name: value.name,
               unit: value.unit,
-              costPerUnit: value.costPerUnit,
+              costPerUnit: value.costPerUnit === form.options.defaultValues?.costPerUnit ? undefined : value.costPerUnit,
               minimumStockLevel: value.minimumStockLevel,
               materialType: value.materialType,
               capacity: value.capacity,

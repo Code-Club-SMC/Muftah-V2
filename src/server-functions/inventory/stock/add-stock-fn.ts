@@ -19,7 +19,8 @@ import {
 } from "@/db";
 import { expenseCategories } from "@/db/schemas/finance-schema";
 import { packagingUnit } from "@/lib/inventory/material-units";
-import { findOrCreateLot, lockMaterialStock, moveLotStock } from "@/lib/inventory/material-lots.server";
+import { findOrCreateLot, moveLotStock } from "@/lib/inventory/material-lots.server";
+import { lockMaterialEverywhere, setMaterialPrice } from "@/lib/inventory/material-price.server";
 import { requireInventoryManageMiddleware } from "@/lib/middlewares";
 import { addStockSchema } from "@/lib/validators/validators";
 import { z } from "zod";
@@ -102,7 +103,7 @@ export const addStockFn = createServerFn()
 			const targetWarehouseId = warehouse.id;
 
 			const ref = { materialType: data.materialType, materialId: data.materialId } as const;
-			await lockMaterialStock(tx, [targetWarehouseId], [ref]);
+			await lockMaterialEverywhere(tx, ref, [targetWarehouseId]);
 			const unitCost = new Big(data.cost).div(data.quantity);
 			const lot = await findOrCreateLot(tx, ref, unitCost.toString());
 
@@ -138,6 +139,7 @@ export const addStockFn = createServerFn()
 				.returning();
 
 			await moveLotStock(tx, { ref, lotId: lot.id, warehouseId: targetWarehouseId, delta: data.quantity, sourceType: "purchase", sourceId: purchase.id });
+			await setMaterialPrice(tx, ref, lot.unitPrice);
 
 			// Conditionally create expense and debit wallet (same pattern as add-chemical/packaging)
 			const walletId = data.walletId || data.paymentMethod;

@@ -148,16 +148,16 @@ export const RecipeDetailView = ({ recipe }: { recipe: Recipe }) => {
           Reference cost estimate
         </summary>
         <p className="mt-4 text-sm">
-          PKR{" "}
-          {Number(recipe.estimatedCostPerContainer ?? 0).toLocaleString(
-            "en-PK",
-            { minimumFractionDigits: 2, maximumFractionDigits: 4 },
-          )}{" "}
-          per pack
+          {recipe.estimatedCostPerContainer === null
+            ? "Not available: one pack is bigger than the formula batch."
+            : `PKR ${Number(recipe.estimatedCostPerContainer).toLocaleString(
+                "en-PK",
+                { minimumFractionDigits: 2, maximumFractionDigits: 4 },
+              )} per pack`}
         </p>
         <p className="mt-2 text-sm text-muted-foreground">
-          Based on the saved formula and packaging estimate. Actual costs come
-          from production and the packing recorded on the batch.
+          Based on the current formula and the latest material prices. Actual
+          costs come from production and the packing recorded on the batch.
         </p>
       </details>
     </div>

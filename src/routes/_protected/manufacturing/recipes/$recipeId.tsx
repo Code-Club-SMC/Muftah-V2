@@ -1,16 +1,20 @@
+import { queryOptions, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { getRecipeFn } from "@/server-functions/inventory/recipes/get-single-recipe-fn";
 import { RecipeDetailView } from "@/components/recipes/recipe-detail-view";
 import { Loader2 } from "lucide-react";
 
+const recipeQuery = (recipeId: string) =>
+  queryOptions({
+    queryKey: ["recipe", recipeId],
+    queryFn: () => getRecipeFn({ data: { id: recipeId } }),
+  });
+
 export const Route = createFileRoute(
   "/_protected/manufacturing/recipes/$recipeId",
 )({
   loader: async ({ context: { queryClient }, params: { recipeId } }) => {
-    return queryClient.ensureQueryData({
-      queryKey: ["recipe", recipeId],
-      queryFn: () => getRecipeFn({ data: { id: recipeId } }),
-    });
+    await queryClient.ensureQueryData(recipeQuery(recipeId));
   },
   component: RecipeDetailComponent,
   errorComponent: () => (
@@ -26,7 +30,8 @@ export const Route = createFileRoute(
 });
 
 function RecipeDetailComponent() {
-  const recipe = Route.useLoaderData();
+  const { recipeId } = Route.useParams();
+  const { data: recipe } = useSuspenseQuery(recipeQuery(recipeId));
 
   return (
     <main className="min-h-screen p-4 sm:p-6 lg:p-8">

@@ -208,7 +208,7 @@ function ItemDetailPage() {
       (itemType === "packaging" ? "pcs" : "kg");
 
   const costPerUnit = isFinished
-    ? item?.estimatedCostPerContainer
+    ? (item?.weightedAverageCostPerPack ?? item?.estimatedCostPerContainer)
     : item?.costPerUnit;
 
   const minLevel = isFinished

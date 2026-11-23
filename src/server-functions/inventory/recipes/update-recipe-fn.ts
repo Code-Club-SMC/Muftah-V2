@@ -5,13 +5,15 @@ import {
   finishedGoodsStock,
   recipePackaging,
   packagingMaterials,
+  chemicals,
 } from "@/db/schemas/inventory-schema";
 import { requireManufacturingManageMiddleware } from "@/lib/middlewares";
 import { updateRecipeSchema } from "@/lib/validators/validators";
 import { and, eq, gt, inArray, or } from "drizzle-orm";
-import { getPlannedPackagingQuantity, normalizePackagingUsageBasis } from "@/lib/recipe-packaging";
+import { normalizePackagingUsageBasis } from "@/lib/recipe-packaging";
+import { estimateFormat } from "@/lib/production/cost-estimate";
 import { getPackagingTarget } from "@/lib/production/packaging-quantity";
-import { formulas, packagingAllocations } from "@/db/schemas/production-schema";
+import { formulaIngredients, formulas, packagingAllocations } from "@/db/schemas/production-schema";
 
 export const updateRecipeFn = createServerFn({ method: "POST" })
   .middleware([requireManufacturingManageMiddleware])
@@ -58,67 +60,35 @@ export const updateRecipeFn = createServerFn({ method: "POST" })
 
       if (usesCartons && !cartonPackaging) throw new Error("Carton packaging material not found");
 
-      // Calculate costs
-      
-
-      // Calculate ingredients cost
-      const ingredientsCost = Number(linkedFormula?.estimatedIngredientsCost ?? 0);
-
-      // Calculate packaging cost (containers)
-      const containerCost = parseFloat(
-        containerPackaging.costPerUnit?.toString() || "0",
-      );
-      const containersCost = targetUnits * containerCost;
-
-      // Calculate cartons cost
-      let cartonsCost = 0;
-      if (cartonPackaging && data.containersPerCarton > 0 && targetUnits > 0) {
-        const cartonsNeeded = Math.ceil(targetUnits / data.containersPerCarton);
-        const cartonCost = parseFloat(
-          cartonPackaging.costPerUnit?.toString() || "0",
-        );
-        cartonsCost = cartonsNeeded * cartonCost;
-      }
-
-      // Calculate additional packaging cost (caps, stickers, etc.)
-      let additionalPackagingCost = 0;
-      if (data.additionalPackaging && data.additionalPackaging.length > 0) {
-        const additionalPackagingIds = data.additionalPackaging.map(
-          (pkg) => pkg.packagingMaterialId,
-        );
-        const additionalPackagingData = await tx
-          .select()
-          .from(packagingMaterials)
-          .where(inArray(packagingMaterials.id, additionalPackagingIds));
-
-        additionalPackagingCost = data.additionalPackaging.reduce(
-          (total, pkg) => {
-            const material = additionalPackagingData.find(
-              (m) => m.id === pkg.packagingMaterialId,
-            );
-            if (!material) throw new Error("Additional packaging material not found");
-            // Shoppers in KG are counted by weight, so they can only be the pack itself.
-            if (material.measuredInKg) throw new Error(`${material.name} is measured in KG, so it can only be the pack, not an extra item`);
-            const costPerUnit = parseFloat(
-              material.costPerUnit?.toString() || "0",
-            );
-            const qtyNeeded = getPlannedPackagingQuantity({
-              quantityPerContainer: pkg.quantityPerContainer,
-              usageBasis: pkg.usageBasis,
-              targetUnits,
-              containersPerCarton: data.containersPerCarton,
-            });
-            return total + costPerUnit * qtyNeeded;
-          },
-          0,
-        );
-      }
-
-      const totalPackagingCost =
-        containersCost + cartonsCost + additionalPackagingCost;
-      const totalBatchCost = ingredientsCost + totalPackagingCost;
-      const costPerContainer =
-        targetUnits > 0 ? totalBatchCost / targetUnits : 0;
+      // Caps, stickers and other extras
+      const extras = data.additionalPackaging ?? [];
+      const extraMaterials = extras.length
+        ? await tx.select().from(packagingMaterials).where(inArray(packagingMaterials.id, extras.map((pkg) => pkg.packagingMaterialId)))
+        : [];
+      const packaging = extras.map((pkg) => {
+        const material = extraMaterials.find((m) => m.id === pkg.packagingMaterialId);
+        if (!material) throw new Error("Additional packaging material not found");
+        // Shoppers in KG are counted by weight, so they can only be the pack itself.
+        if (material.measuredInKg) throw new Error(`${material.name} is measured in KG, so it can only be the pack, not an extra item`);
+        return { quantityPerContainer: pkg.quantityPerContainer, usageBasis: normalizePackagingUsageBasis(pkg.usageBasis), packagingMaterial: material };
+      });
+      const ingredients = await tx
+        .select({ quantityPerBatch: formulaIngredients.quantityPerBatch, chemical: { costPerUnit: chemicals.costPerUnit } })
+        .from(formulaIngredients)
+        .innerJoin(chemicals, eq(chemicals.id, formulaIngredients.chemicalId))
+        .where(eq(formulaIngredients.formulaId, linkedFormula.id));
+      const estimate = estimateFormat({
+        batchSize: linkedFormula.batchSize,
+        batchUnit: linkedFormula.batchUnit,
+        targetUnitsPerBatch: targetUnits,
+        fillAmount: data.fillAmount,
+        fillUnit: data.fillUnit,
+        containersPerCarton: data.containersPerCarton,
+        ingredients,
+        containerPackaging,
+        cartonPackaging,
+        packaging,
+      });
 
       // 4. Update the recipe
       const [recipe] = await tx
@@ -139,10 +109,7 @@ export const updateRecipeFn = createServerFn({ method: "POST" })
             data.cartonPackagingId && data.cartonPackagingId !== "_none"
               ? data.cartonPackagingId
               : null,
-          estimatedIngredientsCost: ingredientsCost.toFixed(2),
-          estimatedPackagingCost: totalPackagingCost.toFixed(2),
-          estimatedCostPerBatch: totalBatchCost.toFixed(2),
-          estimatedCostPerContainer: costPerContainer.toFixed(4),
+          ...estimate,
           minimumStockLevel: data.minimumStockLevel || 0,
         })
         .where(eq(recipes.id, data.id))
