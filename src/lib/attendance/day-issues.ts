@@ -13,6 +13,7 @@ export type DayIssueKind =
   | "missing_checkin"
   | "late"
   | "early_departure"
+  | "missed_shift"
   | "undertime"
   | "bank_cover"
   | "overtime_pending"
@@ -45,6 +46,7 @@ export const dayIssueLabels: Record<DayIssueKind, string> = {
   missing_checkin: "Missing check-in",
   late: "Late",
   early_departure: "Early departure",
+  missed_shift: "Missed shift",
   undertime: "Undertime",
   bank_cover: "Covered from bank",
   overtime_pending: "Overtime pending",
@@ -210,8 +212,14 @@ export function getDayIssues(input: DayIssueInput): DayIssue[] {
             : item.status === "rejected"
               ? "deduction"
               : "info";
+        const issueKind: DayIssueKind =
+          item.kind === "late"
+            ? "late"
+            : item.kind === "early"
+              ? "early_departure"
+              : "missed_shift";
         add(
-          item.kind === "late" ? "late" : "early_departure",
+          issueKind,
           severity,
           `(${formatExceptionMinutes(item.minutes)} · ${TIME_EXCEPTION_STATUS_LABELS[item.status]})`,
           item.status === "grace" ? true : undefined,

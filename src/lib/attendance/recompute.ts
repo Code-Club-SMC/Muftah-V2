@@ -26,6 +26,8 @@ export type ShiftViolation = {
   actualIn?: string;
   expectedOut?: string;
   actualOut?: string;
+  missedShift?: boolean;
+  missedMinutes?: number | null;
 };
 
 export type RecomputeResult = {
@@ -158,6 +160,56 @@ function normalizeForOvernight(
   return punchSeconds;
 }
 
+function matchPunchesToShifts(
+  inPunches: NormalizedPunch[],
+  outPunches: NormalizedPunch[],
+  shifts: Shift[],
+): Array<{ actualIn: NormalizedPunch | null; actualOut: NormalizedPunch | null }> {
+  if (inPunches.length === shifts.length || shifts.length <= 1) {
+    return shifts.map((_, i) => ({
+      actualIn: inPunches[i] ?? null,
+      actualOut: outPunches[i] ?? null,
+    }));
+  }
+
+  const result: Array<{ actualIn: NormalizedPunch | null; actualOut: NormalizedPunch | null }> = shifts.map(() => ({
+    actualIn: null,
+    actualOut: null,
+  }));
+
+  const usedShiftIndices = new Set<number>();
+  const pairs = inPunches.map((inP, idx) => ({
+    inP,
+    outP: outPunches[idx] ?? null,
+  }));
+
+  for (const pair of pairs) {
+    let closestShiftIdx = -1;
+    let minDistance = Infinity;
+
+    for (let sIdx = 0; sIdx < shifts.length; sIdx++) {
+      if (usedShiftIndices.has(sIdx)) continue;
+      const expectedInSec = parseTimeToSeconds(shifts[sIdx].start);
+      if (expectedInSec === null) continue;
+      const dist = Math.abs(pair.inP.secondsOfDay - expectedInSec);
+      if (dist < minDistance) {
+        minDistance = dist;
+        closestShiftIdx = sIdx;
+      }
+    }
+
+    if (closestShiftIdx !== -1) {
+      usedShiftIndices.add(closestShiftIdx);
+      result[closestShiftIdx] = {
+        actualIn: pair.inP,
+        actualOut: pair.outP,
+      };
+    }
+  }
+
+  return result;
+}
+
 function computeShiftViolations(
   inPunches: NormalizedPunch[],
   outPunches: NormalizedPunch[],
@@ -167,6 +219,7 @@ function computeShiftViolations(
   if (shifts.length === 0) return [];
 
   const violations: ShiftViolation[] = [];
+  const matched = matchPunchesToShifts(inPunches, outPunches, shifts);
 
   for (let i = 0; i < shifts.length; i++) {
     const shift = shifts[i];
@@ -174,13 +227,18 @@ function computeShiftViolations(
     const expectedOutSec = parseTimeToSeconds(shift.end);
     if (expectedInSec === null || expectedOutSec === null) continue;
 
-    const actualIn = inPunches[i] ?? null;
-    const actualOut = outPunches[i] ?? null;
+    const { actualIn, actualOut } = matched[i];
 
     let late = false;
     let earlyDeparture = false;
     let lateMinutes: number | null = null;
     let earlyMinutes: number | null = null;
+    let missedShift = false;
+    let missedMinutes: number | null = null;
+
+    const expectedOutNorm = isOvernightShift(shift)
+      ? expectedOutSec + 24 * 3600
+      : expectedOutSec;
 
     if (actualIn) {
       const actualInSec = normalizeForOvernight(actualIn.secondsOfDay, shift, false);
@@ -190,9 +248,6 @@ function computeShiftViolations(
 
     if (actualOut) {
       const actualOutSec = normalizeForOvernight(actualOut.secondsOfDay, shift, true);
-      const expectedOutNorm = isOvernightShift(shift)
-        ? expectedOutSec + 24 * 3600
-        : expectedOutSec;
       earlyDeparture = actualOutSec < expectedOutNorm - graceMinutes * 60;
       earlyMinutes = Math.max(0, Math.round((expectedOutNorm - actualOutSec) / 60));
     } else if (actualIn) {
@@ -200,6 +255,8 @@ function computeShiftViolations(
     } else {
       late = true;
       earlyDeparture = true;
+      missedShift = true;
+      missedMinutes = Math.max(0, Math.round((expectedOutNorm - expectedInSec) / 60));
     }
 
     violations.push({
@@ -212,6 +269,7 @@ function computeShiftViolations(
       actualIn: actualIn?.time,
       expectedOut: shift.end,
       actualOut: actualOut?.time,
+      ...(missedShift && { missedShift, missedMinutes }),
     });
   }
 

@@ -255,4 +255,21 @@ describe("getDayIssues", () => {
       { kind: "undertime", severity: "deduction", label: "Undertime (20m)" },
     ]);
   });
+
+  it("labels missed shift items and prevents duplicate undertime", () => {
+    const result = issues({
+      record: {
+        ...present,
+        dutyHours: "5.50",
+        timeExceptions: [{ kind: "missed_shift", minutes: 150, status: "pending" }],
+      },
+      punches: inOut,
+    });
+    expect(result).toContainEqual({
+      kind: "missed_shift",
+      severity: "action",
+      label: "Missed shift (2h 30m · Pending)",
+    });
+    expect(result.some((i) => i.kind === "undertime")).toBe(false);
+  });
 });

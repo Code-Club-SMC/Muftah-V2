@@ -290,6 +290,24 @@ describe("computeAttendanceFromPunches multi-shift", () => {
     expect(result.shiftViolations[1].earlyDeparture).toBe(true);
     expect(result.shiftViolations[1].lateMinutes).toBeNull();
     expect(result.shiftViolations[1].earlyMinutes).toBeNull();
+    expect(result.shiftViolations[1].missedShift).toBe(true);
+    expect(result.shiftViolations[1].missedMinutes).toBe(240);
+  });
+
+  it("detects missed shift 1 when employee only works shift 2", () => {
+    const result = computeAttendanceFromPunches(
+      [
+        punch("in", "2026-06-01", 13, 0),
+        punch("out", "2026-06-01", 17, 0),
+      ],
+      multiShiftOpts,
+    );
+
+    expect(result.shiftViolations[0].missedShift).toBe(true);
+    expect(result.shiftViolations[0].missedMinutes).toBe(240);
+    expect(result.shiftViolations[1].missedShift).toBeUndefined();
+    expect(result.shiftViolations[1].late).toBe(false);
+    expect(result.shiftViolations[1].earlyDeparture).toBe(false);
   });
 
   it("does not police extra punches beyond configured shifts", () => {

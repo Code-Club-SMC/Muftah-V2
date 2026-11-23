@@ -214,8 +214,18 @@ export function LateEarlyApprovalsContainer() {
                   </div>
                 </TableCell>
                 <TableCell>{format(parseISO(item.date), "dd MMM yyyy")}</TableCell>
-                <TableCell>{item.kind === "late" ? "Late arrival" : "Early departure"}</TableCell>
-                <TableCell>{shortTime(item.expectedTime)}</TableCell>
+                <TableCell>
+                  {item.kind === "late"
+                    ? "Late arrival"
+                    : item.kind === "early"
+                      ? "Early departure"
+                      : "Missed shift"}
+                </TableCell>
+                <TableCell>
+                  {item.kind === "missed_shift"
+                    ? item.expectedTime || "—"
+                    : shortTime(item.expectedTime)}
+                </TableCell>
                 <TableCell>{shortTime(item.actualTime)}</TableCell>
                 <TableCell>{formatExceptionMinutes(item.minutes)}</TableCell>
                 <TableCell>

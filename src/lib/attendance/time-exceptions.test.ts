@@ -29,13 +29,23 @@ describe("buildDesiredTimeExceptions", () => {
     ]);
   });
 
-  it("ignores zero minutes and missing punches", () => {
+  it("ignores zero minutes and missing punches without missedShift flag", () => {
     expect(
       buildDesiredTimeExceptions([
         violation({ lateMinutes: 0, earlyMinutes: null, earlyDeparture: true }),
         violation({ shiftIndex: 1, lateMinutes: null, earlyMinutes: null, late: true, earlyDeparture: true }),
       ]),
     ).toEqual([]);
+  });
+
+  it("creates a missed_shift item when a shift is missed", () => {
+    expect(
+      buildDesiredTimeExceptions([
+        violation({ shiftIndex: 1, missedShift: true, missedMinutes: 150, late: true, earlyDeparture: true }),
+      ]),
+    ).toEqual([
+      { shiftIndex: 1, kind: "missed_shift", minutes: 150, withinGrace: false },
+    ]);
   });
 });
 
@@ -128,6 +138,27 @@ describe("splitShortHoursByTimeExceptions", () => {
       splitShortHoursByTimeExceptions(0.25, [{ kind: "late", minutes: 60, status: "rejected" }]),
     ).toEqual({ lateHours: 0.25, earlyHours: 0, undertimeHours: 0 });
   });
+
+  it("forgives a missed shift when approved as company work or excused", () => {
+    expect(
+      splitShortHoursByTimeExceptions(2.5, [
+        { kind: "missed_shift", minutes: 150, status: "approved_official" },
+      ]),
+    ).toEqual({ lateHours: 0, earlyHours: 0, missedShiftHours: 0, undertimeHours: 0 });
+    expect(
+      splitShortHoursByTimeExceptions(2.5, [
+        { kind: "missed_shift", minutes: 150, status: "approved_excused" },
+      ]),
+    ).toEqual({ lateHours: 0, earlyHours: 0, missedShiftHours: 0, undertimeHours: 0 });
+  });
+
+  it("cuts a missed shift when rejected", () => {
+    expect(
+      splitShortHoursByTimeExceptions(2.5, [
+        { kind: "missed_shift", minutes: 150, status: "rejected" },
+      ]),
+    ).toEqual({ lateHours: 0, earlyHours: 0, missedShiftHours: 2.5, undertimeHours: 0 });
+  });
 });
 
 describe("describeTimeException", () => {
@@ -147,6 +178,12 @@ describe("describeTimeException", () => {
     expect(describeTimeException({ kind: "late", minutes: 30, status: "rejected", decidedByName: "Usman" })).toBe(
       "Late arrival 30 min — Rejected by Usman",
     );
+    expect(
+      describeTimeException({ kind: "missed_shift", minutes: 150, status: "approved_official", decidedByName: "Usman" }),
+    ).toBe("Missed shift 2h 30m — Approved (company work) by Usman — no deduction");
+    expect(
+      describeTimeException({ kind: "missed_shift", minutes: 150, status: "rejected", decidedByName: "Usman" }),
+    ).toBe("Missed shift 2h 30m — Rejected by Usman");
   });
 });
 

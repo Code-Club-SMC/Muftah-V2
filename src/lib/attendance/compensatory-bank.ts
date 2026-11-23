@@ -20,7 +20,11 @@ export function maxCoverHours(input: {
   let shortfall = short;
   if (items.length && short > 0) {
     const split = splitShortHoursByTimeExceptions(short, items);
-    shortfall = split.lateHours + split.earlyHours + split.undertimeHours;
+    shortfall =
+      split.lateHours +
+      split.earlyHours +
+      (split.missedShiftHours ?? 0) +
+      split.undertimeHours;
   }
   // The day's own cover is already reserved, so it counts as available again.
   const available = Math.max(0, input.balance + input.currentCover);

@@ -1,6 +1,6 @@
 import type { ShiftViolation } from "./recompute";
 
-export const TIME_EXCEPTION_KINDS = ["late", "early"] as const;
+export const TIME_EXCEPTION_KINDS = ["late", "early", "missed_shift"] as const;
 export type TimeExceptionKind = (typeof TIME_EXCEPTION_KINDS)[number];
 
 export const TIME_EXCEPTION_STATUSES = [
@@ -57,11 +57,15 @@ export type DesiredTimeException = {
 export function buildDesiredTimeExceptions(violations: ShiftViolation[]): DesiredTimeException[] {
   const items: DesiredTimeException[] = [];
   for (const v of violations) {
-    if (v.lateMinutes != null && v.lateMinutes > 0) {
-      items.push({ shiftIndex: v.shiftIndex, kind: "late", minutes: v.lateMinutes, withinGrace: !v.late });
-    }
-    if (v.earlyMinutes != null && v.earlyMinutes > 0) {
-      items.push({ shiftIndex: v.shiftIndex, kind: "early", minutes: v.earlyMinutes, withinGrace: !v.earlyDeparture });
+    if (v.missedShift && v.missedMinutes != null && v.missedMinutes > 0) {
+      items.push({ shiftIndex: v.shiftIndex, kind: "missed_shift", minutes: v.missedMinutes, withinGrace: false });
+    } else {
+      if (v.lateMinutes != null && v.lateMinutes > 0) {
+        items.push({ shiftIndex: v.shiftIndex, kind: "late", minutes: v.lateMinutes, withinGrace: !v.late });
+      }
+      if (v.earlyMinutes != null && v.earlyMinutes > 0) {
+        items.push({ shiftIndex: v.shiftIndex, kind: "early", minutes: v.earlyMinutes, withinGrace: !v.earlyDeparture });
+      }
     }
   }
   return items;
@@ -128,14 +132,22 @@ export function splitShortHoursByTimeExceptions(shortHours: number, items: Payro
   const forgiven = sumHours((item) => item.status !== "rejected");
   const rejectedLate = sumHours((item) => item.kind === "late" && item.status === "rejected");
   const rejectedEarly = sumHours((item) => item.kind === "early" && item.status === "rejected");
+  const rejectedMissed = sumHours((item) => item.kind === "missed_shift" && item.status === "rejected");
 
   let remaining = Math.max(0, round2(shortHours - forgiven));
   const lateHours = round2(Math.min(remaining, rejectedLate));
   remaining = round2(remaining - lateHours);
   const earlyHours = round2(Math.min(remaining, rejectedEarly));
   remaining = round2(remaining - earlyHours);
+  const missedShiftHours = round2(Math.min(remaining, rejectedMissed));
+  remaining = round2(remaining - missedShiftHours);
 
-  return { lateHours, earlyHours, undertimeHours: remaining < DUST_HOURS ? 0 : remaining };
+  return {
+    lateHours,
+    earlyHours,
+    ...(items.some((i) => i.kind === "missed_shift") ? { missedShiftHours } : {}),
+    undertimeHours: remaining < DUST_HOURS ? 0 : remaining,
+  };
 }
 
 export function formatExceptionMinutes(minutes: number): string {
@@ -146,7 +158,13 @@ export function formatExceptionMinutes(minutes: number): string {
 }
 
 export function describeTimeException(item: PayrollTimeException): string {
-  const label = `${item.kind === "late" ? "Late arrival" : "Early departure"} ${formatExceptionMinutes(item.minutes)}`;
+  const prefix =
+    item.kind === "late"
+      ? "Late arrival"
+      : item.kind === "early"
+        ? "Early departure"
+        : "Missed shift";
+  const label = `${prefix} ${formatExceptionMinutes(item.minutes)}`;
   const by = item.decidedByName ? ` by ${item.decidedByName}` : "";
   switch (item.status) {
     case "grace":

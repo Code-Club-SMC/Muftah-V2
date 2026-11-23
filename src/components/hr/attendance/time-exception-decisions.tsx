@@ -42,7 +42,7 @@ function TimeExceptionDecisionList({ attendanceId }: { attendanceId: string }) {
   return (
     <div className="space-y-3">
       {items.map((item) => {
-        const label = `${item.kind === "late" ? "Late arrival" : "Early departure"} ${formatExceptionMinutes(item.minutes)}`;
+        const label = `${item.kind === "late" ? "Late arrival" : item.kind === "early" ? "Early departure" : "Missed shift"} ${formatExceptionMinutes(item.minutes)}`;
         if (item.status === "grace") {
           return (
             <div key={item.id} className="text-[13px] text-muted-foreground">

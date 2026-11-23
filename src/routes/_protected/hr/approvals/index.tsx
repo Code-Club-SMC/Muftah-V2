@@ -99,7 +99,7 @@ function ApprovalsPage() {
                   className="gap-2 px-4 h-8 text-[13px] font-medium text-muted-foreground data-[state=active]:text-foreground data-[state=active]:bg-background data-[state=active]: rounded-md transition-all"
                 >
                   <Timer className="size-3.5 opacity-70" />
-                  Late / Early
+                  Late / Early / Missed
                 </TabsTrigger>
               )}
 

@@ -536,13 +536,22 @@ export function calculateAbsentDeductions(
     ) {
       const shortHours = Number((standardDutyHours - dutyHours).toFixed(2));
       const split = splitShortHoursByTimeExceptions(shortHours, record.timeExceptions);
-      totalUndertimeHours += split.lateHours + split.earlyHours + split.undertimeHours;
+      totalUndertimeHours +=
+        split.lateHours +
+        split.earlyHours +
+        (split.missedShiftHours ?? 0) +
+        split.undertimeHours;
       const isW = checkWaived("undertime");
 
       for (const item of record.timeExceptions) {
         explanationLog.push({
           date: record.date,
-          type: item.kind === "late" ? "lateArrival" : "earlyLeaving",
+          type:
+            item.kind === "late"
+              ? "lateArrival"
+              : item.kind === "early"
+                ? "earlyLeaving"
+                : "undertime",
           description: describeTimeException(item),
           value: +(item.minutes / 60).toFixed(2),
           unit: "hrs",

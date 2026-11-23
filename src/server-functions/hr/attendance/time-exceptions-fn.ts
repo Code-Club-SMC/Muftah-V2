@@ -92,8 +92,20 @@ export const getTimeExceptionsFn = createServerFn()
         return {
           ...row,
           employeeName: `${firstName} ${lastName ?? ""}`.trim(),
-          expectedTime: (row.kind === "late" ? shift?.expectedIn : shift?.expectedOut) ?? null,
-          actualTime: (row.kind === "late" ? shift?.actualIn : shift?.actualOut) ?? null,
+          expectedTime:
+            row.kind === "late"
+              ? shift?.expectedIn ?? null
+              : row.kind === "early"
+                ? shift?.expectedOut ?? null
+                : shift?.expectedIn && shift?.expectedOut
+                  ? `${shift.expectedIn}–${shift.expectedOut}`
+                  : null,
+          actualTime:
+            row.kind === "late"
+              ? shift?.actualIn ?? null
+              : row.kind === "early"
+                ? shift?.actualOut ?? null
+                : null,
         };
       },
     );
