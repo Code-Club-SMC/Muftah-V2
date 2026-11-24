@@ -159,8 +159,6 @@ const InvoicePrintContent = ({
 
 /* ─── Data transformers ─── */
 
-const fmtCartonQty = (n: number): string => `${n} - 0`;
-
 const calculateInvoiceProfit = (items: any[]): number => {
   return roundMoney((items ?? []).reduce((sum: number, item: any) => {
     const amount = Number(item.amount) || 0;
@@ -177,28 +175,22 @@ const calculateInvoiceProfit = (items: any[]): number => {
   }, 0));
 };
 
-const buildDistributorData = (inv: any): DistributorInvoiceData => {
+export const buildDistributorData = (inv: any): DistributorInvoiceData => {
   const items = (inv.items ?? []).map((item: any, i: number) => {
     const billedCartons = Number(item.numberOfCartons) || 0;
+    const looseUnits = billedCartons > 0 ? 0 : Number(item.quantity) || 0;
     const discCartons = (Number(item.discountCartons) || 0) + (Number(item.freeCartons) || 0);
-    const totalPhysicalCartons = billedCartons + discCartons;
-    const packsPerCarton = Number(item.actualPackSize || item.packsPerCarton) || 0;
+    const packsPerCarton = Math.max(1, Number(item.actualPackSize || item.packsPerCarton) || 0);
+    const cartonRate = Number(item.perCartonPrice) || 0;
 
-    // Use legacy format "N - 0" for exact layout match
-    const cartonQtyLabel = `${billedCartons}-0`;
+    // Labels are "cartons-loose packs".
+    const cartonQtyLabel = `${billedCartons}-${looseUnits}`;
     const schemeLabel = `${discCartons}-0`;
 
-    const grossAmount = billedCartons * (Number(item.perCartonPrice) || 0);
-    const marginPercent =
-      Number(item.marginPercent) ||
-      Number(inv.customer?.defaultMarginPercent) ||
-      (Number(item.margin) < 50 ? Number(item.margin) : 0);
-    const marginAmount =
-      Number(item.marginDeduction) ||
-      (marginPercent > 0 ? (grossAmount * marginPercent) / 100 : 0);
-      
-    // The "Disc." column simply shows the margin amount. The scheme is free physical cartons, not a monetary deduction.
-    const discountAmount = marginAmount;
+    const grossAmount = roundMoney(billedCartons * cartonRate + looseUnits * (cartonRate / packsPerCarton));
+    // What was charged is saved on the line. Free cartons are goods, so the rest is the margin.
+    const netAmount = Number(item.amount) || 0;
+    const discountAmount = roundMoney(Math.max(0, grossAmount - netAmount));
 
     return {
       serialNo: i + 1,
@@ -206,12 +198,12 @@ const buildDistributorData = (inv: any): DistributorInvoiceData => {
       itemDescription: item.pack,
       cartonQty: cartonQtyLabel,
       schemeCarton: schemeLabel,
-      cartonRate: Number(item.perCartonPrice) || 0,
-      margin: marginPercent,
-      marginAmount,
+      cartonRate,
+      margin: Number(item.marginPercent) || 0,
+      marginAmount: discountAmount,
       grossAmount,
       discount: discountAmount,
-      netAmount: Math.max(0, grossAmount - discountAmount),
+      netAmount,
     };
   });
 
