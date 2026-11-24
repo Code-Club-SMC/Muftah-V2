@@ -20,11 +20,16 @@ const integrationEnabled = process.env.OFFLINE_SALES_RUN_DB_TESTS === "true";
 describe.runIf(integrationEnabled)(
   "offline sales PostgreSQL integration",
   () => {
-    it("stages and posts a signed shortage invoice with mixed payments", async () => {
+    it.each([
+      { title: "cartons", packs: 12, margin: 0, total: "2200.00", due: "2100.00" },
+      // 24 packs at 1,100 less 8%
+      { title: "loose packs with a distributor margin", packs: 0, margin: 8, total: "24288.00", due: "24188.00" },
+    ])("stages and posts a signed shortage invoice with mixed payments: $title", async ({ packs, margin, total, due }) => {
       const {
         customers,
         db,
         finishedGoodsStock,
+        invoiceItems,
         invoices,
         offlineSalesImportBatches,
         offlineSalesInvoiceSlots,
@@ -115,7 +120,7 @@ describe.runIf(integrationEnabled)(
         containerPackagingId: packagingId,
         fillAmount: "1000.000",
         fillUnit: "ml",
-        containersPerCarton: 12,
+        containersPerCarton: packs,
         estimatedCostPerContainer: "50.0000",
       });
       const [customer] = await db
@@ -153,6 +158,7 @@ describe.runIf(integrationEnabled)(
             outstandingAmount: "0.00",
             creditLimit: "100000.00",
             creditHold: false,
+            ...(margin ? { marginPercent: margin.toFixed(2) } : {}),
             address: null,
             city: null,
             mobile: null,
@@ -166,7 +172,8 @@ describe.runIf(integrationEnabled)(
             productId,
             code: recipeId,
             name: "Test Cleaner — Test Cleaner 1L",
-            packsPerCarton: 12,
+            packsPerCarton: packs || 1,
+            ...(packs ? {} : { looseOnly: true }),
             distributorCartonPrice: "1200.00",
             generalCartonPrice: "1200.00",
             distributorPrices: [{ customerId, cartonPrice: "1100.00" }],
@@ -272,8 +279,8 @@ describe.runIf(integrationEnabled)(
             items: [
               {
                 productCode: recipeId,
-                cartonQuantity: 2,
-                looseUnitQuantity: 0,
+                cartonQuantity: packs ? 2 : 0,
+                looseUnitQuantity: packs ? 0 : 24,
                 physicalStockConfirmed: true,
               },
             ],
@@ -306,10 +313,10 @@ describe.runIf(integrationEnabled)(
       expect(parsed.invoices).toHaveLength(1);
       expect(parsed.invoices[0]).toMatchObject({
         invoiceNumber,
-        invoiceAmount: 2200,
+        invoiceAmount: Number(total),
         paidAmount: 100,
         pendingAmount: 200,
-        outstandingAmount: 2100,
+        outstandingAmount: Number(due),
       });
       const staged = await stageOfflineSalesUpload({
         parsed,
@@ -353,11 +360,18 @@ describe.runIf(integrationEnabled)(
       if (!postedInvoice) throw new Error("Integration invoice was not posted");
       expect(postedInvoice).toMatchObject({
         source: "offline_import",
-        totalPrice: "2200.00",
+        totalPrice: total,
         paidAmount: "100.00",
-        outstandingAmount: "2100.00",
+        outstandingAmount: due,
         offlineSalesSlotId: slots[0].id,
       });
+      const [line] = await db
+        .select()
+        .from(invoiceItems)
+        .where(eq(invoiceItems.invoiceId, postedInvoice.id));
+      // The full price and the margin are both kept, so a later edit does not take the margin off twice.
+      expect(line).toMatchObject({ perCartonPrice: "1100.00", amount: total, isPriceOverride: false });
+      expect(Number(line.marginPercent ?? 0)).toBe(margin);
       const paymentRows = await db
         .select()
         .from(payments)

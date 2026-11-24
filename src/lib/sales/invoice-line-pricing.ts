@@ -69,6 +69,10 @@ export const normalizeInvoicePricingMode = (
   pricingMode: InvoicePricingMode | null | undefined,
 ): CanonicalInvoicePricingMode => (pricingMode === "distributor" ? "distributor" : "general");
 
+/** The carton price a distributor pays once their margin is taken off. */
+export const discountedCartonRate = (cartonRate: number, marginPercent: number) =>
+  roundMoney(cartonRate * Math.max(0, 1 - marginPercent / 100));
+
 export function calculateInvoiceLinePricing(
   input: CanonicalInvoiceLinePricingInput,
 ): InvoiceLinePricingBreakdown {
@@ -81,10 +85,9 @@ export function calculateInvoiceLinePricing(
   const baseCartonRate = toPositiveMoney(input.baseCartonRate);
   const defaultMarginPercent =
     invoiceMode === "distributor" ? Math.max(0, Number(input.defaultMarginPercent || 0)) : 0;
-  const marginFactor = Math.max(0, 1 - defaultMarginPercent / 100);
   const effectiveCartonRate =
     invoiceMode === "distributor"
-      ? roundMoney(baseCartonRate * marginFactor)
+      ? discountedCartonRate(baseCartonRate, defaultMarginPercent)
       : baseCartonRate;
 
   const baseUnitRate = roundMoney(baseCartonRate / containersPerCarton);

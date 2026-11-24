@@ -10,6 +10,7 @@ import { purchaseStockLeft } from "@/lib/suppliers/purchase-rows.server";
 import { addStockFn } from "@/server-functions/inventory/stock/add-stock-fn";
 import { updateMaterialFn } from "@/server-functions/inventory/update-material-fn";
 import { deletePurchaseRecordFn } from "@/server-functions/suppliers/delete-purchase-record-fn";
+import { getPurchaseEditStateFn } from "@/server-functions/suppliers/get-purchase-edit-state-fn";
 import { updatePurchaseRecordFn } from "@/server-functions/suppliers/update-purchase-record-fn";
 
 // Only HTTP/session transport is bypassed; validators, handlers and SQL are real.
@@ -78,6 +79,7 @@ async function fixture() {
     },
     floor, other, soda, shopper, ingredient, buy,
     edit: (purchaseId: string, fields: Record<string, string>) => updatePurchaseRecordFn({ data: { id: purchaseId, ...fields }, context } as never),
+    editState: (purchaseId: string) => getPurchaseEditStateFn({ data: { id: purchaseId }, context } as never),
     remove: (purchaseId: string) => deletePurchaseRecordFn({ data: { id: purchaseId, reason: "Wrong entry in test" }, context } as never),
     editMaterial: (fields: Record<string, unknown>) => updateMaterialFn({ data: { id: soda.id, type: "chemical", data: { name: soda.name, unit: "kg", minimumStockLevel: "0", packagingKind: null, ...fields } }, context } as never),
     price: async () => (await db.select().from(chemicals).where(eq(chemicals.id, soda.id)))[0].costPerUnit,
@@ -149,6 +151,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("material prices and cost estima
     expect(taken.totalCost).toBe("2628.00");
     expect(await f.lots()).toEqual({ "175.00": "228.000" });
     expect(await f.left(bill.id)).toBe(228);
+    expect(await f.editState(bill.id)).toMatchObject({ stockLocked: true, unused: { quantity: 228, unit: "kg" } });
     expect((await f.use(12))[0].totalCost).toBe("2100.00");
 
     await f.edit(bill.id, { quantity: "240", cost: "43200" }); // Rs 180, corrected again

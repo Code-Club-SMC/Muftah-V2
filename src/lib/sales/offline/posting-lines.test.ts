@@ -70,4 +70,11 @@ describe("posting lines for desk invoices", () => {
     const plain = buildPostingLines([staged()], names, true).items[0];
     expect(plain).toMatchObject({ isPriceOverride: false, preserveStoredDistributorRate: true });
   });
+
+  it("bills a distributor the price less the margin and keeps the full price on the line", () => {
+    const { items, snapshots } = buildPostingLines([staged({ marginPercent: "8.00", manualFreeCartons: 0 })], names, true);
+    expect(items.map((item) => item.perCartonPrice)).toEqual([1000, 1000]);
+    expect(snapshots.map((line) => [line.baseCartonPrice, line.marginPercent, line.lineAmount])).toEqual([[1000, 8, 9200], [1000, 8, 460]]);
+    expect(buildPostingLines([staged()], names, true).snapshots[0]).not.toHaveProperty("marginPercent");
+  });
 });

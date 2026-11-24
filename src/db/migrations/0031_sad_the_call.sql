@@ -1,0 +1,1 @@
+ALTER TABLE "offline_sales_staged_items" ADD COLUMN "margin_percent" numeric(5, 2);

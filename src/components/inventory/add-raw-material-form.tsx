@@ -27,6 +27,7 @@ import { useMemo, useRef, useState } from "react";
 import { Textarea } from "../ui/textarea";
 import { sizeFromPackagingText } from "@/lib/inventory/by-products";
 import { ByProductFields } from "./by-product-fields";
+import { UsedPurchaseNote } from "./used-purchase-note";
 import { updatePurchaseRecordFn } from "@/server-functions/suppliers/update-purchase-record-fn";
 import { toast } from "sonner";
 import { invalidateStockQueries } from "@/lib/inventory/invalidate-stock";
@@ -355,6 +356,8 @@ export const AddRawMaterialForm = ({
             )}
           </form.Field>
         </div>
+
+        {isEditMode && <UsedPurchaseNote purchaseId={initialValues!.purchaseId} />}
 
         {/* ─── LIVE TOTAL COST SUMMARY ─── */}
         <form.Subscribe

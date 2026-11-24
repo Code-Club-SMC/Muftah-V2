@@ -561,6 +561,11 @@ export function EntryForm({
                     {priced ? (
                       <>
                         <p className="font-medium">{formatPKR(priced.lineAmount, false)}</p>
+                        {priced.marginPercent && (
+                          <p className="text-xs text-muted-foreground">
+                            {formatPKR(priced.baseCartonPrice, false)} less {priced.marginPercent}%
+                          </p>
+                        )}
                         {priced.freeCartons + priced.manualFreeCartons > 0 && (
                           <p className="text-xs text-muted-foreground">
                             {priced.freeCartons > 0 ? `+${priced.freeCartons} scheme` : ""}

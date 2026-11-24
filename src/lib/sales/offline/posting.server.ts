@@ -1,3 +1,4 @@
+import { discountedCartonRate } from "@/lib/sales/invoice-line-pricing";
 import { createId } from "@paralleldrive/cuid2";
 import { and, asc, eq, inArray, ne, or, sql } from "drizzle-orm";
 import {
@@ -230,6 +231,9 @@ export function buildPostingLines(
   for (const staged of stagedItems) {
     if (!staged.recipeId) throw new Error("Signed product is no longer available");
     const price = Number(staged.baseCartonPrice);
+    const marginPercent = Number(staged.marginPercent ?? 0);
+    const netPrice = marginPercent > 0 ? discountedCartonRate(price, marginPercent) : price;
+    const margin = marginPercent > 0 ? { marginPercent } : {};
     const manual = staged.manualFreeCartons;
     const common = {
       pack: recipeNames.get(staged.recipeId) ?? staged.productCode,
@@ -264,7 +268,8 @@ export function buildPostingLines(
         freeCartons: staged.freeCartons,
         chargedUnits: chargedCartons * staged.packsPerCarton,
         dispatchedUnits: dispatchedCartons * staged.packsPerCarton,
-        lineAmount: cents(chargedCartons * price),
+        lineAmount: cents(chargedCartons * netPrice),
+        ...margin,
         wacPerPack: Number(staged.wacPerPack),
         stockUnitsSnapshot: staged.stockUnitsSnapshot,
       });
@@ -284,7 +289,8 @@ export function buildPostingLines(
         freeCartons: 0,
         chargedUnits: staged.looseUnitQuantity,
         dispatchedUnits: staged.looseUnitQuantity,
-        lineAmount: cents((price / staged.packsPerCarton) * staged.looseUnitQuantity),
+        lineAmount: cents((netPrice / staged.packsPerCarton) * staged.looseUnitQuantity),
+        ...margin,
         wacPerPack: Number(staged.wacPerPack),
         stockUnitsSnapshot: staged.stockUnitsSnapshot,
       });

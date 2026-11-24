@@ -12,6 +12,7 @@ vi.mock("@/hooks/inventory/use-add-packaging-material", () => ({ useAddPackaging
 vi.mock("@/hooks/stock/use-material-lots", () => ({ useMaterialLots: () => ({ data: {}, isLoading: false }) }));
 vi.mock("@/server-functions/suppliers/get-suppliers-fn", () => ({ getSuppliersFn: vi.fn() }));
 vi.mock("@/server-functions/suppliers/update-purchase-record-fn", () => ({ updatePurchaseRecordFn: mocks.purchase }));
+vi.mock("@/server-functions/suppliers/get-purchase-edit-state-fn", () => ({ getPurchaseEditStateFn: async () => ({ stockLocked: false }) }));
 vi.mock("@/server-functions/inventory/get-inventory-fn", () => ({ getInventoryFn: vi.fn() }));
 vi.mock("@/server-functions/inventory/find-similar-materials-fn", () => ({ findSimilarMaterialsFn: async () => [] }));
 vi.mock("@/components/suppliers/payment-method-select", () => ({ PaymentMethodSelect: () => null }));

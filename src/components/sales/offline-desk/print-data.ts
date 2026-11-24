@@ -128,6 +128,12 @@ function quantityLabel(item: CalculatedOfflineInvoice["items"][number], additive
   return parts.join(" + ");
 }
 
+/** What the distributor's margin took off this line. */
+function marginAmount(item: CalculatedOfflineInvoice["items"][number]) {
+  const full = (item.chargedUnits / item.packsPerCarton) * item.baseCartonPrice;
+  return item.marginPercent ? Math.round((full - item.lineAmount) * 100) / 100 : 0;
+}
+
 export function buildOfflinePrintData(
   entry: OfflineDeskEntry,
   pack: OfflineDeskPack,
@@ -166,10 +172,10 @@ export function buildOfflinePrintData(
           cartonQty: `${item.cartonQuantity}-${item.looseUnitQuantity}`,
           schemeCarton: `${item.freeCartons + item.manualFreeCartons}-0`,
           cartonRate: item.baseCartonPrice,
-          margin: 0,
-          marginAmount: 0,
-          grossAmount: item.lineAmount,
-          discount: 0,
+          margin: item.marginPercent ?? 0,
+          marginAmount: marginAmount(item),
+          grossAmount: Math.round((item.lineAmount + marginAmount(item)) * 100) / 100,
+          discount: marginAmount(item),
           netAmount: item.lineAmount,
         })),
         freight: calculated.expenses,

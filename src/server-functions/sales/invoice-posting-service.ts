@@ -18,9 +18,10 @@ import { cartons } from "@/db/schemas/manufacturing-schema";
 import type { CreateInvoiceInput } from "@/db/zod_schemas";
 import { GENERAL_RECIPE_RATE_ENTITY_ID } from "@/lib/sales/entity-recipe-rate-config";
 import { getApplicableDistributorFreeCartons } from "@/lib/sales/distributor-discount-rules";
-import { effectiveCPP } from "@/lib/sales/effective-cpp";
+import { effectiveCPP, ratePerPack } from "@/lib/sales/effective-cpp";
 import {
   calculateInvoiceLinePricing,
+  discountedCartonRate,
   type InvoicePricingMode,
 } from "@/lib/sales/invoice-line-pricing";
 import { allocateOnlineInvoiceNumber } from "@/lib/sales/invoice-number.server";
@@ -64,6 +65,8 @@ export type PostInvoiceInput = CreateInvoiceInput & {
     stagedItemId: string;
     recipeId: string;
     baseCartonPrice: number;
+    /** The distributor's margin the line amount already has taken off. */
+    marginPercent?: number;
     freeCartons: number;
     chargedUnits: number;
     dispatchedUnits: number;
@@ -385,11 +388,9 @@ const buildConfiguredRecipePriceMap = async ({
     ]),
   );
   const applyEntityRate = (rate: any) => {
-    const containersPerCarton = recipeContainersMap.get(rate.recipeId) ?? 0;
-    if (containersPerCarton <= 0) return;
     recipePriceMap.set(
       rate.recipeId,
-      roundMoney(Number(rate.pricePerCarton) / containersPerCarton),
+      ratePerPack(rate.pricePerCarton, recipeContainersMap.get(rate.recipeId)),
     );
   };
 
@@ -803,22 +804,27 @@ export async function postInvoice(
     });
 
     if (signedLine) {
+      const signedMargin = signedLine.marginPercent ?? 0;
+      const signedNetPrice = signedMargin > 0
+        ? discountedCartonRate(signedLine.baseCartonPrice, signedMargin)
+        : roundMoney(signedLine.baseCartonPrice);
+      const signedGross = signedMargin > 0
+        ? roundMoney((signedLine.chargedUnits / containersPerCarton) * signedLine.baseCartonPrice)
+        : signedLine.lineAmount;
       const signedPricing = {
         ...lineResolution.pricingBreakdown,
         baseCartonRate: roundMoney(signedLine.baseCartonPrice),
-        effectiveCartonRate: roundMoney(signedLine.baseCartonPrice),
+        effectiveCartonRate: signedNetPrice,
         baseUnitRate: roundMoney(
           signedLine.baseCartonPrice / containersPerCarton,
         ),
-        effectiveUnitRate: roundMoney(
-          signedLine.baseCartonPrice / containersPerCarton,
-        ),
+        effectiveUnitRate: roundMoney(signedNetPrice / containersPerCarton),
         freeCartonsTotal: signedLine.freeCartons,
         chargedCartons: item.unitType === "carton" ? item.numberOfCartons : 0,
         chargedUnits: signedLine.chargedUnits,
         dispatchedUnits: signedLine.dispatchedUnits,
-        grossAmount: signedLine.lineAmount,
-        marginDeduction: 0,
+        grossAmount: signedGross,
+        marginDeduction: roundMoney(Math.max(0, signedGross - signedLine.lineAmount)),
         schemeDeduction: 0,
         netAmount: signedLine.lineAmount,
         costOfGoodsSold: roundMoney(
@@ -846,6 +852,7 @@ export async function postInvoice(
         discountFreeCartons: signedLine.freeCartons,
         totalDispatchedUnits: signedLine.dispatchedUnits,
         baseCartonRate: signedLine.baseCartonPrice,
+        marginPercent: signedMargin > 0 ? signedMargin : null,
         unitCostPerPack: signedLine.wacPerPack,
         cogsPerUnit: signedLine.wacPerPack,
         cogsTotal: roundMoney(

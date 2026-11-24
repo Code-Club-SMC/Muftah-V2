@@ -433,6 +433,7 @@ const getOfflineSalesBatchDetailImpl = async (
           isPriceOverride: item.isPriceOverride,
           listedCartonPrice: item.listedCartonPrice,
           baseCartonPrice: item.baseCartonPrice,
+          marginPercent: item.marginPercent,
           dispatchedUnits: item.dispatchedUnits,
           lineAmount: item.lineAmount,
           stockUnitsSnapshot: item.stockUnitsSnapshot,

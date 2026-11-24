@@ -49,6 +49,7 @@ export async function buildOfflineSalesReferenceSnapshot(
           outstandingAmount: true,
           creditLimit: true,
           creditHold: true,
+          defaultMargin: true,
           address: true,
           city: true,
           mobileNumber: true,
@@ -160,6 +161,7 @@ export async function buildOfflineSalesReferenceSnapshot(
         outstandingAmount: money(customer.outstandingAmount),
         creditLimit: money(customer.creditLimit),
         creditHold: Boolean(customer.creditHold),
+        ...(Number(customer.defaultMargin) > 0 ? { marginPercent: money(customer.defaultMargin) } : {}),
         address: customer.address,
         city: customer.city,
         mobile: customer.mobileNumber,
@@ -181,8 +183,7 @@ export async function buildOfflineSalesReferenceSnapshot(
           distributorCartonPrice: money(
             Number(defaultPrice?.invoicePricePerPack ?? 0) * packsPerCarton,
           ),
-          // As online, saved carton rates do not apply to a pack sold without cartons.
-          distributorPrices: (looseOnly ? [] : ratesByRecipe.get(recipe.id) ?? [])
+          distributorPrices: (ratesByRecipe.get(recipe.id) ?? [])
             .map((rate) => ({
               customerId: rate.entityId,
               cartonPrice: money(rate.pricePerCarton),
@@ -191,7 +192,7 @@ export async function buildOfflineSalesReferenceSnapshot(
           retailPricePerPack: money(defaultPrice?.retailPricePerPack),
           // Same rule as an online retailer invoice: the general carton rate if
           // one is configured, otherwise the default price per pack x pack count.
-          generalCartonPrice: !looseOnly && generalRates.has(recipe.id)
+          generalCartonPrice: generalRates.has(recipe.id)
             ? money(generalRates.get(recipe.id)?.pricePerCarton)
             : money(Number(defaultPrice?.invoicePricePerPack ?? 0) * packsPerCarton),
           wacPerPack: money(stock?.weightedAverageCostPerPack, 4),

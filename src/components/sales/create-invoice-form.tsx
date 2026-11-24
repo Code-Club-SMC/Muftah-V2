@@ -19,6 +19,7 @@ import { getCartonAvailabilityFn } from "@/server-functions/inventory/get-carton
 import { useGetDistributorDiscountRules } from "@/hooks/sales/use-discount-rules";
 import { GENERAL_RECIPE_RATE_ENTITY_ID } from "@/lib/sales/entity-recipe-rate-config";
 import { getApplicableDistributorFreeCartons } from "@/lib/sales/distributor-discount-rules";
+import { ratePerPack } from "@/lib/sales/effective-cpp";
 import {
     AlertCircle,
     BanknoteIcon,
@@ -616,18 +617,13 @@ export const CreateInvoiceForm = ({ onSuccess, onCancel, onDirtyChange, initialD
 
     // Overlay entity-specific configured carton rates into global recipe base rates.
     // Non-distributor priority: order booker -> general walk-in -> global recipe rate.
-    // IMPORTANT: perPack must be rounded to match the server's
-    // buildConfiguredRecipePriceMap → applyEntityRate, which stores
-    // roundMoney(pricePerCarton / containersPerCarton). Without rounding,
-    // multiplying back by containersPerCarton gives a different carton rate
-    // than the server, causing "Payments cannot exceed invoice total".
+    // ratePerPack rounds exactly as the server does. A different rounding would give a
+    // different carton rate, causing "Payments cannot exceed invoice total".
     const recipePriceMapWithEntityRates = useMemo(() => {
         const map = new Map(recipePriceMap);
         if (distributorRecipeRates && isDistributorContext) {
             for (const dr of distributorRecipeRates as any[]) {
-                const containersPerCarton = Number(dr.containersPerCarton ?? 0);
-                if (containersPerCarton <= 0) continue;
-                const perPack = roundMoney(Number(dr.pricePerCarton) / containersPerCarton);
+                const perPack = ratePerPack(dr.pricePerCarton, dr.containersPerCarton);
                 const existing = map.get(dr.recipeId);
                 map.set(dr.recipeId, {
                     invoicePricePerPack: perPack,
@@ -641,9 +637,7 @@ export const CreateInvoiceForm = ({ onSuccess, onCancel, onDirtyChange, initialD
 
         if (generalRecipeRates && !isDistributorContext) {
             for (const gr of generalRecipeRates as any[]) {
-                const containersPerCarton = Number(gr.containersPerCarton ?? 0);
-                if (containersPerCarton <= 0) continue;
-                const perPack = roundMoney(Number(gr.pricePerCarton) / containersPerCarton);
+                const perPack = ratePerPack(gr.pricePerCarton, gr.containersPerCarton);
                 const existing = map.get(gr.recipeId);
                 map.set(gr.recipeId, {
                     invoicePricePerPack: perPack,
@@ -656,9 +650,7 @@ export const CreateInvoiceForm = ({ onSuccess, onCancel, onDirtyChange, initialD
 
         if (orderBookerRecipeRates && orderBookerPricingEntityId) {
             for (const obr of orderBookerRecipeRates as any[]) {
-                const containersPerCarton = Number(obr.containersPerCarton ?? 0);
-                if (containersPerCarton <= 0) continue;
-                const perPack = roundMoney(Number(obr.pricePerCarton) / containersPerCarton);
+                const perPack = ratePerPack(obr.pricePerCarton, obr.containersPerCarton);
                 const existing = map.get(obr.recipeId);
                 map.set(obr.recipeId, {
                     invoicePricePerPack: perPack,

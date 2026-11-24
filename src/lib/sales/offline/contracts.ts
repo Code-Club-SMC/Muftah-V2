@@ -36,6 +36,8 @@ export type OfflineSalesReferenceSnapshot = {
     outstandingAmount: string;
     creditLimit: string;
     creditHold: boolean;
+    /** Taken off every price on a direct sale. Left out when the distributor has none. */
+    marginPercent?: string;
     /** Printed on the invoice. */
     address: string | null;
     city: string | null;
@@ -123,6 +125,7 @@ export type ParsedOfflineSalesItem = {
   manualFreeCartons?: number;
   isPriceOverride?: boolean;
   listedCartonPrice?: number;
+  marginPercent?: number;
   sourceColumns: Record<string, string>;
 };
 
@@ -260,6 +263,7 @@ export type OfflineSalesBatchDetail = {
       isPriceOverride: boolean;
       listedCartonPrice: string | null;
       baseCartonPrice: string;
+      marginPercent: string | null;
       dispatchedUnits: number;
       lineAmount: string;
       stockUnitsSnapshot: number;

@@ -17,7 +17,7 @@ import { adjustCartonStock, lockCartonStock } from "@/lib/cartons/stock-adjustme
 import { AppError } from "@/lib/errors";
 import { GENERAL_RECIPE_RATE_ENTITY_ID } from "@/lib/sales/entity-recipe-rate-config";
 import { getApplicableDistributorFreeCartons } from "@/lib/sales/distributor-discount-rules";
-import { effectiveCPP } from "@/lib/sales/effective-cpp";
+import { effectiveCPP, ratePerPack } from "@/lib/sales/effective-cpp";
 import {
   calculateInvoiceLinePricing,
   type InvoicePricingMode,
@@ -520,11 +520,9 @@ const buildConfiguredRecipePriceMap = async ({
     ]),
   );
   const applyEntityRate = (rate: any) => {
-    const containersPerCarton = recipeContainersMap.get(rate.recipeId) ?? 0;
-    if (containersPerCarton <= 0) return;
     recipePriceMap.set(
       rate.recipeId,
-      roundMoney(Number(rate.pricePerCarton) / containersPerCarton),
+      ratePerPack(rate.pricePerCarton, recipeContainersMap.get(rate.recipeId)),
     );
   };
 

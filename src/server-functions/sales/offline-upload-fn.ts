@@ -547,6 +547,7 @@ const stageOfflineSalesUploadImpl = async (input: {
                 item.listedCartonPrice !== undefined
                   ? item.listedCartonPrice.toFixed(2)
                   : null,
+              marginPercent: item.marginPercent?.toFixed(2) ?? null,
               chargedUnits: item.chargedUnits,
               dispatchedUnits: item.dispatchedUnits,
               lineAmount: item.lineAmount.toFixed(2),

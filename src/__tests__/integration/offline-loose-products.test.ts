@@ -8,7 +8,7 @@ import { buildOfflineSalesReferenceSnapshot } from "@/lib/sales/offline/referenc
 const rollback = new Error("rollback");
 
 describe.skipIf(!process.env.TEST_DATABASE_URL)("offline product list", () => {
-  it("lists packs sold without cartons, with their stock and no carton rate", async () => {
+  it("lists packs sold without cartons, with their stock and their rate per pack", async () => {
     await db.transaction(async (tx) => {
       const id = randomUUID();
       if (!(await tx.query.warehouses.findFirst({ where: (row, { eq }) => eq(row.type, "factory_floor") })))
@@ -23,8 +23,9 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("offline product list", () => {
       ]).returning();
       await tx.insert(finishedGoodsStock).values({ warehouseId: factoryWarehouseId, recipeId: loose.id, quantityContainers: 24, quantityOutsidePacks: 24, weightedAverageCostPerPack: "2913.6233" });
       await tx.insert(entityRecipeRates).values([loose, carton].map((row) => ({ entityType: "general" as const, entityId: GENERAL_RECIPE_RATE_ENTITY_ID, recipeId: row.id, pricePerCarton: "4000" })));
+      await tx.insert(entityRecipeRates).values({ entityType: "distributor", entityId: id, recipeId: loose.id, pricePerCarton: "3500" });
       const listed = new Map((await buildOfflineSalesReferenceSnapshot(tx)).products.map((row) => [row.recipeId, row]));
-      expect(listed.get(loose.id)).toMatchObject({ packsPerCarton: 1, looseOnly: true, stockUnits: 24, wacPerPack: "2913.6233", generalCartonPrice: "0.00", distributorPrices: [] });
+      expect(listed.get(loose.id)).toMatchObject({ packsPerCarton: 1, looseOnly: true, stockUnits: 24, wacPerPack: "2913.6233", generalCartonPrice: "4000.00", distributorPrices: [{ customerId: id, cartonPrice: "3500.00" }] });
       expect(listed.get(carton.id)).toMatchObject({ packsPerCarton: 12, stockUnits: 0, generalCartonPrice: "4000.00" });
       expect(listed.get(carton.id)).not.toHaveProperty("looseOnly");
       throw rollback;

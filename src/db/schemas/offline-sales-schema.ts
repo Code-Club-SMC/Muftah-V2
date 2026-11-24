@@ -371,6 +371,8 @@ export const offlineSalesStagedItems = pgTable(
     isPriceOverride: boolean("is_price_override").default(false).notNull(),
     // The price in the signed price list, kept when the operator changed the price.
     listedCartonPrice: decimal("listed_carton_price", { precision: 12, scale: 2 }),
+    // The distributor's margin taken off the carton price. Null when there was none.
+    marginPercent: decimal("margin_percent", { precision: 5, scale: 2 }),
     chargedUnits: integer("charged_units").notNull(),
     dispatchedUnits: integer("dispatched_units").notNull(),
     lineAmount: decimal("line_amount", { precision: 12, scale: 2 }).notNull(),

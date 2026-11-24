@@ -1,3 +1,4 @@
+import { calculateInvoiceLinePricing } from "@/lib/sales/invoice-line-pricing";
 import { describe, expect, it } from "vitest";
 import {
   bookedOrderItems,
@@ -468,5 +469,27 @@ describe("products sold in single packs only", () => {
     expect(bookedOrderItems(withLoose.orders[0], withLoose.products)).toEqual([
       { productCode: "L1", cartonQuantity: 0, looseUnitQuantity: 5, physicalStockConfirmed: false },
     ]);
+  });
+});
+
+describe("a distributor's margin", () => {
+  const withMargin: OfflineCalcReference = { ...reference, distributors: [{ id: "c1", code: "D-1", marginPercent: "8.00" }] };
+  const sell = (item: object, patch: Partial<OfflineEntry> = {}) =>
+    calculateOfflineEntry(direct({ items: [{ productCode: "P1", cartonQuantity: 2, looseUnitQuantity: 3, physicalStockConfirmed: false, ...item }], ...patch }), withMargin, 1).items[0];
+
+  it("comes off the list price, as online", () => {
+    // 1000 less 8% = 920 a carton; 2 cartons and a quarter carton of loose packs
+    expect(sell({})).toMatchObject({ baseCartonPrice: 1000, marginPercent: 8, netCartonPrice: 920, lineAmount: 2070 });
+    const online = calculateInvoiceLinePricing({ invoiceMode: "distributor", unitType: "carton", numberOfCartons: 2, numberOfUnits: 0, baseCartonRate: 1000, containersPerCarton: 12, defaultMarginPercent: 8 });
+    expect(sell({ looseUnitQuantity: 0 }).lineAmount).toBe(online.netAmount);
+  });
+  it("comes off a typed price too", () => {
+    expect(sell({ looseUnitQuantity: 0, priceOverride: 900 })).toMatchObject({ baseCartonPrice: 900, listedCartonPrice: 1000, netCartonPrice: 828, lineAmount: 1656 });
+  });
+  it("is not given to retailers or saved when there is none", () => {
+    expect(sell({ looseUnitQuantity: 0 }, { saleType: "direct_retailer", distributorCode: "C-7" })).toMatchObject({ lineAmount: 3000 });
+    const none = calculateOfflineEntry(direct({}), reference, 1).items[0];
+    expect(none).not.toHaveProperty("marginPercent");
+    expect(none).not.toHaveProperty("netCartonPrice");
   });
 });

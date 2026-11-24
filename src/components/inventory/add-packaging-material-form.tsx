@@ -29,6 +29,7 @@ import { getSuppliersFn } from "@/server-functions/suppliers/get-suppliers-fn";
 import { Textarea } from "../ui/textarea";
 import { packagingUnit } from "@/lib/inventory/material-units";
 import { ByProductFields } from "./by-product-fields";
+import { UsedPurchaseNote } from "./used-purchase-note";
 import { updatePurchaseRecordFn } from "@/server-functions/suppliers/update-purchase-record-fn";
 import { toast } from "sonner";
 import { invalidateStockQueries } from "@/lib/inventory/invalidate-stock";
@@ -500,6 +501,8 @@ export const AddPackagingMaterialForm = ({
               </Field>
             )}
           </form.Field>
+
+          {isEditMode && <UsedPurchaseNote purchaseId={initialValues!.purchaseId} />}
 
           {/* ─── LIVE TOTAL COST SUMMARY ─── */}
           <form.Subscribe

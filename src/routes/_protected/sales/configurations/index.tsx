@@ -1425,10 +1425,12 @@ function RecipeRateRow({
                 value={value}
                 onChange={(e) => setValue(e.target.value)}
                 placeholder="0.00"
+                aria-label={containersPerCarton > 0 ? "Price per carton" : "Price per pack"}
                 autoFocus
                 onKeyDown={(e) => { if (e.key === "Enter") handleSave(); if (e.key === "Escape") setEditing(false); }}
               />
             </div>
+            <span className="text-[10px] text-muted-foreground">{containersPerCarton > 0 ? "/carton" : "/pack"}</span>
             <Button size="sm" variant="default" className="h-8 px-2" onClick={handleSave} disabled={upsert.isPending}>
               <Check className="size-3.5" />
             </Button>
@@ -1441,7 +1443,7 @@ function RecipeRateRow({
         ) : configured ? (
           <>
             <span className="text-sm font-mono tabular-nums font-semibold">{PKR(configured.pricePerCarton)}</span>
-            <span className="text-[10px] text-muted-foreground">/carton</span>
+            <span className="text-[10px] text-muted-foreground">{containersPerCarton > 0 ? "/carton" : "/pack"}</span>
             <Button size="sm" variant="ghost" className="h-8 px-2" onClick={() => setEditing(true)}>
               <Pencil className="size-3.5" />
             </Button>

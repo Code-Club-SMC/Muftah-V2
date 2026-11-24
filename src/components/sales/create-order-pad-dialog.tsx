@@ -1035,7 +1035,7 @@ function OrderLineItem({
                 className={`h-9 text-xs pl-6 ${isManualOverride ? "border-amber-500/50" : !hasConfiguredRate && item.recipeId ? "border-destructive/50" : ""}`}
                 value={sf.state.value}
                 onChange={(e) => onRateManualChange(index, Number(e.target.value))}
-                aria-label="Rate per carton"
+                aria-label={selectedRecipe && !selectedRecipe.containersPerCarton ? "Rate per pack" : "Rate per carton"}
               />
               <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground font-semibold pointer-events-none">₨</span>
             </div>
@@ -1124,7 +1124,7 @@ function OrderLineItem({
               </span>
               {hasConfiguredRate ? (
                 <span className="text-[10px] text-muted-foreground">
-                  Configured carton rate: {formatPKR(configuredRate!)}
+                  Configured {selectedRecipe.containersPerCarton ? "carton" : "pack"} rate: {formatPKR(configuredRate!)}
                   {selectedRecipe.containersPerCarton
                     ? ` · ~${formatPKR(configuredRate! / selectedRecipe.containersPerCarton)}/pack`
                     : ""}

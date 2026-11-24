@@ -79,6 +79,16 @@ describe("offline invoice print data", () => {
     expect(printed.data.previousBalance).toBe(5000);
   });
 
+  it("prints the full rate and what the distributor's margin took off", () => {
+    const sale = entry(1);
+    const withMargin = { ...pack, reference: { ...pack.reference, distributors: pack.reference.distributors.map((row) => ({ ...row, marginPercent: "8.00" })) } };
+    const printed = buildOfflinePrintData(sale, withMargin, [sale]);
+    if (printed.kind !== "distributor") throw new Error("Wrong layout");
+    // 2,700 less 8%
+    expect(printed.data.items[0]).toMatchObject({ cartonRate: 1200, grossAmount: 2700, margin: 8, discount: 216, netAmount: 2484 });
+    expect(printed.data.invoiceAmount).toBe(2484);
+  });
+
   it("uses the general layout for a retailer and for a new walk-in", () => {
     const sale = entry(2, { saleType: "direct_retailer", distributorCode: "C-7" });
     const printed = buildOfflinePrintData(sale, pack, [sale]);

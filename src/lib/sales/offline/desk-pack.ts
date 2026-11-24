@@ -23,6 +23,7 @@ export type OfflineDeskReference = Omit<
     city?: string | null;
     mobile?: string | null;
     outstandingAmount: string;
+    marginPercent?: string;
   }>;
   retailers: Array<{
     id: string;
@@ -100,6 +101,7 @@ export function toDeskReference(snapshot: OfflineSalesReferenceSnapshot): Offlin
       city: value.city ?? null,
       mobile: value.mobile ?? null,
       outstandingAmount: value.outstandingAmount,
+      ...(value.marginPercent ? { marginPercent: value.marginPercent } : {}),
     })),
     retailers: snapshot.retailers.map((value) => ({ ...value })),
     products: snapshot.products.map((value) => ({

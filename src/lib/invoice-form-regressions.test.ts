@@ -1,3 +1,4 @@
+import { ratePerPack } from "@/lib/sales/effective-cpp";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -183,6 +184,16 @@ describe("invoice create/edit regressions", () => {
         { invoicePricePerPack: 16.5, retailPricePerPack: 20.5 },
       ),
     ).toBe(16.92);
+  });
+
+  it("uses a saved rate as the pack price when a product has no cartons", () => {
+    expect(ratePerPack(4000, 0)).toBe(4000);
+    expect(ratePerPack("4000", null)).toBe(4000);
+    expect(ratePerPack(4000, 12)).toBe(333.33);
+    for (const file of ["invoices-fn", "invoice-posting-service"])
+      expect(readFileSync(resolve(process.cwd(), `src/server-functions/sales/${file}.ts`), "utf8"))
+        .toContain("ratePerPack(rate.pricePerCarton, recipeContainersMap.get(rate.recipeId))");
+    expect(readFileSync(CREATE_FORM, "utf8").match(/ratePerPack\(\w+\.pricePerCarton, \w+\.containersPerCarton\)/g)).toHaveLength(3);
   });
 
   it("shows the profit on a general invoice when the price is typed", () => {

@@ -1,3 +1,4 @@
+import { discountedCartonRate } from "@/lib/sales/invoice-line-pricing";
 import { getApplicableDistributorFreeCartons } from "@/lib/sales/distributor-discount-rules";
 import { OFFLINE_SALES_MAX_ITEMS_PER_INVOICE } from "./constants";
 import type {
@@ -14,7 +15,7 @@ import type {
  * never depend on what the browser claims. Keep this file free of Node imports.
  *
  * It follows the online invoice rules: a distributor pays the distributor rate
- * and gets the saved free-carton scheme; a retailer or walk-in pays the general
+ * less the distributor's margin and gets the saved free-carton scheme; a retailer or walk-in pays the general
  * rate; any invoice can get an invoice discount; freight and other
  * expenses add to the total; bank and digital payments carry the same details
  * the online form asks for.
@@ -87,7 +88,7 @@ export type OfflineEntry = {
 /** The part of the signed snapshot the calculator needs. The full snapshot fits. */
 export type OfflineCalcReference = {
   generatedAt: string;
-  distributors: Array<{ id: string; code: string }>;
+  distributors: Array<{ id: string; code: string; marginPercent?: string }>;
   retailers: Array<{ id: string; code: string; customerType: string }>;
   products: Array<{
     recipeId: string;
@@ -127,6 +128,9 @@ export type CalculatedOfflineItem = {
   /** Price in the signed list, before any override. */
   listedCartonPrice: number;
   isPriceOverride: boolean;
+  /** Distributor's margin, and the carton price left after it. Only set when there is one. */
+  marginPercent?: number;
+  netCartonPrice?: number;
   /** Free cartons from the saved scheme (distributors only). */
   freeCartons: number;
   /** Free cartons given by hand. */
@@ -381,6 +385,10 @@ export function calculateOfflineEntry(
 
     if (product.looseOnly && baseCartonPrice <= 0) issues.push(issue("missing_price", "This product has no list price. Use Change price to enter it", source));
 
+    // As online, the margin comes off the list price or a typed price alike.
+    const marginPercent = entry.saleType === "direct_distributor" ? Number(distributor?.marginPercent ?? 0) : 0;
+    const netCartonPrice = marginPercent > 0 ? discountedCartonRate(baseCartonPrice, marginPercent) : baseCartonPrice;
+
     // Free cartons given by hand, as online: cannot exceed the cartons entered.
     const manual = raw.manualFreeCartons ?? 0;
     if (!Number.isSafeInteger(manual) || manual < 0) {
@@ -410,7 +418,8 @@ export function calculateOfflineEntry(
       manualFreeCartons,
       chargedUnits: chargedCartons * product.packsPerCarton + loose,
       dispatchedUnits: dispatchedCartons * product.packsPerCarton + loose,
-      lineAmount: money(chargedCartons * baseCartonPrice + loose * (baseCartonPrice / product.packsPerCarton)),
+      lineAmount: money(chargedCartons * netCartonPrice + loose * (netCartonPrice / product.packsPerCarton)),
+      ...(marginPercent > 0 ? { marginPercent, netCartonPrice } : {}),
       wacPerPack: Number(product.wacPerPack ?? 0),
       stockUnitsSnapshot: product.stockUnits ?? 0,
       physicalStockConfirmed: raw.physicalStockConfirmed,

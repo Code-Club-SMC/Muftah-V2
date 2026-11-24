@@ -549,6 +549,11 @@ function InvoiceRow({
                       {PKR(item.baseCartonPrice)} per carton
                     </p>
                   )}
+                  {item.marginPercent && (
+                    <p className="text-xs text-muted-foreground">
+                      {PKR(item.baseCartonPrice)} less {Number(item.marginPercent)}% margin
+                    </p>
+                  )}
                 </TableCell>
                 <TableCell>
                   <span className="block">{quantity(item)}</span>

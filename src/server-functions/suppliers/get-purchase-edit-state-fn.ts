@@ -2,11 +2,23 @@ import { createServerFn } from "@tanstack/react-start";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db, purchaseRecords } from "@/db";
-import { chemicalLabReports } from "@/db/schemas/inventory-schema";
-import { lockMaterialStock, purchaseIsUntouched } from "@/lib/inventory/material-lots.server";
+import { chemicalLabReports, chemicals, packagingMaterials } from "@/db/schemas/inventory-schema";
+import { packagingUnit } from "@/lib/inventory/material-units";
+import type { MaterialRef } from "@/lib/inventory/material-lots";
+import { lockMaterialStock, purchaseIsUntouched, type Tx } from "@/lib/inventory/material-lots.server";
 import { requireSuppliersManageMiddleware } from "@/lib/middlewares";
 import { planPurchaseRefund } from "@/lib/suppliers/purchase-refund";
+import { purchaseStockLeft } from "@/lib/suppliers/purchase-rows.server";
 import { loadPurchasePayments } from "@/lib/suppliers/purchase-refund.server";
+
+async function materialUnit(tx: Tx, ref: MaterialRef) {
+  if (ref.materialType === "chemical") {
+    const [row] = await tx.select({ unit: chemicals.unit }).from(chemicals).where(eq(chemicals.id, ref.materialId));
+    return row?.unit || "kg";
+  }
+  const [row] = await tx.select({ measuredInKg: packagingMaterials.measuredInKg }).from(packagingMaterials).where(eq(packagingMaterials.id, ref.materialId));
+  return packagingUnit(row);
+}
 
 export const getPurchaseEditStateFn = createServerFn()
   .middleware([requireSuppliersManageMiddleware])
@@ -25,6 +37,7 @@ export const getPurchaseEditStateFn = createServerFn()
     if (purchase.voidedAt) {
       return {
         stockLocked: false,
+        unused: undefined,
         alreadyVoided: true,
         hasLabReports,
         refund: { paid: "0.00", walletId: null },
@@ -39,8 +52,14 @@ export const getPurchaseEditStateFn = createServerFn()
     // Default refund for deleting this purchase, to the wallet that paid it.
     const { payments, walletIds } = await loadPurchasePayments(tx, purchase.id);
     const { paid, defaultWalletId } = planPurchaseRefund({ payments, walletIds });
+    const stockLocked = !(await purchaseIsUntouched(tx, purchase));
+    // What a price correction would still reach.
+    const unused = stockLocked
+      ? { quantity: (await purchaseStockLeft(tx, [purchase])).get(purchase.id) ?? 0, unit: await materialUnit(tx, ref) }
+      : undefined;
     return {
-      stockLocked: !(await purchaseIsUntouched(tx, purchase)),
+      stockLocked,
+      unused,
       alreadyVoided: false,
       hasLabReports,
       refund: { paid: paid.toFixed(2), walletId: defaultWalletId },
