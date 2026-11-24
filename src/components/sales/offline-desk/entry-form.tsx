@@ -532,11 +532,16 @@ export function EntryForm({
                 <div className="grid items-end gap-3 md:grid-cols-[1fr_7rem_7rem_9rem_auto]">
                   <Field>
                     <FieldLabel>Product</FieldLabel>
-                    <NativeSelect className="w-full" value={row.productCode} onChange={(event) => setItem(index, { productCode: event.target.value })} disabled={booked}>
+                    <NativeSelect className="w-full" value={row.productCode} onChange={(event) => {
+                        const productCode = event.target.value;
+                        const looseOnly = reference.products.find((value) => value.code === productCode)?.looseOnly;
+                        // A price typed for another product must not carry over.
+                        setItem(index, { productCode, changePrice: false, priceOverride: "", ...(looseOnly ? { cartons: "", manualFree: "" } : {}) });
+                      }} disabled={booked}>
                       <NativeSelectOption value="">Choose product…</NativeSelectOption>
                       {reference.products.map((product) => (
                         <NativeSelectOption key={product.code} value={product.code}>
-                          {product.name} ({product.packsPerCarton}/ctn)
+                          {product.name} ({product.looseOnly ? "loose packs" : `${product.packsPerCarton}/ctn`})
                           {product.stockUnits !== undefined
                             ? ` · in stock: ${formatStock(Math.max(0, product.stockUnits - (allocated.get(product.code) ?? 0)), product.packsPerCarton)}`
                             : ""}
@@ -546,7 +551,7 @@ export function EntryForm({
                   </Field>
                   <Field>
                     <FieldLabel>Cartons</FieldLabel>
-                    <Input inputMode="numeric" value={row.cartons} onChange={(event) => setItem(index, { cartons: event.target.value })} readOnly={booked} />
+                    <Input inputMode="numeric" value={row.cartons} onChange={(event) => setItem(index, { cartons: event.target.value })} readOnly={booked} disabled={listed?.looseOnly} />
                   </Field>
                   <Field>
                     <FieldLabel>Loose packs</FieldLabel>
@@ -582,6 +587,7 @@ export function EntryForm({
                       <Input
                         inputMode="numeric"
                         value={row.manualFree}
+                        disabled={listed?.looseOnly}
                         onChange={(event) => setItem(index, { manualFree: event.target.value })}
                       />
                     </Field>
@@ -589,7 +595,7 @@ export function EntryForm({
                       {row.changePrice ? (
                         <>
                           <Field className="w-44">
-                            <FieldLabel>Carton price (PKR)</FieldLabel>
+                            <FieldLabel>{listed?.looseOnly ? "Pack" : "Carton"} price (PKR)</FieldLabel>
                             <Input
                               inputMode="decimal"
                               value={row.priceOverride}

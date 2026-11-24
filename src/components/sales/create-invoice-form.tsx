@@ -1101,7 +1101,7 @@ function computeProfit(
         const stock = findStock(availableStock, item.recipeId);
         const recipeDefault = Number(stock?.recipe?.containersPerCarton || item.packsPerCarton || 1);
         const recipePricing = recipePriceMap.get(item.recipeId);
-        const unitCostPerPack = getLineUnitCostPerPack(item, stock, recipePricing, pricingMode);
+        const unitCostPerPack = getLineUnitCostPerPack(item, stock, recipePricing);
         const autoFreeCartons = getAutoDiscountCartons(item, discountRuleMap);
         return acc + getLinePricingBreakdown(
             item,

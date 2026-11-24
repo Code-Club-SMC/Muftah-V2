@@ -8,6 +8,7 @@ import {
   getLiveUnitCostPerPack,
   getPreviewEffectiveCartonPrice,
   getPreviewPerCartonPrice,
+  getLinePricingBreakdown,
   getLineUnitCostPerPack,
   getCartonRateHoverLines,
   doesStockUseCartons,
@@ -181,7 +182,20 @@ describe("invoice create/edit regressions", () => {
         stock as any,
         { invoicePricePerPack: 16.5, retailPricePerPack: 20.5 },
       ),
-    ).toBe(16.5);
+    ).toBe(16.92);
+  });
+
+  it("shows the profit on a general invoice when the price is typed", () => {
+    const item = {
+      pack: "Nice 20 Kg Pack", recipeId: "recipe-1", unitType: "units" as const, numberOfCartons: 0, numberOfUnits: 2,
+      discountCartons: 0, packsPerCarton: 1, hsnCode: "", perCartonPrice: 4000, retailPrice: 0, isPriceOverride: true,
+    };
+    const stock = { id: "fg-1", recipeId: "recipe-1", weightedAverageCostPerPack: "2913.6233", recipe: { containersPerCarton: 0, cartonPackagingId: null } };
+    const profit = (cost: number) => getLinePricingBreakdown(item, 1, cost, "retailer").profit;
+    expect(profit(getLineUnitCostPerPack(item, stock))).toBeCloseTo(2172.75, 2); // 8000 - 2 x 2913.6233
+    // With no known cost there is no profit to claim.
+    expect(profit(getLineUnitCostPerPack(item, { ...stock, weightedAverageCostPerPack: null }))).toBe(0);
+    expect(getLineUnitCostPerPack(item, { ...stock, weightedAverageCostPerPack: "0" })).toBe(0);
   });
 
   it("bills distributor carton lines from carton rate, not reference MRP", () => {
@@ -402,7 +416,6 @@ describe("invoice create/edit regressions", () => {
         },
         stock as any,
         { invoicePricePerPack: 16.5, retailPricePerPack: 20.5 },
-        "distributor",
       ),
     ).toBe(16.92);
   });
@@ -470,7 +483,7 @@ describe("invoice create/edit regressions", () => {
     const source = readFileSync(CREATE_FORM, "utf8");
     const utilsSource = readFileSync(CREATE_FORM_UTILS, "utf8");
 
-    expect(source).toContain("getLineUnitCostPerPack(item, stock, recipePricing, pricingMode)");
+    expect(source).toContain("getLineUnitCostPerPack(item, stock, recipePricing)");
     expect(source).toContain("getLinePricingBreakdown(");
     expect(source).toContain("marginPercent");
     expect(source).toContain("const isDistributorInvoice = values.customerType === \"distributor\"");

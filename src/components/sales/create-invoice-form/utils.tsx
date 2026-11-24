@@ -321,15 +321,14 @@ export function getLineUnitCostPerPack(
     item: ItemFormValue,
     stock: StockItem | null,
     recipePricing?: RecipePriceEntry | null,
-    pricingMode: InvoicePricingMode = "retailer",
 ): number {
+    // Typing a sale price never changes what the pack cost.
+    const liveCost = getLiveUnitCostPerPack(stock, recipePricing);
+    if (liveCost > 0 || stock?.weightedAverageCostPerPack != null) return liveCost;
+
+    // No cost is known, so claim no profit, as the server does.
     const containersPerCarton = getRecipeContainersPerCarton(stock, item.packsPerCarton || 1);
-
-    if (pricingMode !== "distributor" && item.isPriceOverride && (item.perCartonPrice || 0) > 0) {
-        return roundMoney((item.perCartonPrice || 0) / containersPerCarton);
-    }
-
-    return getLiveUnitCostPerPack(stock, recipePricing);
+    return roundMoney((item.perCartonPrice || 0) / containersPerCarton);
 }
 
 export function getLinePricingBreakdown(

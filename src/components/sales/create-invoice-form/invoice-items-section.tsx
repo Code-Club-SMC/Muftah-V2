@@ -265,7 +265,7 @@ export const InvoiceItemsSection = ({
                             isDistributor,
                         );
                         const pricingMode = isDistributor ? "distributor" : "retailer";
-                        const unitCostForProfit = getLineUnitCostPerPack(item, stock, recipePricing, pricingMode);
+                        const unitCostForProfit = getLineUnitCostPerPack(item, stock, recipePricing);
                         const otherReservedUnits = item.recipeId
                             ? getReservedUnitsForRecipe(items, availableStock, item.recipeId, index, discountRuleMap)
                             : 0;

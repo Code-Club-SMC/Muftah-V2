@@ -442,3 +442,31 @@ describe("offline entry calculator", () => {
     });
   });
 });
+
+describe("products sold in single packs only", () => {
+  const withLoose: OfflineCalcReference = {
+    ...reference,
+    products: [
+      ...reference.products,
+      { recipeId: "L1", code: "L1", packsPerCarton: 1, looseOnly: true, distributorCartonPrice: "0.00", generalCartonPrice: "0.00", distributorPrices: [], wacPerPack: "2913.6233", stockUnits: 24 },
+    ],
+    orders: [{ orderBookerCode: "B1", billNumber: 56, items: [{ productCode: "L1", unitType: "pack", quantity: 5, cartonRate: "4000.00" }] }],
+  };
+  const sell = (item: object) =>
+    calculateOfflineEntry(direct({ items: [{ productCode: "L1", cartonQuantity: 0, looseUnitQuantity: 3, physicalStockConfirmed: false, ...item }] }), withLoose, 1);
+
+  it("charges packs at the typed price", () => {
+    const result = sell({ priceOverride: 4000 });
+    expect(result.items[0]).toMatchObject({ lineAmount: 12000, chargedUnits: 3, dispatchedUnits: 3, packsPerCarton: 1, isPriceOverride: true });
+    expect(result.issues.map((value) => value.code)).not.toContain("missing_price");
+  });
+  it("refuses a missing price and cartons", () => {
+    expect(sell({}).issues.map((value) => value.code)).toContain("missing_price");
+    expect(sell({ cartonQuantity: 1, priceOverride: 4000 }).issues.map((value) => value.code)).toContain("no_cartons");
+  });
+  it("fills a booked order with loose packs", () => {
+    expect(bookedOrderItems(withLoose.orders[0], withLoose.products)).toEqual([
+      { productCode: "L1", cartonQuantity: 0, looseUnitQuantity: 5, physicalStockConfirmed: false },
+    ]);
+  });
+});

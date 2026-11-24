@@ -13,6 +13,7 @@ import {
   warehouses,
 } from "@/db/schemas/inventory-schema";
 import { GENERAL_RECIPE_RATE_ENTITY_ID } from "@/lib/sales/entity-recipe-rate-config";
+import { effectiveCPP } from "@/lib/sales/effective-cpp";
 import type { OfflineSalesReferenceSnapshot } from "./contracts";
 
 type SalesTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -138,7 +139,7 @@ export async function buildOfflineSalesReferenceSnapshot(
   const packsPerCartonByRecipe = new Map(
     recipeRows.map((recipe) => [
       recipe.id,
-      Number(recipe.containersPerCarton ?? 0),
+      effectiveCPP(Number(recipe.containersPerCarton ?? 0)),
     ]),
   );
   const ratesByRecipe = new Map<string, typeof rateRows>();
@@ -166,7 +167,8 @@ export async function buildOfflineSalesReferenceSnapshot(
       .sort((a, b) => a.code.localeCompare(b.code)),
     products: recipeRows
       .map((recipe) => {
-        const packsPerCarton = Number(recipe.containersPerCarton ?? 0);
+        const looseOnly = !(Number(recipe.containersPerCarton) > 0);
+        const packsPerCarton = effectiveCPP(Number(recipe.containersPerCarton ?? 0));
         const stock = recipe.finishedGoods[0];
         const defaultPrice = defaultPrices.get(recipe.id);
         return {
@@ -175,10 +177,12 @@ export async function buildOfflineSalesReferenceSnapshot(
           code: recipe.id,
           name: `${recipe.product.name} — ${recipe.name}`,
           packsPerCarton,
+          ...(looseOnly ? { looseOnly } : {}),
           distributorCartonPrice: money(
             Number(defaultPrice?.invoicePricePerPack ?? 0) * packsPerCarton,
           ),
-          distributorPrices: (ratesByRecipe.get(recipe.id) ?? [])
+          // As online, saved carton rates do not apply to a pack sold without cartons.
+          distributorPrices: (looseOnly ? [] : ratesByRecipe.get(recipe.id) ?? [])
             .map((rate) => ({
               customerId: rate.entityId,
               cartonPrice: money(rate.pricePerCarton),
@@ -187,7 +191,7 @@ export async function buildOfflineSalesReferenceSnapshot(
           retailPricePerPack: money(defaultPrice?.retailPricePerPack),
           // Same rule as an online retailer invoice: the general carton rate if
           // one is configured, otherwise the default price per pack x pack count.
-          generalCartonPrice: generalRates.has(recipe.id)
+          generalCartonPrice: !looseOnly && generalRates.has(recipe.id)
             ? money(generalRates.get(recipe.id)?.pricePerCarton)
             : money(Number(defaultPrice?.invoicePricePerPack ?? 0) * packsPerCarton),
           wacPerPack: money(stock?.weightedAverageCostPerPack, 4),
@@ -196,7 +200,6 @@ export async function buildOfflineSalesReferenceSnapshot(
             Number(stock?.quantityContainers ?? 0),
         };
       })
-      .filter((product) => product.packsPerCarton > 0)
       .sort((a, b) => a.name.localeCompare(b.name) || a.code.localeCompare(b.code)),
     salesmen: salesmanRows
       .flatMap((row) => (row.employeeId ? [{ employeeId: row.employeeId, name: row.name }] : []))

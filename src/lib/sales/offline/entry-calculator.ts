@@ -93,6 +93,7 @@ export type OfflineCalcReference = {
     recipeId: string;
     code: string;
     packsPerCarton: number;
+    looseOnly?: boolean;
     distributorCartonPrice: string;
     generalCartonPrice: string;
     distributorPrices: Array<{ customerId: string; cartonPrice: string }>;
@@ -227,8 +228,8 @@ export function bookedOrderItems(
     return [
       {
         productCode,
-        cartonQuantity: Math.floor(total / product.packsPerCarton),
-        looseUnitQuantity: total % product.packsPerCarton,
+        cartonQuantity: product.looseOnly ? 0 : Math.floor(total / product.packsPerCarton),
+        looseUnitQuantity: product.looseOnly ? total : total % product.packsPerCarton,
         physicalStockConfirmed: false,
       },
     ];
@@ -332,6 +333,7 @@ export function calculateOfflineEntry(
     if (!Number.isSafeInteger(cartons) || cartons < 0) issues.push(issue("invalid_cartons", "Enter Carton Quantity as a whole number", source, String(cartons)));
     if (!Number.isSafeInteger(loose) || loose < 0) issues.push(issue("invalid_loose_units", "Enter Loose Unit Quantity as a whole number", source, String(loose)));
     if ((cartons || 0) + (loose || 0) < 1) issues.push(issue("empty_item", "Enter at least one carton or loose unit", source));
+    if (product?.looseOnly && cartons > 0) issues.push(issue("no_cartons", "This product has no cartons. Enter loose packs", source));
     if (!product || !Number.isSafeInteger(cartons) || cartons < 0 || !Number.isSafeInteger(loose) || loose < 0) return;
 
     let baseCartonPrice = Number(product.distributorCartonPrice);
@@ -376,6 +378,8 @@ export function calculateOfflineEntry(
         baseCartonPrice = money(raw.priceOverride);
       }
     }
+
+    if (product.looseOnly && baseCartonPrice <= 0) issues.push(issue("missing_price", "This product has no list price. Use Change price to enter it", source));
 
     // Free cartons given by hand, as online: cannot exceed the cartons entered.
     const manual = raw.manualFreeCartons ?? 0;

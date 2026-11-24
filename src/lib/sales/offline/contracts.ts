@@ -47,6 +47,8 @@ export type OfflineSalesReferenceSnapshot = {
     code: string;
     name: string;
     packsPerCarton: number;
+    /** Sold in single packs only. One pack counts as one carton in prices and stock. */
+    looseOnly?: boolean;
     distributorCartonPrice: string;
     distributorPrices: Array<{ customerId: string; cartonPrice: string }>;
     retailPricePerPack: string;

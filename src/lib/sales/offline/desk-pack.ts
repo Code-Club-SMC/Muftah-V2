@@ -107,6 +107,7 @@ export function toDeskReference(snapshot: OfflineSalesReferenceSnapshot): Offlin
       code: value.code,
       name: value.name,
       packsPerCarton: value.packsPerCarton,
+      ...(value.looseOnly ? { looseOnly: true } : {}),
       distributorCartonPrice: value.distributorCartonPrice,
       generalCartonPrice: value.generalCartonPrice,
       distributorPrices: value.distributorPrices,
