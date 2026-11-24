@@ -489,7 +489,7 @@ describe("device import sheet behavior", () => {
       screen
         .getAllByRole("link", { name: "Open Ali Khan's month" })
         [0].getAttribute("href"),
-    ).toBe("/hr/attendance/employee-1?from=2026-10-01&to=2026-10-31");
+    ).toBe("/hr/attendance/employee-1?from=2026-09-16&to=2026-10-15");
 
     expect(
       screen.getByRole("button", { name: "Review attendance row 3" }),

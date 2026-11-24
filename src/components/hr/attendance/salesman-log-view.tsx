@@ -1,8 +1,9 @@
 import { DatePicker } from "@/components/custom/date-picker";
 import { SalesmanAttendanceLog } from "@/components/hr/attendance/salesman-attendance-log";
 import { Button } from "@/components/ui/button";
+import { attendanceLogRange } from "@/lib/attendance/log-range";
 import { GenericLoader } from "@/components/custom/generic-loader";
-import { format, parseISO, startOfMonth, endOfMonth } from "date-fns";
+import { format, parseISO } from "date-fns";
 import { ArrowLeft, Briefcase, Check, FilterX } from "lucide-react";
 import { useState, useEffect, Suspense } from "react";
 import {
@@ -23,9 +24,7 @@ export const SalesmanLogView = () => {
     from: "/hr/salesman-details/$employeeId",
   });
 
-  const today = new Date();
-  const defaultStart = format(startOfMonth(today), "yyyy-MM-dd");
-  const defaultEnd = format(endOfMonth(today), "yyyy-MM-dd");
+  const { startDate: defaultStart, endDate: defaultEnd } = attendanceLogRange();
 
   const [localFrom, setLocalFrom] = useState(from || defaultStart);
   const [localTo, setLocalTo] = useState(to || defaultEnd);

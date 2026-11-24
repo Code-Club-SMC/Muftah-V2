@@ -11,6 +11,9 @@ export const useUpsertAttendance = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["daily-attendance"] });
       queryClient.invalidateQueries({ queryKey: ["employee-attendance-log"] });
+      queryClient.invalidateQueries({ queryKey: ["driver-activity-log"] });
+      queryClient.invalidateQueries({ queryKey: ["salesman-activity-log"] });
+      queryClient.invalidateQueries({ queryKey: ["order-booker-activity-log"] });
       queryClient.invalidateQueries({ queryKey: ["leave-approvals"] });
       queryClient.invalidateQueries({ queryKey: ["overtime-approvals"] });
       queryClient.invalidateQueries({ queryKey: ["employees"] });
@@ -35,6 +38,7 @@ export const useClearOrderBookerManualOverride = () => {
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ["daily-attendance"] });
       queryClient.invalidateQueries({ queryKey: ["employee-attendance-log"] });
+      queryClient.invalidateQueries({ queryKey: ["order-booker-activity-log"] });
       toast.success(
         result.restoredTripDriven
           ? "Returned to trip-driven attendance"

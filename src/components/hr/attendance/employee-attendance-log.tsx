@@ -4,8 +4,6 @@ import { getEmployeeAttendanceLogFn } from "@/server-functions/hr/attendance/get
 import {
   format,
   parseISO,
-  startOfMonth,
-  endOfMonth,
   eachDayOfInterval,
 } from "date-fns";
 import { Badge } from "@/components/ui/badge";
@@ -29,6 +27,7 @@ import {
   PunchTimelinePreview,
   type PunchTimelineItem,
 } from "./punch-timeline-preview";
+import { attendanceLogRange } from "@/lib/attendance/log-range";
 import { EditAttendanceSheet } from "./edit-attendance-sheet";
 import {
   dayIssueLabels,
@@ -152,14 +151,9 @@ export const EmployeeAttendanceLog = ({
   // Pending overtime days HR picked to convert together into comp-off hours.
   const [compOffIds, setCompOffIds] = useState<string[]>([]);
 
-  const today = new Date();
-  const currentMonth = month || format(today, "yyyy-MM");
-  const startDate =
-    propStartDate ||
-    format(startOfMonth(parseISO(`${currentMonth}-01`)), "yyyy-MM-dd");
-  const endDate =
-    propEndDate ||
-    format(endOfMonth(parseISO(`${currentMonth}-01`)), "yyyy-MM-dd");
+  const range = attendanceLogRange(month);
+  const startDate = propStartDate || range.startDate;
+  const endDate = propEndDate || range.endDate;
 
   const { data } = useSuspenseQuery({
     queryKey: ["employee-attendance-log", employeeId, startDate, endDate],

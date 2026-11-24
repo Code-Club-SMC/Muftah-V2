@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { getSalesmanActivityLogFn } from "@/server-functions/hr/attendance/get-salesman-activity-log-fn";
-import { format, startOfMonth, endOfMonth } from "date-fns";
+import { attendanceLogRange } from "@/lib/attendance/log-range";
 import { z } from "zod";
 import { SalesmanLogView } from "@/components/hr/attendance/salesman-log-view";
 
@@ -13,9 +13,9 @@ export const Route = createFileRoute("/_protected/hr/salesman-details/$employeeI
   validateSearch: searchSchema,
   loaderDeps: ({ search: { from, to } }) => ({ from, to }),
   loader: async ({ params, context, deps }) => {
-    const today = new Date();
-    const startDate = deps.from || format(startOfMonth(today), "yyyy-MM-dd");
-    const endDate = deps.to || format(endOfMonth(today), "yyyy-MM-dd");
+    const range = attendanceLogRange();
+    const startDate = deps.from || range.startDate;
+    const endDate = deps.to || range.endDate;
 
     void context.queryClient.prefetchQuery({
       queryKey: [

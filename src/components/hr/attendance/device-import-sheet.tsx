@@ -1,7 +1,7 @@
 import { useId, useState, type ComponentProps } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { endOfMonth, format, parseISO, startOfMonth } from "date-fns";
+import { format, parseISO } from "date-fns";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { FileUploadIcon } from "@hugeicons/core-free-icons";
 import { ResponsiveSheet } from "@/components/custom/responsive-sheet";
@@ -61,6 +61,7 @@ import {
   useUploadDeviceAttendance,
 } from "@/hooks/hr/use-device-attendance";
 import { useViewerAccess } from "@/hooks/use-viewer-access";
+import { payrollCycleForDate } from "@/lib/attendance/device-import/coverage";
 import {
   DEVICE_IMPORT_MAX_BYTES,
   type DeviceImportMappings,
@@ -99,6 +100,11 @@ const formatPunchTime = (time: string) => {
   const [hours, minutes] = time.split(":").map(Number);
   if (Number.isNaN(hours) || Number.isNaN(minutes)) return time;
   return `${hours % 12 || 12}:${String(minutes).padStart(2, "0")} ${hours < 12 ? "AM" : "PM"}`;
+};
+// The payroll month (16th to 15th) that holds a report date.
+const payrollMonthSearch = (date: string) => {
+  const { cycleStart, cycleEnd } = payrollCycleForDate(date);
+  return { from: cycleStart, to: cycleEnd };
 };
 const formatGapDate = (date: string) => format(parseISO(date), "MMM d");
 // Matches the 20:00 night-shift start used by attendance recompute.
@@ -1055,16 +1061,7 @@ export function DeviceImportSheet({ open, onOpenChange }: Props) {
                                   <Link
                                     to="/hr/attendance/$employeeId"
                                     params={{ employeeId: row.employeeId }}
-                                    search={{
-                                      from: format(
-                                        startOfMonth(parseISO(row.date)),
-                                        "yyyy-MM-dd",
-                                      ),
-                                      to: format(
-                                        endOfMonth(parseISO(row.date)),
-                                        "yyyy-MM-dd",
-                                      ),
-                                    }}
+                                    search={payrollMonthSearch(row.date)}
                                     aria-label={`Open ${row.employeeName ?? row.personId}'s month`}
                                   >
                                     Employee month

@@ -110,6 +110,7 @@ export const getOrderBookerActivityLogFn = createServerFn()
         lastName: true,
         employeeCode: true,
         designation: true,
+        joiningDate: true,
         restDays: true,
         isOrderBooker: true,
       },

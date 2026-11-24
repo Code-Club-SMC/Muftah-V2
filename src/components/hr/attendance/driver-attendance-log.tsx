@@ -1,6 +1,6 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { useParams } from "@tanstack/react-router";
-import { format, parseISO, startOfMonth, endOfMonth } from "date-fns";
+import { format, parseISO } from "date-fns";
 import type { ColumnDef } from "@tanstack/react-table";
 import {
   CheckCircle2,
@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { DataTable } from "@/components/custom/data-table";
 import { Badge } from "@/components/ui/badge";
+import { attendanceLogRange } from "@/lib/attendance/log-range";
 import { formatPKR } from "@/lib/currency-format";
 import { cn } from "@/lib/utils";
 import {
@@ -27,6 +28,7 @@ import {
   type DriverActivityDay,
   type DriverActivityStatus,
 } from "@/server-functions/hr/attendance/get-driver-activity-log-fn";
+import { useFieldDayEditor } from "./use-field-day-editor";
 
 type Props = {
   employeeId?: string;
@@ -212,14 +214,9 @@ export const DriverAttendanceLog = ({
 
   if (!employeeId) return null;
 
-  const today = new Date();
-  const currentMonth = month || format(today, "yyyy-MM");
-  const startDate =
-    propStartDate ||
-    format(startOfMonth(parseISO(`${currentMonth}-01`)), "yyyy-MM-dd");
-  const endDate =
-    propEndDate ||
-    format(endOfMonth(parseISO(`${currentMonth}-01`)), "yyyy-MM-dd");
+  const range = attendanceLogRange(month);
+  const startDate = propStartDate || range.startDate;
+  const endDate = propEndDate || range.endDate;
 
   const { data } = useSuspenseQuery({
     queryKey: ["driver-activity-log", employeeId, startDate, endDate],
@@ -231,6 +228,8 @@ export const DriverAttendanceLog = ({
   });
 
   const { employee, summary, days } = data;
+
+  const editor = useFieldDayEditor<DriverActivityDay>(employee);
 
   const columns: ColumnDef<DriverActivityDay>[] = [
     {
@@ -382,6 +381,7 @@ export const DriverAttendanceLog = ({
         );
       },
     },
+    ...editor.columns,
   ];
 
   return (
@@ -547,7 +547,10 @@ export const DriverAttendanceLog = ({
         showSearch={false}
         showViewOptions={false}
         pageSize={10}
+        autoResetPageIndex={false}
       />
+
+      {editor.sheet}
     </div>
   );
 };

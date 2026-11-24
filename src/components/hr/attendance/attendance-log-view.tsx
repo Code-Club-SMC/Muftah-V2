@@ -4,8 +4,9 @@ import { OrderBookerAttendanceLog } from "@/components/hr/attendance/order-booke
 import { SalesmanAttendanceLog } from "@/components/hr/attendance/salesman-attendance-log";
 import { DriverAttendanceLog } from "@/components/hr/attendance/driver-attendance-log";
 import { Button } from "@/components/ui/button";
+import { attendanceLogRange } from "@/lib/attendance/log-range";
 import { GenericLoader } from "@/components/custom/generic-loader";
-import { format, parseISO, startOfMonth, endOfMonth } from "date-fns";
+import { format, parseISO } from "date-fns";
 import { ArrowLeft, CalendarRange, Check, FilterX } from "lucide-react";
 import { useState, useEffect, Suspense } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -26,9 +27,7 @@ export const AttendanceLogView = () => {
   });
   const navigate = useNavigate({ from: "/hr/attendance/$employeeId" });
 
-  const today = new Date();
-  const defaultStart = format(startOfMonth(today), "yyyy-MM-dd");
-  const defaultEnd = format(endOfMonth(today), "yyyy-MM-dd");
+  const { startDate: defaultStart, endDate: defaultEnd } = attendanceLogRange();
 
   // Local state for filters
   const [localFrom, setLocalFrom] = useState(from || defaultStart);
