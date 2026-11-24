@@ -546,7 +546,8 @@ export const DriverAttendanceLog = ({
         data={days}
         showSearch={false}
         showViewOptions={false}
-        pageSize={10}
+        showPagination={false}
+        pagination={{ pageIndex: 0, pageSize: Math.max(1, days.length) }}
         autoResetPageIndex={false}
       />
 

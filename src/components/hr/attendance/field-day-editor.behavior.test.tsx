@@ -67,6 +67,16 @@ describe("editing a driver's day", () => {
     for (const date of ["28 Oct 2026", "30 Oct 2026", "06 Nov 2026"]) expect(button(date)).toBeNull();
   });
 
+  it("lists every day at once, without next or previous", async () => {
+    const days = Array.from({ length: 46 }, (_, i) => day(new Date(Date.UTC(2026, 9, 16 + i)).toISOString().slice(0, 10), "present"));
+    mocks.log.mockResolvedValue({ ...(await mocks.log()), days });
+    open();
+    expect(await screen.findByText("16 Oct 2026")).toBeTruthy();
+    expect(screen.getByText("30 Nov 2026")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /next/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /previous/i })).toBeNull();
+  });
+
   it("is hidden from people who can only view", async () => {
     mocks.permissions = ["hr.view"];
     open();
