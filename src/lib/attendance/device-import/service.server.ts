@@ -18,6 +18,8 @@ import { recomputeAttendanceRow } from "../recompute-server";
 import { invalidateDraftPayrollsForAttendance } from "../offline/payroll-invalidation.server";
 import { parseDevicePunchReport } from "./parser.server";
 import { planDeviceEmployeeRows, type DevicePlannedRow } from "./timeline";
+import { isFieldStaff, planFieldStaffRows } from "./field-staff";
+import { restoreFieldActivityAttendance } from "./field-staff.server";
 import {
   assertAttendanceDatesEditable,
   lockAttendancePayrollWrites,
@@ -45,6 +47,9 @@ export type DeviceImportSelection = {
 };
 const name = (employee: Employee) =>
   `${employee.firstName} ${employee.lastName}`.trim();
+const importNote = (batch: Import) => `ZKBio Zlink import: ${batch.filename}`;
+const fieldDutyHours = (employee: Employee) =>
+  (employee.standardDutyHours || 8).toFixed(2);
 const shiftDate = (date: string, days: number) =>
   new Date(new Date(`${date}T12:00:00Z`).getTime() + days * 86_400_000)
     .toISOString()
@@ -114,17 +119,13 @@ async function buildPlans(
   }
   const results = new Map<number, DeviceImportRowPreview>();
   const employeePlans: { employee: Employee; plans: DevicePlannedRow[] }[] = [];
+  // Days to mark present, with the report row each came from.
+  const fieldDays: { employee: Employee; rowNumbers: Map<string, number> }[] = [];
   const now = new Date();
   for (const personId of personIds) {
     const employee = resolved.get(personId);
     const rows = rowsByPerson.get(personId)!;
-    if (
-      !employee ||
-      employee.isSalesman ||
-      employee.isDriver ||
-      employee.isOrderBooker ||
-      employee.status === "pending_deletion"
-    ) {
+    if (!employee || employee.status === "pending_deletion") {
       for (const row of rows)
         results.set(row.rowNumber, {
           rowNumber: row.rowNumber,
@@ -140,7 +141,7 @@ async function buildPlans(
           messages: [
             ...row.issues,
             employee
-              ? "This employee does not use standard punch attendance. HR must review this record."
+              ? "This employee is being deleted. HR must review this record."
               : "Link this device Person ID to an employee before importing.",
           ],
         });
@@ -161,6 +162,60 @@ async function buildPlans(
           messages: row.issues,
           newPunchCount: 0,
           dutyHours: null,
+        });
+      continue;
+    }
+    if (isFieldStaff(employee)) {
+      const [records, lockedPayrolls] = await Promise.all([
+        tx.query.attendance.findMany({
+          columns: { date: true, status: true },
+          where: and(
+            eq(attendance.employeeId, employee.id),
+            inArray(attendance.date, dates),
+          ),
+        }),
+        tx.query.payrolls.findMany({
+          columns: { startDate: true, endDate: true },
+          where: and(
+            lte(payrolls.startDate, dates.at(-1)!),
+            gte(payrolls.endDate, dates[0]),
+            inArray(payrolls.status, ["approved", "paid"]),
+          ),
+        }),
+      ]);
+      const plans = planFieldStaffRows({
+        rows,
+        attendanceRows: records,
+        lockedDates: new Set(
+          dates.filter((date) =>
+            lockedPayrolls.some((p) => p.startDate <= date && p.endDate >= date),
+          ),
+        ),
+        joiningDate: employee.joiningDate,
+        now,
+      });
+      fieldDays.push({
+        employee,
+        rowNumbers: new Map(
+          plans.flatMap((p) =>
+            p.marksPresent ? [[p.row.date!, p.row.rowNumber] as const] : [],
+          ),
+        ),
+      });
+      for (const plan of plans)
+        results.set(plan.row.rowNumber, {
+          rowNumber: plan.row.rowNumber,
+          personId,
+          personName: plan.row.personName,
+          employeeId: employee.id,
+          employeeName: name(employee),
+          date: plan.row.date,
+          punchTimes: plan.row.punches,
+          status: plan.status,
+          messages: plan.messages,
+          newPunchCount: 0,
+          dutyHours: plan.marksPresent ? fieldDutyHours(employee) : null,
+          ...(plan.marksPresent ? { marksPresent: true } : {}),
         });
       continue;
     }
@@ -295,9 +350,7 @@ async function buildPlans(
     const punchStaff = staff.filter(
       (e) =>
         (e.status === "active" || e.status === "on_leave") &&
-        !e.isDriver &&
-        !e.isSalesman &&
-        !e.isOrderBooker &&
+        !isFieldStaff(e) &&
         e.joiningDate <= toDate,
     );
     const staffIds = punchStaff.map((e) => e.id);
@@ -411,6 +464,7 @@ async function buildPlans(
     earlierUploads[0];
   return {
     employeePlans,
+    fieldDays,
     resolved,
     links,
     preview: {
@@ -420,13 +474,7 @@ async function buildPlans(
       status: batch.status,
       rows: [...results.values()].sort((a, b) => a.rowNumber - b.rowNumber),
       employees: staff
-        .filter(
-          (e) =>
-            !e.isDriver &&
-            !e.isSalesman &&
-            !e.isOrderBooker &&
-            e.status !== "pending_deletion",
-        )
+        .filter((e) => e.status !== "pending_deletion")
         .map((e) => ({
           id: e.id,
           employeeCode: e.employeeCode,
@@ -494,7 +542,7 @@ export async function confirmDeviceAttendance(
       throw new Error(
         "This import was undone. Upload the report again to import it.",
       );
-    const { employeePlans, resolved, links, preview } = await buildPlans(
+    const { employeePlans, fieldDays, resolved, links, preview } = await buildPlans(
       tx,
       batch,
       input.mappings ?? {},
@@ -503,7 +551,9 @@ export async function confirmDeviceAttendance(
     for (const [personId, employee] of resolved) {
       if (
         employee &&
-        employeePlans.some((plan) => plan.employee.id === employee.id) &&
+        [...employeePlans, ...fieldDays].some(
+          (plan) => plan.employee.id === employee.id,
+        ) &&
         !links.some((link) => link.personId === personId)
       ) {
         await tx.insert(deviceAttendancePersonMappings).values({
@@ -525,7 +575,7 @@ export async function confirmDeviceAttendance(
           direction: p.direction,
           source: "device_import" as const,
           terminalUserId: actorId,
-          note: `ZKBio Zlink import: ${batch.filename}`,
+          note: importNote(batch),
         }));
       for (let offset = 0; offset < added.length; offset += 500)
         await tx
@@ -577,10 +627,40 @@ export async function confirmDeviceAttendance(
         });
       }
     }
-    const rows = preview.rows.map((row) => ({
+    // Row numbers whose day this import marked present, including by an earlier confirmation.
+    const markedRows = new Set(
+      batch.resultRows?.flatMap((row) =>
+        row.marksPresent ? [row.rowNumber] : [],
+      ),
+    );
+    for (const { employee, rowNumbers } of fieldDays) {
+      for (const [date, rowNumber] of rowNumbers) {
+        const [marked] = await tx
+          .insert(attendance)
+          .values({
+            employeeId: employee.id,
+            date,
+            status: "present",
+            dutyHours: fieldDutyHours(employee),
+            entrySource: "biometric",
+            notes: importNote(batch),
+          })
+          .onConflictDoNothing()
+          .returning({ id: attendance.id });
+        if (!marked) continue; // A trip saved the day first.
+        markedRows.add(rowNumber);
+        await invalidateDraftPayrollsForAttendance(tx, {
+          deviceImportId: batch.id,
+          employeeId: employee.id,
+          attendanceDate: date,
+        });
+      }
+    }
+    const rows = preview.rows.map(({ marksPresent, ...row }) => ({
       ...row,
+      ...(markedRows.has(row.rowNumber) ? { marksPresent: true } : {}),
       status:
-        row.status === "ready" && row.newPunchCount > 0
+        row.status === "ready" && (row.newPunchCount > 0 || marksPresent)
           ? ("imported" as const)
           : row.status,
     }));
@@ -614,8 +694,34 @@ export async function undoDeviceAttendanceImport(
     const claims = await tx.query.deviceAttendancePunchClaims.findMany({
       where: eq(deviceAttendancePunchClaims.importId, batch.id),
     });
-    for (const id of [...new Set(claims.map((c) => c.employeeId))].sort())
+    const markedDays = (batch.resultRows ?? []).flatMap((row) =>
+      row.marksPresent && row.employeeId && row.date
+        ? [{ employeeId: row.employeeId, date: row.date }]
+        : [],
+    );
+    for (const id of [
+      ...new Set([...claims, ...markedDays].map((c) => c.employeeId)),
+    ].sort())
       await lockEmployeePunchWrites(tx, id);
+    // Days HR edited since no longer look like the import left them, so they stay.
+    const saved = markedDays.length
+      ? await tx.query.attendance.findMany({
+          where: and(
+            inArray(
+              attendance.employeeId,
+              [...new Set(markedDays.map((day) => day.employeeId))],
+            ),
+            eq(attendance.status, "present"),
+            eq(attendance.entrySource, "biometric"),
+            eq(attendance.notes, importNote(batch)),
+          ),
+        })
+      : [];
+    const undoDays = saved.filter((row) =>
+      markedDays.some(
+        (day) => day.employeeId === row.employeeId && day.date === row.date,
+      ),
+    );
     const punchIds = claims.flatMap((c) => (c.punchId ? [c.punchId] : []));
     const punches = punchIds.length
       ? await tx.query.attendancePunches.findMany({
@@ -633,7 +739,10 @@ export async function undoDeviceAttendanceImport(
     }
     await assertAttendanceDatesEditable(
       tx,
-      [...affected.values()].flatMap((dates) => [...dates]),
+      [
+        ...[...affected.values()].flatMap((dates) => [...dates]),
+        ...undoDays.map((day) => day.date),
+      ],
     );
     await tx
       .delete(deviceAttendancePunchClaims)
@@ -655,6 +764,15 @@ export async function undoDeviceAttendanceImport(
         });
       }
     }
+    for (const day of undoDays) {
+      await tx.delete(attendance).where(eq(attendance.id, day.id));
+      await restoreFieldActivityAttendance(tx, day.employeeId, day.date);
+      await invalidateDraftPayrollsForAttendance(tx, {
+        deviceImportId: batch.id,
+        employeeId: day.employeeId,
+        attendanceDate: day.date,
+      });
+    }
     await tx
       .update(deviceAttendanceImports)
       .set({ status: "undone", undoneAt: new Date(), undoneByUserId: actorId })
@@ -662,6 +780,7 @@ export async function undoDeviceAttendanceImport(
     return {
       removedPunchCount: removable.length,
       keptPunchCount: punches.length - removable.length,
+      ...(undoDays.length ? { removedPresentDays: undoDays.length } : {}),
     };
   });
 }

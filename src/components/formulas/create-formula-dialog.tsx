@@ -22,6 +22,7 @@ import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Textarea } from "@/components/ui/textarea";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { ChemicalOption, ChemicalSearchSelect } from "./chemical-search-select";
+import { batchPercent, scaleQuantity, totalQuantity, typedQuantity } from "@/lib/production/formula-scale";
 
 type Formula = NonNullable<Awaited<ReturnType<typeof getFormulaByIdFn>>>;
 
@@ -82,9 +83,17 @@ export function CreateFormulaDialog({
   const [ingredients, setIngredients] = useState(
     initialFormula?.ingredients.map((ingredient) => ({
       chemicalId: ingredient.chemicalId,
-      quantityPerBatch: ingredient.quantityPerBatch,
-    })) ?? [{ chemicalId: "", quantityPerBatch: "0" }],
+      ...typedQuantity(ingredient.quantityPerBatch, initialFormula.batchSize),
+    })) ?? [{ chemicalId: "", ...typedQuantity("0", "100") }],
   );
+  // Percentages only mean something for ingredients in the batch's own unit.
+  const inBatchUnit = (chemicalId: string) =>
+    availableChemicals.find((c) => c.id === chemicalId)?.unit === batchUnit;
+  const chosen = ingredients.filter((ing) => ing.chemicalId);
+  const total =
+    chosen.length > 0 && chosen.every((ing) => inBatchUnit(ing.chemicalId))
+      ? totalQuantity(chosen.map((ing) => ing.quantityPerBatch))
+      : null;
 
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -110,7 +119,7 @@ export function CreateFormulaDialog({
           setBatchUnit("kg");
           setProductionInstructions("");
           setNotes("");
-          setIngredients([{ chemicalId: "", quantityPerBatch: "0" }]);
+          setIngredients([{ chemicalId: "", ...typedQuantity("0", "100") }]);
         }
       },
     };
@@ -191,8 +200,17 @@ export function CreateFormulaDialog({
                 type="number"
                 step="0.01"
                 value={batchSize}
-                onChange={(e) => setBatchSize(e.target.value)}
+                onChange={(e) => {
+                  const size = e.target.value;
+                  setBatchSize(size);
+                  setIngredients((rows) =>
+                    rows.map((row) => scaleQuantity(row, size)),
+                  );
+                }}
               />
+              <p className="text-xs text-muted-foreground">
+                Ingredient quantities change with the batch size.
+              </p>
             </div>
             <div className="space-y-1.5 min-w-0">
               <label
@@ -255,7 +273,7 @@ export function CreateFormulaDialog({
                 onClick={() =>
                   setIngredients([
                     ...ingredients,
-                    { chemicalId: "", quantityPerBatch: "0" },
+                    { chemicalId: "", ...typedQuantity("0", batchSize) },
                   ])
                 }
               >
@@ -288,12 +306,23 @@ export function CreateFormulaDialog({
                       value={ing.quantityPerBatch}
                       onChange={(e) => {
                         const newIngs = [...ingredients];
-                        newIngs[index].quantityPerBatch = e.target.value;
+                        newIngs[index] = {
+                          ...newIngs[index],
+                          ...typedQuantity(e.target.value, batchSize),
+                        };
                         setIngredients(newIngs);
                       }}
                       placeholder="Qty"
                     />
                   </div>
+                  <span
+                    className="w-14 shrink-0 text-right text-xs tabular-nums text-muted-foreground"
+                    aria-label={`Ingredient ${index + 1} share of batch`}
+                  >
+                    {(inBatchUnit(ing.chemicalId) &&
+                      batchPercent(ing.quantityPerBatch, batchSize)) ||
+                      "—"}
+                  </span>
                   <Button
                     type="button"
                     variant="ghost"
@@ -310,6 +339,12 @@ export function CreateFormulaDialog({
                 </div>
               ))}
             </div>
+            {total && (
+              <p className="text-right text-xs tabular-nums text-muted-foreground">
+                Total {total.toString()} {batchUnit} (
+                {batchPercent(total, batchSize) ?? "0%"} of batch)
+              </p>
+            )}
           </div>
 
           {mutation.error && (

@@ -60,6 +60,9 @@ const invalidateAttendance = (queryClient: QueryClient) =>
     queryClient.invalidateQueries({ queryKey: ["daily-attendance"] }),
     queryClient.invalidateQueries({ queryKey: ["attendance-punches"] }),
     queryClient.invalidateQueries({ queryKey: ["employee-attendance-log"] }),
+    queryClient.invalidateQueries({ queryKey: ["order-booker-activity-log"] }),
+    queryClient.invalidateQueries({ queryKey: ["salesman-activity-log"] }),
+    queryClient.invalidateQueries({ queryKey: ["driver-activity-log"] }),
     queryClient.invalidateQueries({ queryKey: ["payrolls"] }),
     queryClient.invalidateQueries({ queryKey: ["payroll"] }),
   ]);

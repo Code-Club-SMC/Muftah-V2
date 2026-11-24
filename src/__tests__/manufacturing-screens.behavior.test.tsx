@@ -456,6 +456,39 @@ describe("manufacturing screen contracts", () => {
     );
     expect(mocks.formulaUpdate.mock.calls.at(-1)?.[0].data).not.toHaveProperty("minBatchYield");
   });
+  it("scales ingredients with the batch size and shows their share", async () => {
+    mocks.formula.ingredients = ["a", "b"].map((id) => ({
+      chemicalId: id,
+      quantityPerBatch: "50.000",
+      chemical: { id, name: `Chemical ${id}`, unit: "kg" },
+    }));
+    mount(<CreateFormulaDialog initialFormula={mocks.formula} />);
+    fireEvent.click(screen.getByRole("button", { name: "Edit Mixing Formula" }));
+    const size = await screen.findByLabelText("Target Batch Size");
+    const amount = (n: number) =>
+      (screen.getByLabelText(`Ingredient ${n} quantity`) as HTMLInputElement).value;
+    const share = (n: number) =>
+      screen.getByLabelText(`Ingredient ${n} share of batch`).textContent;
+    for (const value of ["", "2", "20", "200"])
+      fireEvent.change(size, { target: { value } });
+    expect([amount(1), amount(2)]).toEqual(["100", "100"]);
+    expect([share(1), share(2)]).toEqual(["50%", "50%"]);
+    expect(screen.getByText("Total 200 kg (100% of batch)")).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Ingredient 1 quantity"), {
+      target: { value: "60" },
+    });
+    expect(share(1)).toBe("30%");
+    fireEvent.change(size, { target: { value: "100" } });
+    expect([amount(1), amount(2)]).toEqual(["30", "50.000"]);
+    fireEvent.click(screen.getByRole("button", { name: "Save Mixing Formula" }));
+    expect(mocks.formulaUpdate.mock.calls.at(-1)?.[0].data).toMatchObject({
+      batchSize: 100,
+      ingredients: [
+        { chemicalId: "a", quantityPerBatch: 30 },
+        { chemicalId: "b", quantityPerBatch: 50 },
+      ],
+    });
+  });
   it("exposes formula deactivation only to definition managers", async () => {
     mocks.permissions = ["manufacturing.manage"];
     mount(<FormulaDetailsContainer formulaId="formula-1" />);

@@ -250,6 +250,24 @@ describe("device import sheet behavior", () => {
     ).toBe(true);
   });
 
+  it("imports a report that only marks field staff days present", async () => {
+    const field = {
+      ...structuredClone(report),
+      rows: [
+        { ...report.rows[0], newPunchCount: 0, marksPresent: true, messages: ["Field staff: any punch marks the day present."] },
+      ],
+    };
+    mocks.upload.mockResolvedValue(field);
+    mocks.confirm.mockResolvedValue({ ...field, status: "completed", rows: [{ ...field.rows[0], status: "imported" }] });
+    mocks.preview.mockResolvedValue({ ...field, status: "completed", rows: [{ ...field.rows[0], status: "unchanged", marksPresent: undefined }] });
+    setup();
+    await uploadReport();
+    expect(screen.getByText("Field staff: any punch marks the day present.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Mark 1 field staff day present" }));
+    expect(await screen.findByText(/1 field staff day marked present/)).toBeTruthy();
+    expect((screen.getByRole("button", { name: "Import 0 new punches" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
   it("requires a refreshed preview after changing an unknown Person ID mapping", async () => {
     setup();
     await uploadReport();

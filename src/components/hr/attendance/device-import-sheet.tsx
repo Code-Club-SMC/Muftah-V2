@@ -126,6 +126,7 @@ export function DeviceImportSheet({ open, onOpenChange }: Props) {
   const [previewStale, setPreviewStale] = useState(false);
   const [mappingPersonIds, setMappingPersonIds] = useState<string[]>([]);
   const [lastImportCount, setLastImportCount] = useState<number | null>(null);
+  const [lastPresentCount, setLastPresentCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(0);
   const [search, setSearch] = useState("");
@@ -239,6 +240,7 @@ export function DeviceImportSheet({ open, onOpenChange }: Props) {
       setLastImportCount(
         result.rows.reduce((count, row) => count + row.newPunchCount, 0),
       );
+      setLastPresentCount(presentDayCount);
       setPreviewStale(true);
       displayPreview(await refresh.mutateAsync(selection));
     } catch (cause) {
@@ -312,6 +314,20 @@ export function DeviceImportSheet({ open, onOpenChange }: Props) {
     (count, row) => count + (row.status === "blocked" ? 0 : row.newPunchCount),
     0,
   );
+  const presentDayCount = rows.filter(
+    (row) => row.status === "ready" && row.marksPresent,
+  ).length;
+  const importParts = [
+    ...(newPunchCount > 0 || presentDayCount === 0
+      ? [`import ${newPunchCount} new punches`]
+      : []),
+    ...(presentDayCount > 0
+      ? [
+          `mark ${presentDayCount} field staff ${presentDayCount === 1 ? "day" : "days"} present`,
+        ]
+      : []),
+  ].join(" and ");
+  const importLabel = importParts[0].toUpperCase() + importParts.slice(1);
   const dates = rows.flatMap((row) => (row.date ? [row.date] : [])).sort();
   const unknownPeople = [
     ...new Map(
@@ -677,7 +693,10 @@ export function DeviceImportSheet({ open, onOpenChange }: Props) {
                   <Alert>
                     <AlertTitle>Import saved</AlertTitle>
                     <AlertDescription>
-                      {lastImportCount} punches imported. The preview shows the
+                      {lastImportCount} punches imported.
+                      {lastPresentCount > 0 &&
+                        ` ${lastPresentCount} field staff ${lastPresentCount === 1 ? "day" : "days"} marked present.`}{" "}
+                      The preview shows the
                       latest remaining work. Review flagged days before payroll.
                     </AlertDescription>
                   </Alert>
@@ -706,7 +725,7 @@ export function DeviceImportSheet({ open, onOpenChange }: Props) {
                     disabled={
                       busy ||
                       previewStale ||
-                      newPunchCount === 0 ||
+                      (newPunchCount === 0 && presentDayCount === 0) ||
                       preview.status === "undone"
                     }
                     onClick={() => void handleConfirm()}
@@ -714,7 +733,7 @@ export function DeviceImportSheet({ open, onOpenChange }: Props) {
                     {confirm.isPending && <Spinner data-icon="inline-start" />}
                     {confirm.isPending
                       ? "Importing punches..."
-                      : `Import ${newPunchCount} new punches`}
+                      : importLabel}
                   </Button>
                   {preview.status === "completed" && (
                     <AlertDialog>
@@ -735,8 +754,9 @@ export function DeviceImportSheet({ open, onOpenChange }: Props) {
                           <AlertDialogTitle>Undo this import?</AlertDialogTitle>
                           <AlertDialogDescription>
                             Every punch this import added is removed and the
-                            affected days are recalculated. Punches HR corrected
-                            since are kept. Draft payrolls for these dates will
+                            affected days are recalculated. Field staff days it
+                            marked present are cleared. Punches and days HR
+                            corrected since are kept. Draft payrolls for these dates will
                             need regenerating. This cannot be reversed; upload
                             the report again to re-import.
                           </AlertDialogDescription>

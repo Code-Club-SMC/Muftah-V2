@@ -115,12 +115,15 @@ describe("device attendance query hooks", () => {
         completed = true;
       });
     });
-    await waitFor(() => expect(invalidate).toHaveBeenCalledTimes(6));
+    await waitFor(() => expect(invalidate).toHaveBeenCalledTimes(9));
     for (const key of [
       deviceAttendanceKeys.all,
       ["daily-attendance"],
       ["attendance-punches"],
       ["employee-attendance-log"],
+      ["order-booker-activity-log"],
+      ["salesman-activity-log"],
+      ["driver-activity-log"],
       ["payrolls"],
       ["payroll"],
     ])

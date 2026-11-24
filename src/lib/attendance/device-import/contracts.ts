@@ -46,6 +46,8 @@ export type DeviceImportRowPreview = {
   messages: string[];
   newPunchCount: number;
   dutyHours: string | null;
+  /** Field staff: importing this row marks the day present, or an earlier import of it did. */
+  marksPresent?: boolean;
   /** A working day with no report row and no saved attendance for this employee. */
   missingDay?: boolean;
 };
@@ -74,4 +76,5 @@ export type DeviceImportPreview = {
 export type DeviceImportUndoResult = {
   removedPunchCount: number;
   keptPunchCount: number;
+  removedPresentDays?: number;
 };

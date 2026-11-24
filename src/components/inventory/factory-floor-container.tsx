@@ -22,6 +22,7 @@ import { Button } from "../ui/button";
 import { FactoryFloorProductionIllustration } from "../illustrations/FactoryFloorProductionIllustration";
 import { cn } from "@/lib/utils";
 import { packagingUnit } from "@/lib/inventory/material-units";
+import { packagingKindLabel } from "@/lib/inventory/packaging-kind";
 
 // ── Animation Variants ─────────────────────────────────────────────────────
 
@@ -80,6 +81,7 @@ export const FactoryFloorContainer = () => {
   });
 
   const [activeTab, setActiveTab] = useState("raw");
+  const [packagingKind, setPackagingKind] = useState("all");
   const [isAddFactoryOpen, setAddFactoryOpen] = useState(false);
   const [adjustDialogOpen, setAdjustDialogOpen] = useState(false);
   const [adjustTarget, setAdjustTarget] = useState<{
@@ -127,6 +129,19 @@ export const FactoryFloorContainer = () => {
   const stickers = factoryFloor.materialStock
     .filter((s) => s.packagingMaterialId !== null && s.packagingMaterial?.type === "sticker" && Number(s.quantity) > 0)
     .map((s) => ({ ...s, warehouse: { name: factoryFloor.name, isActive: factoryFloor.isActive } }));
+
+  const kindOf = (item: (typeof packagingMaterials)[number]) =>
+    item.packagingMaterial ? packagingKindLabel(item.packagingMaterial) : "Unspecified packaging";
+  const kindCounts = new Map<string, number>();
+  for (const item of packagingMaterials) kindCounts.set(kindOf(item), (kindCounts.get(kindOf(item)) ?? 0) + 1);
+  const packagingKinds = [...kindCounts].sort(([a], [b]) => a.localeCompare(b));
+  // A kind that runs out of stock leaves the filter, so the list falls back to all.
+  const shownKind = kindCounts.has(packagingKind) ? packagingKind : "all";
+  const shownPackaging = packagingMaterials
+    .filter((item) => shownKind === "all" || kindOf(item) === shownKind)
+    .sort((a, b) =>
+      kindOf(a).localeCompare(kindOf(b)) ||
+      (a.packagingMaterial?.name ?? "").localeCompare(b.packagingMaterial?.name ?? "", undefined, { numeric: true }));
 
   const finishedGoods = factoryFloor.finishedGoodsStock.map((fg) => ({
     ...fg,
@@ -258,9 +273,27 @@ export const FactoryFloorContainer = () => {
             </div>
           )}
 
-          {activeTab === "packaging" && (
+          {activeTab === "packaging" && (<>
+            {packagingKinds.length > 1 && (
+              <div role="group" aria-label="Filter packaging by kind" className="mb-4 flex flex-wrap gap-2">
+                {[["all", packagingMaterials.length] as [string, number], ...packagingKinds].map(([kind, count]) => (
+                  <Button
+                    key={kind}
+                    type="button"
+                    size="sm"
+                    variant={shownKind === kind ? "default" : "outline"}
+                    aria-pressed={shownKind === kind}
+                    className="rounded-none"
+                    onClick={() => setPackagingKind(kind)}
+                  >
+                    {kind === "all" ? "All" : kind} ({count})
+                  </Button>
+                ))}
+              </div>
+            )}
             <StockTable
-              data={packagingMaterials as any}
+              key={shownKind}
+              data={shownPackaging as any}
               type="packaging"
               warehouses={allWarehouses as any}
               preselectedWarehouse={factoryFloor.id}
@@ -273,7 +306,7 @@ export const FactoryFloorContainer = () => {
                   : undefined
               }
             />
-          )}
+          </>)}
 
           {activeTab === "stickers" && (
             <StockTable

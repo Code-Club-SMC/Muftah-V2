@@ -1,6 +1,6 @@
 import { Suspense } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -130,6 +130,30 @@ describe("factory floor stock exclusion of deleted/zero stock", () => {
     const kpiElements = screen.getAllByText("1");
     expect(kpiElements.length).toBeGreaterThan(0);
 
+    client.clear();
+  });
+
+  it("filters packaging by kind and lists each kind together", async () => {
+    const pack = (id: string, name: string, packagingKind: string | null) => ({
+      id, warehouseId: "floor-1", chemicalId: null, packagingMaterialId: id, quantity: "5", chemical: null,
+      packagingMaterial: { id, name, type: "primary", packagingKind },
+    });
+    mocks.floor.mockResolvedValue({
+      id: "floor-1", name: "Factory Floor", isActive: true, finishedGoodsStock: [], mixedBulk: [],
+      materialStock: [pack("1", "Shopper 1kg", "shopper"), pack("2", "Bottle 1000ml", "bottle"), pack("3", "Old pack", null), pack("4", "Bottle 500ml", "bottle")],
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={client}><Suspense fallback="Loading"><FactoryFloorContainer /></Suspense></QueryClientProvider>);
+    const tab = await screen.findByRole("tab", { name: "Packaging" });
+    fireEvent.mouseDown(tab, { button: 0 });
+    const list = async () => (await screen.findByTestId("stock-table-packaging")).textContent;
+    expect(await list()).toBe("Bottle 500ml, Bottle 1000ml, Old pack, Shopper 1kg");
+    fireEvent.click(screen.getByRole("button", { name: "Bottle (2)" }));
+    expect(await list()).toBe("Bottle 500ml, Bottle 1000ml");
+    fireEvent.click(screen.getByRole("button", { name: "Primary packaging (1)" }));
+    expect(await list()).toBe("Old pack");
+    fireEvent.click(screen.getByRole("button", { name: "All (4)" }));
+    expect(await list()).toContain("Shopper 1kg");
     client.clear();
   });
 });
