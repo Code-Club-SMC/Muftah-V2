@@ -803,6 +803,9 @@ export const salesReturnItems = pgTable("sales_return_items", {
   goodUnits: integer("good_units").notNull().default(0),
   damagedUnits: integer("damaged_units").notNull().default(0),
   expiredUnits: integer("expired_units").notNull().default(0),
+  damagedSalvagePerUnit: decimal("damaged_salvage_per_unit", { precision: 12, scale: 2 }).notNull().default("0"),
+  expiredSalvagePerUnit: decimal("expired_salvage_per_unit", { precision: 12, scale: 2 }).notNull().default("0"),
+  writeOffAmount: decimal("write_off_amount", { precision: 12, scale: 2 }).notNull().default("0"),
   refundPerUnit: decimal("refund_per_unit", { precision: 12, scale: 2 }).notNull().default("0"),
   totalRefund: decimal("total_refund", { precision: 12, scale: 2 }).notNull().default("0"),
   ...timestamps,
@@ -841,6 +844,8 @@ export const salesReturnStockTraces = pgTable("sales_return_stock_traces", {
   totalUnitsMoved: integer("total_units_moved").notNull().default(0),
   costPerUnit: decimal("cost_per_unit", { precision: 12, scale: 4 }).notNull().default("0"),
   totalCost: decimal("total_cost", { precision: 12, scale: 2 }).notNull().default("0"),
+  // Original cost minus the value that entered (or, negative, left) stock. 0 for sellable packs.
+  writeOffAmount: decimal("write_off_amount", { precision: 12, scale: 2 }).notNull().default("0"),
   ...timestamps,
 }, (table) => ({
   salesReturnIdx: index("idx_return_stock_traces_return").on(table.salesReturnId),
@@ -848,6 +853,44 @@ export const salesReturnStockTraces = pgTable("sales_return_stock_traces", {
   invoiceIdx: index("idx_return_stock_traces_invoice").on(table.invoiceId),
   warehouseIdx: index("idx_return_stock_traces_warehouse").on(table.warehouseId),
   destinationIdx: index("idx_return_stock_traces_destination").on(table.destination),
+}));
+
+// Scrap, seconds sales and value changes on damaged/expired returned stock. Voids keep the row.
+export const returnedStockMovements = pgTable("returned_stock_movements", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => createId()),
+  kind: text("kind").notNull(), // scrap | seconds_sale | revalue
+  warehouseId: text("warehouse_id")
+    .notNull()
+    .references(() => warehouses.id),
+  recipeId: text("recipe_id")
+    .notNull()
+    .references(() => recipes.id),
+  condition: text("condition").notNull(), // damaged | expired
+  units: integer("units").notNull().default(0),
+  unitsBefore: integer("units_before").notNull(),
+  valueBefore: decimal("value_before", { precision: 14, scale: 2 }).notNull(),
+  valueRemoved: decimal("value_removed", { precision: 14, scale: 2 }).notNull(),
+  unitPrice: decimal("unit_price", { precision: 12, scale: 2 }),
+  saleAmount: decimal("sale_amount", { precision: 14, scale: 2 }),
+  lossAmount: decimal("loss_amount", { precision: 14, scale: 2 }).notNull(),
+  walletId: text("wallet_id").references(() => wallets.id),
+  transactionId: text("transaction_id").references(() => transactions.id),
+  note: text("note"),
+  movementDate: timestamp("movement_date").notNull().defaultNow(),
+  performedById: text("performed_by_id")
+    .notNull()
+    .references(() => user.id),
+  voidedAt: timestamp("voided_at"),
+  voidedById: text("voided_by_id").references(() => user.id),
+  voidReason: text("void_reason"),
+  voidTransactionId: text("void_transaction_id").references(() => transactions.id),
+  ...timestamps,
+}, (table) => ({
+  dateIdx: index("idx_returned_stock_movements_date").on(table.movementDate),
+  stockIdx: index("idx_returned_stock_movements_stock").on(table.warehouseId, table.recipeId, table.condition),
+  kindCheck: check("returned_stock_movements_kind", sql`${table.kind} in ('scrap', 'seconds_sale', 'revalue')`),
 }));
 
 export const creditNoteCounters = pgTable(
@@ -1221,6 +1264,29 @@ export const salesReturnStockTracesRelations = relations(salesReturnStockTraces,
   recipe: one(recipes, {
     fields: [salesReturnStockTraces.recipeId],
     references: [recipes.id],
+  }),
+}));
+
+export const returnedStockMovementsRelations = relations(returnedStockMovements, ({ one }) => ({
+  warehouse: one(warehouses, {
+    fields: [returnedStockMovements.warehouseId],
+    references: [warehouses.id],
+  }),
+  recipe: one(recipes, {
+    fields: [returnedStockMovements.recipeId],
+    references: [recipes.id],
+  }),
+  wallet: one(wallets, {
+    fields: [returnedStockMovements.walletId],
+    references: [wallets.id],
+  }),
+  performedBy: one(user, {
+    fields: [returnedStockMovements.performedById],
+    references: [user.id],
+  }),
+  voidedBy: one(user, {
+    fields: [returnedStockMovements.voidedById],
+    references: [user.id],
   }),
 }));
 

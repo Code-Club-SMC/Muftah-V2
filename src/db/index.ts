@@ -117,6 +117,7 @@ export const {
   salesReturns,
   salesReturnItems,
   salesReturnStockTraces,
+  returnedStockMovements,
   invoiceTimelineEvents,
   creditNoteCounters,
   customerCreditLots,
