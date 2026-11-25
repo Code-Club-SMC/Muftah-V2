@@ -13,6 +13,7 @@ import {
   eachDayOfInterval,
 } from "date-fns";
 import { createServerFn } from "@tanstack/react-start";
+import { ESTIMATED_WORKING_DAYS } from "@/lib/types/hr-types";
 import {
   generateEmployeePayslipCore,
   simulateEmployeePayslipCore,
@@ -193,7 +194,7 @@ export const getMonthlyPayrollTableFn = createServerFn()
     // to avoid N+1 fetches and to keep the aggregate accurate.
     const totalStats = await db
       .select({
-        totalBasic: sql<string>`sum(CAST(${employees.basicSalary} AS numeric) + COALESCE((SELECT SUM((elem->>'amount')::numeric) FROM jsonb_array_elements(${employees.allowanceConfig}) AS elem), 0))`,
+        totalBasic: sql<string>`sum(CAST(${employees.basicSalary} AS numeric) + COALESCE((SELECT SUM((elem->>'amount')::numeric * CASE WHEN elem->>'payBasis' = 'perDay' THEN ${ESTIMATED_WORKING_DAYS}::numeric ELSE 1 END) FROM jsonb_array_elements(${employees.allowanceConfig}) AS elem), 0))`,
       })
       .from(employees)
       .where(eq(employees.status, "active"));
@@ -208,7 +209,7 @@ export const getMonthlyPayrollTableFn = createServerFn()
 
     const pendingGrossStats = await db
       .select({
-        totalPending: sql<string>`sum(CAST(${employees.basicSalary} AS numeric) + COALESCE((SELECT SUM((elem->>'amount')::numeric) FROM jsonb_array_elements(${employees.allowanceConfig}) AS elem), 0))`,
+        totalPending: sql<string>`sum(CAST(${employees.basicSalary} AS numeric) + COALESCE((SELECT SUM((elem->>'amount')::numeric * CASE WHEN elem->>'payBasis' = 'perDay' THEN ${ESTIMATED_WORKING_DAYS}::numeric ELSE 1 END) FROM jsonb_array_elements(${employees.allowanceConfig}) AS elem), 0))`,
       })
       .from(employees)
       .leftJoin(

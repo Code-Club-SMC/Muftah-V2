@@ -87,7 +87,7 @@ export function SalaryRevisionHistory({ employeeId }: SalaryRevisionHistoryProps
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       {rev.allowanceConfig?.length
-                        ? rev.allowanceConfig.map((a: any) => `${a.name}: PKR ${Math.round(a.amount).toLocaleString()}`).join(", ")
+                        ? rev.allowanceConfig.map((a: any) => `${a.name}: PKR ${Math.round(a.amount).toLocaleString()}${a.payBasis === "perDay" ? " / day" : ""}`).join(", ")
                         : "None"}
                     </TableCell>
                     <TableCell className="text-xs max-w-[200px] truncate" title={rev.reason}>

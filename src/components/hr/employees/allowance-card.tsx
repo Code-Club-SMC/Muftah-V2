@@ -173,6 +173,42 @@ export const AllowanceCard = ({
         )}
       </form.Field>
 
+      {/* ── Pay basis ── Night shift already pays per night. */}
+      {allowanceId !== "nightShift" && (
+        <form.Field name={`allowanceConfig[${index}].payBasis`}>
+          {(field: AnyFieldApi) => (
+            <div role="group" aria-label="Pay basis" className="grid grid-cols-2 gap-1.5">
+              {(["monthly", "perDay"] as const).map((basis) => {
+                const isActive = (field.state.value ?? "monthly") === basis;
+                return (
+                  <Button
+                    key={basis}
+                    type="button"
+                    size="sm"
+                    variant={isActive ? "secondary" : "ghost"}
+                    aria-pressed={isActive}
+                    className="h-7 text-xs"
+                    onClick={() => field.handleChange(basis)}
+                  >
+                    {basis === "monthly" ? "Per month" : "Per day"}
+                  </Button>
+                );
+              })}
+            </div>
+          )}
+        </form.Field>
+      )}
+
+      <form.Subscribe
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        selector={(state: any) => state.values.allowanceConfig[index]?.payBasis === "perDay"}
+      >
+        {(isPerDay: boolean) => isPerDay ? (
+          <p className="text-xs text-muted-foreground px-0.5">
+            Pays this amount for each day present. Absent and leave days pay nothing.
+          </p>
+        ) : (
+          <>
       {/* ── Deduction Occasion Toggles ── */}
       <div className="space-y-1.5 pt-0.5">
         <span className="text-[9px] font-black text-muted-foreground/50 uppercase  px-0.5">
@@ -230,6 +266,9 @@ export const AllowanceCard = ({
           );
         }}
       </form.Field>
+          </>
+        )}
+      </form.Subscribe>
 
     </div>
   );

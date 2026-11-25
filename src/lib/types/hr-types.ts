@@ -5,7 +5,13 @@
 export type AllowanceConfig = {
   id: string;    // e.g., "houseRent", "conveyance", "fuel"
   name: string;  // Display name shown in UI and payslips
-  amount: number; // Monthly amount in PKR
+  amount: number; // PKR per month, or per day present when payBasis is "perDay"
+
+  /**
+   * - "monthly" → amount is the full month's figure, reduced by the deduction rules  [default]
+   * - "perDay"  → pays amount × days present; the deduction rules do not apply
+   */
+  payBasis?: "monthly" | "perDay";
 
   /**
    * Deduction flags — determines on which attendance events this allowance
@@ -29,6 +35,16 @@ export type AllowanceConfig = {
    */
   lateEarlyBasis?: "hourly" | "perDay";
 };
+
+/** Typical working days in a pay cycle. Estimates only; payslips use the actual days present. */
+export const ESTIMATED_WORKING_DAYS = 26;
+
+export function estimateMonthlyAllowance(
+  allowance: { amount?: number | string | null; payBasis?: string },
+): number {
+  const amount = Number(allowance.amount) || 0;
+  return allowance.payBasis === "perDay" ? amount * ESTIMATED_WORKING_DAYS : amount;
+}
 
 export type BasicSalaryDeductionPolicy = {
   absent: boolean;
