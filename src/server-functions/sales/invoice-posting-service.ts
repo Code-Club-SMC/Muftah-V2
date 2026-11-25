@@ -291,7 +291,7 @@ const calculateLineWeightKg = (
     return dispatchedUnits * (normalizedFillAmount / 1000);
   }
 
-  if (fillUnit === "kg") {
+  if (fillUnit === "kg" || fillUnit === "L") {
     return dispatchedUnits * normalizedFillAmount;
   }
 

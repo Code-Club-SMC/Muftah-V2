@@ -1,5 +1,5 @@
 import Big from "big.js";
-import { and, asc, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNull, lte, ne, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { suppliers } from "@/db/schemas/core-suppliers";
 import { expenseCategories, expenses, otherIncome } from "@/db/schemas/finance-schema";
@@ -16,6 +16,7 @@ import {
   mixingRuns,
   packagingAllocations,
 } from "@/db/schemas/production-schema";
+import { salesReturns } from "@/db/schemas/sales-erp-schema";
 import { customers, invoiceItems, invoices } from "@/db/schemas/sales-schema";
 import { purchaseRecords } from "@/db/schemas/supplier-schema";
 import { reportDateBounds, reportDateKey, reportMonth } from "@/lib/report-dates";
@@ -26,6 +27,7 @@ import {
   type MonthKey,
   type MonthlyReport,
   reportExpenseCategories,
+  SUPPLIER_PURCHASE_CATEGORY,
 } from "@/lib/reports/monthly-report";
 
 export interface MonthlyReportDetailRow {
@@ -49,6 +51,34 @@ function instantBounds(from: string, to: string): { fromDate: Date; toDate: Date
   return { fromDate, toDate };
 }
 
+/** Store credit given for received returns, per invoice. It is money the customer got back. */
+function returnCreditByInvoice() {
+  return db
+    .select({
+      invoiceId: salesReturns.invoiceId,
+      amount: sql<string>`sum(${salesReturns.customerCreditAmount})`.as("return_credit_amount"),
+    })
+    .from(salesReturns)
+    .where(eq(salesReturns.status, "completed"))
+    .groupBy(salesReturns.invoiceId)
+    .as("return_credit");
+}
+
+/**
+ * Money kept from an invoice. Paid amount alone counts money twice when a customer pays, gets store
+ * credit (goods returned, or paid above the balance) and spends that credit on another invoice.
+ */
+function cashKept(row: { paid: string; excess: string; returnCredit: string | null }): Big {
+  return new Big(row.paid).minus(row.excess).minus(row.returnCredit ?? 0);
+}
+
+/** Litre packs sold before 2026-11-23 were saved with no weight; 1 litre counts as 1 kg, as ml packs do. */
+const itemWeightKg = sql<string>`coalesce(sum(case when ${invoiceItems.fillUnitSnapshot} = 'L' and ${invoiceItems.totalWeight} = 0
+  then ${invoiceItems.dispatchedUnits} * ${invoiceItems.fillAmountSnapshot} else ${invoiceItems.totalWeight} end), 0)`;
+
+/** Supplier money is shown under Purchases. The saved name still holds if the category is renamed. */
+const notSupplierMoney = ne(expenses.category, SUPPLIER_PURCHASE_CATEGORY);
+
 const monthOf = (value: Date): MonthKey => reportDateKey(value).slice(0, 7);
 
 function addDated(bucket: Map<MonthKey, Big>, value: Date | null, amount: string | null): void {
@@ -65,6 +95,8 @@ export async function loadMonthlyReport(startYear: number, todayKey: string): Pr
     lte(invoices.date, toDate),
   );
 
+  const returnCredit = returnCreditByInvoice();
+
   const [
     invoiceRows,
     weightRows,
@@ -78,11 +110,18 @@ export async function loadMonthlyReport(startYear: number, todayKey: string): Pr
     purchaseRows,
   ] = await Promise.all([
     db
-      .select({ date: invoices.date, paid: invoices.paidAmount, outstanding: invoices.outstandingAmount })
+      .select({
+        date: invoices.date,
+        paid: invoices.paidAmount,
+        excess: invoices.excessCreditedAmount,
+        returnCredit: returnCredit.amount,
+        outstanding: invoices.outstandingAmount,
+      })
       .from(invoices)
+      .leftJoin(returnCredit, eq(returnCredit.invoiceId, invoices.id))
       .where(savedInvoiceInYear),
     db
-      .select({ date: invoices.date, kg: sql<string>`coalesce(sum(${invoiceItems.totalWeight}), 0)` })
+      .select({ date: invoices.date, kg: itemWeightKg })
       .from(invoiceItems)
       .innerJoin(invoices, eq(invoiceItems.invoiceId, invoices.id))
       .where(savedInvoiceInYear)
@@ -150,7 +189,12 @@ export async function loadMonthlyReport(startYear: number, todayKey: string): Pr
       .select({ categoryId: expenses.categoryId, date: expenses.expenseDate, amount: expenses.amount })
       .from(expenses)
       .where(
-        and(isNull(expenses.voidedAt), gte(expenses.expenseDate, fromDate), lte(expenses.expenseDate, toDate)),
+        and(
+          isNull(expenses.voidedAt),
+          notSupplierMoney,
+          gte(expenses.expenseDate, fromDate),
+          lte(expenses.expenseDate, toDate),
+        ),
       ),
     db
       .select({
@@ -177,7 +221,7 @@ export async function loadMonthlyReport(startYear: number, todayKey: string): Pr
   const cash = new Map<MonthKey, Big>();
   const credit = new Map<MonthKey, Big>();
   for (const row of invoiceRows) {
-    addDated(cash, row.date, row.paid);
+    addToMonth(cash, monthOf(row.date), cashKept(row));
     addDated(credit, row.date, row.outstanding);
   }
 
@@ -266,7 +310,7 @@ export async function loadMonthlyReportDetail(line: string, month: MonthKey): Pr
           date: invoices.date,
           number: invoices.invoiceNumber,
           customer: customers.name,
-          kg: sql<string>`coalesce(sum(${invoiceItems.totalWeight}), 0)`,
+          kg: itemWeightKg,
         })
         .from(invoices)
         .innerJoin(customers, eq(invoices.customerId, customers.id))
@@ -285,16 +329,20 @@ export async function loadMonthlyReportDetail(line: string, month: MonthKey): Pr
       );
     }
 
+    const returnCredit = returnCreditByInvoice();
     const rows = await db
       .select({
         date: invoices.date,
         number: invoices.invoiceNumber,
         customer: customers.name,
         paid: invoices.paidAmount,
+        excess: invoices.excessCreditedAmount,
+        returnCredit: returnCredit.amount,
         outstanding: invoices.outstandingAmount,
       })
       .from(invoices)
       .innerJoin(customers, eq(invoices.customerId, customers.id))
+      .leftJoin(returnCredit, eq(returnCredit.invoiceId, invoices.id))
       .where(savedInvoiceInMonth);
     return detail(
       line === "cash" ? "Cash received" : "Credit (unpaid)",
@@ -303,7 +351,7 @@ export async function loadMonthlyReportDetail(line: string, month: MonthKey): Pr
         date: reportDateKey(row.date),
         reference: row.number,
         description: row.customer,
-        amount: money(line === "cash" ? row.paid : row.outstanding),
+        amount: money(line === "cash" ? cashKept(row) : row.outstanding),
       })),
     );
   }
@@ -464,6 +512,7 @@ export async function loadMonthlyReportDetail(line: string, month: MonthKey): Pr
         and(
           eq(expenses.categoryId, categoryId),
           isNull(expenses.voidedAt),
+          notSupplierMoney,
           gte(expenses.expenseDate, fromDate),
           lte(expenses.expenseDate, toDate),
         ),

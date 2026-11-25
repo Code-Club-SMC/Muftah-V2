@@ -13,6 +13,9 @@ const MONTH_LONG = [
 /** Expense categories the system makes for itself. Their money is reported elsewhere. */
 export const SYSTEM_EXPENSE_CATEGORY_SLUGS: readonly string[] = ["supplier-purchase"];
 
+/** Category name the app writes on every supplier payment, whatever the category is called now. */
+export const SUPPLIER_PURCHASE_CATEGORY = "Supplier Purchase";
+
 const TOTAL_KEYS = new Set(["totalSale", "totalConsumption", "difference", "withoutCredit"]);
 
 export function fiscalYearMonths(startYear: number): MonthKey[] {
