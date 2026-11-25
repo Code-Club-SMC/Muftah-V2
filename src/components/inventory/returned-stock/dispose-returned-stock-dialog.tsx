@@ -8,8 +8,7 @@ import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { useWallets } from "@/hooks/finance/use-finance";
-import { useScrapReturnedStock, useSellReturnedStock, type ReturnedStockRow } from "@/hooks/inventory/use-returned-stock";
+import { useReturnedStockAccounts, useScrapReturnedStock, useSellReturnedStock, type ReturnedStockRow } from "@/hooks/inventory/use-returned-stock";
 import { formatRupees } from "@/lib/finance/expense-entry";
 import { poolShare, secondsSaleAmount } from "@/lib/inventory/returned-stock";
 
@@ -22,7 +21,7 @@ export function DisposeReturnedStockDialog({ row, onClose }: { row: ReturnedStoc
   const [error, setError] = useState("");
   const scrap = useScrapReturnedStock();
   const sell = useSellReturnedStock();
-  const wallets = useWallets({ enabled: method === "seconds" });
+  const accounts = useReturnedStockAccounts(method === "seconds");
   const pending = scrap.isPending || sell.isPending;
 
   const packs = Number(units);
@@ -37,7 +36,7 @@ export function DisposeReturnedStockDialog({ row, onClose }: { row: ReturnedStoc
   const loss = removed === null ? null
     : method === "scrap" ? removed
     : sale ? new Big(removed).minus(sale).toFixed(2) : null;
-  const walletName = (wallets.data ?? []).find((wallet: { id: string }) => wallet.id === walletId)?.name;
+  const walletName = (accounts.data ?? []).find(account => account.id === walletId)?.name;
   const valid = !!removed && !checkError && (method === "scrap" || (unitPrice > 0 && !!walletId));
 
   async function submit() {
@@ -82,12 +81,12 @@ export function DisposeReturnedStockDialog({ row, onClose }: { row: ReturnedStoc
                     <Select value={walletId} onValueChange={setWalletId}>
                       <SelectTrigger id="dispose-wallet" aria-label="Money goes into"><SelectValue placeholder="Pick the account" /></SelectTrigger>
                       <SelectContent>
-                        {(wallets.data ?? []).map((wallet: { id: string; name: string }) => (
-                          <SelectItem key={wallet.id} value={wallet.id}>{wallet.name}</SelectItem>
+                        {(accounts.data ?? []).map(account => (
+                          <SelectItem key={account.id} value={account.id}>{account.name}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
-                    {wallets.isError && <p role="alert" className="text-sm text-destructive">Accounts could not be loaded: {wallets.error.message}</p>}
+                    {accounts.isError && <p role="alert" className="text-sm text-destructive">Accounts could not be loaded: {accounts.error.message}</p>}
                   </Field>
                 </>
               )}

@@ -5,7 +5,6 @@ import type { db } from "@/db";
 import { transactions, wallets } from "@/db/schemas/finance-schema";
 import { recipes, returnedFinishedGoodsStock } from "@/db/schemas/inventory-schema";
 import { returnedStockMovements, salesReturnStockTraces } from "@/db/schemas/sales-erp-schema";
-import { formatRupees } from "@/lib/finance/expense-entry";
 import { lockFinishedGoods } from "@/lib/production/finished-goods-lock.server";
 import {
   poolShare,
@@ -87,9 +86,10 @@ async function moveWalletMoney(
     )
     .returning({ id: wallets.id });
   if (!wallet) {
-    const existing = await tx.query.wallets.findFirst({ where: eq(wallets.id, input.walletId), columns: { name: true, balance: true } });
+    const existing = await tx.query.wallets.findFirst({ where: eq(wallets.id, input.walletId), columns: { name: true } });
     if (!existing) throw new Error("Account not found");
-    throw new Error(`${existing.name} has only ${formatRupees(existing.balance)}. Voiding would take it below zero.`);
+    // No balance in the message: the person voiding may not be allowed to see it.
+    throw new Error(`${existing.name} doesn't have enough money to take this sale back out.`);
   }
   const id = createId();
   await tx.insert(transactions).values({

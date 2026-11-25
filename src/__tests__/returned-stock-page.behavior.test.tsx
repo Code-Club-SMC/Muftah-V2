@@ -14,8 +14,8 @@ vi.mock("@/server-functions/inventory/returned-stock-fn", () => ({
   sellReturnedStockFn: mocks.sell,
   setReturnedStockValueFn: mocks.setValue,
   voidReturnedStockMovementFn: mocks.voidMovement,
+  getReturnedStockAccountsFn: mocks.wallets,
 }));
-vi.mock("@/server-functions/finance-fn", () => ({ getWalletsListFn: mocks.wallets }));
 vi.mock("@/hooks/use-viewer-access", () => ({ useViewerAccess: () => ({ data: { permissions: mocks.permissions } }) }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
@@ -40,7 +40,7 @@ beforeEach(() => {
       movementDate: new Date("2026-12-01T10:00:00Z"), performedByName: "Ali", voidedAt: null, voidedByName: null, voidReason: null,
     }],
   });
-  mocks.wallets.mockResolvedValue([{ id: "cash", name: "Main Cash", type: "cash", balance: "100.00" }]);
+  mocks.wallets.mockResolvedValue([{ id: "cash", name: "Main Cash" }]);
   mocks.scrap.mockResolvedValue({ id: "m2" });
   mocks.setValue.mockResolvedValue({ id: "m3" });
   mocks.voidMovement.mockResolvedValue({ id: "m1" });
@@ -83,6 +83,25 @@ describe("Returned Stock page", () => {
     fireEvent.change(screen.getByLabelText("Reason"), { target: { value: "Pack was fine" } });
     fireEvent.click(screen.getByRole("button", { name: "Void entry" }));
     await waitFor(() => expect(mocks.voidMovement).toHaveBeenCalledWith({ data: { movementId: "m1", reason: "Pack was fine" } }));
+  });
+
+  it("sells as seconds with account names for someone who can't view finance", async () => {
+    mocks.permissions = ["inventory.view", "inventory.returns.dispose"];
+    mocks.sell.mockResolvedValue({ id: "m4" });
+    mount();
+    fireEvent.click(await screen.findByRole("button", { name: "Dispose" }));
+    expect(mocks.wallets).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByLabelText("Sell as seconds"));
+    fireEvent.change(screen.getByLabelText("Packs"), { target: { value: "1" } });
+    fireEvent.change(screen.getByLabelText("Price per pack"), { target: { value: "6" } });
+    await waitFor(() => expect(mocks.wallets).toHaveBeenCalled());
+    fireEvent.keyDown(screen.getByRole("combobox", { name: "Money goes into" }), { key: "Enter" });
+    fireEvent.click(await screen.findByRole("option", { name: "Main Cash" }));
+    expect(await screen.findByText("Rs 6 goes into Main Cash. Profit booked: Rs 1")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Sell 1 pack" }));
+    await waitFor(() => expect(mocks.sell).toHaveBeenCalledWith({
+      data: { warehouseId: "w1", recipeId: "r1", condition: "damaged", units: 1, unitPrice: 6, walletId: "cash", note: undefined },
+    }));
   });
 
   it("hides actions from people who can only view", async () => {

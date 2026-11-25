@@ -20,7 +20,7 @@ import { createReportDateRange } from "@/server-functions/reports/profit-loss/re
 import { fetchScopedSummary } from "@/server-functions/reports/profit-loss/reporting-core";
 import { exportPnlCsvFn } from "@/server-functions/reports/profit-loss/export-csv-fn";
 import { formatReportMoney } from "@/lib/report-format";
-import { getReturnedStockFn, scrapReturnedStockFn, sellReturnedStockFn, setReturnedStockValueFn, voidReturnedStockMovementFn } from "@/server-functions/inventory/returned-stock-fn";
+import { getReturnedStockAccountsFn, getReturnedStockFn, scrapReturnedStockFn, sellReturnedStockFn, setReturnedStockValueFn, voidReturnedStockMovementFn } from "@/server-functions/inventory/returned-stock-fn";
 
 // Only HTTP/session transport is bypassed. Real validation, callbacks, SQL,
 // nested transactions, receipt and invoice/return accounting are exercised.
@@ -1034,8 +1034,17 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("reachable two-phase invoice mut
         expect([sale.kind, sale.units, sale.valueRemoved, sale.saleAmount, sale.lossAmount]).toEqual(["seconds_sale", 2, "4.00", "14.00", "-10.00"]);
         expect(await damagedRow(tx, f)).toEqual([1, "2.00"]);
         expect((await tx.query.wallets.findFirst({ where: eq(wallets.id, wallet.id) }))!.balance).toBe("14.00");
+        // Names only: the seller may not be allowed to see balances.
+        const accounts = await readAccounting(tx, () => invoke(getReturnedStockAccountsFn, {}, f.actor.id));
+        expect(accounts.find((account: { id: string }) => account.id === wallet.id)).toEqual({ id: wallet.id, name: wallet.name });
         const [credit] = await tx.select().from(transactions).where(eq(transactions.id, sale.transactionId));
         expect([credit.type, credit.amount, credit.source]).toEqual(["credit", "14.00", "Returned Stock Sale"]);
+
+        await tx.update(wallets).set({ balance: "13.00" }).where(eq(wallets.id, wallet.id));
+        const refused = await invoke(voidReturnedStockMovementFn, { movementId: sale.id, reason: "Buyer returned them" }, f.actor.id)
+          .catch((error: Error) => error.message);
+        expect(refused).toBe(`${wallet.name} doesn't have enough money to take this sale back out.`);
+        await tx.update(wallets).set({ balance: "14.00" }).where(eq(wallets.id, wallet.id));
 
         await invoke(voidReturnedStockMovementFn, { movementId: sale.id, reason: "Buyer returned them" }, f.actor.id);
         expect(await damagedRow(tx, f)).toEqual([3, "6.00"]);

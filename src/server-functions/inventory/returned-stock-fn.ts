@@ -114,6 +114,15 @@ export const getReturnedStockFn = createServerFn()
     return { rows, movements };
   });
 
+/** Names only: people who sell seconds pick an account without seeing balances or needing finance access. */
+export const getReturnedStockAccountsFn = createServerFn()
+  .middleware([requireReturnsDisposeMiddleware])
+  .inputValidator(z.object({}).optional())
+  .handler(async () => {
+    const { db } = await import("@/db");
+    return db.select({ id: wallets.id, name: wallets.name }).from(wallets).orderBy(asc(wallets.createdAt));
+  });
+
 export const scrapReturnedStockFn = createServerFn()
   .middleware([requireReturnsDisposeMiddleware])
   .inputValidator(z.object({ ...stockKey, units: packs, note }))

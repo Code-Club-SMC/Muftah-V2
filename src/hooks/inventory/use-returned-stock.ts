@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
+  getReturnedStockAccountsFn,
   getReturnedStockFn,
   scrapReturnedStockFn,
   sellReturnedStockFn,
@@ -22,6 +23,15 @@ export type VoidMovementInput = { movementId: string; reason: string };
 
 export function useReturnedStock() {
   return useQuery({ queryKey: returnedStockKey, queryFn: () => getReturnedStockFn() });
+}
+
+/** Account names for a seconds sale; needs only the dispose permission. */
+export function useReturnedStockAccounts(enabled: boolean) {
+  return useQuery({
+    queryKey: [...returnedStockKey, "accounts"],
+    queryFn: () => getReturnedStockAccountsFn(),
+    enabled,
+  });
 }
 
 /** Errors stay in the dialog that sent them; success refreshes stock, accounts and reports. */
