@@ -4,11 +4,15 @@ import { attendance, attendancePunches } from "@/db/schemas/hr-schema";
 const mock = vi.hoisted(() => ({
   events: [] as string[],
   db: {
-    query: { employees: { findMany: vi.fn() } },
     select: vi.fn(),
     transaction: vi.fn(),
   },
-  tx: { execute: vi.fn(), select: vi.fn(), insert: vi.fn() },
+  tx: {
+    query: { employees: { findMany: vi.fn() } },
+    execute: vi.fn(),
+    select: vi.fn(),
+    insert: vi.fn(),
+  },
 }));
 vi.mock("@/db", async () => ({
   db: mock.db,
@@ -39,8 +43,8 @@ const run = bulkMarkAttendanceRangeFn as unknown as (input: {
 beforeEach(() => {
   vi.clearAllMocks();
   mock.events = [];
-  mock.db.query.employees.findMany.mockResolvedValue([
-    { id: "emp", restDays: [], shifts: [{ start: "08:00", end: "17:00" }] },
+  mock.tx.query.employees.findMany.mockResolvedValue([
+    { id: "emp", joiningDate: "2026-01-01", restDays: [], shifts: [{ start: "08:00", end: "17:00" }] },
   ]);
   mock.db.transaction.mockImplementation(async (callback) => callback(mock.tx));
   // The importer finishes before bulk marking obtains its lock.
@@ -61,7 +65,13 @@ beforeEach(() => {
             },
           ];
         if (table === attendancePunches)
-          return [{ employeeId: "emp", attendanceDate: "2026-10-13" }];
+          return [
+            {
+              employeeId: "emp",
+              attendanceDate: "2026-10-13",
+              timestamp: new Date("2026-10-13T08:00:00+05:00"),
+            },
+          ];
         throw new Error("Unexpected table");
       },
     }),

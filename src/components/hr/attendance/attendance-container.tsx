@@ -262,10 +262,12 @@ export const AttendanceContainer = () => {
                 Import device report
               </Button>
             )}
-            <Button variant="outline" onClick={() => setBulkOpen(true)}>
-              <CalendarRange className="size-3.5 mr-2" />
-              Bulk Mark
-            </Button>
+            {canManage && (
+              <Button variant="outline" onClick={() => setBulkOpen(true)}>
+                <CalendarRange className="size-3.5 mr-2" />
+                Bulk Mark
+              </Button>
+            )}
           </div>
         </div>
 
@@ -347,11 +349,9 @@ export const AttendanceContainer = () => {
       </motion.div>
 
       {/* ── Modals/Sheets ─────────────────────────────────────────────── */}
-      <BulkAttendanceSheet
-        open={bulkOpen}
-        onOpenChange={setBulkOpen}
-        employees={employees}
-      />
+      {canManage && (
+        <BulkAttendanceSheet open={bulkOpen} onOpenChange={setBulkOpen} />
+      )}
       {canManage && (
         <DeviceImportSheet open={importOpen} onOpenChange={setImportOpen} />
       )}

@@ -20,9 +20,12 @@ export async function lockAttendancePayrollWrites(tx: Tx) {
   );
 }
 
-export async function assertAttendanceDatesEditable(tx: Tx, dates: string[]) {
+export async function assertAttendanceDatesEditable(
+  reader: Reader,
+  dates: string[],
+) {
   if (!dates.length) return;
-  const locked = await tx.query.payrolls.findMany({
+  const locked = await reader.query.payrolls.findMany({
     where: and(
       lte(payrolls.startDate, [...dates].sort().at(-1)!),
       gte(payrolls.endDate, [...dates].sort()[0]),

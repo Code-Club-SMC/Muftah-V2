@@ -44,8 +44,7 @@ describe("phase 6 attendance source", () => {
     expect(bulkSource).toContain(".insert(attendancePunches)");
     expect(bulkSource).toContain("recomputeAttendanceRow");
     expect(bulkSource).toContain('manualFieldStrategy: "reset"');
-    expect(bulkSource).toContain("skippedPunchDays");
-    expect(bulkSource).toContain("skippedMissingShift");
+    expect(bulkSource).toContain("planBulkAttendance");
     expect(bulkSource).not.toContain("template.checkIn");
     expect(bulkSource).not.toContain("template.checkOut");
   });

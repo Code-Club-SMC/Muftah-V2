@@ -13,7 +13,6 @@ type BulkInput = {
         status: "present" | "absent" | "leave" | "holiday";
         leaveType?: "sick" | "annual" | "special" | null;
         notes?: string | null;
-        entrySource?: "biometric" | "manual" | "qr_terminal";
     };
     conflictStrategy: "skip" | "overwrite";
 };
@@ -29,6 +28,14 @@ export function useBulkMarkAttendance() {
             // Invalidate daily attendance and any open log views
             queryClient.invalidateQueries({ queryKey: ["daily-attendance"] });
             queryClient.invalidateQueries({ queryKey: ["employee-attendance-log"] });
+            queryClient.invalidateQueries({ queryKey: ["attendance-punches"] });
+            queryClient.invalidateQueries({ queryKey: ["order-booker-activity-log"] });
+            queryClient.invalidateQueries({ queryKey: ["salesman-activity-log"] });
+            queryClient.invalidateQueries({ queryKey: ["driver-activity-log"] });
+            queryClient.invalidateQueries({ queryKey: ["device-attendance"] });
+            queryClient.invalidateQueries({ queryKey: ["time-exceptions"] });
+            queryClient.invalidateQueries({ queryKey: ["pending-approval-counts"] });
+            queryClient.invalidateQueries({ queryKey: ["bulk-attendance-preview"] });
             queryClient.invalidateQueries({ queryKey: ["leave-approvals"] });
             queryClient.invalidateQueries({ queryKey: ["overtime-approvals"] });
             queryClient.invalidateQueries({ queryKey: ["employees"] });
@@ -53,5 +60,7 @@ export function useBulkAttendancePreview(
         queryFn: () => previewBulkAttendanceFn({ data: input! }),
         enabled: enabled && input !== null,
         staleTime: 0,
+        gcTime: 0,
+        retry: false,
     });
 }
