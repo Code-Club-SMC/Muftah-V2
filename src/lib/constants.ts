@@ -108,6 +108,11 @@ export const navigations: NavigationItem[] = [
         url: "/inventory/factory-floor",
         icon: FactoryFloorIcon,
       },
+      {
+        title: "Returned Stock",
+        url: "/inventory/returned-stock",
+        icon: WarehouseIcon,
+      },
     ],
   },
   {
