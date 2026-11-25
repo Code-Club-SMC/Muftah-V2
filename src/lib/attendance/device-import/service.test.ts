@@ -147,8 +147,10 @@ beforeEach(() => {
         }),
       );
       rows(table).push(...created);
+      const returning = async () => created;
       return Object.assign(Promise.resolve(), {
-        returning: async () => created,
+        returning,
+        onConflictDoNothing: () => ({ returning }),
       });
     },
   }));
@@ -426,5 +428,81 @@ describe("recovering from a wrong device report", () => {
     });
     const different = await uploadDeviceAttendance(file("09:00, 18:00"), "hr-1");
     expect(different.duplicateOf).toBeUndefined();
+  });
+  describe("field staff days missing from the report", () => {
+    const driverFile = (personId: string) =>
+      new NodeFile(
+        [
+          "Person ID,Person Name,Department,Date,Weekday,No. of Punch(s),Punch Records\r\n" +
+            ["2026-10-08", "2026-10-13"]
+              .map((date) => `${personId},Someone,Factory,${date},Day,1,"07:30"`)
+              .join("\r\n"),
+        ],
+        "total-punches.csv",
+        { type: "text/csv" },
+      ) as unknown as File;
+    const missingDates = (
+      preview: Awaited<ReturnType<typeof uploadDeviceAttendance>>,
+    ) =>
+      preview.rows
+        .filter((row) => row.missingDay && row.employeeId === "emp-1")
+        .map((row) => row.date);
+    // 2026-10-09 is a Friday, the driver's rest day.
+    beforeEach(() => {
+      Object.assign(rows(employees)[0], { isDriver: true, restDays: [5] });
+    });
+
+    it("lists a matched driver's unrecorded working days for review", async () => {
+      rows(attendance).push({
+        employeeId: "emp-1",
+        date: "2026-10-11",
+        status: "present",
+        entrySource: "driver_trip",
+      });
+      const preview = await uploadDeviceAttendance(driverFile("112009"), "hr-1");
+      expect(missingDates(preview)).toEqual(["2026-10-10", "2026-10-12"]);
+      expect(preview.rows.find((row) => row.missingDay)).toMatchObject({
+        personId: "112009",
+        status: "needs_review",
+        newPunchCount: 0,
+      });
+    });
+
+    it("imports only punched days and keeps the missing ones for review", async () => {
+      const preview = await uploadDeviceAttendance(driverFile("112009"), "hr-1");
+      const result = await confirmDeviceAttendance(
+        { importId: preview.importId },
+        "hr-1",
+      );
+      expect(rows(attendance).map((row) => row.date)).toEqual([
+        "2026-10-08",
+        "2026-10-13",
+      ]);
+      expect(missingDates(result)).toEqual([
+        "2026-10-10",
+        "2026-10-11",
+        "2026-10-12",
+      ]);
+    });
+
+    it("lists a linked driver who is absent from the whole report", async () => {
+      rows(deviceAttendancePersonMappings).push({
+        personId: "device-7",
+        employeeId: "emp-1",
+      });
+      const preview = await uploadDeviceAttendance(driverFile("other"), "hr-1");
+      expect(missingDates(preview)).toEqual([
+        "2026-10-08",
+        "2026-10-10",
+        "2026-10-11",
+        "2026-10-12",
+        "2026-10-13",
+      ]);
+    });
+
+    it("leaves out field staff who do not use the device", async () => {
+      const preview = await uploadDeviceAttendance(driverFile("other"), "hr-1");
+      expect(missingDates(preview)).toEqual([]);
+    });
   });
 });

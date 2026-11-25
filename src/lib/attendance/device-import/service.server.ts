@@ -347,13 +347,17 @@ async function buildPlans(
   if (reportDates.length) {
     const fromDate = reportDates[0];
     const toDate = reportDates.at(-1)!;
-    const punchStaff = staff.filter(
+    // Field staff may never use the device, so only those this report or a saved
+    // link ties to it are checked. Their trips and deliveries are saved days.
+    const checkedStaff = staff.filter(
       (e) =>
         (e.status === "active" || e.status === "on_leave") &&
-        !isFieldStaff(e) &&
+        (!isFieldStaff(e) ||
+          employeeIds.includes(e.id) ||
+          linkedPeople.has(e.id)) &&
         e.joiningDate <= toDate,
     );
-    const staffIds = punchStaff.map((e) => e.id);
+    const staffIds = checkedStaff.map((e) => e.id);
     const lockedRanges = await tx.query.payrolls.findMany({
       columns: { startDate: true, endDate: true },
       where: and(
@@ -398,7 +402,7 @@ async function buildPlans(
       for (const date of row.attendanceDates ?? []) cover(row.employeeId, date);
     }
     const missing = findMissingWorkingDays({
-      employees: punchStaff,
+      employees: checkedStaff,
       fromDate,
       toDate,
       today: nowPKTDate(),
@@ -419,7 +423,10 @@ async function buildPlans(
       const rowNumber = nextRowNumber++;
       results.set(rowNumber, {
         rowNumber,
-        personId: linkedPeople.get(employeeId) ?? "",
+        personId:
+          linkedPeople.get(employeeId) ??
+          personIds.find((id) => resolved.get(id)?.id === employeeId) ??
+          "",
         personName: "",
         employeeId,
         employeeName: name(employee),
@@ -427,7 +434,9 @@ async function buildPlans(
         punchTimes: [],
         status: "needs_review",
         messages: [
-          "No punches on this working day. Mark the day absent, leave or another status.",
+          isFieldStaff(employee)
+            ? "No punches or field work recorded on this working day. Mark it present if they worked, or absent, leave or another status."
+            : "No punches on this working day. Mark the day absent, leave or another status.",
         ],
         newPunchCount: 0,
         dutyHours: null,
