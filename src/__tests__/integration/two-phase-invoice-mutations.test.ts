@@ -1066,6 +1066,53 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("reachable two-phase invoice mut
       });
     });
 
+    it("refuses to undo a value change once packs have left, until those entries are voided", async () => {
+      await withFixture(async (tx, f) => {
+        await damagedReturn(tx, f); // 4 packs, Rs 20
+        const early = await invoke(scrapReturnedStockFn, { ...key(f), units: 1 }, f.actor.id); // 3 packs, Rs 15
+        const revalue = await invoke(setReturnedStockValueFn, { ...key(f), valuePerPack: 2, note: "Boxes torn" }, f.actor.id); // Rs 6
+        const scrap = await invoke(scrapReturnedStockFn, { ...key(f), units: 2 }, f.actor.id); // 1 pack, Rs 2
+        const undo = () => invoke(voidReturnedStockMovementFn, { movementId: revalue.id, reason: "Entered by mistake" }, f.actor.id);
+
+        await expect(undo()).rejects.toThrow("Some of these packs were scrapped or sold since. Void those entries first.");
+        expect(await damagedRow(tx, f)).toEqual([1, "2.00"]);
+        expect((await tx.select().from(returnedStockMovements).where(eq(returnedStockMovements.id, revalue.id)))[0].voidedAt).toBeNull();
+
+        // A scrap from before the value change never blocks it.
+        await invoke(voidReturnedStockMovementFn, { movementId: scrap.id, reason: "Packs were found" }, f.actor.id);
+        expect(await damagedRow(tx, f)).toEqual([3, "6.00"]);
+        await undo();
+        expect(await damagedRow(tx, f)).toEqual([3, "15.00"]);
+        await invoke(voidReturnedStockMovementFn, { movementId: early.id, reason: "Pack was fine" }, f.actor.id);
+        expect(await damagedRow(tx, f)).toEqual([4, "20.00"]);
+      });
+    });
+
+    it("still blocks undoing a value change when fresh packs hide the ones that left", async () => {
+      await withFixture(async (tx, f) => {
+        await damagedReturn(tx, f); // 4 packs, Rs 20
+        const revalue = await invoke(setReturnedStockValueFn, { ...key(f), valuePerPack: 2, note: "Boxes torn" }, f.actor.id);
+        const [wallet] = await tx.insert(wallets).values({ id: randomUUID(), name: randomUUID(), type: "cash" }).returning();
+        await invoke(sellReturnedStockFn, { ...key(f), units: 3, unitPrice: 7, walletId: wallet.id }, f.actor.id);
+        await damagedReturn(tx, f); // 5 packs now, more than the 4 that were lowered
+        await expect(invoke(voidReturnedStockMovementFn, { movementId: revalue.id, reason: "Entered by mistake" }, f.actor.id))
+          .rejects.toThrow("Some of these packs were scrapped or sold since");
+      });
+    });
+
+    it("blocks undoing a value change after a voided return took packs out", async () => {
+      await withFixture(async (tx, f) => {
+        const first = await damagedReturn(tx, f);
+        await damagedReturn(tx, f); // 8 packs, Rs 40
+        const revalue = await invoke(setReturnedStockValueFn, { ...key(f), valuePerPack: 2, note: "Boxes torn" }, f.actor.id);
+        await invoke(voidSalesReturnFn, { returnId: first.id, reason: "Wrong invoice" }, f.actor.id);
+        expect(await damagedRow(tx, f)).toEqual([4, "8.00"]);
+        await expect(invoke(voidReturnedStockMovementFn, { movementId: revalue.id, reason: "Entered by mistake" }, f.actor.id))
+          .rejects.toThrow("Some of these packs left stock when a return was voided, so the old value can't be put back.");
+        expect(await damagedRow(tx, f)).toEqual([4, "8.00"]);
+      });
+    });
+
     it("shows return write-offs and write-downs as their own P&L lines", async () => {
       await withFixture(async (tx, f) => {
         await receive(tx, f, 4);

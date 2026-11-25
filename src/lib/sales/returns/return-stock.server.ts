@@ -1,6 +1,6 @@
 import Big from "big.js";
 import { createId } from "@paralleldrive/cuid2";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import type { db } from "@/db";
 import {
   finishedGoodsStock,
@@ -405,5 +405,10 @@ export async function reverseReturnStock(
     });
   }
 
-  if (voidTraces.length > 0) await tx.insert(salesReturnStockTraces).values(voidTraces);
+  if (voidTraces.length > 0) {
+    // Stamped while the stock lock is held: undoing a value change checks what left after it.
+    await tx
+      .insert(salesReturnStockTraces)
+      .values(voidTraces.map((trace) => ({ ...trace, createdAt: sql`clock_timestamp()` })));
+  }
 }

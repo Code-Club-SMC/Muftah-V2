@@ -1,10 +1,10 @@
 import Big from "big.js";
 import { createId } from "@paralleldrive/cuid2";
-import { and, eq, gte, sql } from "drizzle-orm";
+import { and, eq, gt, gte, inArray, isNull, sql } from "drizzle-orm";
 import type { db } from "@/db";
 import { transactions, wallets } from "@/db/schemas/finance-schema";
 import { recipes, returnedFinishedGoodsStock } from "@/db/schemas/inventory-schema";
-import { returnedStockMovements } from "@/db/schemas/sales-erp-schema";
+import { returnedStockMovements, salesReturnStockTraces } from "@/db/schemas/sales-erp-schema";
 import { formatRupees } from "@/lib/finance/expense-entry";
 import { lockFinishedGoods } from "@/lib/production/finished-goods-lock.server";
 import {
@@ -106,8 +106,47 @@ async function moveWalletMoney(
 }
 
 async function insertMovement(tx: Tx, values: typeof returnedStockMovements.$inferInsert): Promise<Movement> {
-  const [movement] = await tx.insert(returnedStockMovements).values(values).returning();
+  // Stamped while the stock lock is held, so createdAt follows the order entries really happened in.
+  const [movement] = await tx
+    .insert(returnedStockMovements)
+    .values({ ...values, createdAt: sql`clock_timestamp()` })
+    .returning();
   return movement;
+}
+
+/** A lowered value belongs to the packs it was taken from, so it can't go back once some of them left. */
+async function assertNoPacksLeftSince(tx: Tx, revalue: Movement) {
+  const [disposal] = await tx
+    .select({ id: returnedStockMovements.id })
+    .from(returnedStockMovements)
+    .where(
+      and(
+        eq(returnedStockMovements.warehouseId, revalue.warehouseId),
+        eq(returnedStockMovements.recipeId, revalue.recipeId),
+        eq(returnedStockMovements.condition, revalue.condition),
+        inArray(returnedStockMovements.kind, ["scrap", "seconds_sale"]),
+        isNull(returnedStockMovements.voidedAt),
+        gt(returnedStockMovements.createdAt, revalue.createdAt),
+      ),
+    )
+    .limit(1);
+  if (disposal) throw new Error("Some of these packs were scrapped or sold since. Void those entries first.");
+  const [voidedReturn] = await tx
+    .select({ id: salesReturnStockTraces.id })
+    .from(salesReturnStockTraces)
+    .where(
+      and(
+        eq(salesReturnStockTraces.warehouseId, revalue.warehouseId),
+        eq(salesReturnStockTraces.recipeId, revalue.recipeId),
+        eq(salesReturnStockTraces.destination, revalue.condition),
+        eq(salesReturnStockTraces.kind, "void"),
+        gt(salesReturnStockTraces.createdAt, revalue.createdAt),
+      ),
+    )
+    .limit(1);
+  if (voidedReturn) {
+    throw new Error("Some of these packs left stock when a return was voided, so the old value can't be put back.");
+  }
 }
 
 export async function scrapReturnedStock(
@@ -210,9 +249,7 @@ export async function voidReturnedStockMovement(
     recipeId: movement.recipeId,
     condition: movement.condition as ReturnedCondition,
   });
-  if (movement.kind === "revalue" && locked.units === 0) {
-    throw new Error("These packs are gone, so the old value can't be put back.");
-  }
+  if (movement.kind === "revalue") await assertNoPacksLeftSince(tx, movement);
   await writeReturnedRow(
     tx,
     locked,
