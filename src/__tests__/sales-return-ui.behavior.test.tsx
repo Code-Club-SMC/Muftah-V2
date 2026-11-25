@@ -381,7 +381,7 @@ describe("invoice lifecycle actions", () => {
     fireEvent.change(within(dialog).getByLabelText("Can expired packs"), { target: { value: "1" } });
     expect(within(dialog).getByText("Received: 7 packs. Shortfall: 13 packs. The shortfall is released when this receipt closes the request.")).toBeTruthy();
     fireEvent.click(confirm);
-    await waitFor(() => expect(mocks.complete).toHaveBeenCalledWith({ data: { returnId: "return", notes: undefined, lines: [{ returnItemId: "line", goodUnits: 4, damagedUnits: 2, expiredUnits: 0 }, { returnItemId: "line2", goodUnits: 0, damagedUnits: 0, expiredUnits: 1 }] } }));
+    await waitFor(() => expect(mocks.complete).toHaveBeenCalledWith({ data: { returnId: "return", notes: undefined, lines: [{ returnItemId: "line", goodUnits: 4, damagedUnits: 2, expiredUnits: 0, damagedSalvagePerUnit: 0 }, { returnItemId: "line2", goodUnits: 0, damagedUnits: 0, expiredUnits: 1, expiredSalvagePerUnit: 0 }] } }));
   });
   it("retains inspection and errors, blocks duplicates, and refreshes stale invoice actions", async () => {
     let reject!: (error: Error) => void;
