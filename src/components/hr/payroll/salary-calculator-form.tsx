@@ -1,4 +1,5 @@
 import { useForm, useStore } from "@tanstack/react-form";
+import { Link } from "@tanstack/react-router";
 import { Loader2, Plus, Trash2, AlertCircle, Calculator, Info, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
@@ -436,6 +437,34 @@ export const SalaryCalculatorForm = ({ employeeId, month, onSuccess, isOpen }: S
                         <p className="text-xs text-muted-foreground">{calculation.employeeCode}</p>
                     </div>
                 </div>
+
+                {calculation.unresolvedAttendanceDates.length > 0 && (
+                    <Alert variant="destructive">
+                        <ShieldAlert className="size-4" />
+                        <AlertTitle>
+                            {calculation.unresolvedAttendanceDates.length} attendance {calculation.unresolvedAttendanceDates.length === 1 ? "day needs" : "days need"} HR review
+                        </AlertTitle>
+                        <AlertDescription className="flex flex-col gap-3">
+                            <p className="text-xs">
+                                This payslip cannot be saved yet. Add the missing punch or set the day's status. Paying full salary does not skip this check. Each day opens in a new tab.
+                            </p>
+                            <div className="flex flex-wrap gap-2">
+                                {calculation.unresolvedAttendanceDates.map((date) => (
+                                    <Button key={date} asChild size="sm" variant="outline" className="h-8 text-xs shrink-0">
+                                        <Link
+                                            to="/hr/attendance/$employeeId"
+                                            params={{ employeeId }}
+                                            search={{ from: date, to: date }}
+                                            target="_blank"
+                                        >
+                                            {format(parseISO(date), "dd MMM yyyy")}
+                                        </Link>
+                                    </Button>
+                                ))}
+                            </div>
+                        </AlertDescription>
+                    </Alert>
+                )}
 
                 {/* Arrears Alert */}
                 {calculation.missedCycles && calculation.missedCycles.length > 0 && (

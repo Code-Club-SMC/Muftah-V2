@@ -23,6 +23,7 @@ import {
   getCycleForPayoutMonth,
   getPayrollPeriodForMonthKey,
 } from "@/lib/payroll-cycle";
+import { findUnresolvedDeviceAttendanceDates } from "@/lib/attendance/device-import/payroll.server";
 
 // ── Helper ─────────────────────────────────────────────────────────────────
 
@@ -386,6 +387,14 @@ export const previewEmployeePayslipFn = createServerFn()
       ignorePastUnmarkedDays: true,
     });
 
+    // Saving is refused while any of these remain, so show them up front.
+    const unresolvedAttendanceDates = await findUnresolvedDeviceAttendanceDates(
+      db,
+      employeeId,
+      payrollPeriod.startDate,
+      data.earlyCutoffDate ?? payrollPeriod.endDate,
+    );
+
     // ── 8. Check missed cycles (12-month lookback) ──────────────────────────
     const monthDate = parseISO(`${month}-01`);
     const lookbackMonths = 12;
@@ -448,6 +457,7 @@ export const previewEmployeePayslipFn = createServerFn()
       commissionBreakdown: simulation.commissionBreakdown,
       salaryRevision: simulation.salaryRevision,
       missedCycles,
+      unresolvedAttendanceDates,
       advanceProcessRecords: simulation.advanceProcessRecords,
     };
   });

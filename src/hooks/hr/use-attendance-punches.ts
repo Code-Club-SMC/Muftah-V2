@@ -29,6 +29,7 @@ function useInvalidateAttendancePunches() {
     void queryClient.invalidateQueries({ queryKey: attendancePunchKeys.all });
     void queryClient.invalidateQueries({ queryKey: ["daily-attendance"] });
     void queryClient.invalidateQueries({ queryKey: ["employee-attendance-log"] });
+    void queryClient.invalidateQueries({ queryKey: ["payslip-preview"] });
   };
 }
 
