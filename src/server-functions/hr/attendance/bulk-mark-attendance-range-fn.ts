@@ -1,21 +1,25 @@
 import { createServerFn } from "@tanstack/react-start";
-import { and, between, eq, gte, inArray, lt, or } from "drizzle-orm";
+import { and, between, eq, gte, inArray, lt, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
+import { deviceAttendancePunchClaims } from "@/db/schemas/device-attendance-schema";
 import {
   attendance,
   attendancePunches,
   employees,
 } from "@/db/schemas/hr-schema";
+import { attendancePunchCorrectionAudit } from "@/db/schemas/offline-attendance-schema";
 import { orderBookers, orderBookerTrips } from "@/db/schemas/sales-erp-schema";
 import {
   addDays,
+  BULK_PUNCH_NOTE,
   bulkResultMessage,
   countDays,
   datesBetween,
   isRealDate,
   MAX_BULK_DAYS,
   planBulkAttendance,
+  planBulkUndo,
 } from "@/lib/attendance/bulk-mark";
 import { adjustCompensatoryReservation } from "@/lib/attendance/compensatory-reservation.server";
 import {
@@ -32,16 +36,32 @@ import { lockEmployeePunchWrites } from "./punch-write-lock";
 
 const dateSchema = z.string().refine(isRealDate, "Choose a valid date");
 
+const bulkRangeShape = {
+  /**
+   * Which employees to mark.
+   * Empty array = all active employees.
+   */
+  employeeIds: z.array(z.string()),
+
+  startDate: dateSchema, // YYYY-MM-DD
+  endDate: dateSchema, // YYYY-MM-DD
+};
+const isForwardRange = (data: { startDate: string; endDate: string }) =>
+  data.startDate <= data.endDate;
+const isShortRange = (data: { startDate: string; endDate: string }) =>
+  countDays(data.startDate, data.endDate) <= MAX_BULK_DAYS;
+const FORWARD_ERROR = {
+  message: "End date must be on or after the start date",
+  path: ["endDate"],
+};
+const SHORT_ERROR = {
+  message: `Choose at most ${MAX_BULK_DAYS} days at a time`,
+  path: ["endDate"],
+};
+
 const bulkAttendanceSchema = z
   .object({
-    /**
-     * Which employees to mark.
-     * Empty array = all active employees.
-     */
-    employeeIds: z.array(z.string()),
-
-    startDate: dateSchema, // YYYY-MM-DD
-    endDate: dateSchema, // YYYY-MM-DD
+    ...bulkRangeShape,
 
     template: z.object({
       status: z.enum(["present", "absent", "leave", "holiday"]),
@@ -61,14 +81,8 @@ const bulkAttendanceSchema = z
      */
     conflictStrategy: z.enum(["skip", "overwrite"]).default("skip"),
   })
-  .refine((data) => data.startDate <= data.endDate, {
-    message: "End date must be on or after the start date",
-    path: ["endDate"],
-  })
-  .refine((data) => countDays(data.startDate, data.endDate) <= MAX_BULK_DAYS, {
-    message: `Choose at most ${MAX_BULK_DAYS} days at a time`,
-    path: ["endDate"],
-  })
+  .refine(isForwardRange, FORWARD_ERROR)
+  .refine(isShortRange, SHORT_ERROR)
   .refine(
     (data) => data.template.status !== "leave" || !!data.template.leaveType,
     {
@@ -77,7 +91,13 @@ const bulkAttendanceSchema = z
     },
   );
 
+const bulkUndoSchema = z
+  .object(bulkRangeShape)
+  .refine(isForwardRange, FORWARD_ERROR)
+  .refine(isShortRange, SHORT_ERROR);
+
 type BulkInput = z.infer<typeof bulkAttendanceSchema>;
+type BulkUndoInput = z.infer<typeof bulkUndoSchema>;
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 type Executor = typeof db | Tx;
 
@@ -208,6 +228,24 @@ async function refreshAnnualLeaveBalance(
     .where(eq(employees.id, employee.id));
 }
 
+async function lockedReason(writes: { date: string }[]) {
+  try {
+    await assertAttendanceDatesEditable(db, [
+      ...new Set(writes.map((write) => write.date)),
+    ]);
+    return null;
+  } catch (error) {
+    return error instanceof Error ? error.message : "These days are locked.";
+  }
+}
+
+function groupDates(writes: { employeeId: string; date: string }[]) {
+  const result = new Map<string, string[]>();
+  for (const { employeeId, date } of writes)
+    result.set(employeeId, [...(result.get(employeeId) ?? []), date]);
+  return result;
+}
+
 export const bulkMarkAttendanceRangeFn = createServerFn({ method: "POST" })
   .middleware([requireHrManageMiddleware])
   .inputValidator(bulkAttendanceSchema)
@@ -233,13 +271,9 @@ export const bulkMarkAttendanceRangeFn = createServerFn({ method: "POST" })
           "Add a note. It is required when marking order bookers, salesmen or drivers.",
         );
 
-      const datesByEmployee = new Map<string, string[]>();
-      for (const write of writes) {
-        const dates = datesByEmployee.get(write.employee.id) ?? [];
-        dates.push(write.date);
-        datesByEmployee.set(write.employee.id, dates);
-      }
-      for (const [employeeId, dates] of datesByEmployee) {
+      for (const [employeeId, dates] of groupDates(
+        writes.map(({ employee, date }) => ({ employeeId: employee.id, date })),
+      )) {
         await invalidateDeviceAttendanceChanges(tx, employeeId, dates);
       }
 
@@ -263,7 +297,7 @@ export const bulkMarkAttendanceRangeFn = createServerFn({ method: "POST" })
               attendanceDate: date,
               source: "manual" as const,
               terminalUserId: actorId,
-              note: null,
+              note: BULK_PUNCH_NOTE,
             })),
           );
           continue;
@@ -332,12 +366,23 @@ export const bulkMarkAttendanceRangeFn = createServerFn({ method: "POST" })
           .insert(attendancePunches)
           .values(presentPunchRows.slice(i, i + BATCH));
       }
+      const presentIds: string[] = [];
       for (const write of writes) {
         if (!write.punches) continue;
-        await recomputeAttendanceRow(tx, write.employee.id, write.date, {
-          manualFieldStrategy: "reset",
-          noteOverride: notes,
-        });
+        const row = await recomputeAttendanceRow(
+          tx,
+          write.employee.id,
+          write.date,
+          { manualFieldStrategy: "reset", noteOverride: notes },
+        );
+        if (row) presentIds.push(row.id);
+      }
+      // Same time as the punches, so undo can tell whether HR changed the day later.
+      for (let i = 0; i < presentIds.length; i += BATCH) {
+        await tx
+          .update(attendance)
+          .set({ updatedAt: sql`now()` })
+          .where(inArray(attendance.id, presentIds.slice(i, i + BATCH)));
       }
       for (const employee of balanceChanged) {
         await refreshAnnualLeaveBalance(tx, employee);
@@ -362,16 +407,7 @@ export const previewBulkAttendanceFn = createServerFn({ method: "POST" })
     );
     const { created, updated, ...skipped } = summary;
 
-    let blockedReason: string | null = null;
-    try {
-      await assertAttendanceDatesEditable(
-        db,
-        [...new Set(writes.map((write) => write.date))],
-      );
-    } catch (error) {
-      blockedReason =
-        error instanceof Error ? error.message : "These days are locked.";
-    }
+    const blockedReason = await lockedReason(writes);
 
     return {
       totalEmployees: employeeList.length,
@@ -381,5 +417,119 @@ export const previewBulkAttendanceFn = createServerFn({ method: "POST" })
       ...skipped,
       noteNeeded,
       blockedReason,
+    };
+  });
+
+// ── Undo Present ───────────────────────────────────────────────────────────
+// Removes only punches added by Bulk Mark, on days nobody has changed since.
+
+async function loadUndoPlan(
+  executor: Executor,
+  { startDate, endDate }: BulkUndoInput,
+  ids: string[],
+) {
+  const punches = await executor.query.attendancePunches.findMany({
+    where: and(
+      inArray(attendancePunches.employeeId, ids),
+      between(attendancePunches.attendanceDate, startDate, endDate),
+    ),
+  });
+  const records = await executor.query.attendance.findMany({
+    where: and(
+      inArray(attendance.employeeId, ids),
+      between(attendance.date, startDate, endDate),
+    ),
+    columns: { employeeId: true, date: true, status: true, updatedAt: true },
+  });
+  const claims = await executor.query.deviceAttendancePunchClaims.findMany({
+    where: and(
+      inArray(deviceAttendancePunchClaims.employeeId, ids),
+      between(deviceAttendancePunchClaims.attendanceDate, startDate, endDate),
+    ),
+    columns: { employeeId: true, attendanceDate: true },
+  });
+  return planBulkUndo({
+    punches,
+    records,
+    claimedDays: new Set(
+      claims.map((claim) => `${claim.employeeId}:${claim.attendanceDate}`),
+    ),
+  });
+}
+
+export const undoBulkPresentFn = createServerFn({ method: "POST" })
+  .middleware([requireHrManageMiddleware])
+  .inputValidator(bulkUndoSchema)
+  .handler(async ({ data, context }) =>
+    db.transaction(async (tx) => {
+      await lockAttendancePayrollWrites(tx);
+      const employeeList = await resolveEmployees(tx, data.employeeIds);
+      const ids = employeeList.map((employee) => employee.id).sort();
+      for (const id of ids) await lockEmployeePunchWrites(tx, id);
+      // Read after locking, so a change made a moment ago is kept.
+      const { writes, keptEdited } = await loadUndoPlan(tx, data, ids);
+
+      for (const [employeeId, dates] of groupDates(writes))
+        await invalidateDeviceAttendanceChanges(tx, employeeId, dates);
+
+      const BATCH = 500;
+      const punches = writes.flatMap((write) => write.punches);
+      for (let i = 0; i < punches.length; i += BATCH) {
+        const chunk = punches.slice(i, i + BATCH);
+        await tx.insert(attendancePunchCorrectionAudit).values(
+          chunk.map((punch) => ({
+            originalPunchId: punch.id,
+            action: "delete" as const,
+            oldValues: {
+              timestamp: punch.timestamp.toISOString(),
+              attendanceDate: punch.attendanceDate,
+              direction: punch.direction,
+              source: punch.source,
+              note: punch.note,
+              terminalUserId: punch.terminalUserId,
+              offlineImportRowId: punch.offlineImportRowId,
+              offlineImportIdentity: punch.offlineImportIdentity,
+            },
+            newValues: null,
+            reason: "Bulk Mark Present undone",
+            changedByUserId: context.session.user.id,
+          })),
+        );
+        await tx.delete(attendancePunches).where(
+          inArray(
+            attendancePunches.id,
+            chunk.map((punch) => punch.id),
+          ),
+        );
+      }
+      // A present day with no punches left becomes unmarked again.
+      for (const write of writes)
+        await recomputeAttendanceRow(tx, write.employeeId, write.date);
+
+      return {
+        success: true,
+        cleared: writes.length,
+        keptEdited,
+        message: `${writes.length} ${writes.length === 1 ? "day" : "days"} unmarked.${keptEdited ? ` Kept ${keptEdited} changed since.` : ""}`,
+      };
+    }),
+  );
+
+export const previewUndoBulkPresentFn = createServerFn({ method: "POST" })
+  .middleware([requireHrManageMiddleware])
+  .inputValidator(bulkUndoSchema)
+  .handler(async ({ data }) => {
+    const employeeList = await resolveEmployees(db, data.employeeIds);
+    const { writes, keptEdited } = await loadUndoPlan(
+      db,
+      data,
+      employeeList.map((employee) => employee.id),
+    );
+    return {
+      totalEmployees: employeeList.length,
+      affectedEmployees: new Set(writes.map((write) => write.employeeId)).size,
+      willClear: writes.length,
+      keptEdited,
+      blockedReason: await lockedReason(writes),
     };
   });

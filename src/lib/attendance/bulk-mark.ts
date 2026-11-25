@@ -7,6 +7,8 @@ import {
 import { toPKTDate } from "./time";
 
 export const MAX_BULK_DAYS = 92;
+/** Saved on every punch Bulk Mark adds. Shown in the punch timeline. */
+export const BULK_PUNCH_NOTE = "Bulk Mark";
 const DAY_MS = 86_400_000;
 const TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?$/;
 const ACTIVITY_SOURCES: string[] = [
@@ -59,8 +61,7 @@ export function isRealDate(value: string) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const date = new Date(`${value}T00:00:00Z`);
   return (
-    Number.isFinite(date.getTime()) &&
-    date.toISOString().slice(0, 10) === value
+    Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value
   );
 }
 
@@ -120,6 +121,63 @@ export function buildShiftPunches(
     );
   }
   return result;
+}
+
+type UndoPunch = {
+  id: string;
+  employeeId: string;
+  attendanceDate: string;
+  source: string;
+  note: string | null;
+  createdAt: Date;
+};
+type UndoRecord = {
+  employeeId: string;
+  date: string;
+  status: string;
+  updatedAt: Date;
+};
+
+/**
+ * Picks the days that are still exactly as Bulk Mark Present left them. Bulk Mark saves the
+ * day and its punches with one timestamp, so any later edit or added punch shows up here.
+ */
+export function planBulkUndo<P extends UndoPunch>(input: {
+  punches: P[];
+  records: UndoRecord[];
+  /** "employeeId:date" for each day a device upload also covers. */
+  claimedDays: Set<string>;
+}) {
+  const days = new Map<string, P[]>();
+  for (const punch of input.punches) {
+    const key = `${punch.employeeId}:${punch.attendanceDate}`;
+    days.set(key, [...(days.get(key) ?? []), punch]);
+  }
+  const records = new Map(
+    input.records.map((row) => [`${row.employeeId}:${row.date}`, row]),
+  );
+  const writes: { employeeId: string; date: string; punches: P[] }[] = [];
+  let keptEdited = 0;
+  for (const [key, punches] of days) {
+    if (!punches.some((punch) => punch.note === BULK_PUNCH_NOTE)) continue;
+    const record = records.get(key);
+    const untouched =
+      record?.status === "present" &&
+      !input.claimedDays.has(key) &&
+      punches.every(
+        (punch) =>
+          punch.source === "manual" &&
+          punch.note === BULK_PUNCH_NOTE &&
+          punch.createdAt.getTime() === record.updatedAt.getTime(),
+      );
+    if (!untouched) {
+      keptEdited++;
+      continue;
+    }
+    const { employeeId, attendanceDate: date } = punches[0];
+    writes.push({ employeeId, date, punches });
+  }
+  return { writes, keptEdited };
 }
 
 export type BulkSummary = ReturnType<typeof emptySummary>;

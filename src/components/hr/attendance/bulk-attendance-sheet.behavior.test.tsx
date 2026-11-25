@@ -3,8 +3,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-const mock = vi.hoisted(() => ({ apply: vi.fn(), preview: vi.fn(), employees: vi.fn() }));
-vi.mock("@/server-functions/hr/attendance/bulk-mark-attendance-range-fn", () => ({ bulkMarkAttendanceRangeFn: mock.apply, previewBulkAttendanceFn: mock.preview }));
+const mock = vi.hoisted(() => ({ apply: vi.fn(), preview: vi.fn(), undo: vi.fn(), previewUndo: vi.fn(), employees: vi.fn() }));
+vi.mock("@/server-functions/hr/attendance/bulk-mark-attendance-range-fn", () => ({ bulkMarkAttendanceRangeFn: mock.apply, previewBulkAttendanceFn: mock.preview, undoBulkPresentFn: mock.undo, previewUndoBulkPresentFn: mock.previewUndo }));
 vi.mock("@/server-functions/hr/employees/get-employees-fn", () => ({ getEmployeesFn: mock.employees }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 vi.mock("@/components/custom/responsive-sheet", () => ({ ResponsiveSheet: ({ open, children }: { open: boolean; children: ReactNode }) => (open ? <div>{children}</div> : null) }));
@@ -102,4 +102,51 @@ it("marks only the people picked", async () => {
   fireEvent.click(screen.getByText("Bilal Shah"));
   await waitFor(() => expect(mock.preview.mock.calls.at(-1)![0].data.employeeIds).toEqual(["b"]));
   expect(screen.getByText(/Driver · Field staff/)).toBeTruthy();
+});
+
+const undoCounts = { totalEmployees: 2, affectedEmployees: 2, willClear: 7, keptEdited: 1, blockedReason: null };
+const openUndo = () => fireEvent.click(screen.getAllByRole("button", { name: "Undo Present" })[0]);
+const undoButton = () => screen.getAllByRole("button", { name: "Undo Present" }).at(-1) as HTMLButtonElement;
+
+it("undoes a bulk present without ever calling the mark action", async () => {
+  mock.previewUndo.mockResolvedValue(undoCounts);
+  mock.undo.mockResolvedValue({ message: "7 days unmarked." });
+  show();
+  openUndo();
+  await waitFor(() => expect(undoButton().disabled).toBe(false));
+  expect(screen.queryByLabelText("Notes")).toBeNull();
+  expect(screen.queryByText("Overwrite All")).toBeNull();
+  fireEvent.click(undoButton());
+  expect(screen.getByText(/7 days for 2 people will become unmarked/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Confirm & Apply" }));
+  await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+  expect(mock.undo).toHaveBeenCalledWith({ data: { employeeIds: [], startDate: "2026-10-12", endDate: "2026-10-15" } });
+  expect(mock.apply).not.toHaveBeenCalled();
+});
+
+it("has nothing to undo, or is blocked by payroll", async () => {
+  mock.previewUndo.mockResolvedValue({ ...undoCounts, willClear: 0 });
+  show();
+  openUndo();
+  expect(await screen.findByText("Nothing to apply.")).toBeTruthy();
+  expect(undoButton().disabled).toBe(true);
+  cleanup();
+  mock.previewUndo.mockResolvedValue({ ...undoCounts, blockedReason: "Attendance belongs to approved or paid payroll." });
+  show();
+  openUndo();
+  expect(await screen.findByText(/approved or paid payroll/)).toBeTruthy();
+  expect(undoButton().disabled).toBe(true);
+});
+
+it("goes back to marking, not undoing, when a status is chosen again", async () => {
+  mock.previewUndo.mockResolvedValue(undoCounts);
+  show();
+  openUndo();
+  await waitFor(() => expect(undoButton().disabled).toBe(false));
+  fireEvent.click(screen.getByRole("button", { name: "Absent" }));
+  await waitFor(() => expect(applyButton().disabled).toBe(false));
+  fireEvent.click(applyButton());
+  fireEvent.click(screen.getByRole("button", { name: "Confirm & Apply" }));
+  await waitFor(() => expect(mock.apply.mock.calls[0][0].data.template.status).toBe("absent"));
+  expect(mock.undo).not.toHaveBeenCalled();
 });

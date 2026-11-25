@@ -45,6 +45,9 @@ describe.skipIf(!configuredUrl)("bulk mark attendance on isolated PostgreSQL", (
   let db: typeof import("@/db").db;
   let applyFn: (input: Input) => Promise<{ summary: Summary; message: string }>;
   let previewFn: (input: Input) => Promise<Summary & { blockedReason?: string | null }>;
+  let undoFn: (input: Input) => Promise<{ cleared: number; keptEdited: number; message: string }>;
+  let previewUndoFn: (input: Input) => Promise<{ willClear: number; keptEdited: number; blockedReason: string | null }>;
+  let manual: typeof import("@/server-functions/hr/attendance/manual-punches-fn");
   let actorId: string;
 
   const run = <T,>(fn: (input: Input) => Promise<T>, employeeIds: string[], status: string, extra: Record<string, unknown> = {}) => {
@@ -91,6 +94,9 @@ describe.skipIf(!configuredUrl)("bulk mark attendance on isolated PostgreSQL", (
     const fns = await import("@/server-functions/hr/attendance/bulk-mark-attendance-range-fn");
     applyFn = fns.bulkMarkAttendanceRangeFn as unknown as typeof applyFn;
     previewFn = fns.previewBulkAttendanceFn as unknown as typeof previewFn;
+    undoFn = fns.undoBulkPresentFn as unknown as typeof undoFn;
+    previewUndoFn = fns.previewUndoBulkPresentFn as unknown as typeof previewUndoFn;
+    manual = await import("@/server-functions/hr/attendance/manual-punches-fn");
   }, 120_000);
 
   beforeEach(async () => {
@@ -295,6 +301,105 @@ describe.skipIf(!configuredUrl)("bulk mark attendance on isolated PostgreSQL", (
       await apply([worker.id], "absent", { conflictStrategy: "overwrite" });
       await apply([worker.id], "holiday", { conflictStrategy: "overwrite" });
       expect((await db.query.employees.findFirst({ where: eq(employees.id, worker.id) }))!.compensatoryHoursBalance).toBe("10.00");
+    });
+  });
+
+  describe("undo present", () => {
+    const range = { startDate: MON, endDate: TUE };
+    const undo = (ids: string[], extra = range) => undoFn({ data: { employeeIds: ids, ...extra }, context: { session: { user: { id: actorId } } } });
+    const previewUndo = (ids: string[], extra = range) => previewUndoFn({ data: { employeeIds: ids, ...extra }, context: { session: { user: { id: actorId } } } });
+    const call = (fn: unknown, data: Record<string, unknown>) => (fn as (input: Input) => Promise<unknown>)({ data, context: { session: { user: { id: actorId } } } });
+
+    it("removes exactly what bulk present added, keeps a record of it, and can be repeated", async () => {
+      const worker = await staff();
+      const guard = await staff({ shifts: [{ start: "18:30", end: "06:30" }], restDays: [] });
+      await apply([worker.id, guard.id], "present", range);
+      expect(await previewUndo([worker.id, guard.id])).toMatchObject({ willClear: 4, keptEdited: 0, blockedReason: null });
+      expect(await undo([worker.id, guard.id])).toMatchObject({ cleared: 4, keptEdited: 0 });
+      expect(await db.query.attendance.findMany()).toEqual([]);
+      expect(await db.query.attendancePunches.findMany()).toEqual([]);
+      const audit = await db.query.attendancePunchCorrectionAudit.findMany();
+      expect(audit).toHaveLength(12);
+      expect(audit.every((row) => row.action === "delete" && row.changedByUserId === actorId && row.reason === "Bulk Mark Present undone")).toBe(true);
+      expect(await undo([worker.id])).toMatchObject({ cleared: 0, keptEdited: 0 });
+      await apply([worker.id], "present", range);
+      expect((await day(worker.id))!.dutyHours).toBe("8.00");
+      expect(await undo([worker.id], { startDate: TUE, endDate: TUE })).toMatchObject({ cleared: 1 });
+      expect((await day(worker.id))!.status).toBe("present");
+    });
+
+    it("also undoes present that replaced a hand-marked day, leaving it unmarked", async () => {
+      const worker = await staff();
+      await db.insert(attendance).values({ employeeId: worker.id, date: MON, status: "absent" });
+      await apply([worker.id], "present", { conflictStrategy: "overwrite" });
+      expect(await undo([worker.id])).toMatchObject({ cleared: 1 });
+      expect(await day(worker.id)).toBeUndefined();
+    });
+
+    it("never touches device, QR or hand-typed punches, field staff days or other statuses", async () => {
+      const real = await staff();
+      await punch(real.id, `${MON}T07:30:00`, "in");
+      await db.insert(attendance).values({ employeeId: real.id, date: MON, status: "present", entrySource: "biometric" });
+      const typed = await staff();
+      await call(manual.addManualPunchFn, { employeeId: typed.id, timestamp: `${MON}T07:30:00+05:00`, note: "Bulk Mark" });
+      const driver = await staff({ isDriver: true, shifts: [] });
+      await apply([driver.id], "present", { notes: "x" });
+      const absent = await staff();
+      await apply([absent.id], "absent");
+      await undo([]);
+      for (const person of [real, typed, driver, absent]) expect(await day(person.id)).toBeDefined();
+      expect([...(await punches(real.id)), ...(await punches(typed.id))]).toHaveLength(2);
+    });
+
+    it("keeps days HR changed afterwards", async () => {
+      const people = await Promise.all([staff(), staff(), staff(), staff(), staff()]);
+      const [corrected, removed, added, resaved, untouched] = people;
+      await apply(people.map((p) => p.id), "present");
+      await call(manual.correctPunchFn, { punchId: (await punches(corrected.id))[0].id, newTimestamp: `${MON}T07:40:00+05:00` });
+      await call(manual.deletePunchFn, { punchId: (await punches(removed.id))[3].id });
+      await call(manual.addManualPunchFn, { employeeId: added.id, timestamp: `${MON}T17:00:00+05:00` });
+      const { upsertAttendanceFn } = await import("@/server-functions/hr/attendance/upsert-attendance-fn");
+      await call(upsertAttendanceFn, { employeeId: resaved.id, date: MON, status: "present", entrySource: "manual", checkIn: null, checkOut: null, dutyHours: null, overtimeHours: null, isLate: null, isNightShift: null, isApprovedLeave: null, overtimeRemarks: null, overtimeStatus: null, notes: "Checked by HR" });
+      expect(await previewUndo(people.map((p) => p.id))).toMatchObject({ willClear: 1, keptEdited: 4 });
+      expect(await undo(people.map((p) => p.id))).toMatchObject({ cleared: 1, keptEdited: 4 });
+      for (const person of [corrected, removed, added, resaved]) expect((await punches(person.id)).length).toBeGreaterThan(0);
+      expect((await day(resaved.id))!.notes).toBe("Checked by HR");
+      expect(await day(untouched.id)).toBeUndefined();
+    });
+
+    it("keeps a day that a device upload later confirmed", async () => {
+      const worker = await staff({ shifts: [{ start: "08:00", end: "17:00" }] });
+      await apply([worker.id], "present");
+      const service = await import("@/lib/attendance/device-import/service.server");
+      const csv = `Person ID,Person Name,Department,Date,Weekday,No. of Punch(s),Punch Records\r\n${worker.employeeCode},W,F,${MON},Mon,2,"08:00, 17:00"`;
+      const staged = await service.uploadDeviceAttendance(new File([csv], "x.csv", { type: "text/csv" }), actorId);
+      await service.confirmDeviceAttendance({ importId: staged.importId }, actorId);
+      expect(await undo([worker.id])).toMatchObject({ cleared: 0, keptEdited: 1 });
+      expect((await punches(worker.id)).length).toBeGreaterThanOrEqual(2);
+    });
+
+    it("respects approved payroll, flags drafts and checks the range", async () => {
+      const worker = await staff();
+      await apply([worker.id], "present");
+      await db.insert(payrolls).values({ month: "2026-10-01", startDate: MON, endDate: "2026-11-15", status: "draft" } as typeof payrolls.$inferInsert);
+      await pool.query("UPDATE payrolls SET status = 'approved'");
+      expect((await previewUndo([worker.id])).blockedReason).toMatch(/approved or paid/);
+      await expect(undo([worker.id])).rejects.toThrow(/approved or paid/);
+      expect(await punches(worker.id)).toHaveLength(4);
+      await pool.query("UPDATE payrolls SET status = 'draft'");
+      await undo([worker.id]);
+      expect((await pool.query("SELECT 1 FROM payroll_attendance_invalidations WHERE resolved_at IS NULL")).rows).toHaveLength(1);
+      await expect(undo([worker.id], { startDate: TUE, endDate: MON })).rejects.toThrow(/end date/i);
+    });
+
+    it("runs safely against a correction saved at the same moment", async () => {
+      const worker = await staff();
+      await apply([worker.id], "present");
+      const id = (await punches(worker.id))[0].id;
+      const [undone, correction] = await Promise.allSettled([undo([worker.id]), call(manual.correctPunchFn, { punchId: id, newTimestamp: `${MON}T07:40:00+05:00` })]);
+      // Whoever is first wins completely; never a half-removed day.
+      expect(undone.status).toBe("fulfilled");
+      expect(await punches(worker.id)).toHaveLength(correction.status === "fulfilled" ? 4 : 0);
     });
   });
 
