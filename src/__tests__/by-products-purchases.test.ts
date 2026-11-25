@@ -27,7 +27,7 @@ describe("purchase by-product input", () => {
   it("edit re-checks containers and guards sold vs earned", () => {
     const s = read("src/server-functions/suppliers/update-purchase-record-fn.ts");
     expect(s).toContain("byProductColumns(");
-    expect(s).toContain("await assertEarnedCoversSold(tx, ref)");
+    expect(s).toContain("await assertEarnedCoversSold(tx, ref, byProductsBefore)");
   });
 
   it("void guards sold vs earned before material cleanup", () => {

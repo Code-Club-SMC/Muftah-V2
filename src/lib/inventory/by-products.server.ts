@@ -109,11 +109,16 @@ export async function loadItemByProducts(reader: Reader, ref: MaterialRef): Prom
   return [...rows.values()];
 }
 
-/** Run inside the transaction, after the change is written. */
-export async function assertEarnedCoversSold(tx: Tx, ref: MaterialRef) {
+/**
+ * Run inside the transaction, after the change is written. `before` is the item's by-products read
+ * before the change: an item already short (stock was counted over after a sale) is not refused
+ * unless this change makes it shorter.
+ */
+export async function assertEarnedCoversSold(tx: Tx, ref: MaterialRef, before: ByProductSummary[]) {
   await lockByProductMaterial(tx, ref);
+  const inHandBefore = new Map(before.map((row) => [row.key, row.inHand]));
   for (const row of await loadItemByProducts(tx, ref)) {
-    if (row.sold > row.earned) {
+    if (row.sold > row.earned && row.inHand < (inHandBefore.get(row.key) ?? 0)) {
       throw new Error(`${row.sold} ${row.label} already sold; this change would leave only ${row.earned} earned`);
     }
   }

@@ -22,7 +22,7 @@ import { PURCHASE_LOCKED_MESSAGE } from "@/lib/inventory/material-lots";
 import { cleanupOrphanedMaterial, moveLotStock, purchaseIsUntouched } from "@/lib/inventory/material-lots.server";
 import { lockMaterialEverywhere, revertRemovedPurchase } from "@/lib/inventory/material-price.server";
 import { planPurchaseRefund } from "@/lib/suppliers/purchase-refund";
-import { assertEarnedCoversSold } from "@/lib/inventory/by-products.server";
+import { assertEarnedCoversSold, loadItemByProducts } from "@/lib/inventory/by-products.server";
 import { loadPurchasePayments } from "@/lib/suppliers/purchase-refund.server";
 import { z } from "zod";
 import { packagingUnit } from "@/lib/inventory/material-units";
@@ -84,6 +84,11 @@ export const deletePurchaseRecordFn = createServerFn({ method: "POST" })
         purchase.voidSnapshot?.supplierName ??
         "Unknown Supplier";
       const warehouseName = purchase.warehouse?.name ?? purchase.warehouseId;
+
+      const byProductRef = purchase.materialType === "chemical"
+        ? { materialType: "chemical" as const, materialId: purchase.chemicalId! }
+        : { materialType: "packaging" as const, materialId: purchase.packagingMaterialId! };
+      const byProductsBefore = await loadItemByProducts(tx, byProductRef);
 
       let refund = new Big(0);
       let refundWalletId: string | null = null;
@@ -256,9 +261,7 @@ export const deletePurchaseRecordFn = createServerFn({ method: "POST" })
         .where(eq(purchaseRecords.id, purchase.id));
 
       // Removing this purchase can lower empties earned; refuse if some were already sold.
-      await assertEarnedCoversSold(tx, purchase.materialType === "chemical"
-        ? { materialType: "chemical", materialId: purchase.chemicalId! }
-        : { materialType: "packaging", materialId: purchase.packagingMaterialId! });
+      await assertEarnedCoversSold(tx, byProductRef, byProductsBefore);
 
       // Keep material.lastSupplierId valid if it pointed to this deleted purchase's supplier.
       const materialId = purchase.materialType === "chemical"
