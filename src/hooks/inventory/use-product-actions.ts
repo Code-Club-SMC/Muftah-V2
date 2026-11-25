@@ -20,9 +20,19 @@ export const useProductActions = () => {
 
   const updateMutation = useMutation({
     mutationFn: updateProductFn,
-    onSuccess: () => {
+    onSuccess: (updated) => {
       toast.success("Product updated successfully");
+      // Show the saved values at once; the full refetch below recalculates costs and is slow.
+      if (updated)
+        queryClient.setQueriesData<{ id: string }[]>(
+          { queryKey: ["products"] },
+          (rows) =>
+            rows?.map((row) =>
+              row.id === updated.id ? { ...row, ...updated } : row,
+            ),
+        );
       queryClient.invalidateQueries({ queryKey: ["products"] });
+      queryClient.invalidateQueries({ queryKey: ["product-detail"] });
       queryClient.invalidateQueries({ queryKey: ["recipes"] });
     },
     onError: (error) => {

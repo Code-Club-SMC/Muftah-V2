@@ -225,7 +225,7 @@ export function CreateOrderPadDialog({ orderBookers }: CreateOrderPadDialogProps
   const navigate = useNavigate();
 
   const { data: products } = useQuery({
-    queryKey: ["products"],
+    queryKey: ["products", "select"],
     queryFn: () => getProductsFn(),
   });
 

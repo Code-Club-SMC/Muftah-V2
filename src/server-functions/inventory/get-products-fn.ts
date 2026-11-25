@@ -7,6 +7,8 @@ export const getProductsFn = createServerFn()
   .middleware([requireInventoryViewMiddleware])
   .handler(async () => {
     const products = await db.query.products.findMany({
+      // Without an explicit order Postgres moves an updated row to the end.
+      orderBy: (row, { asc }) => [asc(row.createdAt), asc(row.id)],
       with: {
         recipes: {
           with: {
