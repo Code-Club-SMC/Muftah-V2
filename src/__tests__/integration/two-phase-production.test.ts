@@ -1112,7 +1112,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("two phase production database r
         expect(goodCartons.reduce((sum, row) => sum + row.currentPacks, 0)).toBe(4);
         expect(Number(sellable.totalInventoryValue)).toBe(52);
         expect(damagedStock.quantityCartons * 4 + damagedStock.quantityContainers).toBe(2);
-        expect(Number(damagedStock.totalInventoryValue)).toBe(26);
+        expect(Number(damagedStock.totalInventoryValue)).toBe(0); // no salvage value entered
         const ledger = await tx.select().from(adjustmentLog).where(eq(adjustmentLog.packagingAllocationId, allocation.id));
         expect(ledger.filter(row => row.type !== "RETURN_DAMAGED").reduce((sum, row) => sum + row.delta, 0)).toBe(4);
 

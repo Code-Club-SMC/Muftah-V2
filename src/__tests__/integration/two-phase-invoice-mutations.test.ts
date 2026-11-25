@@ -808,7 +808,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("reachable two-phase invoice mut
         const [damaged] = await tx.select().from(returnedFinishedGoodsStock).where(and(
           eq(returnedFinishedGoodsStock.recipeId, f.recipe.id), eq(returnedFinishedGoodsStock.condition, "damaged")));
         expect(damaged.quantityCartons * 4 + damaged.quantityContainers).toBe(1);
-        expect(damaged.totalInventoryValue).toBe("10.00");
+        expect(damaged.totalInventoryValue).toBe("0.00"); // no salvage value entered
         const saved = await tx.query.salesReturns.findFirst({ where: eq(salesReturns.id, salesReturn.id) });
         expect([saved!.status, saved!.totalAmount, saved!.receivedById]).toEqual(["completed", "20.00", f.actor.id]);
         const [savedItem] = await tx.select().from(salesReturnItems).where(eq(salesReturnItems.salesReturnId, salesReturn.id));
@@ -945,6 +945,44 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("reachable two-phase invoice mut
         await invoke(decideSalesReturnFn, { returnId: second.id, action: "approve" }, f.actor.id);
         await receiveReturn(f, second, damagedOnly);
         await assertStock(tx, f, 2);
+      });
+    });
+
+    it("puts damaged packs in at salvage value, books the write-off and reverses it on void", async () => {
+      await withFixture(async (tx, f) => {
+        await receive(tx, f, 4); // 4 packs at Rs 10
+        const invoice = await invoke(createInvoiceFn, request(f, [line(f, 3)]), f.actor.id);
+        const [item] = await tx.select().from(invoiceItems).where(eq(invoiceItems.invoiceId, invoice.id));
+        const salesReturn = await requestReturn(f, invoice.id, item.id, [3]);
+        await invoke(decideSalesReturnFn, { returnId: salesReturn.id, action: "approve" }, f.actor.id);
+        const lines = (damagedSalvagePerUnit: number) => [
+          { returnItemId: salesReturn.items[0].id, goodUnits: 1, damagedUnits: 2, damagedSalvagePerUnit },
+        ];
+
+        await expect(invoke(completeSalesReturnFn, { returnId: salesReturn.id, lines: lines(11) }, f.actor.id))
+          .rejects.toThrow("salvage value Rs 22.00 is more than what these 2 packs cost (Rs 20.00)");
+        await invoke(completeSalesReturnFn, { returnId: salesReturn.id, lines: lines(3) }, f.actor.id);
+
+        const damagedStock = async () => (await tx.select().from(returnedFinishedGoodsStock).where(and(
+          eq(returnedFinishedGoodsStock.recipeId, f.recipe.id), eq(returnedFinishedGoodsStock.condition, "damaged"))))[0];
+        const afterReceipt = await damagedStock();
+        expect([afterReceipt.quantityCartons * 4 + afterReceipt.quantityContainers, afterReceipt.totalInventoryValue]).toEqual([2, "6.00"]);
+        const [returnLine] = await tx.select().from(salesReturnItems).where(eq(salesReturnItems.salesReturnId, salesReturn.id));
+        expect([returnLine.damagedSalvagePerUnit, returnLine.expiredSalvagePerUnit, returnLine.writeOffAmount]).toEqual(["3.00", "0.00", "14.00"]);
+        const traces = () => tx.select().from(salesReturnStockTraces).where(eq(salesReturnStockTraces.salesReturnId, salesReturn.id));
+        expect((await traces()).map(t => [t.kind, t.destination, t.totalCost, t.writeOffAmount]).sort()).toEqual([
+          ["receive", "damaged", "20.00", "14.00"],
+          ["receive", "sellable", "10.00", "0.00"],
+        ]);
+        await assertStock(tx, f, 2);
+
+        await invoke(voidSalesReturnFn, { returnId: salesReturn.id, reason: "Entered against the wrong invoice" }, f.actor.id);
+        const afterVoid = await damagedStock();
+        expect([afterVoid.quantityCartons * 4 + afterVoid.quantityContainers, afterVoid.totalInventoryValue]).toEqual([0, "0.00"]);
+        expect((await traces()).filter(t => t.kind === "void").map(t => [t.destination, t.totalCost, t.writeOffAmount]).sort()).toEqual([
+          ["damaged", "-20.00", "-14.00"],
+          ["sellable", "-10.00", "0.00"],
+        ]);
       });
     });
   });
