@@ -1065,5 +1065,42 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("reachable two-phase invoice mut
         expect(await damagedRow(tx, f)).toEqual([4, "20.00"]);
       });
     });
+
+    it("shows return write-offs and write-downs as their own P&L lines", async () => {
+      await withFixture(async (tx, f) => {
+        await receive(tx, f, 4);
+        const invoice = await invoke(createInvoiceFn, request(f, [line(f, 2)]), f.actor.id);
+        const [item] = await tx.select().from(invoiceItems).where(eq(invoiceItems.invoiceId, invoice.id));
+        const salesReturn = await requestReturn(f, invoice.id, item.id, [2]);
+        await invoke(decideSalesReturnFn, { returnId: salesReturn.id, action: "approve" }, f.actor.id);
+        await invoke(completeSalesReturnFn, {
+          returnId: salesReturn.id,
+          lines: [{ returnItemId: salesReturn.items[0].id, damagedUnits: 2, damagedSalvagePerUnit: 3 }],
+        }, f.actor.id); // cost 20, stock 6, write-off 14
+        await tx.update(salesReturns).set({ completedAt: new Date("2026-05-05T12:00:00Z") }).where(eq(salesReturns.id, salesReturn.id));
+        const revalue = await invoke(setReturnedStockValueFn, { ...key(f), valuePerPack: 1, note: "Labels faded" }, f.actor.id); // 6 -> 2, write-down 4
+        const scrap = await invoke(scrapReturnedStockFn, { ...key(f), units: 1 }, f.actor.id); // loss 1
+        await tx.update(returnedStockMovements).set({ movementDate: new Date("2026-05-10T12:00:00Z") })
+          .where(inArray(returnedStockMovements.id, [revalue.id, scrap.id]));
+
+        const may = createReportDateRange({ dateFrom: "2026-05-01", dateTo: "2026-05-31" });
+        const snapshot = (source: "all" | "online") =>
+          readAccounting(tx, async () => buildSnapshot(await loadContext(may.fromDate, may.toDate, source), may));
+        const all = await snapshot("all");
+        expect([all.summary.returnWriteOffs, all.summary.returnedStockWriteDowns]).toEqual([15, 4]);
+        expect(all.deductionBreakdown.filter(row => row.type.startsWith("return")).map(row => [row.type, row.amount])).toEqual([
+          ["return_write_offs", 15],
+          ["returned_stock_write_downs", 4],
+        ]);
+        const online = await snapshot("online");
+        expect([online.summary.returnWriteOffs, online.summary.returnedStockWriteDowns]).toEqual([14, 0]);
+
+        await invoke(voidReturnedStockMovementFn, { movementId: scrap.id, reason: "Pack was fine" }, f.actor.id);
+        await tx.update(returnedStockMovements).set({ voidedAt: new Date("2026-06-02T12:00:00Z") }).where(eq(returnedStockMovements.id, scrap.id));
+        const june = createReportDateRange({ dateFrom: "2026-06-01", dateTo: "2026-06-30" });
+        const juneSnapshot = await readAccounting(tx, async () => buildSnapshot(await loadContext(june.fromDate, june.toDate, "all"), june));
+        expect(juneSnapshot.summary.returnWriteOffs).toBe(-1);
+      });
+    });
   });
 });

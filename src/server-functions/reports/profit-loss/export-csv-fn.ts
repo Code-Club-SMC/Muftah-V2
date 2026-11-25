@@ -92,6 +92,8 @@ export const exportPnlCsvFn = createServerFn()
         ["Commissions", formatReportMoney(report.summary.commissions)],
         ["TA/DA", formatReportMoney(report.summary.tada)],
         ["General Expenses", formatReportMoney(report.summary.generalExpenses)],
+        ["Return Write-offs", formatReportMoney(report.summary.returnWriteOffs)],
+        ["Returned Stock Write-downs", formatReportMoney(report.summary.returnedStockWriteDowns)],
         [
           "Total Operating Expenses",
           formatReportMoney(report.summary.totalOperatingExpenses),
