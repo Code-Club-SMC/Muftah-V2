@@ -310,7 +310,7 @@ export const ExpensesContainer = () => {
       <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
         {/* The count is rows on screen (voided included); the money is real spend (voided left out). */}
         <p className="text-sm text-muted-foreground tabular-nums">
-          Page {page} of {pageCount} · {total} expenses
+          Page {page} of {pageCount} · {total} {total === 1 ? "expense" : "expenses"}
           {kpisQuery.data ? ` · ${formatRupees(kpisQuery.data.totalCash)}` : ""}
         </p>
         <div className="flex items-center gap-2 w-full sm:w-auto">
