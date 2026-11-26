@@ -108,6 +108,7 @@ export const {
   orderBookerTrips,
   commissionTiers,
   commissionRecords,
+  commissionEarnings,
   creditRecoveryAttempts,
   recipePrices,
   entityRecipeRates,

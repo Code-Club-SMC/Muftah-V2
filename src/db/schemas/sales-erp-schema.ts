@@ -376,6 +376,10 @@ export const orders = pgTable("orders", {
     .references(() => salesmen.id),
   fulfilledAt: timestamp("fulfilled_at"),
   fulfilledAmount: decimal("fulfilled_amount", { precision: 12, scale: 2 }),
+  // Recovery-based commission (phase 6): locked once, when the order is first delivered.
+  // null = not delivered yet, or an old order not yet moved over (see recovery-commission-service).
+  commissionMode: text("commission_mode", { enum: ["recovery", "suppressed", "delivery_paid"] }),
+  commissionRateLocked: decimal("commission_rate_locked", { precision: 7, scale: 4 }),
   notes: text("notes"),
   ...timestamps,
 }, (table) => ({
@@ -475,7 +479,7 @@ export const commissionRecords = pgTable("commission_records", {
   commissionAmount: decimal("commission_amount", { precision: 12, scale: 2 }).notNull(),
   calculatedAt: timestamp("calculated_at").defaultNow().notNull(),
   earnedAt: timestamp("earned_at", { withTimezone: true }).defaultNow().notNull(),
-  status: text("status").notNull().default("accrued"), // "accrued" | "paid" | "reversed"
+  status: text("status").notNull().default("accrued"), // "accrued" | "paid" | "reversed" | "cancelled" (cancelled = unpaid delivery commission dropped at the phase 6 switch-over)
   paidInPayslipId: text("paid_in_payslip_id"),
   ...timestamps,
 }, (table) => ({
@@ -783,6 +787,44 @@ export const salesReturns = pgTable("sales_returns", {
     "sales_returns_completion_credit_note_check",
     sql`${table.status} not in ('completed', 'voided') or (nullif(btrim(${table.creditNoteNumber}), '') is not null and ${table.appliedToInvoiceAmount} + ${table.customerCreditAmount} = ${table.totalAmount})`,
   ),
+}));
+
+// --- COMMISSION EARNINGS (recovery-based ledger, phase 6) ---
+// Append-only. Corrections are new rows, never edits (except paid_in_payslip_id).
+export const commissionEarnings = pgTable("commission_earnings", {
+  id: text("id").primaryKey().$defaultFn(() => createId()),
+  orderBookerId: text("order_booker_id").notNull().references(() => orderBookers.id),
+  orderId: text("order_id").notNull().references(() => orders.id),
+  invoiceId: text("invoice_id").notNull().references(() => invoices.id),
+  paymentId: text("payment_id").references(() => payments.id),
+  salesReturnId: text("sales_return_id").references(() => salesReturns.id),
+  kind: text("kind", { enum: ["payment", "payment_reversal", "return_clawback", "return_clawback_undo"] }).notNull(),
+  bearer: text("bearer", { enum: ["booker", "company"] }),
+  baseAmount: decimal("base_amount", { precision: 12, scale: 2 }).notNull(),
+  rate: decimal("rate", { precision: 7, scale: 4 }).notNull(),
+  amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
+  entryDate: timestamp("entry_date", { withTimezone: true }).notNull(),
+  paidInPayslipId: text("paid_in_payslip_id"),
+  createdById: text("created_by_id").references(() => user.id),
+  note: text("note"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  paymentKindUnique: uniqueIndex("commission_earnings_payment_kind_unique")
+    .on(table.paymentId, table.kind)
+    .where(sql`${table.paymentId} is not null`),
+  returnKindUnique: uniqueIndex("commission_earnings_return_kind_unique")
+    .on(table.salesReturnId, table.kind)
+    .where(sql`${table.salesReturnId} is not null`),
+  bookerDateIdx: index("commission_earnings_booker_date_idx").on(table.orderBookerId, table.entryDate),
+  invoiceIdx: index("commission_earnings_invoice_idx").on(table.invoiceId),
+  unpaidIdx: index("commission_earnings_unpaid_idx").on(table.orderBookerId).where(sql`${table.paidInPayslipId} is null`),
+}));
+
+export const commissionEarningsRelations = relations(commissionEarnings, ({ one }) => ({
+  orderBooker: one(orderBookers, { fields: [commissionEarnings.orderBookerId], references: [orderBookers.id] }),
+  order: one(orders, { fields: [commissionEarnings.orderId], references: [orders.id] }),
+  invoice: one(invoices, { fields: [commissionEarnings.invoiceId], references: [invoices.id] }),
+  payment: one(payments, { fields: [commissionEarnings.paymentId], references: [payments.id] }),
 }));
 
 export const salesReturnItems = pgTable("sales_return_items", {

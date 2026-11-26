@@ -3,6 +3,12 @@ import { format, parseISO } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Printer, Edit2 } from "lucide-react";
 import { OverrideBradfordDialog } from "./override-bradford-dialog";
+import type { LegacyCommissionLine, PayslipCommissionBreakdown } from "@/lib/order-booker/recovery-commission";
+
+/** Old payslips store per-order lines; recovery-based payslips (phase 6) are shown separately. */
+function legacyCommissionLines(payslip: { commissionBreakdown?: PayslipCommissionBreakdown | null }): LegacyCommissionLine[] {
+  return Array.isArray(payslip.commissionBreakdown) ? payslip.commissionBreakdown : [];
+}
 
 export type PayslipData = {
     id: string;
@@ -51,14 +57,7 @@ export type PayslipData = {
     totalDeductions: string;
     netSalary: string;
     carriedForwardDeficit?: string | null;
-    commissionBreakdown?: Array<{
-      orderId: string;
-      orderRef: string;
-      orderDate: string;
-      orderValue: number;
-      rate: number;
-      amount: number;
-    }> | null;
+    commissionBreakdown?: PayslipCommissionBreakdown | null;
     remarks: string | null;
     paymentSource?: string | null;
     createdAt: Date;
@@ -440,11 +439,11 @@ body { font-family: Arial, sans-serif; font-size:11px; color:#111; background:#f
 
   </div><!-- /main-box -->
 
-  ${payslip.commissionBreakdown && payslip.commissionBreakdown.length > 0 ? `
+  ${legacyCommissionLines(payslip) && legacyCommissionLines(payslip).length > 0 ? `
   <!-- Commission Breakdown -->
   <div style="border:${OUTER_BORDER};border-top:none;font-size:11px;">
     <div style="padding:6px 10px;background:#f8f9fa;font-weight:600;">
-      Commission Breakdown (${payslip.commissionBreakdown.length} orders)
+      Commission Breakdown (${legacyCommissionLines(payslip).length} orders)
     </div>
     <table style="width:100%;border-collapse:collapse;">
       <thead>
@@ -457,7 +456,7 @@ body { font-family: Arial, sans-serif; font-size:11px; color:#111; background:#f
         </tr>
       </thead>
       <tbody>
-        ${payslip.commissionBreakdown.map((item) => `
+        ${legacyCommissionLines(payslip).map((item) => `
         <tr>
           <td style="${base};border-bottom:${ROW_BORDER}">${item.orderRef}</td>
           <td style="${base};border-bottom:${ROW_BORDER}">${item.orderDate}</td>
@@ -656,7 +655,7 @@ body { font-family: Arial, sans-serif; font-size:11px; color:#111; background:#f
                 </div>{/* /main-box */}
 
                 {/* Commission Breakdown (Expandable) */}
-                {payslip.commissionBreakdown && payslip.commissionBreakdown.length > 0 && (
+                {legacyCommissionLines(payslip) && legacyCommissionLines(payslip).length > 0 && (
                     <div style={{
                         border: OUTER_BORDER,
                         borderTop: "none",
@@ -674,7 +673,7 @@ body { font-family: Arial, sans-serif; font-size:11px; color:#111; background:#f
                             }}
                             onClick={() => setCommissionExpanded(!commissionExpanded)}
                         >
-                            <span>Commission Breakdown ({payslip.commissionBreakdown.length} orders)</span>
+                            <span>Commission Breakdown ({legacyCommissionLines(payslip).length} orders)</span>
                             <span style={{ fontSize: 9 }}>{commissionExpanded ? "▲ Collapse" : "▼ Expand"}</span>
                         </div>
                         {commissionExpanded && (
@@ -689,7 +688,7 @@ body { font-family: Arial, sans-serif; font-size:11px; color:#111; background:#f
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {payslip.commissionBreakdown.map((item) => (
+                                    {legacyCommissionLines(payslip).map((item) => (
                                         <tr key={item.orderId}>
                                             <td style={{ ...base, borderBottom: ROW_BORDER }}>{item.orderRef}</td>
                                             <td style={{ ...base, borderBottom: ROW_BORDER }}>{item.orderDate}</td>

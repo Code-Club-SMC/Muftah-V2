@@ -13,6 +13,7 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
+import type { PayslipCommissionBreakdown } from "@/lib/order-booker/recovery-commission";
 import { createId } from "@paralleldrive/cuid2";
 import {
   type AllowanceConfig,
@@ -510,16 +511,10 @@ export const payslips = pgTable(
   compCashOutAmount: decimal("comp_cash_out_amount", { precision: 12, scale: 2 }).default("0").notNull(),
 
   // Commission Breakdown Snapshot
-  // Frozen at payroll generation time — per-order commission detail.
-  // Structure: [{ orderId, orderRef, orderDate, orderValue, rate, amount }]
-  commissionBreakdown: jsonb("commission_breakdown").$type<Array<{
-    orderId: string;
-    orderRef: string;
-    orderDate: string;
-    orderValue: number;
-    rate: number;
-    amount: number;
-  }>>(),
+  // Frozen at payroll generation time.
+  // Old payslips hold the per-order array: [{ orderId, orderRef, orderDate, orderValue, rate, amount }].
+  // New (phase 6) payslips hold { kind: "recovery", paymentsCount, earned, deductions, carriedForward, lines }.
+  commissionBreakdown: jsonb("commission_breakdown").$type<PayslipCommissionBreakdown>(),
 
   // Arrears Roll-Forward
   // When a missed prior-cycle salary is included in this slip, these fields
