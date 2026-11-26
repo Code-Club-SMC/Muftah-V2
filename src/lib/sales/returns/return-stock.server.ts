@@ -304,7 +304,7 @@ export async function reverseReturnStock(
     }
     if (available < units) {
       throw new Error(
-        `Return #${input.returnNumber} can't be voided: ${units} packs of ${first.recipe.name} went to ${PLACE[first.destination] ?? first.destination} but only ${available} are left. Some were sold, scrapped or sold as seconds since.`,
+        `Return #${input.returnNumber} can't be voided: ${units} ${units === 1 ? "pack" : "packs"} of ${first.recipe.name} went to ${PLACE[first.destination] ?? first.destination} but only ${available} ${available === 1 ? "is" : "are"} left. Some were sold, scrapped or sold as seconds since.`,
       );
     }
   }

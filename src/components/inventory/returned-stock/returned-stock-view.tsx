@@ -142,7 +142,7 @@ export function ReturnedStockView() {
                 <TableHead>Item</TableHead>
                 <TableHead className="text-right">Packs</TableHead>
                 <TableHead className="text-right">Sale</TableHead>
-                <TableHead className="text-right">Loss</TableHead>
+                <TableHead className="text-right">Loss / gain</TableHead>
                 <TableHead>By</TableHead>
                 <TableHead>Note</TableHead>
                 {canDispose && <TableHead />}
@@ -161,7 +161,11 @@ export function ReturnedStockView() {
                   <TableCell className="text-right">
                     {movement.saleAmount ? `${formatRupees(movement.saleAmount)}${movement.walletName ? ` → ${movement.walletName}` : ""}` : "—"}
                   </TableCell>
-                  <TableCell className="text-right">{formatRupees(movement.lossAmount)}</TableCell>
+                  <TableCell className="text-right">
+                    {Number(movement.lossAmount) < 0
+                      ? <span className="text-emerald-600 dark:text-emerald-400">Gain {formatRupees(-Number(movement.lossAmount))}</span>
+                      : formatRupees(movement.lossAmount)}
+                  </TableCell>
                   <TableCell>{movement.performedByName ?? "—"}</TableCell>
                   <TableCell>{movement.voidedAt ? `Voided: ${movement.voidReason ?? ""}` : movement.note ?? ""}</TableCell>
                   {canDispose && (

@@ -112,4 +112,19 @@ describe("Returned Stock page", () => {
     expect(screen.queryByRole("button", { name: "Set value" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Void" })).toBeNull();
   });
+
+  it("shows a seconds sale above stock value as a gain, not a negative loss", async () => {
+    mocks.list.mockResolvedValue({
+      rows: [],
+      movements: [{
+        id: "m9", kind: "sell_seconds", recipeName: "Mango 1L", warehouseName: "Factory", condition: "damaged", units: 1,
+        valueRemoved: "1.00", unitPrice: "40.00", saleAmount: "40.00", lossAmount: "-39.00", walletName: "Main Cash", note: null,
+        movementDate: new Date("2026-12-01T10:00:00Z"), performedByName: "Ali", voidedAt: null, voidedByName: null, voidReason: null,
+      }],
+    });
+    mount();
+    expect(await screen.findByText("Gain Rs 39")).toBeTruthy();
+    expect(screen.getByRole("columnheader", { name: "Loss / gain" })).toBeTruthy();
+    expect(screen.queryByText(/−Rs|-Rs/)).toBeNull();
+  });
 });
