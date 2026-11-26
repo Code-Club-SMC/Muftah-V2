@@ -1,9 +1,7 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { driver } from "driver.js";
-import "driver.js/dist/driver.css";
-import { ArrowLeft, ArrowRight, BookOpen } from "lucide-react";
+import { ArrowLeft, ArrowRight } from "lucide-react";
 
 import {
   archiveCategoryFieldOptionFn,
@@ -203,62 +201,6 @@ export function ExpenseCategoriesManager() {
     onError: (error) => toast.error(error.message || "Failed to update option"),
   });
 
-  const startTutorial = () => {
-    const tour = driver({
-      showProgress: true,
-      allowClose: true,
-      steps: [
-        {
-          popover: {
-            title: "Expense Categories Setup",
-            description:
-              "This wizard helps you configure expenses in 3 simple steps: categories, fields, and select options.",
-          },
-        },
-        {
-          element: '[data-tour="wizard-steps"]',
-          popover: {
-            title: "Step Tracker",
-            description: "Use these buttons to move between setup steps at any time.",
-          },
-        },
-        {
-          element: '[data-tour="active-panel"]',
-          popover: {
-            title: "Current Step",
-            description:
-              "This section changes based on the selected step and shows exactly what to configure next.",
-          },
-        },
-        {
-          element: '[data-tour="helper-box"]',
-          popover: {
-            title: "What This Means",
-            description:
-              "Each step includes plain-language guidance so non-technical users can configure safely.",
-          },
-        },
-        {
-          element: '[data-tour="wizard-nav"]',
-          popover: {
-            title: "Next / Back",
-            description:
-              "Use Next and Back to follow the setup flow. You can rerun this tutorial anytime with the tutorial button.",
-          },
-        },
-        {
-          element: '[data-tour="tutorial-btn"]',
-          popover: {
-            title: "Replay Tutorial Anytime",
-            description: "Click this button anytime to restart the guided tour.",
-          },
-        },
-      ],
-    });
-
-    tour.drive();
-  };
-
   const canGoNext = currentStep === 1 ? Boolean(selectedCategoryId) : true;
 
   const goToStep = (step: SetupStep) => {
@@ -290,16 +232,6 @@ export function ExpenseCategoriesManager() {
             Set up your expense categories in 3 simple steps.
           </p>
         </div>
-        <Button
-          type="button"
-          variant="outline"
-          className="rounded-none"
-          onClick={startTutorial}
-          data-tour="tutorial-btn"
-        >
-          <BookOpen className="size-4 mr-2" />
-          Start Tutorial
-        </Button>
       </div>
 
       <div className="grid gap-2 md:grid-cols-3" data-tour="wizard-steps">
