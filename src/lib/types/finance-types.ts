@@ -171,6 +171,12 @@ export type ExpenseTemplate = {
   expenseDates: string[];
 };
 
+export type ExpenseMonthSummary = {
+  currentTotal: number;
+  previousTotal: number;
+  topCategories: Array<{ categoryId: string; name: string; total: number }>;
+};
+
 export type SaveExpenseTemplateInput = {
   templateId?: string;
   name: string;

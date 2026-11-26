@@ -18,7 +18,7 @@ import type {
   ExpenseListResponse,
   FinanceDynamicFieldType,
 } from "@/lib/types/finance-types";
-import { and, count, eq, isNull, SQL, sql, gte, lte } from "drizzle-orm";
+import { and, count, eq, ilike, inArray, isNull, SQL, sql, gte, lte } from "drizzle-orm";
 import { parseISO, isValid } from "date-fns";
 import { z } from "zod";
 import { createId } from "@paralleldrive/cuid2";
@@ -90,7 +90,10 @@ const dynamicFieldFilterSchema = z
 
 type ExpenseFilterInput = {
   categoryId?: string;
+  categoryIds?: string[];
   category?: string;
+  walletId?: string;
+  payee?: string;
   dateFrom?: string;
   dateTo?: string;
   fieldFilters?: Array<z.infer<typeof dynamicFieldFilterSchema>>;
@@ -99,10 +102,23 @@ type ExpenseFilterInput = {
 const buildExpenseFilterConditions = (data: ExpenseFilterInput): SQL[] => {
   const conditions: SQL[] = [];
 
-  if (data.categoryId) {
+  if (data.categoryIds && data.categoryIds.length > 0) {
+    conditions.push(inArray(expenses.categoryId, data.categoryIds));
+  } else if (data.categoryId) {
     conditions.push(eq(expenses.categoryId, data.categoryId));
   } else if (data.category) {
     conditions.push(eq(expenses.category, data.category));
+  }
+
+  if (data.walletId) {
+    conditions.push(eq(expenses.walletId, data.walletId));
+  }
+
+  const payee = data.payee?.trim();
+  if (payee) {
+    // Typed % and _ are matched literally.
+    const escaped = payee.replace(/[\\%_]/g, (char) => `\\${char}`);
+    conditions.push(ilike(expenses.payee, `%${escaped}%`));
   }
 
   if (data.dateFrom) {
@@ -486,6 +502,9 @@ export const getExpensesFn = createServerFn()
   .inputValidator(
     z.object({
       categoryId: z.string().optional(),
+      categoryIds: z.array(z.string().min(1)).max(100).optional(),
+      walletId: z.string().min(1).optional(),
+      payee: z.string().trim().max(200).optional(),
       category: z.string().optional(),
       page: z.number().int().positive().default(1),
       limit: z.number().int().positive().default(60),
@@ -656,6 +675,9 @@ export const getExpensesKpisFn = createServerFn()
   .inputValidator(
     z.object({
       categoryId: z.string().optional(),
+      categoryIds: z.array(z.string().min(1)).max(100).optional(),
+      walletId: z.string().min(1).optional(),
+      payee: z.string().trim().max(200).optional(),
       category: z.string().optional(),
       dateFrom: z.string().optional(),
       dateTo: z.string().optional(),
