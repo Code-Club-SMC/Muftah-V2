@@ -10,7 +10,7 @@ import {
   requireSalesOrdersViewMiddleware,
   requireSalesOrdersManageMiddleware,
 } from "@/lib/middlewares";
-import { calculateCommissionForOrder } from "./order-booker-commission-calc";
+import { lockOrderCommissionTerms } from "./recovery-commission-service";
 import {
   MAX_BILL_NUMBER_RETRIES,
   allocateNextBillNumberInTx,
@@ -371,13 +371,13 @@ export const fulfillOrderFn = createServerFn()
         .where(eq(orders.id, data.id))
         .returning();
 
-      // Calculate commission within same transaction
-      await calculateCommissionForOrder(
-        tx as any,
-        order.orderBookerId,
-        order.id,
-        data.fulfilledAmount,
-      );
+      // Phase 6: lock the rate at delivery; commission is earned when the invoice is paid.
+      await lockOrderCommissionTerms(tx as any, {
+        orderId: order.id,
+        orderBookerId: order.orderBookerId,
+        deliveredAmount: data.fulfilledAmount,
+        policy: "normal",
+      });
 
       await syncSalesmanAttendanceForDate({
         tx: tx as any,

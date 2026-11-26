@@ -41,7 +41,7 @@ import {
   or,
   sql,
 } from "drizzle-orm";
-import { calculateCommissionForOrder } from "./order-booker-commission-calc";
+import { lockOrderCommissionTerms } from "./recovery-commission-service";
 import { recordInvoiceTimelineEvent } from "./invoice-timeline-log";
 import { createInitialPayments } from "./settlement-service";
 import { lockFinishedGoods } from "@/lib/production/finished-goods-lock.server";
@@ -1065,15 +1065,13 @@ export async function postInvoice(
         .where(eq(orders.id, data.orderId));
     }
 
-    if (input.commissionPolicy !== "suppress") {
-      await calculateCommissionForOrder(
-        tx,
-        orderBookerId,
-        data.orderId,
-        commissionBaseAmount,
-        input.businessDate,
-      );
-    }
+    // Phase 6: nothing is earned on delivery. Lock the rate; payments earn it later.
+    await lockOrderCommissionTerms(tx, {
+      orderId: data.orderId,
+      orderBookerId,
+      deliveredAmount: commissionBaseAmount,
+      policy: input.commissionPolicy === "suppress" ? "suppress" : "normal",
+    });
   }
 
   // ── Create slip record ────────────────────────────────────────────────

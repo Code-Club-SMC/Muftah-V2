@@ -5,7 +5,6 @@ import { describe, expect, it } from "vitest";
 const posting = readFileSync(resolve(process.cwd(), "src/lib/sales/offline/posting.server.ts"), "utf8");
 const service = readFileSync(resolve(process.cwd(), "src/server-functions/sales/invoice-posting-service.ts"), "utf8");
 const stockAdjustment = readFileSync(resolve(process.cwd(), "src/lib/cartons/stock-adjustment.server.ts"), "utf8");
-const commission = readFileSync(resolve(process.cwd(), "src/server-functions/sales/order-booker-commission-calc.ts"), "utf8");
 
 describe("offline sales atomic posting", () => {
   it("locks identity, order, stock, and customer before posting", () => {
@@ -35,10 +34,9 @@ describe("offline sales atomic posting", () => {
     expect(posting).toContain('creditPolicy: "warn"');
   });
 
-  it("uses outage dates for order delivery and commission", () => {
+  it("uses outage dates for order delivery and locks offline orders out of commission", () => {
     expect(service).toContain("fulfilledAt: input.businessDate");
-    expect(service).toContain("input.businessDate,");
-    expect(commission).toContain("earnedAt");
+    expect(service).toContain('policy: input.commissionPolicy === "suppress" ? "suppress" : "normal"');
     expect(posting).toContain('commissionPolicy: "suppress"');
   });
 
