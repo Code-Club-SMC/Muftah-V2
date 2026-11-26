@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSalesPeopleViewMiddleware } from "@/lib/middlewares";
-import { summarizeBookerMonth, type BookerMonthSummary } from "@/lib/order-booker/recovery-commission";
+import { paymentEarnsCommission, summarizeBookerMonth, type BookerMonthSummary } from "@/lib/order-booker/recovery-commission";
 import { roundMoney } from "@/lib/sales/settlement/money";
 import { createReportDateRange } from "@/server-functions/reports/profit-loss/reporting-math";
 import type { SalesTransaction } from "./settlement-service";
@@ -71,11 +71,13 @@ export const getBookerCommissionMonthFn = createServerFn()
       .map((invoice) => {
         const own = entries.filter((entry) => entry.invoiceId === invoice.id);
         const single = summarizeBookerMonth({ ...input, invoices: [invoice], entries: [] });
+        // Everything as of month end, so a past month reads the same later.
         const returned = input.returns
-          .filter((r) => r.invoiceId === invoice.id && (!r.voidedAt || r.voidedAt > monthEnd))
+          .filter((r) => r.invoiceId === invoice.id && r.completedAt <= monthEnd && !(r.voidedAt && r.voidedAt <= monthEnd))
           .reduce((sum, r) => sum + r.totalAmount, 0);
         const collected = input.payments
-          .filter((p) => p.invoiceId === invoice.id && p.status === "confirmed" && p.method !== "customer_credit")
+          .filter((p) => p.invoiceId === invoice.id && paymentEarnsCommission(p.method)
+            && p.effectiveDate !== null && p.effectiveDate <= monthEnd && !(p.reversedAt && p.reversedAt <= monthEnd))
           .reduce((sum, p) => sum + p.amount, 0);
         return {
           invoiceId: invoice.id,
