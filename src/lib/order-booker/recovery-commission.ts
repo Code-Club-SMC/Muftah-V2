@@ -54,12 +54,28 @@ export type LegacyCommissionLine = { orderId: string; orderRef: string; orderDat
 export type RecoveryCommissionBreakdown = {
   kind: "recovery";
   paymentsCount: number;
+  /** Commission on confirmed payments only. */
   earned: number;
+  /** Taken back for reversed payments and returns (a positive number). */
   deductions: number;
+  /** Given back because a return was voided. Missing on payslips saved before this field existed. */
+  addedBack?: number;
   carriedForward: number;
   lines: Array<{ entryDate: string; invoiceNumber: string; kind: CommissionEntryKind; base: number; rate: number; amount: number }>;
 };
 export type PayslipCommissionBreakdown = LegacyCommissionLine[] | RecoveryCommissionBreakdown;
+
+/** Splits payslip ledger rows into what the payslip shows: earned, taken back, and given back. */
+export function summarizePayslipEntries(entries: Array<{ kind: CommissionEntryKind; amount: number }>) {
+  const total = (kinds: CommissionEntryKind[]) =>
+    roundMoney(entries.filter((e) => kinds.includes(e.kind)).reduce((sum, e) => sum + e.amount, 0));
+  return {
+    paymentsCount: entries.filter((e) => e.kind === "payment").length,
+    earned: total(["payment"]),
+    deductions: roundMoney(-total(["payment_reversal", "return_clawback"])),
+    addedBack: total(["return_clawback_undo"]),
+  };
+}
 
 export function isRecoveryBreakdown(value: unknown): value is RecoveryCommissionBreakdown {
   return Boolean(value) && !Array.isArray(value) && (value as { kind?: string }).kind === "recovery";

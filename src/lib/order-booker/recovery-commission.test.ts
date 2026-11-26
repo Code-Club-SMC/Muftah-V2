@@ -5,6 +5,7 @@ import {
   earnableBase,
   paymentEarnsCommission,
   settlePayslipCommission,
+  summarizePayslipEntries,
   summarizeBookerMonth,
 } from "./recovery-commission";
 
@@ -69,5 +70,19 @@ describe("recovery commission money rules", () => {
       delivered: 500000, returned: 100000, collected: 250000, earned: 4000,
       stillOwed: 245000, waiting: 3900,
     });
+  });
+});
+
+describe("summarizePayslipEntries", () => {
+  it("keeps payments, take-backs and voided-return add-backs apart", () => {
+    expect(summarizePayslipEntries([
+      { kind: "payment", amount: 800 },
+      { kind: "payment", amount: 1200 },
+      { kind: "payment_reversal", amount: -1200 },
+      { kind: "payment_reversal", amount: 0 },
+      { kind: "payment", amount: 2000 },
+      { kind: "return_clawback", amount: -600 },
+      { kind: "return_clawback_undo", amount: 600 },
+    ])).toEqual({ paymentsCount: 3, earned: 4000, deductions: 1800, addedBack: 600 });
   });
 });

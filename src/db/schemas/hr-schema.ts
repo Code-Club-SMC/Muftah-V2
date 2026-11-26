@@ -513,7 +513,7 @@ export const payslips = pgTable(
   // Commission Breakdown Snapshot
   // Frozen at payroll generation time.
   // Old payslips hold the per-order array: [{ orderId, orderRef, orderDate, orderValue, rate, amount }].
-  // New (phase 6) payslips hold { kind: "recovery", paymentsCount, earned, deductions, carriedForward, lines }.
+  // New (phase 6) payslips hold { kind: "recovery", paymentsCount, earned, deductions, addedBack, carriedForward, lines }.
   commissionBreakdown: jsonb("commission_breakdown").$type<PayslipCommissionBreakdown>(),
 
   // Arrears Roll-Forward

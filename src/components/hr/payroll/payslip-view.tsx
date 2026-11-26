@@ -15,7 +15,8 @@ const rupees = (value: number) => value.toLocaleString("en-PK", { maximumFractio
 /** The plain-English commission lines on a recovery-based payslip (phase 6). */
 function recoveryCommissionNotes(breakdown: RecoveryCommissionBreakdown): string[] {
   const notes = [`Commission on recoveries: Rs ${rupees(breakdown.earned)} (${breakdown.paymentsCount} payments)`];
-  if (breakdown.deductions > 0) notes.push(`Deductions (reversed payments): −Rs ${rupees(breakdown.deductions)}`);
+  if (breakdown.deductions > 0) notes.push(`Deductions (reversed payments and returns): −Rs ${rupees(breakdown.deductions)}`);
+  if ((breakdown.addedBack ?? 0) > 0) notes.push(`Added back (voided returns): Rs ${rupees(breakdown.addedBack ?? 0)}`);
   if (breakdown.carriedForward > 0) notes.push(`Rs ${rupees(breakdown.carriedForward)} carried forward to next month`);
   return notes;
 }
@@ -220,7 +221,7 @@ export const PayslipView = ({
             ? [{ label: "Incentive", value: toN(payslip.incentiveAmount) }]
             : []),
         ...(isRecoveryBreakdown(payslip.commissionBreakdown)
-            ? [{ label: `Commission on recoveries (${payslip.commissionBreakdown.paymentsCount} payments)`, value: toN(payslip.commissionAmount) }]
+            ? [{ label: "Commission (after deductions)", value: toN(payslip.commissionAmount) }]
             : toN(payslip.commissionAmount) > 0
                 ? [{ label: "Commission", value: toN(payslip.commissionAmount) }]
                 : []),

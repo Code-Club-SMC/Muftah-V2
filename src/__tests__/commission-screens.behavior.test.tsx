@@ -73,6 +73,9 @@ describe("Booker Commission tab", () => {
     for (const label of ["Delivered", "Collected", "Earned", "Waiting"]) expect(within(totals).getByText(label)).toBeTruthy();
     expect(await within(totals).findByText("Rs 3,400")).toBeTruthy();
     expect(screen.getByText("INV-7")).toBeTruthy();
+    // The tile counts money confirmed this month; the invoice column is what still stands after reversals.
+    expect(screen.getByRole("columnheader", { name: "Paid so far" })).toBeTruthy();
+    expect(screen.queryByRole("columnheader", { name: "Collected" })).toBeNull();
     expect(screen.getByText("2%")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Show payments for INV-7" }));
     expect(screen.getByText("Payment received")).toBeTruthy();

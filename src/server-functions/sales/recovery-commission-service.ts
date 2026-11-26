@@ -8,8 +8,10 @@ import {
   earnableBase,
   paymentEarnsCommission,
   settlePayslipCommission,
+  summarizePayslipEntries,
   type BookerMonthInput,
   type CommissionBearer,
+  type CommissionEntryKind,
   type CommissionMode,
   type PayslipCommissionSettlement,
   type RecoveryCommissionBreakdown,
@@ -272,9 +274,7 @@ export async function collectPayslipCommission(
     settlement,
     breakdown: {
       kind: "recovery",
-      paymentsCount: rows.filter((r) => r.kind === "payment").length,
-      earned: settlement.earned,
-      deductions: settlement.deductions,
+      ...summarizePayslipEntries(rows.map((r) => ({ kind: r.kind as CommissionEntryKind, amount: Number(r.amount) }))),
       carriedForward: settlement.carriedForward,
       lines: rows.map((r) => ({
         entryDate: r.entryDate.toISOString().slice(0, 10),

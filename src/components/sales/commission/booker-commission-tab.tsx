@@ -42,7 +42,7 @@ export function BookerCommissionTab({ orderBookerId, month, onMonthChange }: { o
               <TableHead className="text-[11px]">Invoice</TableHead>
               <TableHead className="text-right text-[11px]">Delivered</TableHead>
               <TableHead className="text-right text-[11px]">Returned</TableHead>
-              <TableHead className="text-right text-[11px]">Collected</TableHead>
+              <TableHead className="text-right text-[11px]">Paid so far</TableHead>
               <TableHead className="text-right text-[11px]">Still owed</TableHead>
               <TableHead className="text-right text-[11px]">Rate</TableHead>
               <TableHead className="text-right text-[11px]">Commission earned</TableHead>
