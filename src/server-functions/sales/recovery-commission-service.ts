@@ -1,5 +1,5 @@
-import { and, eq, inArray, isNull, lt, sql } from "drizzle-orm";
-import { commissionEarnings, commissionRecords, commissionTiers, orderBookers, orders, salesReturns } from "@/db/schemas/sales-erp-schema";
+import { and, eq, gte, inArray, isNull, lt, lte, sql } from "drizzle-orm";
+import { commissionEarnings, commissionRecords, commissionTiers, orderBookers, orders, payments, salesReturns } from "@/db/schemas/sales-erp-schema";
 import { invoices } from "@/db/schemas/sales-schema";
 import { calculateOrderBookerCommission } from "@/lib/order-booker/commission";
 import {
@@ -8,6 +8,7 @@ import {
   earnableBase,
   paymentEarnsCommission,
   settlePayslipCommission,
+  type BookerMonthInput,
   type CommissionBearer,
   type CommissionMode,
   type PayslipCommissionSettlement,
@@ -300,4 +301,58 @@ export async function markPayslipCommissionPaid(tx: SalesTransaction, entryIds: 
 /** A deleted payslip frees its rows so the next payslip pays them again. */
 export async function releasePayslipCommission(tx: SalesTransaction, payslipId: string): Promise<void> {
   await tx.update(commissionEarnings).set({ paidInPayslipId: null }).where(eq(commissionEarnings.paidInPayslipId, payslipId));
+}
+
+/** Raw rows for the commission screens, grouped per booker. Invoices up to month end; entries inside the month. */
+export async function loadBookerMonthInputs(
+  tx: SalesTransaction,
+  input: { orderBookerIds: string[] | "all"; monthStart: Date; monthEnd: Date },
+): Promise<Map<string, BookerMonthInput>> {
+  const map = new Map<string, BookerMonthInput>();
+  if (input.orderBookerIds !== "all" && input.orderBookerIds.length === 0) return map;
+  const bookerFilter = input.orderBookerIds === "all" ? sql`${invoices.orderBookerId} is not null` : inArray(invoices.orderBookerId, input.orderBookerIds);
+  const invoiceRows = await tx.select({
+    id: invoices.id, orderBookerId: invoices.orderBookerId, date: invoices.date, totalPrice: invoices.totalPrice,
+    mode: orders.commissionMode, rate: orders.commissionRateLocked,
+  }).from(invoices).leftJoin(orders, eq(orders.id, invoices.orderId))
+    .where(and(bookerFilter, eq(invoices.status, "saved"), lte(invoices.date, input.monthEnd)));
+  const bucket = (bookerId: string) => {
+    let entry = map.get(bookerId);
+    if (!entry) {
+      entry = { monthStart: input.monthStart, monthEnd: input.monthEnd, invoices: [], returns: [], payments: [], entries: [] };
+      map.set(bookerId, entry);
+    }
+    return entry;
+  };
+  const bookerOf = new Map(invoiceRows.map((r) => [r.id, r.orderBookerId as string]));
+  for (const r of invoiceRows) {
+    bucket(r.orderBookerId as string).invoices.push({
+      id: r.id, date: r.date, totalPrice: Number(r.totalPrice),
+      mode: (r.mode as CommissionMode | null) ?? null, rate: r.rate === null ? null : Number(r.rate),
+    });
+  }
+  const ids = invoiceRows.map((r) => r.id);
+  if (ids.length > 0) {
+    const returnRows = await tx.select({ invoiceId: salesReturns.invoiceId, totalAmount: salesReturns.totalAmount, completedAt: salesReturns.completedAt, voidedAt: salesReturns.voidedAt })
+      .from(salesReturns).where(and(inArray(salesReturns.invoiceId, ids), sql`${salesReturns.completedAt} is not null`));
+    for (const r of returnRows) {
+      bucket(bookerOf.get(r.invoiceId)!).returns.push({ invoiceId: r.invoiceId, totalAmount: Number(r.totalAmount), completedAt: r.completedAt!, voidedAt: r.voidedAt });
+    }
+    const paymentRows = await tx.select({ invoiceId: payments.invoiceId, amount: payments.amount, method: payments.method, status: payments.status, effectiveDate: payments.effectiveDate, resolvedAt: payments.resolvedAt })
+      .from(payments).where(and(inArray(payments.invoiceId, ids), inArray(payments.status, ["confirmed", "reversed"])));
+    for (const p of paymentRows) {
+      bucket(bookerOf.get(p.invoiceId)!).payments.push({
+        invoiceId: p.invoiceId, amount: Number(p.amount), method: p.method, status: p.status,
+        effectiveDate: p.effectiveDate, reversedAt: p.status === "reversed" ? p.resolvedAt : null,
+      });
+    }
+  }
+  const entryRows = await tx.select({ orderBookerId: commissionEarnings.orderBookerId, amount: commissionEarnings.amount, entryDate: commissionEarnings.entryDate })
+    .from(commissionEarnings)
+    .where(and(
+      input.orderBookerIds === "all" ? undefined : inArray(commissionEarnings.orderBookerId, input.orderBookerIds),
+      gte(commissionEarnings.entryDate, input.monthStart), lte(commissionEarnings.entryDate, input.monthEnd),
+    ));
+  for (const e of entryRows) bucket(e.orderBookerId).entries.push({ amount: Number(e.amount), entryDate: e.entryDate });
+  return map;
 }

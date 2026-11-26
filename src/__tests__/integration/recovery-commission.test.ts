@@ -328,4 +328,20 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("recovery-based commission", () 
       expect((await collectPayslipCommission(tx, f.booker.id, new Date("2026-11-01T00:00:00+05:00"))).settlement.payable).toBe(2000);
     });
   });
+
+  it("builds the month summary from real rows (spec example)", async () => {
+    await withFixture(async (tx, f) => {
+      const { loadBookerMonthInputs } = await import("@/server-functions/sales/recovery-commission-service");
+      const { summarizeBookerMonth } = await import("@/lib/order-booker/recovery-commission");
+      const { invoice } = await deliverOrder(tx, f, 5000); // Rs 5,00,000 today
+      await pay(tx, f, invoice.id, 200000, "cash", new Date());
+      const now = new Date();
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+      const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+      const inputs = await loadBookerMonthInputs(tx, { orderBookerIds: [f.booker.id], monthStart, monthEnd });
+      expect(summarizeBookerMonth(inputs.get(f.booker.id)!)).toEqual({
+        delivered: 500000, returned: 0, collected: 200000, earned: 4000, stillOwed: 300000, waiting: 6000,
+      });
+    });
+  });
 });

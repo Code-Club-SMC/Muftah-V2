@@ -48,6 +48,7 @@ export function usePaymentSettlements(filters: PaymentSettlementFilters) {
 
 const relatedQueryKeys = [
 	["invoices"],
+	["recovery-commission"],
 	["customers"],
 	["payments"],
 	["credit-recovery"],
