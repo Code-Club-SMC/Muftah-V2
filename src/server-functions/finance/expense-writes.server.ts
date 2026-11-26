@@ -10,6 +10,7 @@ import {
   expenseCategories,
   expenseFieldValues,
   expenses,
+  expenseTemplates,
   transactions,
   wallets,
 } from "@/db/schemas/finance-schema";
@@ -384,4 +385,12 @@ export async function loadExpenseSnapshot(tx: Tx, expenseId: string): Promise<Ex
     walletName: row.wallet?.name ?? "",
     fields,
   });
+}
+
+/** Locks an active template; archived ones are refused with the message the form shows. */
+export async function lockActiveTemplate(tx: Tx, templateId: string) {
+  const [template] = await tx.select().from(expenseTemplates).where(eq(expenseTemplates.id, templateId)).for("update");
+  if (!template) throw new Error("Template not found");
+  if (template.archivedAt) throw new Error("This template was deleted");
+  return template;
 }

@@ -29,6 +29,7 @@ import {
   dynamicFieldValueSchema,
   expenseAmountSchema,
   insertExpenseFieldValues,
+  lockActiveTemplate,
   parseExpenseDate,
   resolveExpenseCategory,
   validateExpenseFieldValues,
@@ -420,6 +421,7 @@ export const createExpenseFn = createServerFn()
       remarks: z.string().trim().max(1000).optional(),
       allowOverdraw: z.boolean().optional().default(false),
       fieldValues: z.array(dynamicFieldValueSchema).optional().default([]),
+      templateId: z.string().min(1).optional(),
     }),
   )
   .handler(async ({ data, context }) => {
@@ -431,6 +433,9 @@ export const createExpenseFn = createServerFn()
       const expenseId = createId();
       const amount = new Big(data.amount).toFixed(2);
       const userId = context.session.user.id;
+
+      // Recording from a deleted template is refused, so its reminder can't be marked paid by mistake.
+      if (data.templateId) await lockActiveTemplate(tx, data.templateId);
 
       // Wallet first: a missing account or a refused overdraft fails before anything else is written.
       await applyWalletChange(
@@ -445,6 +450,7 @@ export const createExpenseFn = createServerFn()
           id: expenseId,
           description: data.description,
           payee: data.payee || null,
+          templateId: data.templateId ?? null,
           origin: "manual",
           category: categoryRecord.name,
           categoryId: categoryRecord.id,
