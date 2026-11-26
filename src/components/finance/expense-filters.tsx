@@ -129,7 +129,7 @@ export function ExpenseFilters({
         range={value.range}
         onRangeChange={(range) => onChange({ ...value, range: range ?? getCurrentMonthRange() })}
         placeholder="Current month"
-        className="h-9 min-w-65 rounded-none shadow-none"
+        className="h-9 w-full rounded-none shadow-none lg:w-auto lg:min-w-65"
       />
 
       {/* Keeps the date range: this link only shows for category, account or payee filters. */}
