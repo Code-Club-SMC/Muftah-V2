@@ -1,7 +1,18 @@
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
-import { commissionRecords, commissionTiers, orderBookers, orders } from "@/db/schemas/sales-erp-schema";
+import { and, eq, inArray, isNull, lt, sql } from "drizzle-orm";
+import { commissionEarnings, commissionRecords, commissionTiers, orderBookers, orders, salesReturns } from "@/db/schemas/sales-erp-schema";
+import { invoices } from "@/db/schemas/sales-schema";
 import { calculateOrderBookerCommission } from "@/lib/order-booker/commission";
-import type { CommissionMode } from "@/lib/order-booker/recovery-commission";
+import {
+  clawbackBase,
+  commissionAmount,
+  earnableBase,
+  paymentEarnsCommission,
+  settlePayslipCommission,
+  type CommissionBearer,
+  type CommissionMode,
+  type PayslipCommissionSettlement,
+  type RecoveryCommissionBreakdown,
+} from "@/lib/order-booker/recovery-commission";
 import { roundMoney } from "@/lib/sales/settlement/money";
 import type { SalesTransaction } from "./settlement-service";
 
@@ -96,4 +107,197 @@ export function resetRecoveryCommissionSwitchoverForTests() {
   switchoverDone = false;
 }
 
-export { roundMoney as _roundMoney, inArray as _inArray };
+/** What the customer really owes on the invoice: total minus the value of completed returns. */
+export async function owedOnInvoice(tx: SalesTransaction, invoiceId: string): Promise<number> {
+  const [row] = await tx.select({
+    total: invoices.totalPrice,
+    returned: sql<string>`coalesce((select sum(${salesReturns.totalAmount}) from ${salesReturns}
+      where ${salesReturns.invoiceId} = ${invoiceId} and ${salesReturns.status} = 'completed'), 0)`,
+  }).from(invoices).where(eq(invoices.id, invoiceId));
+  return roundMoney(Math.max(0, Number(row?.total ?? 0) - Number(row?.returned ?? 0)));
+}
+
+/** Money on this invoice that commission has already been worked out on (net of reversals and take-backs). */
+export async function commissionedBase(tx: SalesTransaction, invoiceId: string): Promise<number> {
+  const [row] = await tx.select({ base: sql<string>`coalesce(sum(${commissionEarnings.baseAmount}), 0)` })
+    .from(commissionEarnings).where(eq(commissionEarnings.invoiceId, invoiceId));
+  return roundMoney(Number(row?.base ?? 0));
+}
+
+type InvoiceCommissionContext = { orderId: string; orderBookerId: string; terms: OrderCommissionTerms };
+
+async function invoiceCommissionContext(tx: SalesTransaction, invoiceId: string): Promise<InvoiceCommissionContext | null> {
+  const invoice = await tx.query.invoices.findFirst({ where: eq(invoices.id, invoiceId), columns: { orderId: true, orderBookerId: true } });
+  if (!invoice?.orderId || !invoice.orderBookerId) return null;
+  const terms = await resolveOrderCommissionTerms(tx, invoice.orderId);
+  if (!terms || terms.mode !== "recovery" || terms.rate <= 0) return null;
+  return { orderId: invoice.orderId, orderBookerId: invoice.orderBookerId, terms };
+}
+
+/** Called right after a payment becomes confirmed (the wallet is credited at the same point). */
+export async function earnCommissionForPayment(
+  tx: SalesTransaction,
+  payment: { id: string; invoiceId: string; amount: string; method: string; status: string; effectiveDate: Date | null },
+  actorId: string,
+): Promise<void> {
+  if (payment.status !== "confirmed" || !payment.effectiveDate || !paymentEarnsCommission(payment.method)) return;
+  const context = await invoiceCommissionContext(tx, payment.invoiceId);
+  if (!context) return;
+  const base = earnableBase({
+    paymentAmount: Number(payment.amount),
+    owed: await owedOnInvoice(tx, payment.invoiceId),
+    commissionedBase: await commissionedBase(tx, payment.invoiceId),
+  });
+  if (base <= 0) return;
+  await tx.insert(commissionEarnings).values({
+    orderBookerId: context.orderBookerId,
+    orderId: context.orderId,
+    invoiceId: payment.invoiceId,
+    paymentId: payment.id,
+    kind: "payment",
+    baseAmount: base.toFixed(2),
+    rate: context.terms.rate.toFixed(4),
+    amount: commissionAmount(base, context.terms.rate).toFixed(2),
+    entryDate: payment.effectiveDate,
+    createdById: actorId,
+  }).onConflictDoNothing();
+}
+
+/** A reversed payment either takes its commission back from the booker or records that the company bears it. */
+export async function reverseCommissionForPayment(
+  tx: SalesTransaction,
+  input: { paymentId: string; bearer: CommissionBearer; actorId: string; date: Date; reason: string },
+): Promise<void> {
+  const earned = await tx.query.commissionEarnings.findFirst({
+    where: and(eq(commissionEarnings.paymentId, input.paymentId), eq(commissionEarnings.kind, "payment")),
+  });
+  if (!earned) return;
+  const deduct = input.bearer === "booker";
+  await tx.insert(commissionEarnings).values({
+    orderBookerId: earned.orderBookerId,
+    orderId: earned.orderId,
+    invoiceId: earned.invoiceId,
+    paymentId: input.paymentId,
+    kind: "payment_reversal",
+    bearer: input.bearer,
+    baseAmount: deduct ? (-Number(earned.baseAmount)).toFixed(2) : "0.00",
+    rate: earned.rate,
+    amount: deduct ? (-Number(earned.amount)).toFixed(2) : "0.00",
+    entryDate: input.date,
+    createdById: input.actorId,
+    note: input.reason,
+  }).onConflictDoNothing();
+}
+
+/** Commission a confirmed payment earned. Null when it earned nothing or was already reversed. */
+export async function getPaymentCommission(tx: SalesTransaction, paymentId: string): Promise<{ amount: number; orderBookerName: string } | null> {
+  const rows = await tx.query.commissionEarnings.findMany({
+    where: eq(commissionEarnings.paymentId, paymentId),
+    with: { orderBooker: { columns: { name: true } } },
+  });
+  const earned = rows.find((r) => r.kind === "payment");
+  if (!earned || rows.some((r) => r.kind === "payment_reversal")) return null;
+  return { amount: Number(earned.amount), orderBookerName: earned.orderBooker.name };
+}
+
+/** After a return completes: if money already commissioned is above what is now owed, take back the difference. */
+export async function capCommissionAfterReturn(
+  tx: SalesTransaction,
+  input: { invoiceId: string; salesReturnId: string; actorId: string; date: Date },
+): Promise<void> {
+  const base = clawbackBase({ owed: await owedOnInvoice(tx, input.invoiceId), commissionedBase: await commissionedBase(tx, input.invoiceId) });
+  if (base <= 0) return;
+  // Every row on an invoice carries the order's single locked rate.
+  const latest = await tx.query.commissionEarnings.findFirst({
+    where: and(eq(commissionEarnings.invoiceId, input.invoiceId), eq(commissionEarnings.kind, "payment")),
+    orderBy: (row, { desc }) => [desc(row.createdAt)],
+  });
+  if (!latest) return;
+  await tx.insert(commissionEarnings).values({
+    orderBookerId: latest.orderBookerId,
+    orderId: latest.orderId,
+    invoiceId: input.invoiceId,
+    salesReturnId: input.salesReturnId,
+    kind: "return_clawback",
+    baseAmount: (-base).toFixed(2),
+    rate: latest.rate,
+    amount: (-commissionAmount(base, Number(latest.rate))).toFixed(2),
+    entryDate: input.date,
+    createdById: input.actorId,
+  }).onConflictDoNothing();
+}
+
+/** A voided return gives back exactly what it took. */
+export async function restoreCommissionAfterReturnVoid(
+  tx: SalesTransaction,
+  input: { salesReturnId: string; actorId: string; date: Date },
+): Promise<void> {
+  const taken = await tx.query.commissionEarnings.findFirst({
+    where: and(eq(commissionEarnings.salesReturnId, input.salesReturnId), eq(commissionEarnings.kind, "return_clawback")),
+  });
+  if (!taken) return;
+  await tx.insert(commissionEarnings).values({
+    orderBookerId: taken.orderBookerId,
+    orderId: taken.orderId,
+    invoiceId: taken.invoiceId,
+    salesReturnId: input.salesReturnId,
+    kind: "return_clawback_undo",
+    baseAmount: (-Number(taken.baseAmount)).toFixed(2),
+    rate: taken.rate,
+    amount: (-Number(taken.amount)).toFixed(2),
+    entryDate: input.date,
+    createdById: input.actorId,
+  }).onConflictDoNothing();
+}
+
+/** Every unpaid ledger row dated before the end of the pay period, with the payslip outcome. */
+export async function collectPayslipCommission(
+  tx: SalesTransaction,
+  orderBookerId: string,
+  periodEndExclusive: Date,
+): Promise<{ entryIds: string[]; settlement: PayslipCommissionSettlement; breakdown: RecoveryCommissionBreakdown }> {
+  const rows = await tx.query.commissionEarnings.findMany({
+    where: and(
+      eq(commissionEarnings.orderBookerId, orderBookerId),
+      isNull(commissionEarnings.paidInPayslipId),
+      lt(commissionEarnings.entryDate, periodEndExclusive),
+    ),
+    with: { invoice: { columns: { invoiceNumber: true } } },
+    orderBy: (row, { asc }) => [asc(row.entryDate), asc(row.createdAt)],
+  });
+  const settlement = settlePayslipCommission(rows.map((r) => ({ amount: Number(r.amount) })));
+  return {
+    entryIds: rows.map((r) => r.id),
+    settlement,
+    breakdown: {
+      kind: "recovery",
+      paymentsCount: rows.filter((r) => r.kind === "payment").length,
+      earned: settlement.earned,
+      deductions: settlement.deductions,
+      carriedForward: settlement.carriedForward,
+      lines: rows.map((r) => ({
+        entryDate: r.entryDate.toISOString().slice(0, 10),
+        invoiceNumber: String(r.invoice?.invoiceNumber ?? r.invoiceId.slice(0, 8)),
+        kind: r.kind,
+        base: Number(r.baseAmount),
+        rate: Number(r.rate),
+        amount: Number(r.amount),
+      })),
+    },
+  };
+}
+
+export async function markPayslipCommissionPaid(tx: SalesTransaction, entryIds: string[], payslipId: string): Promise<void> {
+  if (entryIds.length === 0) return;
+  const updated = await tx.update(commissionEarnings).set({ paidInPayslipId: payslipId })
+    .where(and(inArray(commissionEarnings.id, entryIds), isNull(commissionEarnings.paidInPayslipId)))
+    .returning({ id: commissionEarnings.id });
+  if (updated.length !== entryIds.length) {
+    throw new Error("Commission entries changed during payroll generation. Please recalculate the payslip.");
+  }
+}
+
+/** A deleted payslip frees its rows so the next payslip pays them again. */
+export async function releasePayslipCommission(tx: SalesTransaction, payslipId: string): Promise<void> {
+  await tx.update(commissionEarnings).set({ paidInPayslipId: null }).where(eq(commissionEarnings.paidInPayslipId, payslipId));
+}

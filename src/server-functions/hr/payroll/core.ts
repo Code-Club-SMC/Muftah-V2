@@ -16,6 +16,14 @@ import { orderBookerTrips, commissionRecords, orderBookers, drivers, driverTrips
 import { eq, and, inArray, gte, lt, desc, sql, isNull } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
 import {
+  collectPayslipCommission,
+  ensureRecoveryCommissionSwitchover,
+  markPayslipCommissionPaid,
+  releasePayslipCommission,
+} from "@/server-functions/sales/recovery-commission-service";
+import type { SalesTransaction } from "@/server-functions/sales/settlement-service";
+import type { PayslipCommissionBreakdown } from "@/lib/order-booker/recovery-commission";
+import {
   buildRestDayDateSet,
   calculatePayslip,
   calculateYearlyBradfordFactor,
@@ -291,6 +299,8 @@ export async function reversePayslipSideEffects(
     })
     .where(eq(commissionRecords.paidInPayslipId, payslipId));
 
+  await releasePayslipCommission(tx, payslipId);
+
   await tx
     .update(travelLogs)
     .set({
@@ -525,14 +535,8 @@ export async function generateEmployeePayslipCore(
   let dynamicTA = 0;
   let orderBookerCommission = 0;
   let commissionIdsToPay: string[] = [];
-  let commissionBreakdownSnapshot: Array<{
-    orderId: string;
-    orderRef: string;
-    orderDate: string;
-    orderValue: number;
-    rate: number;
-    amount: number;
-  }> = [];
+  let recoveryEntryIds: string[] = [];
+  let commissionBreakdownSnapshot: PayslipCommissionBreakdown = [];
 
   // Find linked order booker for this employee
   const linkedOrderBooker = await db.query.orderBookers.findFirst({
@@ -586,6 +590,16 @@ export async function generateEmployeePayslipCore(
       rate: parseFloat(rec.appliedRate || "0"),
       amount: parseFloat(rec.commissionAmount || "0"),
     }));
+
+    // Recovery-based commission (phase 6): every unpaid ledger row up to the period end.
+    await ensureRecoveryCommissionSwitchover();
+    const recovery = await collectPayslipCommission(db as unknown as SalesTransaction, linkedOrderBooker.id, payrollEndExclusiveTs);
+    recoveryEntryIds = recovery.settlement.paysEntries ? recovery.entryIds : [];
+    orderBookerCommission += recovery.settlement.payable;
+    if (recovery.entryIds.length > 0) {
+      // Legacy lines (if any) are history from before phase 6; the recovery breakdown is what this payslip pays now.
+      commissionBreakdownSnapshot = recovery.breakdown;
+    }
   }
 
   // -- 5.6 Driver TA from driver trips ---------------------------------------
@@ -759,7 +773,9 @@ export async function generateEmployeePayslipCore(
         nightShiftAllowanceAmount: payslipCalc.nightShiftAllowanceAmount.toString(),
         incentiveAmount: payslipCalc.incentiveAmount.toString(),
         commissionAmount: payslipCalc.commissionAmount.toString(),
-        commissionBreakdown: commissionBreakdownSnapshot.length > 0 ? commissionBreakdownSnapshot : null,
+        commissionBreakdown: Array.isArray(commissionBreakdownSnapshot)
+          ? (commissionBreakdownSnapshot.length > 0 ? commissionBreakdownSnapshot : null)
+          : commissionBreakdownSnapshot,
         bonusAmount: payslipCalc.bonusAmount.toString(),
 
         absentDeduction: payslipCalc.absentDeduction.toString(),
@@ -887,6 +903,10 @@ export async function generateEmployeePayslipCore(
           "Commission records changed during payroll generation. Please recalculate the payslip.",
         );
       }
+    }
+
+    if (recoveryEntryIds.length > 0) {
+      await markPayslipCommissionPaid(tx, recoveryEntryIds, slip.id);
     }
 
     if (approvedTravelLogIds.length > 0) {
@@ -1068,14 +1088,7 @@ export async function simulateEmployeePayslipCore(
   // -- 5.5 Order booker TA + commission --------------------------------------
   let dynamicTA = 0;
   let orderBookerCommission = 0;
-  let commissionBreakdownSnapshot: Array<{
-    orderId: string;
-    orderRef: string;
-    orderDate: string;
-    orderValue: number;
-    rate: number;
-    amount: number;
-  }> = [];
+  let commissionBreakdownSnapshot: PayslipCommissionBreakdown = [];
 
   const linkedOrderBooker = await db.query.orderBookers.findFirst({
     where: eq(orderBookers.employeeId, employeeId),
@@ -1124,6 +1137,14 @@ export async function simulateEmployeePayslipCore(
       rate: parseFloat(rec.appliedRate || "0"),
       amount: parseFloat(rec.commissionAmount || "0"),
     }));
+
+    // Recovery-based commission (phase 6). A preview marks nothing paid.
+    await ensureRecoveryCommissionSwitchover();
+    const recovery = await collectPayslipCommission(db as unknown as SalesTransaction, linkedOrderBooker.id, payrollEndExclusiveTs);
+    orderBookerCommission += recovery.settlement.payable;
+    if (recovery.entryIds.length > 0) {
+      commissionBreakdownSnapshot = recovery.breakdown;
+    }
   }
 
   // -- 5.6 Driver TA from driver trips ---------------------------------------

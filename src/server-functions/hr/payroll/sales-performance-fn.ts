@@ -8,6 +8,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { db } from "@/db";
 import {
   salesPerformanceLogs,
+  commissionEarnings,
   commissionRecords,
   orderBookers,
   salesmen,
@@ -19,7 +20,7 @@ import {
   requireHrViewMiddleware,
   requireSalesManageMiddleware,
 } from "@/lib/middlewares";
-import { eq, and, gte, lt, desc } from "drizzle-orm";
+import { eq, and, gte, lt, desc, ne, sql } from "drizzle-orm";
 import { addMonths, parseISO } from "date-fns";
 
 /**
@@ -64,6 +65,7 @@ export async function rebuildSalesPerformanceLog(
     const commissions = await db.query.commissionRecords.findMany({
       where: and(
         eq(commissionRecords.orderBookerId, obId),
+        ne(commissionRecords.status, "cancelled"),
         gte(commissionRecords.earnedAt, monthStart),
         lt(commissionRecords.earnedAt, monthEndExclusive),
       ),
@@ -74,6 +76,19 @@ export async function rebuildSalesPerformanceLog(
       0,
     );
     commissionIds = commissions.map((c) => c.id);
+
+    // Recovery-based commission (phase 6) dated in this month.
+    const [ledger] = await db
+      .select({ total: sql<string>`coalesce(sum(${commissionEarnings.amount}), 0)` })
+      .from(commissionEarnings)
+      .where(
+        and(
+          eq(commissionEarnings.orderBookerId, obId),
+          gte(commissionEarnings.entryDate, monthStart),
+          lt(commissionEarnings.entryDate, monthEndExclusive),
+        ),
+      );
+    totalCommission += Number(ledger?.total ?? 0);
 
     const obOrders = await db.query.orders.findMany({
       where: and(

@@ -24,6 +24,7 @@ import {
 import { z } from "zod";
 import { and, count, desc, eq, ilike, inArray, or } from "drizzle-orm";
 import { recalculateInvoiceSettlement } from "./settlement-service";
+import { capCommissionAfterReturn, restoreCommissionAfterReturnVoid } from "./recovery-commission-service";
 import { lockFinishedGoods } from "@/lib/production/finished-goods-lock.server";
 import { lockCartonReturnOrder } from "@/lib/cartons/sales-return.server";
 import { lockCartonStock } from "@/lib/cartons/stock-adjustment.server";
@@ -803,6 +804,7 @@ export const completeSalesReturnFn = createServerFn()
         actorId: userId,
         reason: `Completed return #${salesReturn.returnNumber} (${creditNoteNumber})`,
       });
+      await capCommissionAfterReturn(tx, { invoiceId: salesReturn.invoiceId, salesReturnId: salesReturn.id, actorId: userId, date: now });
 
       const customerInfo = await tx.query.customers.findFirst({
         where: eq(customers.id, salesReturn.customerId),
@@ -915,6 +917,7 @@ export const voidSalesReturnFn = createServerFn()
         reason: `Return #${salesReturn.returnNumber} voided: ${data.reason}`,
         allowUnapplyOverageOnReturnVoid: true,
       });
+      await restoreCommissionAfterReturnVoid(tx, { salesReturnId: salesReturn.id, actorId: userId, date: now });
 
       await recordInvoiceTimelineEvent(
         {
