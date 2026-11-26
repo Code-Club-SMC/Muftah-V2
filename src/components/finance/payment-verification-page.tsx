@@ -555,7 +555,7 @@ export function PaymentVerificationPage() {
 				open={Boolean(dialog)}
 				onOpenChange={(open) => !open && closeDialog()}
 			>
-				<DialogContent>
+				<DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto">
 					{dialog && (
 						<>
 							<DialogHeader>
