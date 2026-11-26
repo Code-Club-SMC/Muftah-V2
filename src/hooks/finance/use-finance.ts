@@ -16,12 +16,16 @@ import { listCategoryDefinitionsFn } from "@/server-functions/finance/expense-ca
 import { getExpenseEntryDefaultsFn } from "@/server-functions/finance/expense-entry-defaults-fn";
 import { updateExpenseFn, voidExpenseFn } from "@/server-functions/finance/expense-corrections-fn";
 import { isOverdrawConfirmError } from "@/lib/finance/expense-corrections";
+import { getMonthToDateRanges } from "@/lib/finance/expense-templates";
+import { getExpenseDateRangeFilters } from "@/lib/finance-expenses";
+import { getExpenseMonthSummaryFn } from "@/server-functions/finance/expense-summary-fn";
 import type {
   CreateExpenseInput,
   ExpenseEntryDefaults,
   ExpenseCategoryDefinition,
   ExpenseKpis,
   ExpenseListResponse,
+  ExpenseMonthSummary,
   FinanceDynamicFieldFilterInput,
   FinanceDynamicFieldType,
   FinanceDynamicFieldValueInput,
@@ -42,6 +46,9 @@ type ExpenseListParams = {
   limit?: number;
   offset?: number;
   categoryId?: string;
+  categoryIds?: string[];
+  walletId?: string;
+  payee?: string;
   category?: string;
   dateFrom?: string;
   dateTo?: string;
@@ -50,6 +57,9 @@ type ExpenseListParams = {
 
 type ExpenseKpiParams = {
   categoryId?: string;
+  categoryIds?: string[];
+  walletId?: string;
+  payee?: string;
   category?: string;
   dateFrom?: string;
   dateTo?: string;
@@ -78,6 +88,9 @@ const normalizeExpenseListParams = (params: ExpenseListParams = {}) => {
     limit = 60,
     offset,
     categoryId,
+    categoryIds = [],
+    walletId,
+    payee,
     category,
     dateFrom,
     dateTo,
@@ -91,6 +104,9 @@ const normalizeExpenseListParams = (params: ExpenseListParams = {}) => {
     limit,
     offset: finalOffset,
     categoryId,
+    categoryIds,
+    walletId,
+    payee: payee?.trim() || undefined,
     category,
     dateFrom,
     dateTo,
@@ -100,6 +116,9 @@ const normalizeExpenseListParams = (params: ExpenseListParams = {}) => {
 
 const normalizeExpenseKpiParams = (params: ExpenseKpiParams = {}) => ({
   categoryId: params.categoryId,
+  categoryIds: params.categoryIds ?? [],
+  walletId: params.walletId,
+  payee: params.payee?.trim() || undefined,
   category: params.category,
   dateFrom: params.dateFrom,
   dateTo: params.dateTo,
@@ -111,6 +130,9 @@ const buildExpenseListRequest = (params: ReturnType<typeof normalizeExpenseListP
   limit: params.limit,
   offset: params.offset,
   ...(params.categoryId ? { categoryId: params.categoryId } : {}),
+  ...(params.categoryIds.length > 0 ? { categoryIds: params.categoryIds } : {}),
+  ...(params.walletId ? { walletId: params.walletId } : {}),
+  ...(params.payee ? { payee: params.payee } : {}),
   ...(params.category ? { category: params.category } : {}),
   ...(params.dateFrom ? { dateFrom: params.dateFrom } : {}),
   ...(params.dateTo ? { dateTo: params.dateTo } : {}),
@@ -119,6 +141,9 @@ const buildExpenseListRequest = (params: ReturnType<typeof normalizeExpenseListP
 
 const buildExpenseKpiRequest = (params: ReturnType<typeof normalizeExpenseKpiParams>) => ({
   ...(params.categoryId ? { categoryId: params.categoryId } : {}),
+  ...(params.categoryIds.length > 0 ? { categoryIds: params.categoryIds } : {}),
+  ...(params.walletId ? { walletId: params.walletId } : {}),
+  ...(params.payee ? { payee: params.payee } : {}),
   ...(params.category ? { category: params.category } : {}),
   ...(params.dateFrom ? { dateFrom: params.dateFrom } : {}),
   ...(params.dateTo ? { dateTo: params.dateTo } : {}),
@@ -371,3 +396,18 @@ export const useDebitWallet = () => {
       toast.error("Payment failed", { description: err.message }),
   });
 };
+
+/** The Expenses page summary strip: this calendar month so far, company-wide, ignoring list filters. */
+export const useExpenseMonthSummary = (todayKey: string) =>
+  useQuery({
+    queryKey: ["expenses", "month-summary", todayKey],
+    queryFn: () => {
+      const { current, previous } = getMonthToDateRanges(todayKey);
+      const now = getExpenseDateRangeFilters(current);
+      const before = getExpenseDateRangeFilters(previous);
+      return getExpenseMonthSummaryFn({
+        data: { currentFrom: now.dateFrom!, currentTo: now.dateTo!, previousFrom: before.dateFrom!, previousTo: before.dateTo! },
+      }) as Promise<ExpenseMonthSummary>;
+    },
+    staleTime: EXPENSES_STALE_TIME,
+  });
