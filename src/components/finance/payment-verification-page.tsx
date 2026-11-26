@@ -42,6 +42,8 @@ import {
 	FieldLabel,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Spinner } from "@/components/ui/spinner";
 import {
 	Table,
@@ -63,7 +65,8 @@ import {
 	useReturnCheque,
 	useReversePayment,
 } from "@/hooks/sales/use-payment-settlement";
-import { formatPKRPrecise } from "@/lib/currency-format";
+import { usePaymentCommission } from "@/hooks/sales/use-recovery-commission";
+import { formatPKR, formatPKRPrecise } from "@/lib/currency-format";
 
 type SettlementAction =
 	| "confirm-bank"
@@ -169,6 +172,9 @@ export function PaymentVerificationPage() {
 	const [effectiveDate, setEffectiveDate] = useState(toLocalDateTimeValue);
 	const [paymentDueDate, setPaymentDueDate] = useState("");
 	const [reason, setReason] = useState("");
+	const [commissionBearer, setCommissionBearer] = useState<
+		"booker" | "company"
+	>("booker");
 
 	const filters = useMemo(() => ({ view, page, limit: 25 }), [view, page]);
 	const settlementQuery = usePaymentSettlements(filters);
@@ -177,6 +183,9 @@ export function PaymentVerificationPage() {
 	const returnCheque = useReturnCheque();
 	const cancelBank = useCancelBankTransfer();
 	const reversePayment = useReversePayment();
+	const paymentCommission = usePaymentCommission(
+		dialog?.action === "reverse" ? dialog.payment.id : null,
+	);
 
 	const activeMutation =
 		dialog?.action === "confirm-bank"
@@ -197,6 +206,7 @@ export function PaymentVerificationPage() {
 				: "",
 		);
 		setReason("");
+		setCommissionBearer("booker");
 		setDialog({ action, payment });
 	}
 
@@ -245,6 +255,9 @@ export function PaymentVerificationPage() {
 						effectiveDate: new Date(effectiveDate),
 						reason,
 						paymentDueDate: dueDate,
+						commissionBearer: paymentCommission.data
+							? commissionBearer
+							: "booker",
 					});
 					break;
 			}
@@ -622,6 +635,33 @@ export function PaymentVerificationPage() {
 											</FieldDescription>
 										</Field>
 									</>
+								)}
+								{dialog.action === "reverse" && paymentCommission.data && (
+									<Field>
+										<FieldLabel>
+											Commission on this payment:{" "}
+											{formatPKR(paymentCommission.data.amount, false)} (
+											{paymentCommission.data.orderBookerName})
+										</FieldLabel>
+										<FieldDescription>Who bears it?</FieldDescription>
+										<RadioGroup
+											value={commissionBearer}
+											onValueChange={(value) =>
+												setCommissionBearer(value as "booker" | "company")
+											}
+										>
+											<div className="flex items-center gap-2">
+												<RadioGroupItem id="bearer-booker" value="booker" />
+												<Label htmlFor="bearer-booker">Deduct from booker</Label>
+											</div>
+											<div className="flex items-center gap-2">
+												<RadioGroupItem id="bearer-company" value="company" />
+												<Label htmlFor="bearer-company">
+													Company bears the loss
+												</Label>
+											</div>
+										</RadioGroup>
+									</Field>
 								)}
 							</FieldGroup>
 

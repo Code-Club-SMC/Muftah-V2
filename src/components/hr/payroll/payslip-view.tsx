@@ -3,11 +3,21 @@ import { format, parseISO } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Printer, Edit2 } from "lucide-react";
 import { OverrideBradfordDialog } from "./override-bradford-dialog";
-import type { LegacyCommissionLine, PayslipCommissionBreakdown } from "@/lib/order-booker/recovery-commission";
+import { isRecoveryBreakdown, type LegacyCommissionLine, type PayslipCommissionBreakdown, type RecoveryCommissionBreakdown } from "@/lib/order-booker/recovery-commission";
 
 /** Old payslips store per-order lines; recovery-based payslips (phase 6) are shown separately. */
 function legacyCommissionLines(payslip: { commissionBreakdown?: PayslipCommissionBreakdown | null }): LegacyCommissionLine[] {
   return Array.isArray(payslip.commissionBreakdown) ? payslip.commissionBreakdown : [];
+}
+
+const rupees = (value: number) => value.toLocaleString("en-PK", { maximumFractionDigits: 2 });
+
+/** The plain-English commission lines on a recovery-based payslip (phase 6). */
+function recoveryCommissionNotes(breakdown: RecoveryCommissionBreakdown): string[] {
+  const notes = [`Commission on recoveries: Rs ${rupees(breakdown.earned)} (${breakdown.paymentsCount} payments)`];
+  if (breakdown.deductions > 0) notes.push(`Deductions (reversed payments): −Rs ${rupees(breakdown.deductions)}`);
+  if (breakdown.carriedForward > 0) notes.push(`Rs ${rupees(breakdown.carriedForward)} carried forward to next month`);
+  return notes;
 }
 
 export type PayslipData = {
@@ -209,9 +219,11 @@ export const PayslipView = ({
         ...(toN(payslip.incentiveAmount) > 0
             ? [{ label: "Incentive", value: toN(payslip.incentiveAmount) }]
             : []),
-        ...(toN(payslip.commissionAmount) > 0
-            ? [{ label: "Commission", value: toN(payslip.commissionAmount) }]
-            : []),
+        ...(isRecoveryBreakdown(payslip.commissionBreakdown)
+            ? [{ label: `Commission on recoveries (${payslip.commissionBreakdown.paymentsCount} payments)`, value: toN(payslip.commissionAmount) }]
+            : toN(payslip.commissionAmount) > 0
+                ? [{ label: "Commission", value: toN(payslip.commissionAmount) }]
+                : []),
         ...(toN(payslip.bonusAmount) > 0
             ? [{ label: "Eid Allowance", value: toN(payslip.bonusAmount) }]
             : []),
@@ -470,6 +482,13 @@ body { font-family: Arial, sans-serif; font-size:11px; color:#111; background:#f
   </div>
   ` : ""}
 
+  ${isRecoveryBreakdown(payslip.commissionBreakdown) ? `
+  <!-- Recovery commission -->
+  <div style="border:${OUTER_BORDER};border-top:none;font-size:11px;padding:6px 10px;">
+    ${recoveryCommissionNotes(payslip.commissionBreakdown).map((note) => `<div>${note}</div>`).join("")}
+  </div>
+  ` : ""}
+
   <!-- Remarks -->
   <div class="remarks">
     ${payslip.remarks || "Salaries are paid as per company policy."}
@@ -700,6 +719,15 @@ body { font-family: Arial, sans-serif; font-size:11px; color:#111; background:#f
                                 </tbody>
                             </table>
                         )}
+                    </div>
+                )}
+
+                {/* Recovery commission (phase 6 payslips) */}
+                {isRecoveryBreakdown(payslip.commissionBreakdown) && (
+                    <div style={{ border: OUTER_BORDER, borderTop: "none", fontSize: 11, padding: "6px 10px" }}>
+                        {recoveryCommissionNotes(payslip.commissionBreakdown).map((note) => (
+                            <p key={note} style={{ margin: 0 }}>{note}</p>
+                        ))}
                     </div>
                 )}
 

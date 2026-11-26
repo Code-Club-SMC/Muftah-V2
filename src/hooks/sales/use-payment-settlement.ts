@@ -155,6 +155,7 @@ export function useReversePayment() {
 			effectiveDate: Date;
 			reason: string;
 			paymentDueDate?: Date;
+			commissionBearer?: "booker" | "company";
 		}) => reversePaymentFn({ data }),
 		onSuccess: async () => {
 			toast.success("Payment reversed");
