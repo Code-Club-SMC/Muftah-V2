@@ -149,6 +149,8 @@ function formatActionText(action: string): string {
       return "rejected";
     case "paid":
       return "processed payment for";
+    case "chemical_recovered":
+      return "settled chemicals for";
     case "login":
       return "signed in to";
     case "logout":

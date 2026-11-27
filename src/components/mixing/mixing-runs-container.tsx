@@ -1,6 +1,7 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { getMixingRunsFn } from "@/server-functions/manufacturing/mixing/get-mixing-runs-fn";
 import { MixingRunsTable } from "./mixing-runs-table";
+import { FailedBatchesToSettleBanner } from "./failed-batches-to-settle-banner";
 import { CreateMixingRunDialog } from "./create-mixing-run-dialog";
 import { useState } from "react";
 import { useViewerAccess } from "@/hooks/use-viewer-access";
@@ -43,6 +44,7 @@ export const MixingRunsContainer = ({
 
   return (
     <div className="flex flex-col gap-6">
+      <FailedBatchesToSettleBanner linkTo="manager" />
       <ProductionListFilters
         actions={canManage && <CreateMixingRunDialog />}
         value={filters}

@@ -124,7 +124,9 @@ export const useFailMixingRun = () => {
     mutationFn: failMixingRunFn,
     onSuccess: async (_data, variables) => {
       await invalidateStockQueries(queryClient);
-      toast.success("Mixing batch marked as failed");
+      toast.success("Mixing batch marked as failed. Now settle its chemicals.");
+      queryClient.invalidateQueries({ queryKey: ["failed-batches-to-settle"] });
+      queryClient.invalidateQueries({ queryKey: ["failed-batch-settlement", variables.data.id] });
       queryClient.invalidateQueries({ queryKey: ["mixing-runs"] });
       queryClient.invalidateQueries({
         queryKey: ["mixing-run", variables.data.id],

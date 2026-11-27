@@ -16,6 +16,7 @@ import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { getMixingRunsFn } from "@/server-functions/manufacturing/mixing/get-mixing-runs-fn";
 import { GenericEmpty } from "@/components/custom/empty";
+import { FailedBatchesToSettleBanner } from "@/components/mixing/failed-batches-to-settle-banner";
 
 export const MixingOperatorInterface = () => {
   const [page, setPage] = useState(1);
@@ -40,6 +41,7 @@ export const MixingOperatorInterface = () => {
   });
   return (
     <div className="flex flex-col gap-6">
+      <FailedBatchesToSettleBanner linkTo="operator" />
       <FieldGroup className="max-w-lg">
         <Field>
           <FieldLabel htmlFor="batch-search">Find a batch</FieldLabel>

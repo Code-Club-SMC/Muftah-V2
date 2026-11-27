@@ -13,6 +13,7 @@ import {
 } from "@/hooks/manufacturing/mixing/use-mixing-mutations";
 import { useViewerAccess } from "@/hooks/use-viewer-access";
 import { BatchPackingForm } from "@/components/packaging/batch-packing-form";
+import { FailedBatchSettlementPanel } from "@/components/mixing/failed-batch-settlement-panel";
 import { hasPermission } from "@/lib/rbac";
 import { MIXING_REASONS, checkReason } from "@/lib/production/material-use";
 import { useMaterialLots } from "@/hooks/stock/use-material-lots";
@@ -157,6 +158,8 @@ export const MixingConsole = ({ runId }: { runId: string }) => {
             </CardContent>
           </Card>
         </div>
+
+        {run.status === "failed" && <FailedBatchSettlementPanel mixingRunId={runId} />}
 
         {run.status === "in_progress" && (canLog || canComplete || canFail) && (
           <Card className="border-border/50 shadow-sm mt-8">

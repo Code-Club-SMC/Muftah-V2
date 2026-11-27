@@ -17,6 +17,7 @@ import { useViewerAccess } from "@/hooks/use-viewer-access";
 import { hasPermission } from "@/lib/rbac";
 import { Link } from "@tanstack/react-router";
 import { StartMixingDialog } from "./start-mixing-dialog";
+import { FailedBatchSettlementPanel } from "./failed-batch-settlement-panel";
 import { formatPKRPrecise } from "@/lib/currency-format";
 
 export function MixingRunDetailsContainer({ runId }: { runId: string }) {
@@ -106,6 +107,8 @@ export function MixingRunDetailsContainer({ runId }: { runId: string }) {
           </div>
         )}
       </Card>
+
+      {run.status === "failed" && <FailedBatchSettlementPanel mixingRunId={runId} />}
 
       {run.costSummary && (
         <Card aria-label="Batch costs to date">
