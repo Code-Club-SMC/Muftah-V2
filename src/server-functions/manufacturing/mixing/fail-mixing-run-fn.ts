@@ -5,12 +5,13 @@ import { mixingRuns } from "@/db/schemas/production-schema";
 import { requireProductionWorkFailMiddleware } from "@/lib/middlewares";
 import { hasPermission } from "@/lib/rbac";
 import { eq } from "drizzle-orm";
+import { logActivityQuiet } from "@/lib/activity-logger.server";
 
 export const failMixingRunFn = createServerFn()
   .middleware([requireProductionWorkFailMiddleware])
   .inputValidator(z.object({ id: z.string().min(1), reason: z.string().trim().min(1) }))
   .handler(async ({ data, context }) => {
-    return await db.transaction(async (tx) => {
+    const failed = await db.transaction(async (tx) => {
       const [run] = await tx
         .select()
         .from(mixingRuns)
@@ -45,4 +46,19 @@ export const failMixingRunFn = createServerFn()
 
       return updated;
     });
+
+    await logActivityQuiet({
+      module: "manufacturing",
+      action: "failed",
+      entityType: "mixing_run",
+      entityId: failed.id,
+      entityLabel: failed.batchId,
+      actorId: context.session.user.id,
+      actorName: context.session.user.name,
+      description: `Marked mixing batch ${failed.batchId} as failed. Reason: ${data.reason}`,
+      metadata: { reason: data.reason, previousStatus: "in_progress" },
+      severity: "critical",
+    });
+
+    return failed;
   });

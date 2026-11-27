@@ -13,6 +13,8 @@ import {
   eachDayOfInterval,
 } from "date-fns";
 import { createServerFn } from "@tanstack/react-start";
+import { logActivityQuiet } from "@/lib/activity-logger.server";
+import { payrollMonthLabel } from "@/lib/hr/salary-payments";
 import { ESTIMATED_WORKING_DAYS } from "@/lib/types/hr-types";
 import {
   generateEmployeePayslipCore,
@@ -509,6 +511,7 @@ export const saveEmployeePayslipFn = createServerFn()
       throw new Error(LOCKED_PAYROLL_MESSAGE);
     }
 
+    const payrollCreated = !payroll;
     if (!payroll) {
       const [newPayroll] = await db
         .insert(payrolls)
@@ -540,6 +543,35 @@ export const saveEmployeePayslipFn = createServerFn()
     );
 
     const payrollTotalAmount = await syncPayrollTotal(db, payroll.id);
+
+    const employee = await db.query.employees.findFirst({
+      where: eq(employees.id, employeeId),
+      columns: { firstName: true, lastName: true },
+    });
+    const employeeName = employee ? `${employee.firstName} ${employee.lastName}` : employeeId;
+    const label = payrollMonthLabel(payroll.month);
+    const actor = { actorId: context.session.user.id, actorName: context.session.user.name };
+    if (payrollCreated) {
+      await logActivityQuiet({
+        module: "hr",
+        action: "created",
+        entityType: "payroll_cycle",
+        entityId: payroll.id,
+        entityLabel: `Payroll ${label}`,
+        ...actor,
+        description: `Created payroll for ${label}`,
+      });
+    }
+    await logActivityQuiet({
+      module: "hr",
+      action: "generated",
+      entityType: "payslip",
+      entityId: result.id,
+      entityLabel: employeeName,
+      ...actor,
+      description: `Saved ${label} payslip for ${employeeName} — net PKR ${Number(result.netSalary ?? 0).toLocaleString()}`,
+      metadata: { payrollId: payroll.id, employeeId, netSalary: result.netSalary, arrearsAmount: result.arrearsAmount, payrollTotalAmount },
+    });
 
     return {
       ...result,

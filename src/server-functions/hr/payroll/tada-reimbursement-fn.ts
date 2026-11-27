@@ -14,6 +14,7 @@ import {
 } from "@/lib/middlewares";
 import { and, eq, gte, inArray, isNull, sql } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
+import { logActivityQuiet } from "@/lib/activity-logger.server";
 import { z } from "zod";
 
 const batchReimburseSchema = z.object({
@@ -35,7 +36,7 @@ export const batchReimburseTadaFn = createServerFn()
     const userId = context.session.user.id;
     const selectedLogIds = [...new Set(data.travelLogIds)];
 
-    return await db.transaction(async (tx) => {
+    const result = await db.transaction(async (tx) => {
       const logs = await tx.query.travelLogs.findMany({
         where: and(
           inArray(travelLogs.id, selectedLogIds),
@@ -134,8 +135,38 @@ export const batchReimburseTadaFn = createServerFn()
         reimbursedCount: logs.length,
         totalAmount,
         method: "wallet",
+        walletName: wallet.name,
+        expenseId,
       };
     });
+
+    const amount = `PKR ${Math.round(result.totalAmount).toLocaleString()}`;
+    const actor = { actorId: userId, actorName: context.session.user.name };
+    const metadata = { walletId: data.walletId, account: result.walletName, expenseId: result.expenseId, totalAmount: result.totalAmount, travelLogIds: selectedLogIds };
+    await Promise.all([
+      logActivityQuiet({
+        module: "hr",
+        action: "paid",
+        entityType: "tada_reimbursement",
+        entityId: result.expenseId,
+        entityLabel: `${result.reimbursedCount} TA/DA log(s)`,
+        ...actor,
+        description: `Reimbursed ${result.reimbursedCount} TA/DA log(s) — ${amount} from ${result.walletName}`,
+        metadata,
+      }),
+      logActivityQuiet({
+        module: "finance",
+        action: "debited",
+        entityType: "tada_reimbursement",
+        entityId: data.walletId,
+        entityLabel: result.walletName,
+        ...actor,
+        description: `${result.walletName} debited ${amount} for TA/DA reimbursement of ${result.reimbursedCount} log(s)`,
+        metadata,
+      }),
+    ]);
+
+    return result;
   });
 
 /**

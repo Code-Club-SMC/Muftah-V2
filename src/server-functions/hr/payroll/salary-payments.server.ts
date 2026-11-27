@@ -202,6 +202,13 @@ export async function insertPayment(
   return id;
 }
 
+async function walletNames(tx: Tx, ids: (string | null)[]): Promise<string[]> {
+  const unique = [...new Set(ids.filter((id): id is string => !!id))];
+  if (unique.length === 0) return [];
+  const rows = await tx.select({ name: wallets.name }).from(wallets).where(inArray(wallets.id, unique));
+  return rows.map((row) => row.name);
+}
+
 export type PaySalariesInput = {
   payrollId: string;
   employeeIds: string[];
@@ -224,7 +231,7 @@ export async function paySalaries(tx: Tx, input: PaySalariesInput) {
   const settled = lines.find((line) => !new Big(line.due).gt(0));
   if (settled) throw new Error(`${settled.name} has nothing left to pay. Refresh and try again.`);
   const total = lines.reduce((sum, line) => sum.plus(line.due), new Big(0)).toFixed(2);
-  await assertWalletCovers(tx, input.walletId, total);
+  const wallet = await assertWalletCovers(tx, input.walletId, total);
   for (const line of lines) {
     await insertPayment(tx, {
       payrollId: payroll.id,
@@ -237,7 +244,13 @@ export async function paySalaries(tx: Tx, input: PaySalariesInput) {
       actorId: input.actorId,
     });
   }
-  return { paidCount: lines.length, total };
+  return {
+    paidCount: lines.length,
+    total,
+    payrollMonth: payroll.month,
+    walletName: wallet.name,
+    lines: lines.map((line) => ({ employeeId: line.employeeId, name: line.name, amount: line.due })),
+  };
 }
 
 type ReverseContext = { reason: string; actorId: string; todayKey: string; name: string; payrollMonth: string };
@@ -314,7 +327,14 @@ export async function changeSalaryAccount(tx: Tx, input: PaySalariesInput) {
       });
     }
   }
-  return { movedCount: moves.length, total };
+  return {
+    movedCount: moves.length,
+    total,
+    payrollMonth: payroll.month,
+    walletName: target.name,
+    fromWalletNames: await walletNames(tx, moves.flatMap((move) => move.toMove.map((row) => row.walletId))),
+    names: moves.map((move) => move.slip.name),
+  };
 }
 
 const UNDO_ORDER = { recovery: 0, refund: 1, payment: 2 } as const;
@@ -332,7 +352,15 @@ export async function undoSalaryPayment(
   for (const row of [...rows].sort((a, b) => UNDO_ORDER[a.kind] - UNDO_ORDER[b.kind])) {
     await reverseRow(tx, row, { reason, actorId: input.actorId, todayKey: input.todayKey, name: slip.name, payrollMonth: payroll.month });
   }
-  return { reversedCount: rows.length };
+  const payments = rows.filter((row) => row.kind === "payment");
+  return {
+    reversedCount: rows.length,
+    payrollMonth: payroll.month,
+    name: slip.name,
+    reason,
+    returnedTotal: payments.reduce((sum, row) => sum.plus(row.amount), new Big(0)).toFixed(2),
+    walletNames: await walletNames(tx, payments.map((row) => row.walletId)),
+  };
 }
 
 async function lockOverpaidSlip(tx: Tx, payrollId: string, employeeId: string) {
@@ -365,7 +393,8 @@ export async function recordSalaryRefund(
     id, payrollId: payroll.id, employeeId: slip.employeeId, kind: "refund", amount: overpaid,
     walletId: input.walletId, transactionId, paymentDate: input.paymentDate, recordedById: input.actorId,
   });
-  return { amount: overpaid };
+  const [wallet] = await walletNames(tx, [input.walletId]);
+  return { amount: overpaid, payrollMonth: payroll.month, name: slip.name, walletName: wallet ?? "" };
 }
 
 /** Creates a one-installment advance that the next generated payslip deducts. No money moves now. */
@@ -391,7 +420,7 @@ export async function recoverOverpaidSalary(
     payrollId: payroll.id, employeeId: slip.employeeId, kind: "recovery", amount: overpaid,
     advanceId: advance.id, paymentDate: input.todayKey, recordedById: input.actorId,
   });
-  return { amount: overpaid };
+  return { amount: overpaid, payrollMonth: payroll.month, name: slip.name };
 }
 
 export const slipKey = (payrollId: string, employeeId: string) => `${payrollId}:${employeeId}`;
