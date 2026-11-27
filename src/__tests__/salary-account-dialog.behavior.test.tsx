@@ -10,7 +10,7 @@ const lines = [
 ];
 const props = {
   open: true, onOpenChange: vi.fn(), title: "Pay salaries", description: "Choose the account", confirmLabel: "Pay Rs 1,28,424",
-  lines, direction: "out" as const, payrollMonth: "2026-11-01", todayKey: "2026-12-03", pending: false,
+  lines, direction: "out" as const, earliestDate: "2026-11-27", todayKey: "2026-12-03", pending: false,
 };
 
 describe("SalaryAccountDialog", () => {
@@ -30,10 +30,20 @@ describe("SalaryAccountDialog", () => {
     expect((screen.getByRole("button", { name: "Pay Rs 1,28,424" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it("blocks a future payment date", () => {
+  it("only offers days from when the slip was made up to today", () => {
     render(<SalaryAccountDialog {...props} wallets={[{ id: "cash", name: "Cash in Hand", balance: "500000.00" }]} onConfirm={vi.fn()} />);
-    fireEvent.change(screen.getByLabelText("Payment date"), { target: { value: "2026-12-04" } });
-    expect(screen.getByText("Payment date can't be in the future")).toBeTruthy();
+    expect(screen.getByText("From 27 Nov 2026, when the last of these slips was made, up to today.")).toBeTruthy();
+    const trigger = screen.getByRole("button", { name: "Payment date" });
+    expect(trigger.textContent).toContain("3 Dec 2026");
+    fireEvent.click(trigger);
+    const day = (label: RegExp) => screen.getByRole("button", { name: label }) as HTMLButtonElement;
+    expect(day(/December 4th, 2026/).disabled).toBe(true);
+    expect(day(/December 2nd, 2026/).disabled).toBe(false);
+  });
+
+  it("blocks a date before the slip was made", () => {
+    render(<SalaryAccountDialog {...props} defaultDate="2026-11-26" wallets={[{ id: "cash", name: "Cash in Hand", balance: "500000.00" }]} onConfirm={vi.fn()} />);
+    expect(screen.getByText("Payment date can't be before 27 Nov 2026, when the slip was made")).toBeTruthy();
     expect((screen.getByRole("button", { name: "Pay Rs 1,28,424" }) as HTMLButtonElement).disabled).toBe(true);
   });
 

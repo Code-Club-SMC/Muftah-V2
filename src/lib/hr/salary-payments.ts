@@ -74,11 +74,19 @@ export function firstDayOfPayrollMonth(payrollMonth: string): string {
   return `${payrollMonth.slice(0, 7)}-01`;
 }
 
-export function paymentDateError(dateKey: string, payrollMonth: string, todayKey: string): string | null {
+/**
+ * A salary can be paid from the day its slip was made (earliestKey) up to today.
+ * `who` names the employee when several slips are paid together.
+ */
+export function paymentDateError(dateKey: string, earliestKey: string, todayKey: string, who?: string): string | null {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) return "Choose a payment date";
   if (dateKey > todayKey) return "Payment date can't be in the future";
-  const first = firstDayOfPayrollMonth(payrollMonth);
-  if (dateKey < first) return `Payment date can't be before ${format(parseISO(first), "d MMM yyyy")}`;
+  if (dateKey < earliestKey) {
+    const day = format(parseISO(earliestKey), "d MMM yyyy");
+    return who
+      ? `Payment date can't be before ${day}, when ${who}'s slip was made`
+      : `Payment date can't be before ${day}, when the slip was made`;
+  }
   return null;
 }
 

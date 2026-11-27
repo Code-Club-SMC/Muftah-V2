@@ -34,6 +34,7 @@ export async function salaryFixture(options: { cash?: string; nets?: string[] } 
     }).returning();
     const [slip] = await db.insert(payslips).values({
       payrollId: payroll.id, employeeId: employee.id, basicSalary: net, grossSalary: net, totalDeductions: "0", netSalary: net,
+      createdAt: new Date(`${year}-11-26T07:00:00.000Z`), // slips made on 26 Nov
     }).returning();
     staff.push({ employee, slip, name: `${employee.firstName} ${employee.lastName}` });
   }

@@ -1,5 +1,5 @@
 import Big from "big.js";
-import { and, asc, eq, gte, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, min, sql } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
 import type { db } from "@/db";
 import { transactions, wallets } from "@/db/schemas/finance-schema";
@@ -20,6 +20,7 @@ import {
   type SalaryPaymentStatus,
   type SlipPaymentState,
 } from "@/lib/hr/salary-payments";
+import { reportDateKey } from "@/lib/report-dates";
 
 export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 export type Executor = typeof db | Tx;
@@ -32,9 +33,43 @@ export async function loadPayroll(tx: Executor, payrollId: string) {
   return payroll;
 }
 
-export function assertPaymentDate(dateKey: string, payrollMonth: string, todayKey: string) {
-  const error = paymentDateError(dateKey, payrollMonth, todayKey);
-  if (error) throw new Error(error);
+/**
+ * Earliest allowed payment date per slip: the day the slip was made. Revise re-makes the slip,
+ * so an earlier payment already recorded on it keeps its own date allowed (e.g. changing account).
+ */
+export async function earliestPaymentDates(executor: Executor, payrollId: string, employeeIds: string[]): Promise<Map<string, string>> {
+  const result = new Map<string, string>();
+  if (employeeIds.length === 0) return result;
+  const slips = await executor
+    .select({ employeeId: payslips.employeeId, createdAt: payslips.createdAt })
+    .from(payslips)
+    .where(and(eq(payslips.payrollId, payrollId), inArray(payslips.employeeId, employeeIds)));
+  for (const slip of slips) result.set(slip.employeeId, reportDateKey(slip.createdAt));
+  const firstPayments = await executor
+    .select({ employeeId: salaryPayments.employeeId, first: min(salaryPayments.paymentDate) })
+    .from(salaryPayments)
+    .where(and(eq(salaryPayments.payrollId, payrollId), inArray(salaryPayments.employeeId, employeeIds)))
+    .groupBy(salaryPayments.employeeId);
+  for (const row of firstPayments) {
+    const first = row.first ? String(row.first).slice(0, 10) : null;
+    const made = result.get(row.employeeId);
+    if (first && made && first < made) result.set(row.employeeId, first);
+  }
+  return result;
+}
+
+export async function assertPaymentDate(
+  executor: Executor,
+  payrollId: string,
+  slips: { employeeId: string; name: string }[],
+  dateKey: string,
+  todayKey: string,
+) {
+  const earliest = await earliestPaymentDates(executor, payrollId, slips.map((slip) => slip.employeeId));
+  for (const slip of slips) {
+    const error = paymentDateError(dateKey, earliest.get(slip.employeeId) ?? todayKey, todayKey, slip.name);
+    if (error) throw new Error(error);
+  }
 }
 
 /** Locks the slips (in employee-code order, so concurrent calls can't deadlock) before reading their payments. */
@@ -179,8 +214,8 @@ export type PaySalariesInput = {
 /** Pays what is still due on each chosen slip (full net, or the balance after a revision). All or nothing. */
 export async function paySalaries(tx: Tx, input: PaySalariesInput) {
   const payroll = await loadPayroll(tx, input.payrollId);
-  assertPaymentDate(input.paymentDate, payroll.month, input.todayKey);
   const slips = await lockSlips(tx, payroll.id, input.employeeIds);
+  await assertPaymentDate(tx, payroll.id, slips, input.paymentDate, input.todayKey);
   const existing = await activeRows(tx, payroll.id, slips.map((slip) => slip.employeeId));
   const lines = slips.map((slip) => ({
     ...slip,
@@ -243,8 +278,8 @@ export async function reverseRow(tx: Tx, row: ActiveRow, ctx: ReverseContext) {
 
 export async function changeSalaryAccount(tx: Tx, input: PaySalariesInput) {
   const payroll = await loadPayroll(tx, input.payrollId);
-  assertPaymentDate(input.paymentDate, payroll.month, input.todayKey);
   const slips = await lockSlips(tx, payroll.id, input.employeeIds);
+  await assertPaymentDate(tx, payroll.id, slips, input.paymentDate, input.todayKey);
   const existing = await activeRows(tx, payroll.id, slips.map((slip) => slip.employeeId));
   const [target] = await tx.select({ name: wallets.name }).from(wallets).where(eq(wallets.id, input.walletId));
   if (!target) throw new Error("Account not found");
@@ -314,7 +349,7 @@ export async function recordSalaryRefund(
   input: { payrollId: string; employeeId: string; walletId: string; paymentDate: string; todayKey: string; actorId: string },
 ) {
   const { payroll, slip, overpaid } = await lockOverpaidSlip(tx, input.payrollId, input.employeeId);
-  assertPaymentDate(input.paymentDate, payroll.month, input.todayKey);
+  await assertPaymentDate(tx, payroll.id, [slip], input.paymentDate, input.todayKey);
   const id = createId();
   const transactionId = await moveMoney(tx, {
     walletId: input.walletId,
@@ -362,8 +397,13 @@ export async function recoverOverpaidSalary(
 export const slipKey = (payrollId: string, employeeId: string) => `${payrollId}:${employeeId}`;
 export type SlipPaymentRow = ActiveRow & { walletName: string | null };
 /** lastPaymentDate: the latest active payment's date, suggested when changing the account. */
-export type RegisterSlipPayment = SlipPaymentState & { paidFrom: string | null; lastPaymentDate: string | null };
-export type PayableSlip = { employeeId: string; name: string; due: string };
+export type RegisterSlipPayment = SlipPaymentState & {
+  paidFrom: string | null;
+  lastPaymentDate: string | null;
+  /** First day a payment may be dated: when the slip was made. */
+  earliestPaymentDate: string;
+};
+export type PayableSlip = { employeeId: string; name: string; due: string; earliestPaymentDate: string };
 
 export async function loadActivePaymentsForPayrolls(executor: Executor, payrollIds: string[]) {
   const map = new Map<string, SlipPaymentRow[]>();
@@ -395,14 +435,16 @@ export async function loadRegisterPayments(executor: Executor, payrollId: string
     .where(eq(payslips.payrollId, payrollId))
     .orderBy(asc(employees.employeeCode));
   const payments = await loadActivePaymentsForPayrolls(executor, [payrollId]);
+  const earliest = await earliestPaymentDates(executor, payrollId, slips.map((slip) => slip.employeeId));
   const byEmployee = new Map<string, RegisterSlipPayment>();
   const payable: PayableSlip[] = [];
   for (const slip of slips) {
     const rows = payments.get(slipKey(payrollId, slip.employeeId)) ?? [];
     const state = slipPaymentState(slip.netSalary, rows);
     const paymentDates = rows.filter((row) => row.kind === "payment").map((row) => String(row.paymentDate).slice(0, 10)).sort();
-    byEmployee.set(slip.employeeId, { ...state, paidFrom: paidFromText(rows), lastPaymentDate: paymentDates.at(-1) ?? null });
-    if (new Big(state.due).gt(0)) payable.push({ employeeId: slip.employeeId, name: `${slip.firstName} ${slip.lastName}`, due: state.due });
+    const earliestPaymentDate = earliest.get(slip.employeeId)!;
+    byEmployee.set(slip.employeeId, { ...state, paidFrom: paidFromText(rows), lastPaymentDate: paymentDates.at(-1) ?? null, earliestPaymentDate });
+    if (new Big(state.due).gt(0)) payable.push({ employeeId: slip.employeeId, name: `${slip.firstName} ${slip.lastName}`, due: state.due, earliestPaymentDate });
   }
   const summary: RegisterPaymentSummary = registerPaymentSummary([...byEmployee.values()]);
   return { byEmployee, summary, payable };

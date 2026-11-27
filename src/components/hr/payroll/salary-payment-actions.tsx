@@ -17,7 +17,6 @@ import type { RegisterSlipPayment } from "@/server-functions/hr/payroll/salary-p
 
 type Props = {
   payrollId: string;
-  payrollMonth: string;
   employeeId: string;
   name: string;
   payment: RegisterSlipPayment;
@@ -27,7 +26,7 @@ type Props = {
 
 type Open = null | "change" | "undo" | "refund" | "recover";
 
-export function SalaryPaymentActions({ payrollId, payrollMonth, employeeId, name, payment, wallets, todayKey }: Props) {
+export function SalaryPaymentActions({ payrollId, employeeId, name, payment, wallets, todayKey }: Props) {
   const [open, setOpen] = useState<Open>(null);
   const [reason, setReason] = useState("");
   const change = useChangeSalaryAccount();
@@ -63,7 +62,7 @@ export function SalaryPaymentActions({ payrollId, payrollMonth, employeeId, name
           confirmLabel="Change account"
           lines={[{ employeeId, name, amount: payment.paid }]}
           wallets={wallets.filter((w) => !payment.paidFrom?.split(", ").includes(w.name))}
-          direction="out" payrollMonth={payrollMonth} todayKey={todayKey} pending={change.isPending}
+          direction="out" earliestDate={payment.earliestPaymentDate} todayKey={todayKey} pending={change.isPending}
           defaultDate={payment.lastPaymentDate ?? undefined}
           onConfirm={({ walletId, paymentDate }) =>
             change.mutate({ payrollId, employeeIds: [employeeId], walletId, paymentDate }, { onSuccess: close })
@@ -78,7 +77,7 @@ export function SalaryPaymentActions({ payrollId, payrollMonth, employeeId, name
           description="The employee handed back the overpaid amount. It goes into the account you choose."
           confirmLabel={`Record ${formatRupees(payment.overpaid)}`}
           lines={[{ employeeId, name, amount: payment.overpaid }]}
-          wallets={wallets} direction="in" payrollMonth={payrollMonth} todayKey={todayKey} pending={refund.isPending}
+          wallets={wallets} direction="in" earliestDate={payment.earliestPaymentDate} todayKey={todayKey} pending={refund.isPending}
           onConfirm={({ walletId, paymentDate }) =>
             refund.mutate({ payrollId, employeeId, walletId, paymentDate }, { onSuccess: close })
           }

@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { db } from "@/db";
 import { wallets } from "@/db/schemas/finance-schema";
-import { advanceInstallments, salaryAdvances } from "@/db/schemas/hr-schema";
+import { advanceInstallments, payslips, salaryAdvances } from "@/db/schemas/hr-schema";
 import { calculateEnrichedAdvanceDeductions } from "@/server-functions/hr/payroll/core";
 import { reportDateKey } from "@/lib/report-dates";
 import { slipPaymentState } from "@/lib/hr/salary-payments";
@@ -37,11 +37,26 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("paying salaries", () => {
     expect(await f.rows(f.staff[0].employee.id)).toHaveLength(0);
   });
 
-  it("rejects a future date and a date before the payroll month", async () => {
+  it("rejects a future date and a date before the slip was made", async () => {
     const f = await salaryFixture();
     const ids = [f.staff[0].employee.id];
     await expect(payFor(f, ids, f.cash.id, `${f.year}-12-04`)).rejects.toThrow("Payment date can't be in the future");
-    await expect(payFor(f, ids, f.cash.id, `${f.year}-10-31`)).rejects.toThrow(`Payment date can't be before 1 Nov ${f.year}`);
+    await expect(payFor(f, ids, f.cash.id, `${f.year}-11-25`))
+      .rejects.toThrow(`Payment date can't be before 26 Nov ${f.year}, when ${f.staff[0].name}'s slip was made`);
+    expect(await payFor(f, ids, f.cash.id, `${f.year}-11-26`)).toEqual({ paidCount: 1, total: "26200.00" });
+  });
+
+  it("keeps the first payment's date allowed after a Revise re-makes the slip", async () => {
+    const f = await salaryFixture();
+    const [staff] = f.staff;
+    await payFor(f, [staff.employee.id], f.cash.id, `${f.year}-11-27`);
+    // Revise deletes and re-inserts the slip, so its made-on day moves to the revise day.
+    await db.update(payslips).set({ createdAt: new Date(`${f.year}-12-02T07:00:00.000Z`) })
+      .where(eq(payslips.id, staff.slip.id));
+    await expect(db.transaction((tx) => changeSalaryAccount(tx, { ...f.base, employeeIds: [staff.employee.id], walletId: f.bank.id, paymentDate: `${f.year}-11-27` })))
+      .resolves.toMatchObject({ movedCount: 1 });
+    const register = await loadRegisterPayments(db, f.payroll.id);
+    expect(register.byEmployee.get(staff.employee.id)?.earliestPaymentDate).toBe(`${f.year}-11-27`);
   });
 
   it("never pays the same slip twice, even when two people click at once", async () => {
@@ -181,7 +196,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("reading payments", () => {
 
     const register = await loadRegisterPayments(db, f.payroll.id);
     expect(register.summary).toEqual({ slipCount: 2, paidCount: 1, paidTotal: "26200.00", remainingTotal: "100000.00" });
-    expect(register.payable).toEqual([{ employeeId: b.employee.id, name: b.name, due: "100000.00" }]);
+    expect(register.payable).toEqual([{ employeeId: b.employee.id, name: b.name, due: "100000.00", earliestPaymentDate: `${f.year}-11-26` }]);
     expect(register.byEmployee.get(a.employee.id)).toMatchObject({ status: "paid", paidFrom: f.cash.name, lastPaymentDate: f.todayKey });
     expect(register.byEmployee.get(b.employee.id)).toMatchObject({ status: "unpaid", paidFrom: null, lastPaymentDate: null });
   });

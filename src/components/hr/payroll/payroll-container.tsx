@@ -205,7 +205,7 @@ export function PayrollContainer() {
   const canPay = useCanPaySalaries();
   const { data: walletList = [] } = useWallets({ enabled: canPay });
   const paySalaries = usePaySalaries();
-  const [selected, setSelected] = useState<Record<string, { name: string; amount: string }>>({});
+  const [selected, setSelected] = useState<Record<string, { name: string; amount: string; earliestPaymentDate: string }>>({});
   const [payOpen, setPayOpen] = useState(false);
   const todayKey = reportDateKey(new Date());
 
@@ -234,7 +234,9 @@ export function PayrollContainer() {
   const selectedLines = Object.entries(selected).map(([employeeId, v]) => ({ employeeId, ...v }));
   const payLines = selectedLines.length > 0
     ? selectedLines
-    : data.payableSlips.map((slip) => ({ employeeId: slip.employeeId, name: slip.name, amount: slip.due }));
+    : data.payableSlips.map((slip) => ({ employeeId: slip.employeeId, name: slip.name, amount: slip.due, earliestPaymentDate: slip.earliestPaymentDate }));
+  // One date covers every chosen slip, so it can't be before the last of them was made.
+  const payEarliestDate = payLines.reduce((latest, line) => (line.earliestPaymentDate > latest ? line.earliestPaymentDate : latest), "");
   const payTotal = payLines.reduce((sum, line) => sum.plus(line.amount), new Big(0)).toFixed(2);
   const payLabel = selectedLines.length > 0 ? `Pay selected · ${formatRupees(payTotal)}` : `Pay all unpaid · ${formatRupees(payTotal)}`;
   const isPayable = (row: EmployeePayrollRow) => !!row.payment && new Big(row.payment.due).gt(0);
@@ -270,7 +272,7 @@ export function PayrollContainer() {
               onCheckedChange={(checked) =>
                 setSelected((current) => {
                   const next = { ...current };
-                  if (checked) next[emp.id] = { name: `${emp.firstName} ${emp.lastName}`, amount: emp.payment!.due };
+                  if (checked) next[emp.id] = { name: `${emp.firstName} ${emp.lastName}`, amount: emp.payment!.due, earliestPaymentDate: emp.payment!.earliestPaymentDate };
                   else delete next[emp.id];
                   return next;
                 })
@@ -521,7 +523,6 @@ export function PayrollContainer() {
               {canPay && emp.payment && data.payrollId && (
                 <SalaryPaymentActions
                   payrollId={data.payrollId}
-                  payrollMonth={`${month}-01`}
                   employeeId={emp.id}
                   name={`${emp.firstName} ${emp.lastName}`}
                   payment={emp.payment}
@@ -768,7 +769,7 @@ export function PayrollContainer() {
           lines={payLines}
           wallets={walletList}
           direction="out"
-          payrollMonth={`${month}-01`}
+          earliestDate={payEarliestDate || todayKey}
           todayKey={todayKey}
           pending={paySalaries.isPending}
           onConfirm={({ walletId, paymentDate }) =>

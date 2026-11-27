@@ -48,14 +48,18 @@ describe("registerPaymentSummary", () => {
 });
 
 describe("paymentDateError", () => {
-  it("allows the payroll month's first day up to today", () => {
-    expect(paymentDateError("2026-11-01", "2026-11-01", "2026-12-03")).toBeNull();
-    expect(paymentDateError("2026-12-03", "2026-11-01", "2026-12-03")).toBeNull();
+  it("allows the day the slip was made up to today", () => {
+    expect(paymentDateError("2026-11-27", "2026-11-27", "2026-12-03")).toBeNull();
+    expect(paymentDateError("2026-12-03", "2026-11-27", "2026-12-03")).toBeNull();
   });
-  it("blocks future dates and dates before the payroll month", () => {
-    expect(paymentDateError("2026-12-04", "2026-11-01", "2026-12-03")).toBe("Payment date can't be in the future");
-    expect(paymentDateError("2026-10-31", "2026-11-01", "2026-12-03")).toBe("Payment date can't be before 1 Nov 2026");
-    expect(paymentDateError("", "2026-11-01", "2026-12-03")).toBe("Choose a payment date");
+  it("allows an early slip to be paid before its payout month starts", () => {
+    expect(paymentDateError("2026-11-27", "2026-11-27", "2026-11-27")).toBeNull();
+  });
+  it("blocks future dates and dates before the slip was made", () => {
+    expect(paymentDateError("2026-12-04", "2026-11-27", "2026-12-03")).toBe("Payment date can't be in the future");
+    expect(paymentDateError("2026-11-26", "2026-11-27", "2026-12-03")).toBe("Payment date can't be before 27 Nov 2026, when the slip was made");
+    expect(paymentDateError("2026-11-26", "2026-11-27", "2026-12-03", "Rizwan Qureshi")).toBe("Payment date can't be before 27 Nov 2026, when Rizwan Qureshi's slip was made");
+    expect(paymentDateError("", "2026-11-27", "2026-12-03")).toBe("Choose a payment date");
   });
 });
 
