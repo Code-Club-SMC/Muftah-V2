@@ -77,6 +77,8 @@ export type PayslipData = {
 type PayslipViewProps = {
     payslip: PayslipData;
     showActions?: boolean;
+    /** Account(s) the salary was paid from, or "Not paid yet". Row hidden when undefined. */
+    paidFrom?: string;
 };
 
 // ── Labels matching official payslip exactly ────────────────────────────────
@@ -150,6 +152,7 @@ const netNum: React.CSSProperties = { ...base, fontWeight: 800, fontSize: 13, ba
 export const PayslipView = ({
     payslip,
     showActions = true,
+    paidFrom,
 }: PayslipViewProps) => {
     const { employee, payroll } = payslip;
     const [overrideOpen, setOverrideOpen] = useState(false);
@@ -447,6 +450,7 @@ body { font-family: Arial, sans-serif; font-size:11px; color:#111; background:#f
           <td class="net-n">${fmt(netPay)}</td>
           <td class="net-l">PKR</td>
         </tr>
+        ${paidFrom !== undefined ? `<tr><td class="tot-l" colspan="4">Paid from</td><td class="tot-n" colspan="2">${paidFrom.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`)}</td></tr>` : ""}
       </tbody>
     </table>
 
@@ -668,6 +672,12 @@ body { font-family: Arial, sans-serif; font-size:11px; color:#111; background:#f
                                 <td style={netNum}>{fmt(netPay)}</td>
                                 <td style={netLbl}>PKR</td>
                             </tr>
+                            {paidFrom !== undefined && (
+                                <tr>
+                                    <td colSpan={4} style={totLbl}>Paid from</td>
+                                    <td colSpan={2} style={totNum}>{paidFrom}</td>
+                                </tr>
+                            )}
 
                         </tbody>
                     </table>

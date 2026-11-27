@@ -20,6 +20,7 @@ import { useWallets } from "@/hooks/finance/use-finance";
 import { useCanPaySalaries, usePaySalaries } from "@/hooks/hr/use-salary-payments";
 import { SalaryPaymentBadge } from "@/components/hr/payroll/salary-payment-badge";
 import { SalaryAccountDialog } from "@/components/hr/payroll/salary-account-dialog";
+import { SalaryPaymentActions } from "@/components/hr/payroll/salary-payment-actions";
 import { formatRupees } from "@/lib/finance/expense-entry";
 import { reportDateKey } from "@/lib/report-dates";
 import type { RegisterSlipPayment } from "@/server-functions/hr/payroll/salary-payments.server";
@@ -237,6 +238,10 @@ export function PayrollContainer() {
   const payTotal = payLines.reduce((sum, line) => sum.plus(line.amount), new Big(0)).toFixed(2);
   const payLabel = selectedLines.length > 0 ? `Pay selected · ${formatRupees(payTotal)}` : `Pay all unpaid · ${formatRupees(payTotal)}`;
   const isPayable = (row: EmployeePayrollRow) => !!row.payment && new Big(row.payment.due).gt(0);
+  const selectedRow = employees.find((e) => e.id === selectedEmployeeId);
+  const paidNote = selectedRow?.payment && selectedRow.payment.paid !== "0.00"
+    ? `This slip is already paid (${formatRupees(selectedRow.payment.paid)}${selectedRow.payment.paidFrom ? ` from ${selectedRow.payment.paidFrom}` : ""}). If you change it, the difference shows as balance due or overpaid.`
+    : undefined;
 
   if (employees.length === 0 && pageIndex === 0 && !globalFilter) {
     return (
@@ -513,6 +518,17 @@ export function PayrollContainer() {
                   </Button>
                 </TooltipWrapper>
               )}
+              {canPay && emp.payment && data.payrollId && (
+                <SalaryPaymentActions
+                  payrollId={data.payrollId}
+                  payrollMonth={`${month}-01`}
+                  employeeId={emp.id}
+                  name={`${emp.firstName} ${emp.lastName}`}
+                  payment={emp.payment}
+                  wallets={walletList}
+                  todayKey={todayKey}
+                />
+              )}
               <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-primary/5 hover:text-primary rounded-none" asChild title="View Payroll History">
                 <Link to="/hr/payroll/employee/$employeeId" params={{ employeeId: emp.id }}>
                   <Eye className="size-4" />
@@ -523,7 +539,7 @@ export function PayrollContainer() {
         },
       },
     ],
-    [cycleEnd, cycleStart, now, selected, canPay],
+    [cycleEnd, cycleStart, now, selected, canPay, walletList, todayKey, month, data.payrollId],
   );
 
   const table = useReactTable({
@@ -769,6 +785,7 @@ export function PayrollContainer() {
         onClose={() => { setIsCalculatorOpen(false); setSelectedEmployeeId(null); }}
         employeeId={selectedEmployeeId}
         month={month}
+        paidNote={paidNote}
       />
     </motion.div>
   );
