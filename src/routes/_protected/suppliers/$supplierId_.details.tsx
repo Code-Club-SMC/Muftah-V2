@@ -366,6 +366,7 @@ function DetailsPage() {
         purchaseId={returnPurchaseId}
       />
       <RecordPaymentDialog
+        supplierCredit={supplier.supplierCredit}
         open={isRecordPaymentOpen}
         onOpenChange={(open) => {
           setRecordPaymentOpen(open);
