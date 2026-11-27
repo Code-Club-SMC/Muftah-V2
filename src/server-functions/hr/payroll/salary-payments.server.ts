@@ -3,12 +3,13 @@ import { and, asc, eq, gte, inArray, sql } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
 import type { db } from "@/db";
 import { transactions, wallets } from "@/db/schemas/finance-schema";
-import { employees, payrolls, payslips, salaryPayments } from "@/db/schemas/hr-schema";
+import { employees, payrolls, payslips, salaryAdvances, salaryPayments } from "@/db/schemas/hr-schema";
 import {
   effectiveDateFromKey,
   paymentDateError,
   payrollLedgerSource,
   salaryLedgerDescription,
+  salaryReversalDescription,
   shortfallMessage,
   slipPaymentState,
 } from "@/lib/hr/salary-payments";
@@ -195,4 +196,99 @@ export async function paySalaries(tx: Tx, input: PaySalariesInput) {
     });
   }
   return { paidCount: lines.length, total };
+}
+
+type ReverseContext = { reason: string; actorId: string; todayKey: string; name: string; payrollMonth: string };
+
+/**
+ * Reverses one active row. Payment: money back into its account. Refund: money out again.
+ * Recovery: cancels its advance, only while no later slip has deducted it. Dated today.
+ */
+export async function reverseRow(tx: Tx, row: ActiveRow, ctx: ReverseContext) {
+  let reversalTransactionId: string | null = null;
+  if (row.kind === "recovery") {
+    const [cancelled] = await tx
+      .update(salaryAdvances)
+      .set({ status: "cancelled" })
+      .where(and(eq(salaryAdvances.id, row.advanceId!), eq(salaryAdvances.status, "approved"), eq(salaryAdvances.installmentsPaid, 0)))
+      .returning({ id: salaryAdvances.id });
+    if (!cancelled) throw new Error(`The overpaid amount for ${ctx.name} was already taken from a later salary, so it can't be undone.`);
+  } else {
+    reversalTransactionId = await moveMoney(tx, {
+      walletId: row.walletId!,
+      type: row.kind === "payment" ? "credit" : "debit",
+      amount: row.amount,
+      source: payrollLedgerSource(ctx.payrollMonth),
+      description: salaryReversalDescription(ctx.name, ctx.payrollMonth, ctx.reason),
+      effectiveDate: effectiveDateFromKey(ctx.todayKey),
+      actorId: ctx.actorId,
+      referenceId: row.id,
+      reversalOfTransactionId: row.transactionId,
+    });
+  }
+  const [updated] = await tx
+    .update(salaryPayments)
+    .set({ status: "reversed", reversedAt: new Date(), reversedById: ctx.actorId, reversalReason: ctx.reason, reversalTransactionId })
+    .where(and(eq(salaryPayments.id, row.id), eq(salaryPayments.status, "active")))
+    .returning({ id: salaryPayments.id });
+  if (!updated) throw new Error("This payment changed. Refresh and try again.");
+}
+
+export async function changeSalaryAccount(tx: Tx, input: PaySalariesInput) {
+  const payroll = await loadPayroll(tx, input.payrollId);
+  assertPaymentDate(input.paymentDate, payroll.month, input.todayKey);
+  const slips = await lockSlips(tx, payroll.id, input.employeeIds);
+  const existing = await activeRows(tx, payroll.id, slips.map((slip) => slip.employeeId));
+  const [target] = await tx.select({ name: wallets.name }).from(wallets).where(eq(wallets.id, input.walletId));
+  if (!target) throw new Error("Account not found");
+
+  const moves = slips.map((slip) => {
+    const payments = (existing.get(slip.employeeId) ?? []).filter((row) => row.kind === "payment");
+    if (payments.length === 0) throw new Error(`${slip.name} is not paid yet.`);
+    const toMove = payments.filter((row) => row.walletId !== input.walletId);
+    if (toMove.length === 0) throw new Error(`${slip.name} is already paid from ${target.name}.`);
+    return { slip, toMove };
+  });
+
+  const reason = `Account changed to ${target.name}`;
+  for (const { slip, toMove } of moves) {
+    for (const row of toMove) {
+      await reverseRow(tx, row, { reason, actorId: input.actorId, todayKey: input.todayKey, name: slip.name, payrollMonth: payroll.month });
+    }
+  }
+  const total = moves.flatMap((move) => move.toMove).reduce((sum, row) => sum.plus(row.amount), new Big(0)).toFixed(2);
+  await assertWalletCovers(tx, input.walletId, total);
+  for (const { slip, toMove } of moves) {
+    for (const row of toMove) {
+      await insertPayment(tx, {
+        payrollId: payroll.id,
+        payrollMonth: payroll.month,
+        employeeId: slip.employeeId,
+        name: slip.name,
+        walletId: input.walletId,
+        amount: row.amount,
+        paymentDate: input.paymentDate,
+        actorId: input.actorId,
+      });
+    }
+  }
+  return { movedCount: moves.length, total };
+}
+
+const UNDO_ORDER = { recovery: 0, refund: 1, payment: 2 } as const;
+
+export async function undoSalaryPayment(
+  tx: Tx,
+  input: { payrollId: string; employeeId: string; reason: string; todayKey: string; actorId: string },
+) {
+  const reason = input.reason.trim();
+  if (reason.length < 3) throw new Error("Give a reason of at least 3 characters");
+  const payroll = await loadPayroll(tx, input.payrollId);
+  const [slip] = await lockSlips(tx, payroll.id, [input.employeeId]);
+  const rows = (await activeRows(tx, payroll.id, [slip.employeeId])).get(slip.employeeId) ?? [];
+  if (rows.length === 0) throw new Error(`${slip.name} has no payment to undo.`);
+  for (const row of [...rows].sort((a, b) => UNDO_ORDER[a.kind] - UNDO_ORDER[b.kind])) {
+    await reverseRow(tx, row, { reason, actorId: input.actorId, todayKey: input.todayKey, name: slip.name, payrollMonth: payroll.month });
+  }
+  return { reversedCount: rows.length };
 }
