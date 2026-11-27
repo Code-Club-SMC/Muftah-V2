@@ -2,10 +2,10 @@ import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { describe, expect, it, vi } from "vitest";
 import { chemicals, materialStock, purchaseRecords, suppliers, user, wallets, warehouses } from "@/db";
-import { supplierReturns } from "@/db/schemas/supplier-schema";
+import { supplierCreditMovements, supplierReturns } from "@/db/schemas/supplier-schema";
 import { addStockFn } from "@/server-functions/inventory/stock/add-stock-fn";
 import type { Tx } from "@/lib/inventory/material-lots.server";
-import { cancelSupplierReturn, completeSupplierReturn, dispatchSupplierReturn, previewDebitNote, requestSupplierReturn, returnableForPurchase, supplierCreditBalance } from "@/lib/suppliers/supplier-returns.server";
+import { cancelSupplierReturn, completeSupplierReturn, dispatchSupplierReturn, previewDebitNote, requestSupplierReturn, returnableForPurchase, supplierCreditBalance, voidSupplierReturn } from "@/lib/suppliers/supplier-returns.server";
 import { withRollback } from "./with-rollback";
 
 vi.mock("@tanstack/react-start", () => ({ createServerFn: () => {
@@ -157,5 +157,48 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("supplier returns: debit note", 
     const purchase = await buy("100", "50000");
     const created = await requestSupplierReturn(tx, { purchaseId: purchase.id, quantity: "10", reason: "Wet" }, actor.id);
     await expect(completeSupplierReturn(tx, { returnId: created.id }, actor.id)).rejects.toThrow("Mark it as dispatched first");
+  }));
+});
+
+describe.skipIf(!process.env.TEST_DATABASE_URL)("supplier returns: void", () => {
+  it("reverses stock, owed amount, cash back and credit", () => withRollback(async (tx) => {
+    const f = await supplierReturnFixture(tx);
+    const purchase = await f.buy("100", "50000");
+    await tx.update(purchaseRecords).set({ paidAmount: "48000" }).where(eq(purchaseRecords.id, purchase.id));
+    const [cash] = await tx.insert(wallets).values({ id: `w-${purchase.id}`, name: "Cash in Hand", type: "cash", balance: "0" }).returning();
+    const created = await requestSupplierReturn(tx, { purchaseId: purchase.id, quantity: "10", reason: "Wet" }, f.actor.id);
+    await dispatchSupplierReturn(tx, { returnId: created.id }, f.actor.id);
+    await completeSupplierReturn(tx, { returnId: created.id, cashBack: "1000", refundWalletId: cash.id }, f.actor.id);
+    // applied 2000, cash 1000, credit 2000
+
+    const result = await voidSupplierReturn(tx, { returnId: created.id, reason: "Supplier rejected the goods" }, f.actor.id);
+    expect(result.refundTakenBack).toBe("1000.00");
+    expect(await f.stock()).toBe("100.000");
+    const [p] = await tx.select().from(purchaseRecords).where(eq(purchaseRecords.id, purchase.id));
+    expect(p.returnedAmount).toBe("0.00");
+    const [w] = await tx.select().from(wallets).where(eq(wallets.id, cash.id));
+    expect(w.balance).toBe("0.00");
+    expect(await supplierCreditBalance(tx, f.supplier.id)).toBe("0.00");
+    const [row] = await tx.select().from(supplierReturns).where(eq(supplierReturns.id, created.id));
+    expect(row.status).toBe("voided");
+  }));
+
+  it("refuses when the credit was already spent", () => withRollback(async (tx) => {
+    const f = await supplierReturnFixture(tx);
+    const purchase = await f.buy("100", "50000");
+    await tx.update(purchaseRecords).set({ paidAmount: "50000" }).where(eq(purchaseRecords.id, purchase.id));
+    const created = await requestSupplierReturn(tx, { purchaseId: purchase.id, quantity: "6", reason: "Wet" }, f.actor.id);
+    await dispatchSupplierReturn(tx, { returnId: created.id }, f.actor.id);
+    await completeSupplierReturn(tx, { returnId: created.id }, f.actor.id); // credit 3000
+    await tx.insert(supplierCreditMovements).values({ supplierId: f.supplier.id, kind: "used", amount: "-2500.00", performedById: f.actor.id });
+    await expect(voidSupplierReturn(tx, { returnId: created.id, reason: "x" }, f.actor.id))
+      .rejects.toThrow("Rs 2,500 of this return's credit was already used on later payments, so it can't be voided.");
+  }));
+
+  it("refuses to void anything not completed", () => withRollback(async (tx) => {
+    const f = await supplierReturnFixture(tx);
+    const purchase = await f.buy("100", "50000");
+    const created = await requestSupplierReturn(tx, { purchaseId: purchase.id, quantity: "6", reason: "Wet" }, f.actor.id);
+    await expect(voidSupplierReturn(tx, { returnId: created.id, reason: "x" }, f.actor.id)).rejects.toThrow("Only a completed return");
   }));
 });

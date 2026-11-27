@@ -4,6 +4,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { chemicals, inventoryAuditLog, materialLotStock, packagingMaterials, purchaseRecords, suppliers, transactions, wallets, warehouses } from "@/db";
 import { creditNoteCounters } from "@/db/schemas/sales-erp-schema";
 import { supplierCreditMovements, supplierReturns } from "@/db/schemas/supplier-schema";
+import { formatRupees } from "@/lib/finance/expense-entry";
 import type { MaterialRef } from "@/lib/inventory/material-lots";
 import { lockMaterialStock, moveLotStock, type Tx } from "@/lib/inventory/material-lots.server";
 import { packagingUnit } from "@/lib/inventory/material-units";
@@ -316,4 +317,60 @@ export async function completeSupplierReturn(
   }
 
   return { debitNoteNumber, applied: split.applied, refund: leftover.refund, credit: leftover.credit };
+}
+
+export async function voidSupplierReturn(tx: Tx, input: { returnId: string; reason: string }, actorId: string) {
+  const reason = input.reason.trim();
+  if (!reason) throw new Error("A reason is required");
+  const { row, purchase } = await lockReturn(tx, input.returnId);
+  if (row.status !== "completed") throw new Error("Only a completed return has a debit note to void.");
+
+  const credit = new Big(row.supplierCreditAmount);
+  if (credit.gt(0)) {
+    const balance = new Big(await supplierCreditBalance(tx, row.supplierId));
+    if (balance.lt(credit)) {
+      throw new Error(`${formatRupees(credit.minus(balance).toFixed(2))} of this return's credit was already used on later payments, so it can't be voided.`);
+    }
+    await tx.insert(supplierCreditMovements).values({
+      supplierId: row.supplierId,
+      kind: "issue_reversed",
+      amount: credit.times(-1).toFixed(2),
+      supplierReturnId: row.id,
+      purchaseId: purchase.id,
+      note: `Debit note ${row.debitNoteNumber} voided`,
+      performedById: actorId,
+    });
+  }
+
+  let walletName: string | null = null;
+  const refund = new Big(row.refundAmount);
+  if (refund.gt(0) && row.refundWalletId) {
+    const [wallet] = await tx.select({ id: wallets.id, name: wallets.name }).from(wallets).where(eq(wallets.id, row.refundWalletId)).for("update");
+    walletName = wallet?.name ?? null;
+    await tx.update(wallets).set({ balance: sql`${wallets.balance} - ${refund.toFixed(2)}` }).where(eq(wallets.id, row.refundWalletId));
+    await tx.insert(transactions).values({
+      id: createId(),
+      walletId: row.refundWalletId,
+      type: "debit",
+      amount: refund.toFixed(2),
+      source: "Supplier Refund",
+      referenceId: row.id,
+      description: `Reversal: debit note ${row.debitNoteNumber} voided`,
+      reversalOfTransactionId: row.refundTransactionId,
+      performedById: actorId,
+    });
+  }
+
+  if (new Big(row.appliedToPurchaseAmount).gt(0)) {
+    await tx.update(purchaseRecords)
+      .set({ returnedAmount: sql`${purchaseRecords.returnedAmount} - ${row.appliedToPurchaseAmount}`, updatedAt: new Date() })
+      .where(eq(purchaseRecords.id, purchase.id));
+  }
+
+  await moveReturnStock(tx, row, "back", actorId, `Debit note ${row.debitNoteNumber} voided: ${reason}`);
+  await tx.update(supplierReturns)
+    .set({ status: "voided", voidedById: actorId, voidedAt: new Date(), voidReason: reason, updatedAt: new Date() })
+    .where(eq(supplierReturns.id, row.id));
+
+  return { debitNoteNumber: row.debitNoteNumber!, refundTakenBack: refund.toFixed(2), walletName };
 }
