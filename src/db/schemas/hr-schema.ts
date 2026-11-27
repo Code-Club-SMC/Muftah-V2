@@ -1,5 +1,6 @@
 import {
   boolean,
+  check,
   decimal,
   index,
   integer,
@@ -30,6 +31,8 @@ import {
 } from "@/lib/attendance/time-exceptions";
 
 import { user } from "./auth-schema";
+import { transactions, wallets } from "./finance-schema";
+import { SALARY_PAYMENT_KINDS, SALARY_PAYMENT_STATUSES } from "@/lib/hr/salary-payments";
 
 const timestamps = {
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -662,6 +665,46 @@ export const advanceInstallments = pgTable("advance_installments", {
   ...timestamps,
 });
 
+// --- SALARY PAYMENTS ---
+// One row per money event on a payslip. Linked to payroll + employee, not to the payslip row,
+// because Revise deletes and re-inserts the payslip. Rows are never edited for money: a correction
+// marks the row reversed and writes a reversal Ledger line.
+export const salaryPayments = pgTable(
+  "salary_payments",
+  {
+    id: text("id").primaryKey().$defaultFn(() => createId()),
+    payrollId: text("payroll_id").notNull().references(() => payrolls.id),
+    employeeId: text("employee_id").notNull().references(() => employees.id),
+    kind: text("kind", { enum: SALARY_PAYMENT_KINDS }).notNull(),
+    amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
+    walletId: text("wallet_id").references(() => wallets.id),
+    transactionId: text("transaction_id").references(() => transactions.id),
+    advanceId: text("advance_id").references(() => salaryAdvances.id),
+    paymentDate: date("payment_date").notNull(),
+    status: text("status", { enum: SALARY_PAYMENT_STATUSES }).notNull().default("active"),
+    reversalTransactionId: text("reversal_transaction_id").references(() => transactions.id),
+    reversalReason: text("reversal_reason"),
+    reversedAt: timestamp("reversed_at"),
+    reversedById: text("reversed_by_id").references(() => user.id),
+    recordedById: text("recorded_by_id").notNull().references(() => user.id),
+    ...timestamps,
+  },
+  (table) => ({
+    payrollEmployeeIdx: index("salary_payments_payroll_employee_idx").on(table.payrollId, table.employeeId),
+    amountCheck: check("salary_payments_amount_check", sql`${table.amount} > 0`),
+    shapeCheck: check(
+      "salary_payments_shape_check",
+      sql`(${table.kind} in ('payment', 'refund') and ${table.walletId} is not null and ${table.transactionId} is not null and ${table.advanceId} is null)
+        or (${table.kind} = 'recovery' and ${table.walletId} is null and ${table.transactionId} is null and ${table.advanceId} is not null)`,
+    ),
+    reversalCheck: check(
+      "salary_payments_reversal_check",
+      sql`(${table.status} = 'active' and ${table.reversedAt} is null)
+        or (${table.status} = 'reversed' and ${table.reversedAt} is not null and ${table.reversedById} is not null and ${table.reversalReason} is not null)`,
+    ),
+  }),
+);
+
 // --- COMP-OFF CASH-OUTS ---
 // Banked hours leave the employee's balance when HR records the cash-out.
 // The next generated payslip pays them at the overtime rate and links itself here.
@@ -928,6 +971,18 @@ export const advanceInstallmentRelations = relations(advanceInstallments, ({ one
   payslip: one(payslips, {
     fields: [advanceInstallments.payslipId],
     references: [payslips.id],
+  }),
+}));
+
+export const salaryPaymentsRelations = relations(salaryPayments, ({ one }) => ({
+  payroll: one(payrolls, { fields: [salaryPayments.payrollId], references: [payrolls.id] }),
+  employee: one(employees, { fields: [salaryPayments.employeeId], references: [employees.id] }),
+  wallet: one(wallets, { fields: [salaryPayments.walletId], references: [wallets.id] }),
+  recordedBy: one(user, { fields: [salaryPayments.recordedById], references: [user.id] }),
+  reversedBy: one(user, {
+    fields: [salaryPayments.reversedById],
+    references: [user.id],
+    relationName: "salaryPaymentReversedBy",
   }),
 }));
 
