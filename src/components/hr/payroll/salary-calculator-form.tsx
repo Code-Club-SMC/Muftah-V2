@@ -1712,7 +1712,7 @@ export const SalaryCalculatorForm = ({ employeeId, month, onSuccess, isOpen }: S
                         Draft Payslip Save
                     </p>
                     <p className="text-xs text-muted-foreground leading-relaxed">
-                        Saving this slip only updates the draft payroll record. No wallet is debited here. Finance settlement is selected later when the payroll is marked as paid.
+                        Saving this slip only updates the payslip. No money moves here. Pay it from the Payroll Register, where you choose the account.
                     </p>
 
                     <form.Field name="remarks">
