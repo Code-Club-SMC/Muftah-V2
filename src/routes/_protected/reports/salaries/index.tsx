@@ -108,11 +108,8 @@ function SalariesReportPage() {
                 "Current-period net",
                 "Arrears included",
                 "Net incl. arrears",
-                "Paid from",
-                "Paid",
-                "Due",
               ]}
-              alignRight={[2, 3, 4, 5, 6, 8, 9]}
+              alignRight={[2, 3, 4, 5, 6]}
             >
               {data.payslips.map((p) => (
                 <ReportTableRow key={p.payslipId}>
@@ -135,9 +132,6 @@ function SalariesReportPage() {
                       {formatReportMoney(v)}
                     </ReportCell>
                   ))}
-                  <ReportCell>{p.paidFrom ?? "Not paid"}</ReportCell>
-                  <ReportCell align="right" mono>{formatReportMoney(p.paid)}</ReportCell>
-                  <ReportCell align="right" mono>{formatReportMoney(p.due)}</ReportCell>
                 </ReportTableRow>
               ))}
               <ReportTableRow>
@@ -154,9 +148,6 @@ function SalariesReportPage() {
                     {formatReportMoney(v)}
                   </ReportCell>
                 ))}
-                <ReportCell />
-                <ReportCell align="right" bold mono>{formatReportMoney(data.summary.totalPaid)}</ReportCell>
-                <ReportCell align="right" bold mono>{formatReportMoney(data.summary.totalDue)}</ReportCell>
               </ReportTableRow>
             </ReportTable>
             <p className="mt-3 text-sm">
@@ -164,6 +155,36 @@ function SalariesReportPage() {
               Current-period net is gross minus deductions; arrears are shown
               separately for reference and must not be added to net again.
             </p>
+            <div className="mt-6">
+              <SectionTitle accentColor={ACCENT}>Payments</SectionTitle>
+              <ReportTable
+                headers={["Employee / code", "Payroll month", "Net incl. arrears", "Paid from", "Paid", "Due"]}
+                alignRight={[2, 4, 5]}
+              >
+                {data.payslips.map((p) => (
+                  <ReportTableRow key={p.payslipId}>
+                    <ReportCell bold>
+                      {p.employeeName}
+                      <br />
+                      {p.employeeCode}
+                    </ReportCell>
+                    <ReportCell>{p.payrollMonth ? formatReportMonth(p.payrollMonth) : "—"}</ReportCell>
+                    <ReportCell align="right" mono>{formatReportMoney(p.netSalary)}</ReportCell>
+                    <ReportCell>{p.paidFrom ?? "Not paid"}</ReportCell>
+                    <ReportCell align="right" mono>{formatReportMoney(p.paid)}</ReportCell>
+                    <ReportCell align="right" mono>{formatReportMoney(p.due)}</ReportCell>
+                  </ReportTableRow>
+                ))}
+                <ReportTableRow>
+                  <ReportCell bold>Total</ReportCell>
+                  <ReportCell />
+                  <ReportCell align="right" bold mono>{formatReportMoney(data.summary.totalNet)}</ReportCell>
+                  <ReportCell />
+                  <ReportCell align="right" bold mono>{formatReportMoney(data.summary.totalPaid)}</ReportCell>
+                  <ReportCell align="right" bold mono>{formatReportMoney(data.summary.totalDue)}</ReportCell>
+                </ReportTableRow>
+              </ReportTable>
+            </div>
             {data.payslips.map((p) => {
               const detail = salaryComponents(p);
               return (
