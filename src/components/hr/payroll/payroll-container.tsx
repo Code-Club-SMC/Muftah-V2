@@ -14,6 +14,15 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SalaryCalculatorSheet } from "@/components/hr/payroll/salary-calculator-sheet";
+import Big from "big.js";
+import { Checkbox } from "@/components/ui/checkbox";
+import { useWallets } from "@/hooks/finance/use-finance";
+import { useCanPaySalaries, usePaySalaries } from "@/hooks/hr/use-salary-payments";
+import { SalaryPaymentBadge } from "@/components/hr/payroll/salary-payment-badge";
+import { SalaryAccountDialog } from "@/components/hr/payroll/salary-account-dialog";
+import { formatRupees } from "@/lib/finance/expense-entry";
+import { reportDateKey } from "@/lib/report-dates";
+import type { RegisterSlipPayment } from "@/server-functions/hr/payroll/salary-payments.server";
 import { MonthSelector } from "@/components/ui/month-selector";
 import {
   Calculator,
@@ -71,6 +80,7 @@ export type EmployeePayrollRow = {
   joiningDate: string;
   basicSalary: string | null;
   hasPayslip: boolean;
+  payment: RegisterSlipPayment | null;
   payslipId: string;
   netSalary: string;
   status: string;
@@ -191,6 +201,12 @@ export function PayrollContainer() {
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
   const [isCalculatorOpen, setIsCalculatorOpen] = useState(false);
   const [globalFilter, setGlobalFilter] = useState("");
+  const canPay = useCanPaySalaries();
+  const { data: walletList = [] } = useWallets({ enabled: canPay });
+  const paySalaries = usePaySalaries();
+  const [selected, setSelected] = useState<Record<string, { name: string; amount: string }>>({});
+  const [payOpen, setPayOpen] = useState(false);
+  const todayKey = reportDateKey(new Date());
 
   const { data } = useSuspenseQuery({
     queryKey: ["payroll-dashboard", month, pageIndex],
@@ -214,6 +230,14 @@ export function PayrollContainer() {
   );
   const totalPages = Math.ceil(data.totalEmployees / limit);
 
+  const selectedLines = Object.entries(selected).map(([employeeId, v]) => ({ employeeId, ...v }));
+  const payLines = selectedLines.length > 0
+    ? selectedLines
+    : data.payableSlips.map((slip) => ({ employeeId: slip.employeeId, name: slip.name, amount: slip.due }));
+  const payTotal = payLines.reduce((sum, line) => sum.plus(line.amount), new Big(0)).toFixed(2);
+  const payLabel = selectedLines.length > 0 ? `Pay selected · ${formatRupees(payTotal)}` : `Pay all unpaid · ${formatRupees(payTotal)}`;
+  const isPayable = (row: EmployeePayrollRow) => !!row.payment && new Big(row.payment.due).gt(0);
+
   if (employees.length === 0 && pageIndex === 0 && !globalFilter) {
     return (
       <GenericEmpty
@@ -228,6 +252,28 @@ export function PayrollContainer() {
 
   const columns: ColumnDef<EmployeePayrollRow & { missedLastMonth: boolean }>[] = useMemo(
     () => [
+      ...(canPay ? [{
+        id: "select",
+        header: "",
+        cell: ({ row }: { row: { original: EmployeePayrollRow & { missedLastMonth: boolean } } }) => {
+          const emp = row.original;
+          if (!isPayable(emp)) return null;
+          return (
+            <Checkbox
+              aria-label={`Select ${emp.firstName} ${emp.lastName}`}
+              checked={!!selected[emp.id]}
+              onCheckedChange={(checked) =>
+                setSelected((current) => {
+                  const next = { ...current };
+                  if (checked) next[emp.id] = { name: `${emp.firstName} ${emp.lastName}`, amount: emp.payment!.due };
+                  else delete next[emp.id];
+                  return next;
+                })
+              }
+            />
+          );
+        },
+      } as ColumnDef<EmployeePayrollRow & { missedLastMonth: boolean }>] : []),
       {
         accessorKey: "employeeCode",
         header: "Code",
@@ -344,6 +390,9 @@ export function PayrollContainer() {
         accessorKey: "status",
         header: "Payslip",
         cell: ({ row }) => {
+          if (row.original.hasPayslip && row.original.payment) {
+            return <SalaryPaymentBadge payment={row.original.payment} />;
+          }
           if (row.original.hasPayslip) {
             return (
               <div className="flex flex-col gap-0.5">
@@ -474,7 +523,7 @@ export function PayrollContainer() {
         },
       },
     ],
-    [cycleEnd, cycleStart, now],
+    [cycleEnd, cycleStart, now, selected, canPay],
   );
 
   const table = useReactTable({
@@ -522,6 +571,7 @@ export function PayrollContainer() {
             onChange={(value) => {
               setMonth(value || activeMonth);
               setPageIndex(0);
+              setSelected({});
             }}
             className="rounded-none h-10"
           />
@@ -598,6 +648,11 @@ export function PayrollContainer() {
             </p>
           </div>
           <div className="flex items-center gap-3 w-full sm:w-auto">
+            {canPay && data.payrollId && payLines.length > 0 && (
+              <Button className="h-9 rounded-none whitespace-nowrap" onClick={() => setPayOpen(true)}>
+                {payLabel}
+              </Button>
+            )}
             <div className="relative w-full sm:w-[260px]">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
               <Input
@@ -612,6 +667,11 @@ export function PayrollContainer() {
             </div>
           </div>
         </div>
+        {data.paymentSummary.slipCount > 0 && (
+          <div className="px-6 py-2 border-b border-border text-xs text-muted-foreground">
+            Paid {data.paymentSummary.paidCount} of {data.paymentSummary.slipCount} · {formatRupees(data.paymentSummary.paidTotal)} paid · {formatRupees(data.paymentSummary.remainingTotal)} remaining
+          </div>
+        )}
 
         <div className="p-0 sm:p-4 overflow-x-auto">
           <Table>
@@ -642,7 +702,7 @@ export function PayrollContainer() {
                 ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={7} className="h-64">
+                  <TableCell colSpan={columns.length} className="h-64">
                     <GenericEmpty
                       icon={HREmptyIllustration}
                       title="No results found"
@@ -681,6 +741,28 @@ export function PayrollContainer() {
           </div>
         </div>
       </motion.div>
+
+      {payOpen && data.payrollId && (
+        <SalaryAccountDialog
+          open={payOpen}
+          onOpenChange={setPayOpen}
+          title="Pay salaries"
+          description="The total comes out of the account you choose and shows on the Ledger."
+          confirmLabel={`Pay ${formatRupees(payTotal)}`}
+          lines={payLines}
+          wallets={walletList}
+          direction="out"
+          payrollMonth={`${month}-01`}
+          todayKey={todayKey}
+          pending={paySalaries.isPending}
+          onConfirm={({ walletId, paymentDate }) =>
+            paySalaries.mutate(
+              { payrollId: data.payrollId!, employeeIds: payLines.map((line) => line.employeeId), walletId, paymentDate },
+              { onSuccess: () => { setPayOpen(false); setSelected({}); } },
+            )
+          }
+        />
+      )}
 
       <SalaryCalculatorSheet
         isOpen={isCalculatorOpen}
