@@ -36,6 +36,7 @@ import {
   lockAttendancePayrollWrites,
 } from "@/lib/attendance/device-import/payroll.server";
 import { isWorkingLeaveDate } from "@/lib/attendance/leave-policy";
+import { payrollAcceptsPayslipChanges } from "@/lib/hr/salary-payments";
 
 // ── Status Workflow Validation ────────────────────────────────────────────────
 type PayrollStatus = "draft" | "approved" | "paid";
@@ -352,8 +353,8 @@ export const generatePayslipsFn = createServerFn()
             where: eq(payrolls.id, payroll.id),
             columns: { status: true },
           });
-          // Approval may have committed between individual employee saves.
-          if (currentPayroll?.status !== "draft") return;
+          // The payroll may have been closed between individual employee saves.
+          if (!payrollAcceptsPayslipChanges(currentPayroll?.status)) return;
           for (const payslipId of generatedPayslipIds) {
             await reversePayslipSideEffects(tx, payslipId);
             await tx.delete(payslips).where(eq(payslips.id, payslipId));

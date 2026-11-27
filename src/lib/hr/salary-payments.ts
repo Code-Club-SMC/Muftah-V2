@@ -21,6 +21,16 @@ export const SLIP_PAYMENT_LABELS: Record<SlipPaymentStatus, string> = {
 };
 
 export const PAYROLL_LEDGER_SOURCE_PREFIX = "Payroll";
+
+/**
+ * There is no Approve step any more, so a payroll approved under the old process is still open.
+ * Only a payroll marked paid by the old whole-payroll payment stays closed: its money moved
+ * outside salary payments, so changing a slip there would not match the Ledger.
+ */
+export const LOCKED_PAYROLL_MESSAGE = "This payroll was paid under the old process, so its payslips can't be changed.";
+export function payrollAcceptsPayslipChanges(status: string | null | undefined): boolean {
+  return status === "draft" || status === "approved";
+}
 /** Written by the sales desk when a distributor pays a salesman's salary (stored as a salary advance). */
 export const DISTRIBUTOR_SALARY_REASON_PREFIX = "Salary paid directly by distributor";
 

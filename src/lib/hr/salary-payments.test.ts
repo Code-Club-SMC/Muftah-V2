@@ -4,6 +4,7 @@ import {
   isPayrollLedgerSource,
   overpaidRecoveryReason,
   paymentDateError,
+  payrollAcceptsPayslipChanges,
   payrollLedgerSource,
   registerPaymentSummary,
   salaryLedgerDescription,
@@ -76,5 +77,14 @@ describe("ledger text", () => {
   });
   it("explains a shortfall", () => {
     expect(shortfallMessage("Cash in Hand", "80000.00", "128424.00")).toBe("Cash in Hand has Rs 80,000. Needed Rs 1,28,424. Short by Rs 48,424.");
+  });
+});
+
+describe("payrollAcceptsPayslipChanges", () => {
+  it("keeps draft and old approved payrolls open, and old paid payrolls closed", () => {
+    expect(payrollAcceptsPayslipChanges("draft")).toBe(true);
+    expect(payrollAcceptsPayslipChanges("approved")).toBe(true);
+    expect(payrollAcceptsPayslipChanges("paid")).toBe(false);
+    expect(payrollAcceptsPayslipChanges(undefined)).toBe(false);
   });
 });

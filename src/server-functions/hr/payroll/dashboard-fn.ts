@@ -23,6 +23,7 @@ import {
   getPayrollPeriodForMonthKey,
 } from "@/lib/payroll-cycle";
 import { loadRegisterPayments, type RegisterSlipPayment } from "./salary-payments.server";
+import { LOCKED_PAYROLL_MESSAGE, payrollAcceptsPayslipChanges } from "@/lib/hr/salary-payments";
 
 // ── Helper ─────────────────────────────────────────────────────────────────
 
@@ -493,8 +494,8 @@ export const saveEmployeePayslipFn = createServerFn()
       where: eq(payrolls.month, payrollPeriod.month),
     });
 
-    if (payroll && payroll.status !== "draft") {
-      throw new Error("Only draft payrolls can be updated from the salary calculator.");
+    if (payroll && !payrollAcceptsPayslipChanges(payroll.status)) {
+      throw new Error(LOCKED_PAYROLL_MESSAGE);
     }
 
     if (!payroll) {

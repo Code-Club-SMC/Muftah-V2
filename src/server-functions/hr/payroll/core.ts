@@ -43,6 +43,7 @@ import {
 import { assertDeviceAttendanceResolved, lockAttendancePayrollWrites } from "@/lib/attendance/device-import/payroll.server";
 import { compCashOutAmount } from "@/lib/attendance/compensatory-bank";
 import { payrollAttendanceWith, toPayrollAttendanceRecord } from "./attendance-records";
+import { LOCKED_PAYROLL_MESSAGE, payrollAcceptsPayslipChanges } from "@/lib/hr/salary-payments";
 
 function getEffectiveSalaryDate(payrollPeriod: { startDate: string; endDate: string }): string {
   const todayStr = format(new Date(), "yyyy-MM-dd");
@@ -726,7 +727,8 @@ export async function generateEmployeePayslipCore(
   const savedPayslip = await db.transaction(async (tx) => {
     await lockAttendancePayrollWrites(tx);
     const currentPayroll = await tx.query.payrolls.findFirst({ where: eq(payrolls.id, payrollId) });
-    if (!currentPayroll || currentPayroll.status !== "draft") throw new Error("Only draft payrolls can save payslips.");
+    if (!currentPayroll) throw new Error("Payroll not found");
+    if (!payrollAcceptsPayslipChanges(currentPayroll.status)) throw new Error(LOCKED_PAYROLL_MESSAGE);
     await assertDeviceAttendanceResolved(tx, employeeId, payrollPeriod.startDate, earlyCutoffDate ?? payrollPeriod.endDate);
     const existingPayslip = await tx.query.payslips.findFirst({
       where: and(
