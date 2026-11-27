@@ -99,7 +99,7 @@ type Reader = Pick<typeof db, "select">;
 const putInLot = sql<string>`coalesce((
   select sum(moved.delta) from ${materialLotMovements} moved
   where moved.lot_id = ${purchaseRecords}.lot_id and moved.source_id = ${purchaseRecords}.id
-    and moved.source_type in ('purchase', 'purchase_edit')
+    and moved.source_type in ('purchase', 'purchase_edit', 'supplier_return', 'supplier_return_undo')
 ), ${purchaseRecords}.quantity)`;
 
 /**

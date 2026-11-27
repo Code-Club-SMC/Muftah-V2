@@ -110,7 +110,9 @@ export function checkOldestFirst(input: { name: string; unit: string; required: 
   return [];
 }
 
-const PURCHASE_SOURCES = new Set(["purchase", "purchase_edit", "purchase_delete"]);
+// A supplier return takes stock out of what its purchase brought in (and an undo puts it back),
+// so it changes "purchased" as well as the balance and never makes a purchase look used.
+const PURCHASE_SOURCES = new Set(["purchase", "purchase_edit", "purchase_delete", "supplier_return", "supplier_return_undo"]);
 
 // movements: every lot movement in the purchase's store, starting with the purchase's own
 // movement, oldest first. Newest purchases are treated as used last, so the purchase is

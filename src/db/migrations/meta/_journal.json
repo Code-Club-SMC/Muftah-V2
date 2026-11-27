@@ -253,6 +253,13 @@
       "when": 1795745765249,
       "tag": "0035_goofy_the_liberteens",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1795765109672,
+      "tag": "0036_powerful_guardian",
+      "breakpoints": true
     }
   ]
 }
