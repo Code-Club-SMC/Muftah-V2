@@ -1,7 +1,7 @@
 import { createId } from "@paralleldrive/cuid2";
 import Big from "big.js";
-import { and, eq, inArray, sql } from "drizzle-orm";
-import { chemicals, inventoryAuditLog, materialLotStock, packagingMaterials, purchaseRecords, supplierPayments, suppliers, transactions, wallets, warehouses } from "@/db";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { chemicals, inventoryAuditLog, materialLotStock, packagingMaterials, purchaseRecords, supplierPayments, suppliers, transactions, user, wallets, warehouses } from "@/db";
 import { creditNoteCounters } from "@/db/schemas/sales-erp-schema";
 import { supplierCreditMovements, supplierReturns } from "@/db/schemas/supplier-schema";
 import { formatRupees } from "@/lib/finance/expense-entry";
@@ -11,7 +11,10 @@ import { packagingUnit } from "@/lib/inventory/material-units";
 import { purchaseStockLeft } from "@/lib/suppliers/purchase-rows.server";
 import {
   ACTIVE_SUPPLIER_RETURN_STATUSES,
+  QUEUE_STATUSES,
   SUPPLIER_CREDIT_METHOD,
+  type SupplierReturnQueue,
+  type SupplierReturnStatus,
   formatDebitNoteNumber,
   formatSupplierReturnNumber,
   maxReturnable,
@@ -436,4 +439,132 @@ export async function restoreCreditUsedOnPurchase(tx: Tx, purchaseId: string, ac
     });
   }
   return total.toFixed(2);
+}
+
+// ---------------------------------------------------------------------------
+// Reads
+// ---------------------------------------------------------------------------
+
+export type SupplierReturnRow = {
+  id: string;
+  returnNumber: string;
+  status: SupplierReturnStatus;
+  requestedAt: Date;
+  dispatchedAt: Date | null;
+  completedAt: Date | null;
+  materialName: string;
+  unit: string;
+  warehouseName: string;
+  quantity: string;
+  unitCost: string;
+  totalAmount: string;
+  reason: string;
+  notes: string | null;
+  debitNoteNumber: string | null;
+  appliedToPurchaseAmount: string;
+  refundAmount: string;
+  refundWalletName: string | null;
+  supplierCreditAmount: string;
+  purchaseInvoiceNumber: string | null;
+  purchaseDate: Date;
+  cancelReason: string | null;
+  voidReason: string | null;
+  requestedByName: string | null;
+};
+
+const rowSelect = {
+  id: supplierReturns.id,
+  returnNumber: supplierReturns.returnNumber,
+  status: supplierReturns.status,
+  requestedAt: supplierReturns.requestedAt,
+  dispatchedAt: supplierReturns.dispatchedAt,
+  completedAt: supplierReturns.completedAt,
+  chemicalName: chemicals.name,
+  chemicalUnit: chemicals.unit,
+  packagingName: packagingMaterials.name,
+  packagingMeasuredInKg: packagingMaterials.measuredInKg,
+  warehouseName: warehouses.name,
+  quantity: supplierReturns.quantity,
+  unitCost: supplierReturns.unitCost,
+  totalAmount: supplierReturns.totalAmount,
+  reason: supplierReturns.reason,
+  notes: supplierReturns.notes,
+  debitNoteNumber: supplierReturns.debitNoteNumber,
+  appliedToPurchaseAmount: supplierReturns.appliedToPurchaseAmount,
+  refundAmount: supplierReturns.refundAmount,
+  refundWalletName: wallets.name,
+  supplierCreditAmount: supplierReturns.supplierCreditAmount,
+  purchaseInvoiceNumber: purchaseRecords.invoiceNumber,
+  purchaseDate: purchaseRecords.purchaseDate,
+  cancelReason: supplierReturns.cancelReason,
+  voidReason: supplierReturns.voidReason,
+  requestedByName: user.name,
+};
+
+function baseQuery(tx: Tx) {
+  return tx
+    .select(rowSelect)
+    .from(supplierReturns)
+    .innerJoin(purchaseRecords, eq(purchaseRecords.id, supplierReturns.purchaseId))
+    .innerJoin(warehouses, eq(warehouses.id, supplierReturns.warehouseId))
+    .leftJoin(chemicals, eq(chemicals.id, supplierReturns.chemicalId))
+    .leftJoin(packagingMaterials, eq(packagingMaterials.id, supplierReturns.packagingMaterialId))
+    .leftJoin(wallets, eq(wallets.id, supplierReturns.refundWalletId))
+    .leftJoin(user, eq(user.id, supplierReturns.requestedById));
+}
+
+type RawReturnRow = Awaited<ReturnType<typeof baseQuery>>[number];
+
+function toRow(r: RawReturnRow): SupplierReturnRow {
+  const { chemicalName, chemicalUnit, packagingName, packagingMeasuredInKg, ...rest } = r;
+  return {
+    ...rest,
+    status: r.status as SupplierReturnStatus,
+    materialName: chemicalName ?? packagingName ?? "Material",
+    unit: chemicalName ? (chemicalUnit ?? "kg") : packagingUnit({ measuredInKg: packagingMeasuredInKg }),
+    quantity: new Big(r.quantity).toFixed(3),
+    unitCost: new Big(r.unitCost).toFixed(2),
+    totalAmount: new Big(r.totalAmount).toFixed(2),
+    appliedToPurchaseAmount: new Big(r.appliedToPurchaseAmount).toFixed(2),
+    refundAmount: new Big(r.refundAmount).toFixed(2),
+    supplierCreditAmount: new Big(r.supplierCreditAmount).toFixed(2),
+  };
+}
+
+export async function listSupplierReturns(
+  tx: Tx,
+  input: { supplierId: string; queue: SupplierReturnQueue },
+): Promise<{ rows: SupplierReturnRow[]; counts: Record<SupplierReturnQueue, number> }> {
+  const rows = await baseQuery(tx)
+    .where(and(eq(supplierReturns.supplierId, input.supplierId), inArray(supplierReturns.status, QUEUE_STATUSES[input.queue])))
+    .orderBy(desc(supplierReturns.requestedAt), desc(supplierReturns.id))
+    .limit(200);
+  const countRows = await tx
+    .select({ status: supplierReturns.status, n: sql<number>`count(*)::int` })
+    .from(supplierReturns)
+    .where(eq(supplierReturns.supplierId, input.supplierId))
+    .groupBy(supplierReturns.status);
+  const counts: Record<SupplierReturnQueue, number> = { to_dispatch: 0, dispatched: 0, done: 0 };
+  const queues = Object.keys(QUEUE_STATUSES) as SupplierReturnQueue[];
+  for (const c of countRows) {
+    const queue = queues.find((q) => QUEUE_STATUSES[q].includes(c.status as SupplierReturnStatus));
+    if (queue) counts[queue] += Number(c.n);
+  }
+  return { rows: rows.map(toRow), counts };
+}
+
+export async function getSupplierReturn(tx: Tx, returnId: string) {
+  const [row] = await baseQuery(tx).where(eq(supplierReturns.id, returnId));
+  if (!row) throw new Error("Supplier return not found");
+  const [supplier] = await tx
+    .select({ name: suppliers.supplierName, phone: suppliers.phone, address: suppliers.address })
+    .from(suppliers)
+    .innerJoin(supplierReturns, eq(supplierReturns.supplierId, suppliers.id))
+    .where(eq(supplierReturns.id, returnId));
+  return {
+    ...toRow(row),
+    supplierName: supplier?.name ?? "Supplier",
+    supplierPhone: supplier?.phone ?? null,
+    supplierAddress: supplier?.address ?? null,
+  };
 }

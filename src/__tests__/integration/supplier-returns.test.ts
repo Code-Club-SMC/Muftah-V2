@@ -5,7 +5,7 @@ import { chemicals, materialStock, purchaseRecords, supplierPayments, suppliers,
 import { supplierCreditMovements, supplierReturns } from "@/db/schemas/supplier-schema";
 import { addStockFn } from "@/server-functions/inventory/stock/add-stock-fn";
 import type { Tx } from "@/lib/inventory/material-lots.server";
-import { applySupplierCredit, assertPurchaseHasNoActiveReturn, cancelSupplierReturn, completeSupplierReturn, dispatchSupplierReturn, previewDebitNote, requestSupplierReturn, restoreCreditUsedOnPurchase, returnableForPurchase, supplierCreditBalance, voidSupplierReturn } from "@/lib/suppliers/supplier-returns.server";
+import { applySupplierCredit, assertPurchaseHasNoActiveReturn, cancelSupplierReturn, completeSupplierReturn, dispatchSupplierReturn, listSupplierReturns, previewDebitNote, requestSupplierReturn, restoreCreditUsedOnPurchase, returnableForPurchase, supplierCreditBalance, voidSupplierReturn } from "@/lib/suppliers/supplier-returns.server";
 import { withRollback } from "./with-rollback";
 
 vi.mock("@tanstack/react-start", () => ({ createServerFn: () => {
@@ -244,5 +244,19 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("supplier credit and purchase gu
     await applySupplierCredit(tx, { purchaseId: second.id, amount: "2000" }, actor.id);
     expect(await restoreCreditUsedOnPurchase(tx, second.id, actor.id)).toBe("2000.00");
     expect(await supplierCreditBalance(tx, supplier.id)).toBe("3000.00");
+  }));
+});
+
+describe.skipIf(!process.env.TEST_DATABASE_URL)("supplier returns: list", () => {
+  it("lists by work queue with counts", () => withRollback(async (tx) => {
+    const { actor, supplier, buy } = await supplierReturnFixture(tx);
+    const purchase = await buy("100", "50000");
+    const a = await requestSupplierReturn(tx, { purchaseId: purchase.id, quantity: "5", reason: "Wet" }, actor.id);
+    const b = await requestSupplierReturn(tx, { purchaseId: purchase.id, quantity: "5", reason: "Torn" }, actor.id);
+    await dispatchSupplierReturn(tx, { returnId: b.id }, actor.id);
+    const { rows, counts } = await listSupplierReturns(tx, { supplierId: supplier.id, queue: "to_dispatch" });
+    expect(rows.map((r) => r.id)).toEqual([a.id]);
+    expect(rows[0]).toMatchObject({ quantity: "5.000", totalAmount: "2500.00", unit: "kg", status: "requested", requestedByName: "Buyer" });
+    expect(counts).toEqual({ to_dispatch: 1, dispatched: 1, done: 0 });
   }));
 });
