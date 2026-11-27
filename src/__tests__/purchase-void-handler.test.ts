@@ -20,6 +20,7 @@ vi.mock("@/lib/middlewares", () => ({ requireSuppliersManageMiddleware: {}, requ
 vi.mock("@/lib/activity-logger.server", () => ({ logActivityQuiet: mocks.log }));
 vi.mock("@/lib/inventory/by-products.server", () => ({ assertEarnedCoversSold: vi.fn(), loadItemByProducts: vi.fn() }));
 vi.mock("@/lib/inventory/material-price.server", () => ({ lockMaterialEverywhere: mocks.lock, followEditedPurchase: vi.fn(), revertRemovedPurchase: vi.fn(), repriceUnusedStock: vi.fn(), lotForPurchase: vi.fn() }));
+vi.mock("@/lib/suppliers/supplier-returns.server", () => ({ assertPurchaseHasNoActiveReturn: vi.fn(), restoreCreditUsedOnPurchase: vi.fn(async () => "0.00") }));
 vi.mock("@/lib/inventory/material-lots.server", () => ({ lockMaterialStock: mocks.lock, purchaseIsUntouched: mocks.untouched, moveLotStock: mocks.move, findOrCreateLot: vi.fn(), cleanupOrphanedMaterial: vi.fn() }));
 vi.mock("@tanstack/react-start", () => ({ createServerFn: () => {
   let validator: { parse(data: unknown): unknown };

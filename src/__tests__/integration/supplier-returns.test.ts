@@ -1,11 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { describe, expect, it, vi } from "vitest";
-import { chemicals, materialStock, purchaseRecords, suppliers, user, wallets, warehouses } from "@/db";
+import { chemicals, materialStock, purchaseRecords, supplierPayments, suppliers, user, wallets, warehouses } from "@/db";
 import { supplierCreditMovements, supplierReturns } from "@/db/schemas/supplier-schema";
 import { addStockFn } from "@/server-functions/inventory/stock/add-stock-fn";
 import type { Tx } from "@/lib/inventory/material-lots.server";
-import { cancelSupplierReturn, completeSupplierReturn, dispatchSupplierReturn, previewDebitNote, requestSupplierReturn, returnableForPurchase, supplierCreditBalance, voidSupplierReturn } from "@/lib/suppliers/supplier-returns.server";
+import { applySupplierCredit, assertPurchaseHasNoActiveReturn, cancelSupplierReturn, completeSupplierReturn, dispatchSupplierReturn, previewDebitNote, requestSupplierReturn, restoreCreditUsedOnPurchase, returnableForPurchase, supplierCreditBalance, voidSupplierReturn } from "@/lib/suppliers/supplier-returns.server";
 import { withRollback } from "./with-rollback";
 
 vi.mock("@tanstack/react-start", () => ({ createServerFn: () => {
@@ -30,10 +30,15 @@ export async function supplierReturnFixture(tx: Tx) {
   const [supplier] = await tx.insert(suppliers).values({ supplierName: `${id}-Ali Traders` }).returning();
   const [soda] = await tx.insert(chemicals).values({ name: `${id} Soda Ash`, unit: "kg", costPerUnit: "500" }).returning();
   const context = { session: { user: actor }, authContext: { session: { user: actor } } };
+  // Rows made in one transaction share created_at, so pick the purchase this call added.
+  const bought = new Set<string>();
   const buy = async (quantity: string, cost: string) => {
     await addStockFn({ data: { warehouseId: floor.id, materialType: "chemical", materialId: soda.id, quantity, supplierId: supplier.id, cost, notes: "", paymentMethod: "pay_later", walletId: "", paymentStatus: "unpaid", amountPaid: "", transactionId: "", bankName: "" }, context } as never);
     const rows = await tx.select().from(purchaseRecords).where(eq(purchaseRecords.chemicalId, soda.id));
-    return rows.sort((a, b) => +b.createdAt - +a.createdAt)[0];
+    const added = rows.find((row) => !bought.has(row.id));
+    if (!added) throw new Error("Purchase was not recorded");
+    bought.add(added.id);
+    return added;
   };
   const stock = async () => {
     const [row] = await tx.select().from(materialStock).where(and(eq(materialStock.warehouseId, floor.id), eq(materialStock.chemicalId, soda.id)));
@@ -200,5 +205,44 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("supplier returns: void", () => 
     const purchase = await f.buy("100", "50000");
     const created = await requestSupplierReturn(tx, { purchaseId: purchase.id, quantity: "6", reason: "Wet" }, f.actor.id);
     await expect(voidSupplierReturn(tx, { returnId: created.id, reason: "x" }, f.actor.id)).rejects.toThrow("Only a completed return");
+  }));
+});
+
+describe.skipIf(!process.env.TEST_DATABASE_URL)("supplier credit and purchase guards", () => {
+  async function withCredit(tx: Tx) {
+    const f = await supplierReturnFixture(tx);
+    const first = await f.buy("100", "50000");
+    await tx.update(purchaseRecords).set({ paidAmount: "50000" }).where(eq(purchaseRecords.id, first.id));
+    const created = await requestSupplierReturn(tx, { purchaseId: first.id, quantity: "6", reason: "Wet" }, f.actor.id);
+    await dispatchSupplierReturn(tx, { returnId: created.id }, f.actor.id);
+    await completeSupplierReturn(tx, { returnId: created.id }, f.actor.id); // credit 3000
+    const second = await f.buy("40", "21000"); // new price lot, owes 21000
+    return { ...f, first, second, created };
+  }
+
+  it("pays part of a later purchase from supplier credit without touching any account", () => withRollback(async (tx) => {
+    const { actor, supplier, second } = await withCredit(tx);
+    const result = await applySupplierCredit(tx, { purchaseId: second.id, amount: "2000" }, actor.id);
+    expect(result.balanceAfter).toBe("1000.00");
+    const [p] = await tx.select().from(purchaseRecords).where(eq(purchaseRecords.id, second.id));
+    expect(p.paidAmount).toBe("2000.00");
+    const [payment] = await tx.select().from(supplierPayments).where(eq(supplierPayments.id, result.paymentId));
+    expect(payment).toMatchObject({ method: "supplier_credit", walletId: null, supplierId: supplier.id });
+  }));
+
+  it("refuses more than the credit or more than is owed", () => withRollback(async (tx) => {
+    const { actor, second } = await withCredit(tx);
+    await expect(applySupplierCredit(tx, { purchaseId: second.id, amount: "3000.01" }, actor.id)).rejects.toThrow("Supplier credit is only");
+    await tx.update(purchaseRecords).set({ paidAmount: "20000" }).where(eq(purchaseRecords.id, second.id));
+    await expect(applySupplierCredit(tx, { purchaseId: second.id, amount: "1500" }, actor.id)).rejects.toThrow("Only Rs 1,000 is still owed");
+  }));
+
+  it("blocks edit and delete while a return is active, and gives credit back on delete", () => withRollback(async (tx) => {
+    const { actor, supplier, first, second } = await withCredit(tx);
+    await expect(assertPurchaseHasNoActiveReturn(tx, first.id)).rejects.toThrow(/This purchase has supplier return SR-\d+\. Cancel or void the return first\./);
+    await expect(assertPurchaseHasNoActiveReturn(tx, second.id)).resolves.toBeUndefined();
+    await applySupplierCredit(tx, { purchaseId: second.id, amount: "2000" }, actor.id);
+    expect(await restoreCreditUsedOnPurchase(tx, second.id, actor.id)).toBe("2000.00");
+    expect(await supplierCreditBalance(tx, supplier.id)).toBe("3000.00");
   }));
 });

@@ -1,7 +1,7 @@
 import { createId } from "@paralleldrive/cuid2";
 import Big from "big.js";
-import { and, eq, sql } from "drizzle-orm";
-import { chemicals, inventoryAuditLog, materialLotStock, packagingMaterials, purchaseRecords, suppliers, transactions, wallets, warehouses } from "@/db";
+import { and, eq, inArray, sql } from "drizzle-orm";
+import { chemicals, inventoryAuditLog, materialLotStock, packagingMaterials, purchaseRecords, supplierPayments, suppliers, transactions, wallets, warehouses } from "@/db";
 import { creditNoteCounters } from "@/db/schemas/sales-erp-schema";
 import { supplierCreditMovements, supplierReturns } from "@/db/schemas/supplier-schema";
 import { formatRupees } from "@/lib/finance/expense-entry";
@@ -10,6 +10,8 @@ import { lockMaterialStock, moveLotStock, type Tx } from "@/lib/inventory/materi
 import { packagingUnit } from "@/lib/inventory/material-units";
 import { purchaseStockLeft } from "@/lib/suppliers/purchase-rows.server";
 import {
+  ACTIVE_SUPPLIER_RETURN_STATUSES,
+  SUPPLIER_CREDIT_METHOD,
   formatDebitNoteNumber,
   formatSupplierReturnNumber,
   maxReturnable,
@@ -373,4 +375,65 @@ export async function voidSupplierReturn(tx: Tx, input: { returnId: string; reas
     .where(eq(supplierReturns.id, row.id));
 
   return { debitNoteNumber: row.debitNoteNumber!, refundTakenBack: refund.toFixed(2), walletName };
+}
+
+const MONEY = /^\d+(\.\d{1,2})?$/;
+
+export async function applySupplierCredit(tx: Tx, input: { purchaseId: string; amount: string }, actorId: string) {
+  if (!MONEY.test(input.amount) || new Big(input.amount).lte(0)) throw new Error("Enter an amount above 0 with at most 2 decimals");
+  const amount = new Big(input.amount);
+  const purchase = await loadPurchase(tx, input.purchaseId, true);
+  if (purchase.voidedAt) throw new Error("Purchase is already voided");
+  // Serialise credit use per supplier: lock the supplier row.
+  await tx.select({ id: suppliers.id }).from(suppliers).where(eq(suppliers.id, purchase.supplierId)).for("update");
+  const balance = new Big(await supplierCreditBalance(tx, purchase.supplierId));
+  if (amount.gt(balance)) throw new Error(`Supplier credit is only ${formatRupees(balance.toFixed(2))}`);
+  const owed = purchaseOwed(purchase);
+  if (amount.gt(owed)) throw new Error(`Only ${formatRupees(owed.toFixed(2))} is still owed on this purchase`);
+
+  await tx.update(purchaseRecords)
+    .set({ paidAmount: sql`${purchaseRecords.paidAmount} + ${amount.toFixed(2)}`, updatedAt: new Date() })
+    .where(eq(purchaseRecords.id, purchase.id));
+  const [payment] = await tx.insert(supplierPayments).values({
+    supplierId: purchase.supplierId,
+    purchaseId: purchase.id,
+    amount: amount.toFixed(2),
+    method: SUPPLIER_CREDIT_METHOD,
+    walletId: null,
+    reference: "Supplier credit",
+  }).returning({ id: supplierPayments.id });
+  await tx.insert(supplierCreditMovements).values({
+    supplierId: purchase.supplierId,
+    kind: "used",
+    amount: amount.times(-1).toFixed(2),
+    purchaseId: purchase.id,
+    supplierPaymentId: payment.id,
+    performedById: actorId,
+  });
+  return { paymentId: payment.id, balanceAfter: balance.minus(amount).toFixed(2) };
+}
+
+export async function assertPurchaseHasNoActiveReturn(tx: Tx, purchaseId: string) {
+  const [active] = await tx.select({ returnNumber: supplierReturns.returnNumber }).from(supplierReturns)
+    .where(and(eq(supplierReturns.purchaseId, purchaseId), inArray(supplierReturns.status, [...ACTIVE_SUPPLIER_RETURN_STATUSES])))
+    .limit(1);
+  if (active) throw new Error(`This purchase has supplier return ${active.returnNumber}. Cancel or void the return first.`);
+}
+
+/** Before a purchase is deleted: credit spent on it goes back to the supplier. */
+export async function restoreCreditUsedOnPurchase(tx: Tx, purchaseId: string, actorId: string) {
+  const payments = await tx.select({ amount: supplierPayments.amount, supplierId: supplierPayments.supplierId }).from(supplierPayments)
+    .where(and(eq(supplierPayments.purchaseId, purchaseId), eq(supplierPayments.method, SUPPLIER_CREDIT_METHOD)));
+  const total = payments.reduce((sum, p) => sum.plus(p.amount), new Big(0));
+  if (total.gt(0)) {
+    await tx.insert(supplierCreditMovements).values({
+      supplierId: payments[0].supplierId,
+      kind: "use_reversed",
+      amount: total.toFixed(2),
+      purchaseId,
+      note: "Purchase deleted; supplier credit given back",
+      performedById: actorId,
+    });
+  }
+  return total.toFixed(2);
 }

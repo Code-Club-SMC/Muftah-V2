@@ -24,6 +24,7 @@ import { lockMaterialEverywhere, revertRemovedPurchase } from "@/lib/inventory/m
 import { planPurchaseRefund } from "@/lib/suppliers/purchase-refund";
 import { assertEarnedCoversSold, loadItemByProducts } from "@/lib/inventory/by-products.server";
 import { loadPurchasePayments } from "@/lib/suppliers/purchase-refund.server";
+import { assertPurchaseHasNoActiveReturn, restoreCreditUsedOnPurchase } from "@/lib/suppliers/supplier-returns.server";
 import { z } from "zod";
 import { packagingUnit } from "@/lib/inventory/material-units";
 
@@ -63,6 +64,7 @@ export const deletePurchaseRecordFn = createServerFn({ method: "POST" })
       if (!purchase) {
         throw new Error("Purchase record not found");
       }
+      await assertPurchaseHasNoActiveReturn(tx, purchase.id);
 
       const isAlreadyVoided = Boolean(purchase.voidedAt);
       const material = purchase.materialType === "chemical"
@@ -252,6 +254,7 @@ export const deletePurchaseRecordFn = createServerFn({ method: "POST" })
         .from(supplierPayments)
         .where(eq(supplierPayments.purchaseId, purchase.id));
 
+      await restoreCreditUsedOnPurchase(tx, purchase.id, userId);
       await tx
         .delete(supplierPayments)
         .where(eq(supplierPayments.purchaseId, purchase.id));

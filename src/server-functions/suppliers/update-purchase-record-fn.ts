@@ -10,6 +10,7 @@ import { lotPrice, lotQuantity, PURCHASE_LOCKED_MESSAGE } from "@/lib/inventory/
 import { moveLotStock, purchaseIsUntouched } from "@/lib/inventory/material-lots.server";
 import { followEditedPurchase, lockMaterialEverywhere, lotForPurchase, repriceUnusedStock } from "@/lib/inventory/material-price.server";
 import { byProductColumns } from "@/lib/inventory/by-products";
+import { assertPurchaseHasNoActiveReturn } from "@/lib/suppliers/supplier-returns.server";
 import { assertEarnedCoversSold, loadItemByProducts } from "@/lib/inventory/by-products.server";
 
 import { chemicals, packagingMaterials } from "@/db/schemas/inventory-schema";
@@ -104,6 +105,7 @@ export const updatePurchaseRecordFn = createServerFn({ method: "POST" })
         throw new Error("Purchase record not found");
       }
       if (existingRecord.voidedAt) throw new Error("Purchase is already voided");
+      await assertPurchaseHasNoActiveReturn(tx, existingRecord.id);
       const minimumStock = data.minStock === undefined ? undefined
         : (existingRecord.materialType === "chemical" ? chemicalStockThresholdSchema : packagingStockThresholdSchema).parse(data.minStock);
 
@@ -234,7 +236,7 @@ export const updatePurchaseRecordFn = createServerFn({ method: "POST" })
           data.paymentStatus === "paid"
             ? parseFloat(data.cost ?? existingRecord.cost)
             : parseFloat(data.paidAmount ?? "0");
-        const alreadyPaid = parseFloat(existingRecord.paidAmount || "0");
+        const alreadyPaid = parseFloat(existingRecord.paidAmount || "0") + parseFloat(existingRecord.returnedAmount || "0");
         const additionalPayment = targetPaidAmount - alreadyPaid;
 
         if (additionalPayment > 0) {
