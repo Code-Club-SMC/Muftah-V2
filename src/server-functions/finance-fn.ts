@@ -18,7 +18,8 @@ import type {
   ExpenseListResponse,
   FinanceDynamicFieldType,
 } from "@/lib/types/finance-types";
-import { and, count, eq, ilike, inArray, isNull, SQL, sql, gte, lte } from "drizzle-orm";
+import { and, count, eq, ilike, inArray, isNull, like, SQL, sql, gte, lte } from "drizzle-orm";
+import { PAYROLL_LEDGER_SOURCE_PREFIX } from "@/lib/hr/salary-payments";
 import { parseISO, isValid } from "date-fns";
 import { z } from "zod";
 import { createId } from "@paralleldrive/cuid2";
@@ -731,16 +732,24 @@ export const getTransactionsFn = createServerFn()
 
     const conditions: SQL[] = [];
     if (data.walletId) conditions.push(eq(transactions.walletId, data.walletId));
-    if (data.source) conditions.push(eq(transactions.source, data.source));
+    if (data.source) {
+      // Payroll lines carry the month ("Payroll - Nov 2026"); the filter's "Payroll" matches them all.
+      conditions.push(
+        data.source === PAYROLL_LEDGER_SOURCE_PREFIX
+          ? like(transactions.source, `${PAYROLL_LEDGER_SOURCE_PREFIX} - %`)
+          : eq(transactions.source, data.source),
+      );
+    }
     if (data.type) conditions.push(eq(transactions.type, data.type));
-    
+
+    // Lines are dated by when the money really moved (a back-dated salary shows on its payment day).
     if (data.dateFrom) {
       const from = parseISO(data.dateFrom);
-      if (isValid(from)) conditions.push(gte(transactions.createdAt, from));
+      if (isValid(from)) conditions.push(gte(transactions.effectiveDate, from));
     }
     if (data.dateTo) {
       const to = parseISO(data.dateTo);
-      if (isValid(to)) conditions.push(lte(transactions.createdAt, to));
+      if (isValid(to)) conditions.push(lte(transactions.effectiveDate, to));
     }
 
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
@@ -756,7 +765,7 @@ export const getTransactionsFn = createServerFn()
         wallet: { columns: { id: true, name: true, type: true } },
         performer: { columns: { id: true, name: true } },
       },
-      orderBy: (t, { desc }) => [desc(t.createdAt)],
+      orderBy: (t, { desc }) => [desc(t.effectiveDate), desc(t.createdAt)],
       limit: data.limit,
       offset,
     });

@@ -373,12 +373,17 @@ export const LedgerContainer = () => {
                       </TableCell>
                       <TableCell className="py-2.5">
                         <div className="flex flex-col">
-                          <span className="text-sm font-bold tabular-nums text-foreground">{format(new Date(txn.createdAt), "dd MMM yyyy")}</span>
-                          <span className="text-[10px] text-muted-foreground tabular-nums uppercase  font-semibold">{format(new Date(txn.createdAt), "hh:mm a")}</span>
+                          <span className="text-sm font-bold tabular-nums text-foreground">{format(new Date(txn.effectiveDate), "dd MMM yyyy")}</span>
+                          <span className="text-[10px] text-muted-foreground tabular-nums uppercase  font-semibold">
+                            Entered {format(new Date(txn.createdAt), "dd MMM, hh:mm a")}
+                          </span>
                         </div>
                       </TableCell>
                       <TableCell className="py-2.5">
-                        <span className="font-bold text-sm text-foreground">{txn.source}</span>
+                        <div className="flex flex-col">
+                          <span className="font-bold text-sm text-foreground">{txn.source}</span>
+                          {txn.description && <span className="text-xs text-muted-foreground">{txn.description}</span>}
+                        </div>
                       </TableCell>
                       <TableCell className="py-2.5">
                         <div className="flex items-center gap-2">
