@@ -1,11 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { describe, expect, it, vi } from "vitest";
-import { chemicals, materialStock, purchaseRecords, suppliers, user, warehouses } from "@/db";
+import { chemicals, materialStock, purchaseRecords, suppliers, user, wallets, warehouses } from "@/db";
 import { supplierReturns } from "@/db/schemas/supplier-schema";
 import { addStockFn } from "@/server-functions/inventory/stock/add-stock-fn";
 import type { Tx } from "@/lib/inventory/material-lots.server";
-import { cancelSupplierReturn, dispatchSupplierReturn, requestSupplierReturn, returnableForPurchase } from "@/lib/suppliers/supplier-returns.server";
+import { cancelSupplierReturn, completeSupplierReturn, dispatchSupplierReturn, previewDebitNote, requestSupplierReturn, returnableForPurchase, supplierCreditBalance } from "@/lib/suppliers/supplier-returns.server";
 import { withRollback } from "./with-rollback";
 
 vi.mock("@tanstack/react-start", () => ({ createServerFn: () => {
@@ -113,5 +113,49 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("supplier returns: dispatch", ()
     await tx.update(supplierReturns).set({ quantity: "5.000", totalAmount: "2500.00" }).where(eq(supplierReturns.id, created.id));
     await dispatchSupplierReturn(tx, { returnId: created.id }, actor.id);
     await expect(dispatchSupplierReturn(tx, { returnId: created.id }, actor.id)).rejects.toThrow("already dispatched");
+  }));
+});
+
+describe.skipIf(!process.env.TEST_DATABASE_URL)("supplier returns: debit note", () => {
+  async function dispatched(tx: Tx, paid: string) {
+    const f = await supplierReturnFixture(tx);
+    const purchase = await f.buy("100", "50000");
+    if (paid !== "0") await tx.update(purchaseRecords).set({ paidAmount: paid }).where(eq(purchaseRecords.id, purchase.id));
+    const created = await requestSupplierReturn(tx, { purchaseId: purchase.id, quantity: "10", reason: "Wet" }, f.actor.id);
+    await dispatchSupplierReturn(tx, { returnId: created.id }, f.actor.id);
+    return { ...f, purchase, created };
+  }
+
+  it("lowers what we owe on an unpaid purchase", () => withRollback(async (tx) => {
+    const { actor, purchase, created } = await dispatched(tx, "0");
+    expect(await previewDebitNote(tx, created.id)).toMatchObject({ value: "5000.00", owedBefore: "50000.00", applied: "5000.00", leftover: "0.00" });
+    const done = await completeSupplierReturn(tx, { returnId: created.id }, actor.id);
+    expect(done.debitNoteNumber).toMatch(/^DN-\d{4,}$/);
+    expect(done).toMatchObject({ applied: "5000.00", refund: "0.00", credit: "0.00" });
+    const [p] = await tx.select().from(purchaseRecords).where(eq(purchaseRecords.id, purchase.id));
+    expect(p.returnedAmount).toBe("5000.00");
+  }));
+
+  it("on a paid purchase, splits the leftover into cash back and supplier credit", () => withRollback(async (tx) => {
+    const { actor, supplier, created } = await dispatched(tx, "50000");
+    const [cash] = await tx.insert(wallets).values({ id: `w-${created.id}`, name: "Cash in Hand", type: "cash", balance: "1000" }).returning();
+    const done = await completeSupplierReturn(tx, { returnId: created.id, cashBack: "2000", refundWalletId: cash.id }, actor.id);
+    expect(done).toMatchObject({ applied: "0.00", refund: "2000.00", credit: "3000.00" });
+    const [w] = await tx.select().from(wallets).where(eq(wallets.id, cash.id));
+    expect(w.balance).toBe("3000.00");
+    expect(await supplierCreditBalance(tx, supplier.id)).toBe("3000.00");
+  }));
+
+  it("needs an account for cash back and refuses more than the leftover", () => withRollback(async (tx) => {
+    const { actor, created } = await dispatched(tx, "48000");
+    await expect(completeSupplierReturn(tx, { returnId: created.id, cashBack: "100" }, actor.id)).rejects.toThrow("Pick the account");
+    await expect(completeSupplierReturn(tx, { returnId: created.id, cashBack: "3000.01", refundWalletId: "x" }, actor.id)).rejects.toThrow("Cash back can't be more than");
+  }));
+
+  it("only completes dispatched returns", () => withRollback(async (tx) => {
+    const { actor, buy } = await supplierReturnFixture(tx);
+    const purchase = await buy("100", "50000");
+    const created = await requestSupplierReturn(tx, { purchaseId: purchase.id, quantity: "10", reason: "Wet" }, actor.id);
+    await expect(completeSupplierReturn(tx, { returnId: created.id }, actor.id)).rejects.toThrow("Mark it as dispatched first");
   }));
 });

@@ -1,8 +1,9 @@
+import { createId } from "@paralleldrive/cuid2";
 import Big from "big.js";
 import { and, eq, sql } from "drizzle-orm";
-import { chemicals, inventoryAuditLog, materialLotStock, packagingMaterials, purchaseRecords, suppliers, warehouses } from "@/db";
+import { chemicals, inventoryAuditLog, materialLotStock, packagingMaterials, purchaseRecords, suppliers, transactions, wallets, warehouses } from "@/db";
 import { creditNoteCounters } from "@/db/schemas/sales-erp-schema";
-import { supplierReturns } from "@/db/schemas/supplier-schema";
+import { supplierCreditMovements, supplierReturns } from "@/db/schemas/supplier-schema";
 import type { MaterialRef } from "@/lib/inventory/material-lots";
 import { lockMaterialStock, moveLotStock, type Tx } from "@/lib/inventory/material-lots.server";
 import { packagingUnit } from "@/lib/inventory/material-units";
@@ -11,6 +12,9 @@ import {
   formatDebitNoteNumber,
   formatSupplierReturnNumber,
   maxReturnable,
+  planLeftover,
+  purchaseOwed,
+  splitDebitNote,
   supplierReturnValue,
 } from "./supplier-returns";
 
@@ -222,4 +226,94 @@ export async function cancelSupplierReturn(tx: Tx, input: { returnId: string; re
     .set({ status: "cancelled", cancelledById: actorId, cancelledAt: new Date(), cancelReason: reason, updatedAt: new Date() })
     .where(eq(supplierReturns.id, row.id));
   return { returnNumber: row.returnNumber, stockRestored };
+}
+
+export async function supplierCreditBalance(tx: Tx, supplierId: string): Promise<string> {
+  const [row] = await tx
+    .select({ total: sql<string>`coalesce(sum(${supplierCreditMovements.amount}), 0)` })
+    .from(supplierCreditMovements)
+    .where(eq(supplierCreditMovements.supplierId, supplierId));
+  return new Big(row?.total ?? 0).toFixed(2);
+}
+
+export async function previewDebitNote(tx: Tx, returnId: string) {
+  const [row] = await tx.select().from(supplierReturns).where(eq(supplierReturns.id, returnId));
+  if (!row) throw new Error("Supplier return not found");
+  const purchase = await loadPurchase(tx, row.purchaseId, false);
+  const owed = purchaseOwed(purchase);
+  const split = splitDebitNote({ value: row.totalAmount, owed });
+  const [supplier] = await tx.select({ name: suppliers.supplierName }).from(suppliers).where(eq(suppliers.id, row.supplierId));
+  return { value: new Big(row.totalAmount).toFixed(2), owedBefore: owed.toFixed(2), ...split, supplierName: supplier?.name ?? "Supplier" };
+}
+
+export async function completeSupplierReturn(
+  tx: Tx,
+  input: { returnId: string; cashBack?: string | null; refundWalletId?: string | null },
+  actorId: string,
+) {
+  const { row, purchase } = await lockReturn(tx, input.returnId);
+  if (row.status === "requested") throw new Error("Mark it as dispatched first.");
+  if (row.status !== "dispatched") throw new Error(`This return is already ${row.status}.`);
+
+  const split = splitDebitNote({ value: row.totalAmount, owed: purchaseOwed(purchase) });
+  const leftover = planLeftover({ leftover: split.leftover, cashBack: input.cashBack });
+  const refund = new Big(leftover.refund);
+  let refundWalletId: string | null = null;
+  let refundTransactionId: string | null = null;
+  const debitNoteNumber = await nextDebitNoteNumber(tx);
+  const [supplier] = await tx.select({ name: suppliers.supplierName }).from(suppliers).where(eq(suppliers.id, row.supplierId));
+  const supplierName = supplier?.name ?? "supplier";
+
+  if (refund.gt(0)) {
+    if (!input.refundWalletId) throw new Error("Pick the account the cash back goes into");
+    const [wallet] = await tx.select({ id: wallets.id }).from(wallets).where(eq(wallets.id, input.refundWalletId)).for("update");
+    if (!wallet) throw new Error("Pick the account the cash back goes into");
+    refundWalletId = wallet.id;
+    refundTransactionId = createId();
+    await tx.update(wallets).set({ balance: sql`${wallets.balance} + ${leftover.refund}` }).where(eq(wallets.id, wallet.id));
+    await tx.insert(transactions).values({
+      id: refundTransactionId,
+      walletId: wallet.id,
+      type: "credit",
+      amount: leftover.refund,
+      source: "Supplier Refund",
+      referenceId: row.id,
+      description: `Cash back for debit note ${debitNoteNumber} from ${supplierName}`,
+      performedById: actorId,
+    });
+  }
+
+  if (new Big(split.applied).gt(0)) {
+    await tx.update(purchaseRecords)
+      .set({ returnedAmount: sql`${purchaseRecords.returnedAmount} + ${split.applied}`, updatedAt: new Date() })
+      .where(eq(purchaseRecords.id, purchase.id));
+  }
+
+  // Status first: the movement's return must already satisfy the debit-note check if it is read back.
+  await tx.update(supplierReturns).set({
+    status: "completed",
+    completedById: actorId,
+    completedAt: new Date(),
+    debitNoteNumber,
+    appliedToPurchaseAmount: split.applied,
+    refundAmount: leftover.refund,
+    refundWalletId,
+    refundTransactionId,
+    supplierCreditAmount: leftover.credit,
+    updatedAt: new Date(),
+  }).where(eq(supplierReturns.id, row.id));
+
+  if (new Big(leftover.credit).gt(0)) {
+    await tx.insert(supplierCreditMovements).values({
+      supplierId: row.supplierId,
+      kind: "issued",
+      amount: leftover.credit,
+      supplierReturnId: row.id,
+      purchaseId: purchase.id,
+      note: `Debit note ${debitNoteNumber}`,
+      performedById: actorId,
+    });
+  }
+
+  return { debitNoteNumber, applied: split.applied, refund: leftover.refund, credit: leftover.credit };
 }
