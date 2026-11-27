@@ -436,6 +436,8 @@ export function calculateAbsentDeductions(
     // 2. Allowance deductions
     let allowanceOccasionTotal = new Big(0);
     for (const allowance of config) {
+      // Per-day allowances are only earned on days present, so there is nothing to cut.
+      if (allowance.payBasis === "perDay") continue;
       let shouldDeduct = false;
       if (occasion === "not_employed") {
         shouldDeduct = true; // Always prorate all allowances if not employed
@@ -840,7 +842,6 @@ export function calculatePayslip(
   attendanceAdjustments?: AttendanceDeductionAdjustments,
 ): PayslipCalculation {
   const stdDutyHours = employee.standardDutyHours || 8;
-  const config = employee.allowanceConfig || [];
   const basicSalaryStd = parseFloat(employee.basicSalary || "0");
   const restDays = employee.restDays ?? [0];
 
@@ -948,6 +949,19 @@ export function calculatePayslip(
   ).length;
   const bradfordFactorScore = calculateBradfordFactor(validEvaluationRecords);
 
+  // Resolve per-day allowances to what was earned this cycle. Everything below works on money amounts.
+  // Night shift is already paid per night through its own path.
+  const isPerDay = (a: AllowanceConfig) => a.payBasis === "perDay" && a.id !== "nightShift";
+  const config = (employee.allowanceConfig || []).map((a) =>
+    isPerDay(a)
+      ? {
+          ...a,
+          name: `${a.name} (${a.amount} × ${daysPresent} days present)`,
+          amount: roundMoney(new Big(a.amount).times(daysPresent), new Big(1)),
+        }
+      : a,
+  );
+
   // 7. Deductions
   const {
     explanationLog,
@@ -959,7 +973,7 @@ export function calculatePayslip(
     componentDeductions,
     deductionBreakdownByOccasion,
     unadjustedOccasionDeductions,
-  } = calculateAbsentDeductions(employee, workingDayRecords, calendarDaysInMonth, attendanceAdjustments);
+  } = calculateAbsentDeductions({ ...employee, allowanceConfig: config }, workingDayRecords, calendarDaysInMonth, attendanceAdjustments);
 
   // Add overtime to explanation log
   for (const record of workingDayRecords) {
@@ -986,7 +1000,7 @@ export function calculatePayslip(
   for (const a of config) {
     allowanceNames[a.id] = a.name;
     const hasAnyDeduction = Object.values(a.deductions || {}).some(Boolean);
-    fixedComponents[a.id] = !hasAnyDeduction;
+    fixedComponents[a.id] = !hasAnyDeduction && !isPerDay(a);
   }
 
   // ── 5. Overtime ───────────────────────────────────────────────────────────

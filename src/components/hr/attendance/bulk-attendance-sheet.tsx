@@ -1,8 +1,14 @@
 import { useState, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { format, parseISO } from "date-fns";
+import { countDays, MAX_BULK_DAYS } from "@/lib/attendance/bulk-mark";
+import { isFieldStaff } from "@/lib/attendance/device-import/field-staff";
+import { getEmployeesFn } from "@/server-functions/hr/employees/get-employees-fn";
 import {
   useBulkMarkAttendance,
   useBulkAttendancePreview,
+  useUndoBulkPresent,
+  useUndoBulkPresentPreview,
 } from "@/hooks/hr/use-bulk-mark-attendance";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -44,20 +50,9 @@ import { DatePicker } from "@/components/custom/date-picker";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
-interface Employee {
-  id: string;
-  firstName: string;
-  lastName: string;
-  employeeCode: string;
-  designation: string;
-  status: string;
-  restDays?: number[];
-}
-
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  employees: Employee[];
   /** Pre-select a specific date range (e.g. from an "unmarked days" alert) */
   initialStartDate?: string;
   initialEndDate?: string;
@@ -97,12 +92,20 @@ const STATUS_OPTIONS = [
 export const BulkAttendanceSheet = ({
   open,
   onOpenChange,
-  employees,
   initialStartDate,
   initialEndDate,
 }: Props) => {
-  // Active employees only
-  const activeEmployees = employees.filter((e) => e.status === "active");
+  // Every active employee, not only those who had joined by the day on screen.
+  const employeesQuery = useQuery({
+    queryKey: ["employees", "active"],
+    queryFn: () => getEmployeesFn({ data: { status: "active" } }),
+    enabled: open,
+  });
+  const activeEmployees = [...(employeesQuery.data ?? [])].sort((a, b) =>
+    `${a.firstName} ${a.lastName}`.localeCompare(
+      `${b.firstName} ${b.lastName}`,
+    ),
+  );
 
   // ── Local state ───────────────────────────────────────────────────────────
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -120,13 +123,16 @@ export const BulkAttendanceSheet = ({
   const [leaveType, setLeaveType] = useState<
     "sick" | "annual" | "special" | null
   >(null);
+  const [undoing, setUndoing] = useState(false);
   const [conflictStrategy, setConflictStrategy] = useState<
     "skip" | "overwrite"
   >("skip");
   const [notes, setNotes] = useState("");
   const [confirmOpen, setConfirmOpen] = useState(false);
 
-  const mutation = useBulkMarkAttendance();
+  const markMutation = useBulkMarkAttendance();
+  const undoMutation = useUndoBulkPresent();
+  const isSaving = markMutation.isPending || undoMutation.isPending;
 
   // ── Derived ───────────────────────────────────────────────────────────────
   const filteredEmployees = activeEmployees.filter((e) => {
@@ -142,24 +148,52 @@ export const BulkAttendanceSheet = ({
     ? activeEmployees.map((e) => e.id)
     : [...selectedIds];
 
-  const previewInput =
-    startDate && endDate && effectiveEmployeeIds.length > 0
+  const start = startDate ? format(startDate, "yyyy-MM-dd") : "";
+  const end = endDate ? format(endDate, "yyyy-MM-dd") : "";
+  const rangeError =
+    !start || !end
+      ? null
+      : end < start
+        ? "End date must be on or after the start date"
+        : countDays(start, end) > MAX_BULK_DAYS
+          ? `Choose at most ${MAX_BULK_DAYS} days at a time`
+          : null;
+
+  const range =
+    open && start && end && !rangeError && effectiveEmployeeIds.length > 0
       ? {
           employeeIds: selectAll ? [] : effectiveEmployeeIds,
-          startDate: format(startDate, "yyyy-MM-dd"),
-          endDate: format(endDate, "yyyy-MM-dd"),
+          startDate: start,
+          endDate: end,
+        }
+      : null;
+  const previewInput =
+    range && !undoing && (status !== "leave" || leaveType)
+      ? {
+          ...range,
           template: {
             status,
             leaveType: status === "leave" ? leaveType : null,
-            notes: notes || null,
-            entrySource: "manual" as const,
           },
           conflictStrategy,
         }
       : null;
 
-  const { data: preview, isFetching: previewLoading } =
-    useBulkAttendancePreview(previewInput, !!previewInput);
+  const undoInput = undoing ? range : null;
+
+  // The note does not change the counts, so typing it does not reload the preview.
+  const markPreview = useBulkAttendancePreview(previewInput, !!previewInput);
+  const undoPreviewQuery = useUndoBulkPresentPreview(undoInput);
+  const active = undoing ? undoPreviewQuery : markPreview;
+  const previewLoading = active.isFetching;
+  const previewError = active.error;
+  const blockedReason = active.data?.blockedReason ?? null;
+  const preview = undoing ? undefined : markPreview.data;
+  const undoPreview = undoing ? undoPreviewQuery.data : undefined;
+  const changeCount = undoing
+    ? (undoPreview?.willClear ?? 0)
+    : (preview?.willCreate ?? 0) + (preview?.willUpdate ?? 0);
+  const noteMissing = !!preview?.noteNeeded && !notes.trim();
 
   // ── Handlers ──────────────────────────────────────────────────────────────
   const toggleEmployee = (id: string) => {
@@ -176,24 +210,34 @@ export const BulkAttendanceSheet = ({
   };
 
   const handleApply = () => {
-    if (!previewInput) return;
-    setConfirmOpen(true);
+    if (canApply) setConfirmOpen(true);
   };
 
   const handleConfirm = async () => {
-    if (!previewInput) return;
-    await mutation.mutateAsync(previewInput);
+    try {
+      if (undoInput) await undoMutation.mutateAsync(undoInput);
+      else if (previewInput)
+        await markMutation.mutateAsync({
+          ...previewInput,
+          template: { ...previewInput.template, notes: notes.trim() || null },
+        });
+      else return;
+    } catch {
+      // The reason is already on screen. Keep the choices so HR can correct them.
+      setConfirmOpen(false);
+      return;
+    }
     setConfirmOpen(false);
     onOpenChange(false);
   };
 
   const canApply =
-    !!startDate &&
-    !!endDate &&
-    effectiveEmployeeIds.length > 0 &&
-    (status !== "leave" || !!leaveType) &&
-    !!preview &&
-    preview.willCreate + preview.willUpdate > 0;
+    !!(undoInput ?? previewInput) &&
+    !previewLoading &&
+    !previewError &&
+    !blockedReason &&
+    !noteMissing &&
+    changeCount > 0;
 
   // ── Reset on open ─────────────────────────────────────────────────────────
   useEffect(() => {
@@ -202,19 +246,21 @@ export const BulkAttendanceSheet = ({
       setSelectedIds(new Set());
       setSearch("");
       setStatus("present");
+      setUndoing(false);
       setLeaveType(null);
       setConflictStrategy("skip");
       setNotes("");
-      if (initialStartDate) setStartDate(parseISO(initialStartDate));
-      if (initialEndDate) setEndDate(parseISO(initialEndDate));
+      setConfirmOpen(false);
+      setStartDate(initialStartDate ? parseISO(initialStartDate) : undefined);
+      setEndDate(initialEndDate ? parseISO(initialEndDate) : undefined);
     }
-  }, [open]);
+  }, [open, initialStartDate, initialEndDate]);
 
   return (
     <>
       <ResponsiveSheet
         open={open}
-        onOpenChange={onOpenChange}
+        onOpenChange={(next) => !isSaving && onOpenChange(next)}
         title="Bulk Mark Attendance"
         description="Mark multiple employees across a date range in one action."
         icon={CalendarRange}
@@ -248,10 +294,9 @@ export const BulkAttendanceSheet = ({
                 />
               </div>
             </div>
-            {startDate && endDate && endDate < startDate && (
+            {rangeError && (
               <p className="text-[11px] text-destructive flex items-center gap-1">
-                <AlertCircle className="size-3" /> End date must be after start
-                date
+                <AlertCircle className="size-3" /> {rangeError}
               </p>
             )}
           </div>
@@ -263,15 +308,19 @@ export const BulkAttendanceSheet = ({
             <SectionLabel icon={Clock} label="Attendance Template" />
 
             {/* Status selector */}
-            <div className="grid grid-cols-4 gap-1 p-1 rounded-lg bg-muted/40 border border-border/50">
+            <div className="grid grid-cols-3 sm:grid-cols-5 gap-1 p-1 rounded-lg bg-muted/40 border border-border/50">
               {STATUS_OPTIONS.map((s) => (
                 <button
                   key={s.value}
                   type="button"
-                  onClick={() => setStatus(s.value)}
+                  aria-pressed={!undoing && status === s.value}
+                  onClick={() => {
+                    setUndoing(false);
+                    setStatus(s.value);
+                  }}
                   className={cn(
-                    "rounded-md py-1.5 text-[12px] font-semibold transition-all duration-150 focus:outline-none",
-                    status === s.value
+                    "rounded-md py-1.5 text-[12px] font-semibold transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                    !undoing && status === s.value
                       ? s.activeBg
                       : "text-muted-foreground hover:text-foreground border border-transparent",
                   )}
@@ -279,10 +328,37 @@ export const BulkAttendanceSheet = ({
                   {s.label}
                 </button>
               ))}
+              <button
+                type="button"
+                aria-pressed={undoing}
+                onClick={() => setUndoing(true)}
+                className={cn(
+                  "rounded-md py-1.5 text-[12px] font-semibold transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  undoing
+                    ? "bg-background border border-border/40 text-foreground"
+                    : "text-muted-foreground hover:text-foreground border border-transparent",
+                )}
+              >
+                Undo Present
+              </button>
             </div>
 
+            {undoing && (
+              <div className="rounded-lg border border-border/60 bg-background/70 p-3">
+                <p className="text-[12px] font-semibold text-foreground">
+                  Undo a bulk Present
+                </p>
+                <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+                  Removes only punches added by Bulk Mark, and leaves those days
+                  unmarked. Device and QR punches are never removed. Days
+                  changed since are kept. For order bookers, salesmen and
+                  drivers, mark the correct status with Overwrite All instead.
+                </p>
+              </div>
+            )}
+
             {/* Leave type — only for leave status */}
-            {status === "leave" && (
+            {!undoing && status === "leave" && (
               <div className="space-y-1.5 animate-in fade-in duration-200">
                 <p className="text-[12px] font-medium text-foreground/80">
                   Leave Type <span className="text-destructive">*</span>
@@ -310,15 +386,17 @@ export const BulkAttendanceSheet = ({
               </div>
             )}
 
-            {status === "present" && (
+            {!undoing && status === "present" && (
               <div className="space-y-3 animate-in fade-in duration-200">
                 <div className="rounded-lg border border-emerald-200/60 bg-emerald-50/50 p-3 dark:border-emerald-900/40 dark:bg-emerald-950/20">
                   <p className="text-[12px] font-semibold text-emerald-700 dark:text-emerald-400">
                     Present is punch-driven
                   </p>
                   <p className="mt-1 text-[11px] leading-relaxed text-emerald-700/80 dark:text-emerald-400/80">
-                    Bulk present creates one `IN` punch at shift start and one
-                    `OUT` punch at shift end for each selected work day.
+                    Bulk present creates one `IN` punch at the start and one
+                    `OUT` punch at the end of every shift of the day. Order
+                    bookers, salesmen and drivers are marked present without
+                    punches.
                   </p>
                 </div>
                 <div className="rounded-lg border border-border/60 bg-background/70 p-3">
@@ -326,65 +404,79 @@ export const BulkAttendanceSheet = ({
                     Safety rules
                   </p>
                   <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
-                    Employees without both shift times are skipped. Days that
-                    already have punches are also skipped, even when overwrite
-                    is selected.
+                    Office staff without complete shift times are skipped. So
+                    are shifts that have not finished yet. Days that already
+                    have punches, trips or deliveries are never replaced.
                   </p>
                 </div>
               </div>
             )}
 
             {/* Notes */}
-            <div className="space-y-1.5">
-              <p className="text-[12px] font-medium text-foreground/80">
-                Notes{" "}
-                <span className="text-muted-foreground font-normal">
-                  (optional)
-                </span>
-              </p>
-              <Input
-                placeholder="e.g. Public holiday, Office closed"
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                className="h-9 text-[13px] bg-background border-border/60"
-              />
-            </div>
+            {!undoing && (
+              <div className="space-y-1.5">
+                <p className="text-[12px] font-medium text-foreground/80">
+                  Notes{" "}
+                  {preview?.noteNeeded ? (
+                    <span className="text-destructive">*</span>
+                  ) : (
+                    <span className="text-muted-foreground font-normal">
+                      (optional)
+                    </span>
+                  )}
+                </p>
+                <Input
+                  placeholder="e.g. Public holiday, Office closed"
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  aria-label="Notes"
+                  maxLength={500}
+                  className="h-9 text-[13px] bg-background border-border/60"
+                />
+                {noteMissing && (
+                  <p className="text-[11px] text-destructive flex items-center gap-1">
+                    <AlertCircle className="size-3" /> A note is required for
+                    order bookers, salesmen and drivers.
+                  </p>
+                )}
+              </div>
+            )}
           </div>
 
           <Separator className="opacity-40" />
 
           {/* ── Section 3: Conflict Strategy ─────────────────────── */}
-          <div className="space-y-3">
-            <SectionLabel icon={RefreshCcw} label="Existing Records" />
-            <div className="flex p-1 rounded-lg bg-muted/40 border border-border/50">
-              {(["skip", "overwrite"] as const).map((strategy) => (
-                <button
-                  key={strategy}
-                  type="button"
-                  onClick={() => setConflictStrategy(strategy)}
-                  className={cn(
-                    "flex-1 rounded-md py-1.5 text-[12px] font-semibold transition-all duration-150 focus:outline-none",
-                    conflictStrategy === strategy
-                      ? "bg-background text-foreground  border border-border/40"
-                      : "text-muted-foreground hover:text-foreground border border-transparent",
-                  )}
-                >
-                  {strategy === "skip" ? "Keep Existing" : "Overwrite All"}
-                </button>
-              ))}
-            </div>
-            <p className="text-[11px] text-muted-foreground leading-relaxed">
-              {status === "present"
-                ? conflictStrategy === "skip"
-                  ? "Days with an attendance row but no punches stay untouched. Real punch timelines are never replaced here."
-                  : "Overwrite only affects attendance rows with no punches. Days that already have punches are always preserved."
-                : conflictStrategy === "skip"
-                  ? "Days that already have an attendance record will not be touched."
-                  : "Existing records will be replaced with the template above."}
-            </p>
-          </div>
+          {!undoing && (
+            <>
+              <div className="space-y-3">
+                <SectionLabel icon={RefreshCcw} label="Existing Records" />
+                <div className="flex p-1 rounded-lg bg-muted/40 border border-border/50">
+                  {(["skip", "overwrite"] as const).map((strategy) => (
+                    <button
+                      key={strategy}
+                      type="button"
+                      onClick={() => setConflictStrategy(strategy)}
+                      className={cn(
+                        "flex-1 rounded-md py-1.5 text-[12px] font-semibold transition-all duration-150 focus:outline-none",
+                        conflictStrategy === strategy
+                          ? "bg-background text-foreground  border border-border/40"
+                          : "text-muted-foreground hover:text-foreground border border-transparent",
+                      )}
+                    >
+                      {strategy === "skip" ? "Keep Existing" : "Overwrite All"}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[11px] text-muted-foreground leading-relaxed">
+                  {conflictStrategy === "skip"
+                    ? "Days that already have an attendance record will not be touched."
+                    : "Records marked by hand will be replaced. Days with punches, trips or deliveries are always kept."}
+                </p>
+              </div>
 
-          <Separator className="opacity-40" />
+              <Separator className="opacity-40" />
+            </>
+          )}
 
           {/* ── Section 4: Employee Selection ────────────────────── */}
           <div className="space-y-3">
@@ -414,8 +506,11 @@ export const BulkAttendanceSheet = ({
                   All Active Employees
                 </p>
                 <p className="text-[11px] text-muted-foreground">
-                  {activeEmployees.length} employee
-                  {activeEmployees.length !== 1 ? "s" : ""}
+                  {employeesQuery.isError
+                    ? "Could not load the employee list"
+                    : employeesQuery.isPending
+                      ? "Loading…"
+                      : `${activeEmployees.length} employee${activeEmployees.length !== 1 ? "s" : ""}`}
                 </p>
               </div>
             </label>
@@ -461,6 +556,7 @@ export const BulkAttendanceSheet = ({
                             </p>
                             <p className="text-[10px] text-muted-foreground">
                               {emp.designation}
+                              {isFieldStaff(emp) && " · Field staff"}
                             </p>
                           </div>
                         </div>
@@ -482,11 +578,12 @@ export const BulkAttendanceSheet = ({
                       </label>
                     );
                   })}
-                  {filteredEmployees.length === 0 && (
-                    <p className="text-[12px] text-muted-foreground text-center py-6">
-                      No employees match "{search}"
-                    </p>
-                  )}
+                  {employeesQuery.isSuccess &&
+                    filteredEmployees.length === 0 && (
+                      <p className="text-[12px] text-muted-foreground text-center py-6">
+                        No employees match "{search}"
+                      </p>
+                    )}
                 </div>
 
                 {selectedIds.size > 0 && (
@@ -500,14 +597,12 @@ export const BulkAttendanceSheet = ({
           </div>
 
           {/* ── Preview Summary ───────────────────────────────────── */}
-          {previewInput && (
+          {(undoInput ?? previewInput) && (
             <div
               className={cn(
                 "rounded-xl border p-4 space-y-3",
-                preview
-                  ? preview.willCreate + preview.willUpdate > 0
-                    ? "bg-emerald-50/50 border-emerald-200/60 dark:bg-emerald-950/20 dark:border-emerald-900/40"
-                    : "bg-muted/30 border-border/50"
+                changeCount > 0
+                  ? "bg-emerald-50/50 border-emerald-200/60 dark:bg-emerald-950/20 dark:border-emerald-900/40"
                   : "bg-muted/30 border-border/50",
               )}
             >
@@ -519,6 +614,21 @@ export const BulkAttendanceSheet = ({
                   <Loader2 className="size-3.5 animate-spin text-muted-foreground" />
                 )}
               </div>
+
+              {undoPreview && !previewLoading && (
+                <div className="grid grid-cols-2 gap-2">
+                  <PreviewStat
+                    label="Days To Unmark"
+                    value={undoPreview.willClear}
+                    color="blue"
+                  />
+                  <PreviewStat
+                    label="Changed Since, Kept"
+                    value={undoPreview.keptEdited}
+                    color="slate"
+                  />
+                </div>
+              )}
 
               {preview && !previewLoading ? (
                 <div className="grid grid-cols-2 gap-2 md:grid-cols-3">
@@ -544,37 +654,61 @@ export const BulkAttendanceSheet = ({
                     color="slate"
                   />
                   <PreviewStat
-                    label="Punch Days Skipped"
+                    label="Worked Days Kept"
                     value={preview.skippedPunchDays}
                     color="slate"
                   />
                   <PreviewStat
-                    label="Missing Shift Skipped"
+                    label="No Usable Shift"
                     value={preview.skippedMissingShift}
                     color="slate"
                   />
+                  {preview.skippedFuture > 0 && (
+                    <PreviewStat
+                      label="Not Finished Yet"
+                      value={preview.skippedFuture}
+                      color="slate"
+                    />
+                  )}
+                  {preview.skippedNotJoined > 0 && (
+                    <PreviewStat
+                      label="Before Joining"
+                      value={preview.skippedNotJoined}
+                      color="slate"
+                    />
+                  )}
+                  {preview.skippedHolidays > 0 && (
+                    <PreviewStat
+                      label="Holidays Skipped"
+                      value={preview.skippedHolidays}
+                      color="slate"
+                    />
+                  )}
                 </div>
-              ) : !previewLoading ? (
-                <p className="text-[12px] text-muted-foreground">
-                  Select dates and employees to see preview.
-                </p>
               ) : null}
 
-              {preview &&
-                preview.willCreate + preview.willUpdate === 0 &&
-                !previewLoading && (
-                  <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
-                    <Info className="size-3.5 shrink-0" />
-                    Nothing to apply.
-                    {conflictStrategy === "skip" &&
-                      preview.skippedExisting > 0 && (
-                        <>
-                          {" "}Switch to "Overwrite All" to replace existing
-                          non-punch records.
-                        </>
-                      )}
-                  </div>
-                )}
+              {!previewLoading && (previewError || blockedReason) && (
+                <p className="flex items-start gap-2 text-[12px] text-destructive">
+                  <AlertCircle className="size-3.5 shrink-0 mt-0.5" />
+                  {blockedReason ??
+                    "The preview could not be loaded. Change a choice or try again."}
+                </p>
+              )}
+
+              {active.data && changeCount === 0 && !previewLoading && (
+                <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
+                  <Info className="size-3.5 shrink-0" />
+                  Nothing to apply.
+                  {conflictStrategy === "skip" &&
+                    !!preview?.skippedExisting && (
+                      <>
+                        {" "}
+                        Switch to "Overwrite All" to replace days marked by
+                        hand.
+                      </>
+                    )}
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -586,22 +720,23 @@ export const BulkAttendanceSheet = ({
               variant="outline"
               className="flex-1"
               onClick={() => onOpenChange(false)}
-              disabled={mutation.isPending}
+              disabled={isSaving}
             >
               Cancel
             </Button>
             <Button
               className="flex-1"
               onClick={handleApply}
-              disabled={!canApply || mutation.isPending}
+              disabled={!canApply || isSaving}
             >
-              {mutation.isPending ? (
+              {isSaving ? (
                 <>
                   <Loader2 className="size-4 mr-2 animate-spin" /> Applying…
                 </>
               ) : (
                 <>
-                  <CheckCircle2 className="size-4 mr-2" /> Apply Bulk Mark
+                  <CheckCircle2 className="size-4 mr-2" />{" "}
+                  {undoing ? "Undo Present" : "Apply Bulk Mark"}
                 </>
               )}
             </Button>
@@ -610,13 +745,22 @@ export const BulkAttendanceSheet = ({
       </ResponsiveSheet>
 
       {/* ── Confirmation Dialog ───────────────────────────────────────────── */}
-      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+      <AlertDialog
+        open={confirmOpen}
+        onOpenChange={(next) => !isSaving && setConfirmOpen(next)}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Confirm Bulk Mark</AlertDialogTitle>
+            <AlertDialogTitle>
+              {undoing ? "Undo bulk Present" : "Confirm Bulk Mark"}
+            </AlertDialogTitle>
             <AlertDialogDescription asChild>
               <div className="space-y-3">
-                <p>This will apply the following changes:</p>
+                <p>
+                  {undoPreview
+                    ? `${undoPreview.willClear} ${undoPreview.willClear === 1 ? "day" : "days"} for ${undoPreview.affectedEmployees} ${undoPreview.affectedEmployees === 1 ? "person" : "people"} will become unmarked and must be marked again before payroll.`
+                    : "This will apply the following changes:"}
+                </p>
                 {preview && (
                   <div className="bg-muted/40 rounded-lg p-3 space-y-1.5 text-sm">
                     <div className="flex justify-between">
@@ -648,13 +792,13 @@ export const BulkAttendanceSheet = ({
                         Employees affected
                       </span>
                       <span className="font-bold">
-                        {preview.totalEmployees}
+                        {preview.affectedEmployees} of {preview.totalEmployees}
                       </span>
                     </div>
                     {preview.skippedPunchDays > 0 && (
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">
-                          Punch days preserved
+                          Worked days kept
                         </span>
                         <span className="font-bold text-slate-600 dark:text-slate-400">
                           {preview.skippedPunchDays}
@@ -678,24 +822,32 @@ export const BulkAttendanceSheet = ({
                   preview.willUpdate > 0 && (
                     <p className="text-destructive text-xs flex items-center gap-1.5">
                       <AlertCircle className="size-3.5 shrink-0" />
-                      {preview.willUpdate} existing non-punch records will be
+                      {preview.willUpdate} existing hand-marked records will be
                       replaced.
                     </p>
                   )}
                 <p className="text-xs text-muted-foreground">
-                  This action cannot be undone. Individual payslip records are
-                  not affected.
+                  {undoing
+                    ? "The removed punches are kept in the correction history. "
+                    : status === "present"
+                      ? "Undo Present can remove these punches later, but cannot bring back a record you overwrite. "
+                      : "This cannot be undone in one step. "}
+                  Draft payslips for these days must be regenerated before
+                  approval.
                 </p>
               </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel disabled={isSaving}>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              onClick={handleConfirm}
-              disabled={mutation.isPending}
+              onClick={(event) => {
+                event.preventDefault();
+                void handleConfirm();
+              }}
+              disabled={!canApply || isSaving}
             >
-              {mutation.isPending ? (
+              {isSaving ? (
                 <>
                   <Loader2 className="size-4 mr-1.5 animate-spin" />
                   Applying…

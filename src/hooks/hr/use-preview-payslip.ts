@@ -39,5 +39,8 @@ export function usePreviewPayslip(
     queryFn: () => previewEmployeePayslipFn({ data: input }),
     enabled: enabled && !!input.employeeId,
     placeholderData: keepPreviousData,
+    // Blocked days open in a new tab; recheck them when HR comes back.
+    refetchOnWindowFocus: (query) =>
+      query.state.data?.unresolvedAttendanceDates.length ? "always" : false,
   });
 }

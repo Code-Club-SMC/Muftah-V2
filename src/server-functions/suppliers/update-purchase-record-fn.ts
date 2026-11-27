@@ -10,7 +10,7 @@ import { lotPrice, lotQuantity, PURCHASE_LOCKED_MESSAGE } from "@/lib/inventory/
 import { moveLotStock, purchaseIsUntouched } from "@/lib/inventory/material-lots.server";
 import { followEditedPurchase, lockMaterialEverywhere, lotForPurchase, repriceUnusedStock } from "@/lib/inventory/material-price.server";
 import { byProductColumns } from "@/lib/inventory/by-products";
-import { assertEarnedCoversSold } from "@/lib/inventory/by-products.server";
+import { assertEarnedCoversSold, loadItemByProducts } from "@/lib/inventory/by-products.server";
 
 import { chemicals, packagingMaterials } from "@/db/schemas/inventory-schema";
 import { expenseCategories } from "@/db/schemas/finance-schema";
@@ -143,6 +143,7 @@ export const updatePurchaseRecordFn = createServerFn({ method: "POST" })
       const ref = existingRecord.materialType === "chemical"
         ? { materialType: "chemical" as const, materialId: existingRecord.chemicalId! }
         : { materialType: "packaging" as const, materialId: existingRecord.packagingMaterialId! };
+      const byProductsBefore = await loadItemByProducts(tx, ref);
       const newQuantity = data.quantity ? lotQuantity(data.quantity) : new Big(existingRecord.quantity).toFixed(3);
       if (new Big(newQuantity).lte(0)) throw new Error("Quantity must be more than zero");
       // By-product container: use the edit's values when sent, else keep the saved ones,
@@ -220,7 +221,7 @@ export const updatePurchaseRecordFn = createServerFn({ method: "POST" })
         .update(purchaseRecords)
         .set(updateData)
         .where(eq(purchaseRecords.id, data.id));
-      await assertEarnedCoversSold(tx, ref);
+      await assertEarnedCoversSold(tx, ref, byProductsBefore);
       if (priceChanged) await followEditedPurchase(tx, ref, existingRecord.id, newPrice);
 
       // 5. Conditionally create expense and debit wallet

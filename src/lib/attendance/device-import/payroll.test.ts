@@ -61,6 +61,21 @@ describe("device attendance payroll review gate", () => {
       assertDeviceAttendanceResolved(reader, "emp", "2026-10-01", "2026-10-31"),
     ).rejects.toThrow("needs HR review");
   });
+  it("names every blocked day, oldest first", async () => {
+    setup("present", false);
+    mock.claims.mockResolvedValue([
+      { attendanceDate: "2026-10-13" },
+      { attendanceDate: "2026-10-11" },
+      { attendanceDate: "2026-10-12" },
+    ]);
+    mock.records.mockResolvedValue([
+      { date: "2026-10-13", status: "present" },
+      { date: "2026-10-12", status: "leave" },
+    ]);
+    await expect(
+      assertDeviceAttendanceResolved(reader, "emp", "2026-10-01", "2026-10-31"),
+    ).rejects.toThrow("2026-10-11, 2026-10-13 needs HR review");
+  });
   it("allows HR's explicit absence decision without inventing a checkout", async () => {
     setup("absent", false);
     await expect(

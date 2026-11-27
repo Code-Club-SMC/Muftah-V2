@@ -20,9 +20,12 @@ export async function lockAttendancePayrollWrites(tx: Tx) {
   );
 }
 
-export async function assertAttendanceDatesEditable(tx: Tx, dates: string[]) {
+export async function assertAttendanceDatesEditable(
+  reader: Reader,
+  dates: string[],
+) {
   if (!dates.length) return;
-  const locked = await tx.query.payrolls.findMany({
+  const locked = await reader.query.payrolls.findMany({
     where: and(
       lte(payrolls.startDate, [...dates].sort().at(-1)!),
       gte(payrolls.endDate, [...dates].sort()[0]),
@@ -62,12 +65,13 @@ export async function invalidateDeviceAttendanceChanges(
   }
 }
 
-export async function assertDeviceAttendanceResolved(
+/** Past uploaded days, oldest first, that block payroll until HR resolves them. */
+export async function findUnresolvedDeviceAttendanceDates(
   reader: Reader,
   employeeId: string,
   startDate: string,
   endDate: string,
-) {
+): Promise<string[]> {
   const claims = await reader.query.deviceAttendancePunchClaims.findMany({
     where: and(
       eq(deviceAttendancePunchClaims.employeeId, employeeId),
@@ -75,10 +79,10 @@ export async function assertDeviceAttendanceResolved(
       lte(deviceAttendancePunchClaims.attendanceDate, endDate),
     ),
   });
-  const dates = [...new Set(claims.map((c) => c.attendanceDate))].filter(
-    (d) => d < nowPKTDate(),
-  );
-  if (!dates.length) return;
+  const dates = [...new Set(claims.map((c) => c.attendanceDate))]
+    .filter((d) => d < nowPKTDate())
+    .sort();
+  if (!dates.length) return [];
   const [punches, records] = await Promise.all([
     reader.query.attendancePunches.findMany({
       where: and(
@@ -94,19 +98,34 @@ export async function assertDeviceAttendanceResolved(
       ),
     }),
   ]);
-  for (const date of dates) {
+  return dates.filter((date) => {
     const record = records.find((r) => r.date === date);
-    if (record && record.status !== "present") continue; // HR explicitly resolved this date.
+    if (record && record.status !== "present") return false; // HR explicitly resolved this date.
     const day = punches.filter((p) => p.attendanceDate === date);
-    if (
+    return (
       !record ||
       day.length === 0 ||
       day.at(-1)?.direction === "in" ||
       !isPunchTimelineValid(day)
-    ) {
-      throw new Error(
-        `Attendance on ${date} needs HR review. Correct the punches or resolve the daily status before payroll.`,
-      );
-    }
+    );
+  });
+}
+
+export async function assertDeviceAttendanceResolved(
+  reader: Reader,
+  employeeId: string,
+  startDate: string,
+  endDate: string,
+) {
+  const dates = await findUnresolvedDeviceAttendanceDates(
+    reader,
+    employeeId,
+    startDate,
+    endDate,
+  );
+  if (dates.length) {
+    throw new Error(
+      `Attendance on ${dates.join(", ")} needs HR review. Correct the punches or resolve the daily status before payroll.`,
+    );
   }
 }

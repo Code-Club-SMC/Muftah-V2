@@ -62,6 +62,7 @@ export const createSalaryRevisionFn = createServerFn()
         id: z.string(),
         name: z.string(),
         amount: z.number(),
+        payBasis: z.enum(["monthly", "perDay"]).optional(),
         deductions: z.object({
           absent: z.boolean(),
           annualLeave: z.boolean(),

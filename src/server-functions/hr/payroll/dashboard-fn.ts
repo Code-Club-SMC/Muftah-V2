@@ -13,6 +13,7 @@ import {
   eachDayOfInterval,
 } from "date-fns";
 import { createServerFn } from "@tanstack/react-start";
+import { ESTIMATED_WORKING_DAYS } from "@/lib/types/hr-types";
 import {
   generateEmployeePayslipCore,
   simulateEmployeePayslipCore,
@@ -24,6 +25,7 @@ import {
 } from "@/lib/payroll-cycle";
 import { loadRegisterPayments, type RegisterSlipPayment } from "./salary-payments.server";
 import { LOCKED_PAYROLL_MESSAGE, payrollAcceptsPayslipChanges } from "@/lib/hr/salary-payments";
+import { findUnresolvedDeviceAttendanceDates } from "@/lib/attendance/device-import/payroll.server";
 
 // ── Helper ─────────────────────────────────────────────────────────────────
 
@@ -204,7 +206,7 @@ export const getMonthlyPayrollTableFn = createServerFn()
     // to avoid N+1 fetches and to keep the aggregate accurate.
     const totalStats = await db
       .select({
-        totalBasic: sql<string>`sum(CAST(${employees.basicSalary} AS numeric) + COALESCE((SELECT SUM((elem->>'amount')::numeric) FROM jsonb_array_elements(${employees.allowanceConfig}) AS elem), 0))`,
+        totalBasic: sql<string>`sum(CAST(${employees.basicSalary} AS numeric) + COALESCE((SELECT SUM((elem->>'amount')::numeric * CASE WHEN elem->>'payBasis' = 'perDay' THEN ${ESTIMATED_WORKING_DAYS}::numeric ELSE 1 END) FROM jsonb_array_elements(${employees.allowanceConfig}) AS elem), 0))`,
       })
       .from(employees)
       .where(eq(employees.status, "active"));
@@ -219,7 +221,7 @@ export const getMonthlyPayrollTableFn = createServerFn()
 
     const pendingGrossStats = await db
       .select({
-        totalPending: sql<string>`sum(CAST(${employees.basicSalary} AS numeric) + COALESCE((SELECT SUM((elem->>'amount')::numeric) FROM jsonb_array_elements(${employees.allowanceConfig}) AS elem), 0))`,
+        totalPending: sql<string>`sum(CAST(${employees.basicSalary} AS numeric) + COALESCE((SELECT SUM((elem->>'amount')::numeric * CASE WHEN elem->>'payBasis' = 'perDay' THEN ${ESTIMATED_WORKING_DAYS}::numeric ELSE 1 END) FROM jsonb_array_elements(${employees.allowanceConfig}) AS elem), 0))`,
       })
       .from(employees)
       .leftJoin(
@@ -399,6 +401,14 @@ export const previewEmployeePayslipFn = createServerFn()
       ignorePastUnmarkedDays: true,
     });
 
+    // Saving is refused while any of these remain, so show them up front.
+    const unresolvedAttendanceDates = await findUnresolvedDeviceAttendanceDates(
+      db,
+      employeeId,
+      payrollPeriod.startDate,
+      data.earlyCutoffDate ?? payrollPeriod.endDate,
+    );
+
     // ── 8. Check missed cycles (12-month lookback) ──────────────────────────
     const monthDate = parseISO(`${month}-01`);
     const lookbackMonths = 12;
@@ -461,6 +471,7 @@ export const previewEmployeePayslipFn = createServerFn()
       commissionBreakdown: simulation.commissionBreakdown,
       salaryRevision: simulation.salaryRevision,
       missedCycles,
+      unresolvedAttendanceDates,
       advanceProcessRecords: simulation.advanceProcessRecords,
     };
   });

@@ -29,6 +29,7 @@ const allowanceConfigSchema = z.object({
   amount: z.number().nonnegative("Amount must be 0 or greater"),
   deductions: deductionsSchema,
   lateEarlyBasis: z.enum(["hourly", "perDay"]).optional(),
+  payBasis: z.enum(["monthly", "perDay"]).optional(),
 });
 
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/;

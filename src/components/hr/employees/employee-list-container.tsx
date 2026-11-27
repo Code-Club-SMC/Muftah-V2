@@ -1,3 +1,4 @@
+import { estimateMonthlyAllowance, type AllowanceConfig } from "@/lib/types/hr-types";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { getEmployeesFn } from "@/server-functions/hr/employees/get-employees-fn";
 import { Button } from "@/components/ui/button";
@@ -58,8 +59,8 @@ export const EmployeeListContainer = () => {
     .reduce(
       (acc, curr) => {
         const allowances = Array.isArray(curr.allowanceConfig)
-          ? (curr.allowanceConfig as { amount?: number }[]).reduce(
-              (sum, a) => sum + (typeof a.amount === "number" ? a.amount : 0),
+          ? (curr.allowanceConfig as AllowanceConfig[]).reduce(
+              (sum, a) => sum + estimateMonthlyAllowance(a),
               0,
             )
           : 0;

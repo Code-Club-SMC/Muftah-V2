@@ -87,6 +87,7 @@ const migrateAllowance = (raw: Partial<AllowanceConfig>): AllowanceConfig => ({
   name: raw.name ?? "Allowance",
   amount: raw.amount ?? 0,
   lateEarlyBasis: raw.lateEarlyBasis ?? "hourly",
+  payBasis: raw.payBasis ?? "monthly",
   deductions: {
     absent: raw.deductions?.absent ?? FALLBACK_DEDUCTIONS.absent,
     annualLeave:

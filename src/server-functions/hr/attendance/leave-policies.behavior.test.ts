@@ -61,7 +61,7 @@ function input(overrides: Row = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks(); mock.finalized = false; mock.events = [];
-  employee = { id: "emp", firstName: "Test", lastName: "Employee", restDays: [0], standardDutyHours: 8, shifts: [{ start: "09:00", end: "17:00" }], compensatoryHoursBalance: "8", annualLeaveAllowance: 14 };
+  employee = { id: "emp", firstName: "Test", lastName: "Employee", joiningDate: "2026-01-01", restDays: [0], standardDutyHours: 8, shifts: [{ start: "09:00", end: "17:00" }], compensatoryHoursBalance: "8", annualLeaveAllowance: 14 };
   ledger = [];
   records = [{ id: "leave", employeeId: "emp", date: "2026-10-13", status: "leave", leaveType: "compensatory", leaveApprovalStatus: "pending", isApprovedLeave: false, compensatoryHoursUsed: "8", dutyHours: "0" }];
   mock.db.transaction.mockImplementation(async (callback) => callback(mock.db));
@@ -163,10 +163,16 @@ describe("leave policy mutation behavior", () => {
     expect(records[0]).toMatchObject({ status: "absent", leaveType: null, compensatoryHoursUsed: "0" });
   });
 
-  it.each(["single", "range"])("P4 %s bulk refuses a holiday leave charge", async (kind) => {
+  it("P4 single bulk refuses a holiday leave charge", async () => {
     records[0].status = "holiday";
-    const action = kind === "single" ? bulk({ data: { employeeIds: ["emp"], date: "2026-10-13", status: "leave", leaveType: "annual" } }) : bulkRange({ data: { employeeIds: ["emp"], startDate: "2026-10-13", endDate: "2026-10-13", template: { status: "leave", leaveType: "annual", entrySource: "manual" }, conflictStrategy: "overwrite" }, context });
-    await expect(action).rejects.toThrow("holiday");
+    await expect(bulk({ data: { employeeIds: ["emp"], date: "2026-10-13", status: "leave", leaveType: "annual" } })).rejects.toThrow("holiday");
+    expect(records[0].status).toBe("holiday");
+    expect(employee.compensatoryHoursBalance).toBe("8");
+  });
+
+  it("P4 range bulk skips a recorded holiday without charging leave", async () => {
+    records[0].status = "holiday";
+    await expect(bulkRange({ data: { employeeIds: ["emp"], startDate: "2026-10-13", endDate: "2026-10-13", template: { status: "leave", leaveType: "annual" }, conflictStrategy: "overwrite" }, context })).resolves.toMatchObject({ summary: { updated: 0, skippedHolidays: 1 } });
     expect(records[0].status).toBe("holiday");
     expect(employee.compensatoryHoursBalance).toBe("8");
   });

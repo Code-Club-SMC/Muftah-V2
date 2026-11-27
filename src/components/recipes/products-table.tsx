@@ -181,6 +181,7 @@ export const ProductsTable = ({ products }: ProductsTableProps) => {
       <DataTable
         columns={columns}
         data={products}
+        autoResetPageIndex={false}
         searchKey="name"
         searchPlaceholder="Filter products..."
       />
@@ -190,7 +191,8 @@ export const ProductsTable = ({ products }: ProductsTableProps) => {
         onOpenChange={setAddProductOpen}
       />
 
-      {selectedProduct && (
+      {/* Mounted only while open so the form always starts from the clicked row. */}
+      {editDialogOpen && selectedProduct && (
         <EditProductDialog
           open={editDialogOpen}
           onOpenChange={setEditDialogOpen}

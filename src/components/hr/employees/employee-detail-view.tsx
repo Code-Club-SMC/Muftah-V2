@@ -2,6 +2,7 @@ import { useState } from "react";
 import { format, formatDistanceToNow, parseISO } from "date-fns";
 import { useNavigate, useParams, Link } from "@tanstack/react-router";
 import { getEmployeeFn } from "@/server-functions/hr/employees/get-employee-fn";
+import { ESTIMATED_WORKING_DAYS, estimateMonthlyAllowance } from "@/lib/types/hr-types";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -146,7 +147,7 @@ export const EmployeeDetailView = () => {
   // ── Salary calculations ──────────────────────────────────────────────────
   const allowanceConfig = (employee.allowanceConfig as any[]) || [];
   const basicSalary = parseFloat(employee.basicSalary || "0") || 0;
-  const totalAllowances = allowanceConfig.reduce((sum, a) => sum + (parseFloat(a.amount) || 0), 0);
+  const totalAllowances = allowanceConfig.reduce((sum, a) => sum + estimateMonthlyAllowance(a), 0);
 
   const grossSalary = basicSalary + totalAllowances;
 
@@ -403,7 +404,8 @@ export const EmployeeDetailView = () => {
                       {allowanceConfig
                         .filter((a: any) => a.id !== "basicSalary" && parseFloat(a.amount || "0") > 0)
                         .map((allowance: any) => {
-                          const rules = allowance.deductions || {};
+                          const isPerDay = allowance.payBasis === "perDay";
+                          const rules = isPerDay ? {} : allowance.deductions || {};
                           const activeRules: string[] = [];
                           if (rules.absent) activeRules.push("Absent");
                           if (rules.leave) activeRules.push("Leave");
@@ -433,12 +435,13 @@ export const EmployeeDetailView = () => {
                                   </div>
                                 ) : (
                                   <span className="inline-flex items-center gap-1 text-[9px] text-emerald-600 font-bold uppercase tracking-wider">
-                                    <CheckCircle2 className="size-2.5" /> No deductions
+                                    <CheckCircle2 className="size-2.5" /> {isPerDay ? "Paid per day present" : "No deductions"}
                                   </span>
                                 )}
                               </div>
                               <span className="font-black text-sm tabular-nums ml-4 shrink-0">
                                 PKR {parseFloat(allowance.amount || "0").toLocaleString()}
+                                {isPerDay && " / day"}
                               </span>
                             </div>
                           );
@@ -459,6 +462,8 @@ export const EmployeeDetailView = () => {
                       </span>
                       <span className="text-[10px] text-muted-foreground">
                         Basic + all non-zero allowances
+                        {allowanceConfig.some((a) => a.payBasis === "perDay") &&
+                          ` (daily ones × ${ESTIMATED_WORKING_DAYS} days)`}
                       </span>
                     </div>
                     <span className="text-lg font-black text-emerald-700 tabular-nums">
