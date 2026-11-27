@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { db } from "@/db";
 import { paySalaries } from "@/server-functions/hr/payroll/salary-payments.server";
 import { getTransactionsFn } from "@/server-functions/finance-fn";
+import { getSalariesReportFn } from "@/server-functions/reports/salaries-report-fn";
 import { salaryFixture } from "./salary-fixture";
 
 // Only HTTP/session transport is bypassed; validators, handlers and SQL are real.
@@ -42,5 +43,22 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("salary payments on the Ledger",
 
     const nov28 = (await getTransactionsFn({ data: { walletId: f.cash.id, dateFrom: `${f.year}-11-28T00:00:00+05:00`, dateTo: `${f.year}-11-28T23:59:59+05:00` } } as never)) as { data: unknown[] };
     expect(nov28.data).toHaveLength(1);
+  });
+});
+
+describe.skipIf(!process.env.TEST_DATABASE_URL)("salaries report", () => {
+  it("selects slips by payroll month and shows what was paid and from where", async () => {
+    const f = await salaryFixture();
+    await payOne(f, 0, `${f.year}-12-02`);
+
+    const report = (await getSalariesReportFn({ data: { dateFrom: `${f.year}-11-01`, dateTo: `${f.year}-11-30` } } as never)) as {
+      payslips: { employeeCode: string; paidFrom: string | null; paid: number; due: number }[];
+      summary: { totalPaid: number; totalDue: number; count: number };
+    };
+    const mine = report.payslips.filter((p) => p.employeeCode.startsWith(f.id.slice(0, 8)));
+    expect(mine.map((p) => [p.paidFrom, p.paid, p.due])).toEqual([[f.cash.name, 26200, 0], [null, 0, 100000]]);
+    expect(report.summary.count).toBe(2);
+    expect(report.summary.totalPaid).toBe(26200);
+    expect(report.summary.totalDue).toBe(100000);
   });
 });

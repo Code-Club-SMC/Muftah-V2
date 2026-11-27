@@ -1,5 +1,5 @@
 import Big from "big.js";
-import { and, asc, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm";
+import { and, asc, eq, gte, isNull, lte, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { suppliers } from "@/db/schemas/core-suppliers";
 import { expenseCategories, expenses, otherIncome } from "@/db/schemas/finance-schema";
@@ -140,7 +140,6 @@ export async function loadMonthlyReport(startYear: number, todayKey: string): Pr
       .innerJoin(payrolls, eq(payslips.payrollId, payrolls.id))
       .where(
         and(
-          inArray(payrolls.status, ["approved", "paid"]),
           gte(payrolls.month, range.from),
           lte(payrolls.month, range.to),
         ),
@@ -430,7 +429,7 @@ export async function loadMonthlyReportDetail(line: string, month: MonthKey): Pr
       .innerJoin(payrolls, eq(payslips.payrollId, payrolls.id))
       .innerJoin(employees, eq(payslips.employeeId, employees.id))
       .where(
-        and(inArray(payrolls.status, ["approved", "paid"]), gte(payrolls.month, from), lte(payrolls.month, to)),
+        and(gte(payrolls.month, from), lte(payrolls.month, to)),
       );
     return detail(
       "Salaries",

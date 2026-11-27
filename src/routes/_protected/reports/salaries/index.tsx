@@ -61,8 +61,8 @@ function SalariesReportPage() {
       applied={params}
       generatedAt={dataUpdatedAt}
       error={error}
-      basis="Payslips selected by payroll payment date; payroll month is shown separately. Net salary is a payroll result, not a claim that the same cash amount was disbursed."
-      periodLabel="Payroll payment date range"
+      basis="Payslips selected by payroll month. Paid and Due come from salary payments recorded on the Payroll Register."
+      periodLabel="Payroll month range"
       isLoading={isLoading}
       isEmpty={isEmpty}
       accentColor={ACCENT}
@@ -71,7 +71,7 @@ function SalariesReportPage() {
         <div className="space-y-8">
           <section>
             <SectionTitle accentColor={ACCENT}>Period Summary</SectionTitle>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 print:grid-cols-4">
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3 print:grid-cols-3">
               <SummaryCard
                 label="Payslips"
                 value={formatNumber(data.summary.count)}
@@ -92,6 +92,8 @@ function SalariesReportPage() {
                 value={formatReportMoney(data.summary.totalNet)}
                 accentColor={ACCENT}
               />
+              <SummaryCard label="Paid" value={formatReportMoney(data.summary.totalPaid)} accentColor={ACCENT} />
+              <SummaryCard label="Still due" value={formatReportMoney(data.summary.totalDue)} accentColor={ACCENT} />
             </div>
           </section>
 
@@ -106,8 +108,11 @@ function SalariesReportPage() {
                 "Current-period net",
                 "Arrears included",
                 "Net incl. arrears",
+                "Paid from",
+                "Paid",
+                "Due",
               ]}
-              alignRight={[2, 3, 4, 5, 6]}
+              alignRight={[2, 3, 4, 5, 6, 8, 9]}
             >
               {data.payslips.map((p) => (
                 <ReportTableRow key={p.payslipId}>
@@ -130,6 +135,9 @@ function SalariesReportPage() {
                       {formatReportMoney(v)}
                     </ReportCell>
                   ))}
+                  <ReportCell>{p.paidFrom ?? "Not paid"}</ReportCell>
+                  <ReportCell align="right" mono>{formatReportMoney(p.paid)}</ReportCell>
+                  <ReportCell align="right" mono>{formatReportMoney(p.due)}</ReportCell>
                 </ReportTableRow>
               ))}
               <ReportTableRow>
@@ -146,6 +154,9 @@ function SalariesReportPage() {
                     {formatReportMoney(v)}
                   </ReportCell>
                 ))}
+                <ReportCell />
+                <ReportCell align="right" bold mono>{formatReportMoney(data.summary.totalPaid)}</ReportCell>
+                <ReportCell align="right" bold mono>{formatReportMoney(data.summary.totalDue)}</ReportCell>
               </ReportTableRow>
             </ReportTable>
             <p className="mt-3 text-sm">

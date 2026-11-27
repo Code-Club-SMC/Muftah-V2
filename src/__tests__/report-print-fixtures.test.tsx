@@ -194,6 +194,11 @@ function fixture(kind: Kind, count: number) {
         netSalary: 50500,
         arrearsAmount: 1000,
         arrearsFromMonths: ["2026-09"],
+        paidFrom: "Cash in Hand",
+        paid: 50500,
+        due: 0,
+        payrollId: "payroll-1",
+        employeeId: id,
       })),
       summary: {
         count,
@@ -201,6 +206,8 @@ function fixture(kind: Kind, count: number) {
         totalDeductions: 500 * count,
         totalNet: 50500 * count,
         totalArrears: 1000 * count,
+        totalPaid: 50500 * count,
+        totalDue: 0,
       },
     };
   return {

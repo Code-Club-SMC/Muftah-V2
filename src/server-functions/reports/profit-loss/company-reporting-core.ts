@@ -14,8 +14,10 @@ import {
   employees,
   payrolls,
   payslips,
+  salaryPayments,
   travelLogs,
 } from "@/db/schemas/hr-schema";
+import { effectiveDateFromKey } from "@/lib/hr/salary-payments";
 import {
   orderBookerTrips,
   payments,
@@ -657,43 +659,52 @@ export async function loadContext(
           settledAt: row.settledAt,
         })),
       ),
-    db
-      .select({
-        payrollId: payrolls.id,
-        payrollMonth: payrolls.month,
-        payrollStartDate: payrolls.startDate,
-        payrollEndDate: payrolls.endDate,
-        paidAt: payrolls.paidAt,
-        payslipId: payslips.id,
-        employeeId: employees.id,
-        grossSalary: payslips.grossSalary,
-        commissionAmount: payslips.commissionAmount,
-      })
-      .from(payslips)
-      .innerJoin(payrolls, eq(payslips.payrollId, payrolls.id))
-      .innerJoin(employees, eq(payslips.employeeId, employees.id))
-      .where(
-        and(
-          eq(payrolls.status, "paid"),
-          gte(payrolls.paidAt, fromDate),
-          lte(payrolls.paidAt, toDate),
-        ),
-      )
-      .then((rows) =>
-        rows
-          .filter((row) => row.paidAt)
-          .map((row) => ({
+    (() => {
+      // A slip's salary cost falls on the day it was first paid (no Approve step any more).
+      const firstPayment = db
+        .select({
+          payrollId: salaryPayments.payrollId,
+          employeeId: salaryPayments.employeeId,
+          paidOn: sql<string>`min(${salaryPayments.paymentDate})`.as("paid_on"),
+        })
+        .from(salaryPayments)
+        .where(and(eq(salaryPayments.kind, "payment"), eq(salaryPayments.status, "active")))
+        .groupBy(salaryPayments.payrollId, salaryPayments.employeeId)
+        .as("first_payment");
+      return db
+        .select({
+          payrollId: payrolls.id,
+          payrollMonth: payrolls.month,
+          payrollStartDate: payrolls.startDate,
+          payrollEndDate: payrolls.endDate,
+          paidOn: firstPayment.paidOn,
+          payslipId: payslips.id,
+          employeeId: employees.id,
+          grossSalary: payslips.grossSalary,
+          commissionAmount: payslips.commissionAmount,
+        })
+        .from(payslips)
+        .innerJoin(payrolls, eq(payslips.payrollId, payrolls.id))
+        .innerJoin(employees, eq(payslips.employeeId, employees.id))
+        .innerJoin(firstPayment, and(eq(firstPayment.payrollId, payslips.payrollId), eq(firstPayment.employeeId, payslips.employeeId)))
+        .where(and(
+          sql`${firstPayment.paidOn} >= ${reportDateKey(fromDate)}`,
+          sql`${firstPayment.paidOn} <= ${reportDateKey(toDate)}`,
+        ))
+        .then((rows) =>
+          rows.map((row) => ({
             payrollId: row.payrollId,
             payrollMonth: row.payrollMonth,
             payrollStartDate: row.payrollStartDate,
             payrollEndDate: row.payrollEndDate,
-            paidAt: row.paidAt!,
+            paidAt: effectiveDateFromKey(String(row.paidOn).slice(0, 10)),
             payslipId: row.payslipId,
             employeeId: row.employeeId,
             grossSalary: toNumber(row.grossSalary),
             commissionAmount: toNumber(row.commissionAmount),
           })),
-      ),
+        );
+    })(),
     db.query.orderBookers.findMany({
       columns: {
         id: true,
