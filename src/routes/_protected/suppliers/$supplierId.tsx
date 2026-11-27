@@ -103,10 +103,10 @@ export const Route = createFileRoute("/_protected/suppliers/$supplierId")({
         queryFn: () =>
           getSupplierDetailsFn({ data: { id: params.supplierId } }),
       }),
-      context.queryClient.ensureQueryData({
-        queryKey: ["inventory"],
-        queryFn: getInventoryFn,
-      }),
+      // Stores come from inventory, which needs its own permission. Skip it for supplier-only users.
+      hasPermission(context.viewerAccess.permissions, "inventory.view")
+        ? context.queryClient.ensureQueryData({ queryKey: ["inventory"], queryFn: getInventoryFn })
+        : Promise.resolve(),
       context.queryClient.ensureQueryData(overviewPurchasesQuery(params.supplierId, 1)),
       context.queryClient.ensureQueryData(overviewPaymentsQuery(params.supplierId, 1)),
     ]);
@@ -253,9 +253,11 @@ function SupplierDetailsPage() {
     queryFn: () => getSupplierDetailsFn({ data: { id: supplierId } }),
   });
 
-  const { data: warehouses } = useSuspenseQuery({
+  const canViewInventory = hasPermission(viewer?.permissions ?? [], "inventory.view");
+  const { data: warehouses = [] } = useQuery({
     queryKey: ["inventory"],
     queryFn: getInventoryFn,
+    enabled: canViewInventory,
   });
 
   const [purchasesPage, setPurchasesPage] = useState(1);

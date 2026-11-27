@@ -417,21 +417,37 @@ export async function applySupplierCredit(tx: Tx, input: { purchaseId: string; a
   return { paymentId: payment.id, balanceAfter: balance.minus(amount).toFixed(2) };
 }
 
-export async function assertPurchaseHasNoActiveReturn(tx: Tx, purchaseId: string) {
+/** The open (requested, dispatched or completed) return on a purchase, if any. */
+export async function activeReturnNumber(tx: Tx, purchaseId: string): Promise<string | null> {
   const [active] = await tx.select({ returnNumber: supplierReturns.returnNumber }).from(supplierReturns)
     .where(and(eq(supplierReturns.purchaseId, purchaseId), inArray(supplierReturns.status, [...ACTIVE_SUPPLIER_RETURN_STATUSES])))
     .limit(1);
-  if (active) throw new Error(`This purchase has supplier return ${active.returnNumber}. Cancel or void the return first.`);
+  return active?.returnNumber ?? null;
+}
+
+export function activeReturnMessage(returnNumber: string) {
+  return `This purchase has supplier return ${returnNumber}. Cancel or void the return first.`;
+}
+
+export async function assertPurchaseHasNoActiveReturn(tx: Tx, purchaseId: string) {
+  const returnNumber = await activeReturnNumber(tx, purchaseId);
+  if (returnNumber) throw new Error(activeReturnMessage(returnNumber));
+}
+
+/** How much of a purchase was paid with supplier credit. */
+export async function creditUsedOnPurchase(tx: Tx, purchaseId: string) {
+  const payments = await tx.select({ amount: supplierPayments.amount, supplierId: supplierPayments.supplierId }).from(supplierPayments)
+    .where(and(eq(supplierPayments.purchaseId, purchaseId), eq(supplierPayments.method, SUPPLIER_CREDIT_METHOD)));
+  const total = payments.reduce((sum, p) => sum.plus(p.amount), new Big(0));
+  return { total, supplierId: payments[0]?.supplierId ?? null };
 }
 
 /** Before a purchase is deleted: credit spent on it goes back to the supplier. */
 export async function restoreCreditUsedOnPurchase(tx: Tx, purchaseId: string, actorId: string) {
-  const payments = await tx.select({ amount: supplierPayments.amount, supplierId: supplierPayments.supplierId }).from(supplierPayments)
-    .where(and(eq(supplierPayments.purchaseId, purchaseId), eq(supplierPayments.method, SUPPLIER_CREDIT_METHOD)));
-  const total = payments.reduce((sum, p) => sum.plus(p.amount), new Big(0));
-  if (total.gt(0)) {
+  const { total, supplierId } = await creditUsedOnPurchase(tx, purchaseId);
+  if (total.gt(0) && supplierId) {
     await tx.insert(supplierCreditMovements).values({
-      supplierId: payments[0].supplierId,
+      supplierId,
       kind: "use_reversed",
       amount: total.toFixed(2),
       purchaseId,

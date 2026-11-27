@@ -24,7 +24,8 @@ import { useAddPackagingMaterial } from "@/hooks/inventory/use-add-packaging-mat
 import { addPackagingMaterialSchema, BY_PRODUCT_FORM_FIELDS } from "@/lib/validators/validators";
 import { useState, useMemo, useRef } from "react";
 import { cn, plainNumber } from "@/lib/utils";
-import { useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
+import { getPurchaseEditStateFn } from "@/server-functions/suppliers/get-purchase-edit-state-fn";
 import { getSuppliersFn } from "@/server-functions/suppliers/get-suppliers-fn";
 import { Textarea } from "../ui/textarea";
 import { packagingUnit } from "@/lib/inventory/material-units";
@@ -187,6 +188,13 @@ export const AddPackagingMaterialForm = ({
     preselectedWarehouse && !availableWarehouses.find((w) => w.id === preselectedWarehouse);
 
   const isPending = isEditMode ? editMutate.isPending : addMutate.status === "pending";
+  // An open supplier return blocks editing; the note above the button says why.
+  const { data: editState } = useQuery({
+    queryKey: ["purchase-edit-state", initialValues?.purchaseId],
+    queryFn: () => getPurchaseEditStateFn({ data: { id: initialValues!.purchaseId! } }),
+    enabled: isEditMode,
+  });
+  const blockedByReturn = isEditMode && Boolean(editState?.activeReturn);
   const originalPaid = parseFloat(initialValues?.paidAmount || "0");
 
   const derivePaymentStatus = (newTotal: number): "paid" | "partial" | "unpaid" => {
@@ -708,7 +716,7 @@ export const AddPackagingMaterialForm = ({
         </FieldGroup>
 
         <div className="flex justify-end pt-2">
-          <Button type="submit" disabled={isPending} className="w-full sm:w-auto">
+          <Button type="submit" disabled={isPending || blockedByReturn} className="w-full sm:w-auto">
             {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             {isEditMode ? "Save Changes" : "Save Material"}
           </Button>

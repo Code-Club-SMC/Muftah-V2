@@ -120,9 +120,11 @@ function DetailsPage() {
     queryFn: () => getSupplierDetailsFn({ data: { id: supplierId } }),
   });
 
-  const { data: warehouses } = useSuspenseQuery({
+  const canViewInventory = hasPermission(viewer?.permissions ?? [], "inventory.view");
+  const { data: warehouses = [] } = useQuery({
     queryKey: ["inventory"],
     queryFn: getInventoryFn,
+    enabled: canViewInventory,
   });
 
   // Table Data based on View

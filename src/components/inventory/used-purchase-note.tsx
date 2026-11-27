@@ -8,6 +8,14 @@ export function UsedPurchaseNote({ purchaseId }: { purchaseId: string }) {
     queryKey: ["purchase-edit-state", purchaseId],
     queryFn: () => getPurchaseEditStateFn({ data: { id: purchaseId } }),
   });
+  if (data?.activeReturn) {
+    return (
+      <p role="note" className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-400">
+        <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+        <span>{data.activeReturn.message}</span>
+      </p>
+    );
+  }
   if (!data?.stockLocked) return null;
   const unused = data.unused?.quantity ?? 0;
   return (

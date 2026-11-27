@@ -318,6 +318,8 @@ describe("purchase deletion and supplier audit handler", () => {
       stockLocked: false,
       alreadyVoided: true,
       hasLabReports: true,
+      activeReturn: null,
+      creditGivenBack: "0.00",
       refund: { paid: "0.00", walletId: null },
     });
     await expect(updatePurchaseRecordFn({ data: { id: "p", cost: "8000" }, context } as never)).rejects.toThrow("voided");

@@ -10,7 +10,7 @@ vi.mock("@/server-functions/finance-fn", () => ({ getWalletsListFn: vi.fn() }));
 
 const purchase = { id: "p1", materialType: "chemical", cost: "7000", quantity: "100" };
 
-function open(state: { stockLocked: boolean; alreadyVoided?: boolean; hasLabReports?: boolean; refund: { paid: string; walletId: string | null } }) {
+function open(state: { stockLocked: boolean; alreadyVoided?: boolean; hasLabReports?: boolean; activeReturn?: { returnNumber: string; message: string } | null; creditGivenBack?: string; refund: { paid: string; walletId: string | null } }) {
   const client = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity, retry: false } } });
   client.setQueryData(["purchase-edit-state", "p1"], state);
   client.setQueryData(["wallets"], [
@@ -115,5 +115,36 @@ describe("Delete purchase refund", () => {
     rerender(renderDialog(true, "p2"));
     expect((screen.getByLabelText("Reason") as HTMLTextAreaElement).value).toBe("");
     expect((screen.getByRole("button", { name: "Delete purchase" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("blocks deleting up front when the purchase has an open supplier return", () => {
+    const message = "This purchase has supplier return SR-0002. Cancel or void the return first.";
+    open({ stockLocked: false, activeReturn: { returnNumber: "SR-0002", message }, refund: { paid: "7000.00", walletId: "cash" } });
+    expect(screen.getByText(message)).toBeTruthy();
+    expect(screen.queryByText(/will be reversed/)).toBeNull();
+    expect(screen.queryByLabelText("Refund amount (PKR)")).toBeNull();
+    expect((screen.getByRole("button", { name: "Delete purchase" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("says supplier credit spent on the purchase goes back", () => {
+    open({ stockLocked: false, creditGivenBack: "3000.00", refund: { paid: "0.00", walletId: null } });
+    expect(screen.getByText(/Rs 3,000 of this purchase was paid with supplier credit/)).toBeTruthy();
+    expect((screen.getByRole("button", { name: "Delete purchase" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("closes without flashing a load error once the delete succeeds", async () => {
+    const onOpenChange = vi.fn();
+    const client = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity, retry: false } } });
+    client.setQueryData(["purchase-edit-state", "p1"], { stockLocked: false, refund: { paid: "0.00", walletId: null } });
+    render(
+      <QueryClientProvider client={client}>
+        <DeletePurchaseDialog open onOpenChange={onOpenChange} purchase={purchase} />
+      </QueryClientProvider>,
+    );
+    fireEvent.change(screen.getByLabelText("Reason"), { target: { value: "Duplicate" } });
+    fireEvent.click(screen.getByRole("button", { name: "Delete purchase" }));
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+    expect(client.getQueryData(["purchase-edit-state", "p1"])).toBeUndefined();
+    expect(screen.queryByText(/Unable to load purchase state/)).toBeNull();
   });
 });
