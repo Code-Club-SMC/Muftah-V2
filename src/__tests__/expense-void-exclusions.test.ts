@@ -10,6 +10,8 @@ describe("voided expenses stay out of money totals", () => {
     ["src/server-functions/dashboard/get-dashboard-fn.ts", 2],
     ["src/server-functions/reports/expenses-report-fn.ts", 1],
     ["src/server-functions/finance-fn.ts", 1],
+    ["src/server-functions/finance/expense-summary-fn.ts", 1],
+    ["src/server-functions/finance/expense-templates-fn.ts", 1],
   ])("%s filters voided expenses %i time(s)", (path, times) => {
     expect(occurrences(path, "isNull(expenses.voidedAt)")).toBe(times);
   });
@@ -18,6 +20,7 @@ describe("voided expenses stay out of money totals", () => {
     for (const path of [
       "src/server-functions/dashboard/get-dashboard-fn.ts",
       "src/server-functions/finance-fn.ts",
+      "src/server-functions/finance/expense-summary-fn.ts",
     ]) {
       expect(occurrences(path, "sum(${expenses.amount})")).toBeLessThanOrEqual(occurrences(path, "isNull(expenses.voidedAt)"));
     }

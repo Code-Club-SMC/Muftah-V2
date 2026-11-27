@@ -70,6 +70,8 @@ const fixture = {
     commissions: 0,
     tada: 0,
     generalExpenses: 0,
+    returnWriteOffs: 0,
+    returnedStockWriteDowns: 0,
     totalOperatingExpenses: 0,
     netProfit: 0,
     netMargin: 0,

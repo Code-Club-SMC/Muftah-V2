@@ -683,6 +683,13 @@ describe("P&L Phase 4 — edge-case audit on company reporting core", () => {
 		expect(exportSrc).toContain("realizedRevenue");
 		expect(exportSrc).toContain("realizedCogs");
 	});
+
+	it("adds back non-cash returned stock losses in the reconciliation bridge", () => {
+		const src = readFileSync(resolve(process.cwd(), "src/server-functions/reports/profit-loss/company-reporting-core.ts"), "utf8");
+		expect(src).toContain('type: "returned_stock_losses"');
+		expect(src).toContain('type: "return_write_offs"');
+		expect(src).toContain('type: "returned_stock_write_downs"');
+	});
 });
 
 describe("aggregateRealizedInvoiceRows", () => {

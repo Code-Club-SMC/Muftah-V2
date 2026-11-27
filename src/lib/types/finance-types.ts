@@ -147,12 +147,45 @@ export type CreateExpenseInput = {
   remarks?: string;
   allowOverdraw?: boolean;
   fieldValues?: FinanceDynamicFieldValueInput[];
+  templateId?: string;
 };
 
 export type ExpenseEntryDefaults = {
   lastWalletId: string | null;
   categoryUsageRank: string[];
   payees: string[];
+};
+
+export type ExpenseTemplate = {
+  id: string;
+  name: string;
+  categoryId: string;
+  categoryName: string;
+  amount: string | null;
+  payee: string | null;
+  walletId: string | null;
+  note: string | null;
+  reminderDay: number | null;
+  skippedMonth: string | null;
+  /** ISO timestamps of live expenses from this template inside the requested window. */
+  expenseDates: string[];
+};
+
+export type ExpenseMonthSummary = {
+  currentTotal: number;
+  previousTotal: number;
+  topCategories: Array<{ categoryId: string; name: string; total: number }>;
+};
+
+export type SaveExpenseTemplateInput = {
+  templateId?: string;
+  name: string;
+  categoryId: string;
+  amount?: number | null;
+  payee?: string | null;
+  walletId?: string | null;
+  note?: string | null;
+  reminderDay?: number | null;
 };
 
 export type UpdateExpenseInput = {

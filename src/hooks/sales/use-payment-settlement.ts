@@ -48,6 +48,7 @@ export function usePaymentSettlements(filters: PaymentSettlementFilters) {
 
 const relatedQueryKeys = [
 	["invoices"],
+	["recovery-commission"],
 	["customers"],
 	["payments"],
 	["credit-recovery"],
@@ -154,6 +155,7 @@ export function useReversePayment() {
 			effectiveDate: Date;
 			reason: string;
 			paymentDueDate?: Date;
+			commissionBearer?: "booker" | "company";
 		}) => reversePaymentFn({ data }),
 		onSuccess: async () => {
 			toast.success("Payment reversed");

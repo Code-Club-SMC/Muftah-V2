@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { Link } from "@tanstack/react-router";
+import Big from "big.js";
 import { format } from "date-fns";
 import { Printer } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -38,6 +39,7 @@ import {
   getBalanceAfter,
   parseAmountInput,
 } from "@/lib/finance/expense-entry";
+import { salvageSplit } from "@/lib/inventory/returned-stock";
 import { getReturnUnitsPerCarton } from "@/lib/sales/returns/refund-pricing";
 import {
   availableReturnActions,
@@ -45,6 +47,7 @@ import {
   parseVoidBlockedByRefundError,
   receivedUnits,
   requestedUnits,
+  returnCostBasis,
   shortUnits,
   type ReturnAction,
 } from "@/lib/sales/returns/return-lifecycle";
@@ -63,6 +66,18 @@ type SettledCreditNoteResult = {
   invoiceNumber: string;
   leftoverCreditBalance: number;
 };
+
+type LineInput = {
+  returnItemId: string;
+  goodUnits: string;
+  damagedUnits: string;
+  expiredUnits: string;
+  damagedSalvage: string;
+  expiredSalvage: string;
+};
+const emptyLine = (returnItemId: string): LineInput => ({
+  returnItemId, goodUnits: "", damagedUnits: "", expiredUnits: "", damagedSalvage: "", expiredSalvage: "",
+});
 
 const labels: Record<ReturnAction, string> = {
   approve: "Approve", reject: "Reject", receive: "Receive", cancel: "Cancel return", void: "Void receipt",
@@ -112,7 +127,7 @@ export function ReturnLifecycleActions({
   const [reason, setReason] = useState("");
   const [notes, setNotes] = useState("");
   const [error, setError] = useState("");
-  const [lines, setLines] = useState<Array<{ returnItemId: string; goodUnits: string; damagedUnits: string; expiredUnits: string }>>([]);
+  const [lines, setLines] = useState<LineInput[]>([]);
 
   const [settledCreditNote, setSettledCreditNote] = useState<SettledCreditNoteResult | null>(null);
   const [settlementChoice, setSettlementChoice] = useState<"keep" | "refund">("keep");
@@ -135,6 +150,14 @@ export function ReturnLifecycleActions({
 
   const needsDetail = action === "receive" && items === undefined;
   const detailQuery = useSalesReturnDetail(needsDetail ? returnId : null);
+  // Cost per pack drives the "Loss booked" preview; the server works out the exact amount.
+  const costQuery = useSalesReturnDetail(action === "receive" ? returnId : null);
+  const costPerUnitById = new Map(
+    (costQuery.data?.items ?? []).map(line => [
+      line.id,
+      returnCostBasis(line.invoiceItem, getReturnUnitsPerCarton(line.invoiceItem)).costPerUnit,
+    ]),
+  );
   const waitingForDetail = needsDetail && (detailQuery.isLoading || detailQuery.isError || !detailQuery.data);
   const effectiveStatus = needsDetail && detailQuery.data ? detailQuery.data.status : status;
   const effectiveActions = availableReturnActions(effectiveStatus, {
@@ -154,10 +177,35 @@ export function ReturnLifecycleActions({
   // Read current requested limits after a stale-detail refresh; never fill inspection from them.
   const inspection = resolvedItems.map(item => {
     const line = lines.find(line => line.returnItemId === item.id);
-    return { ...item, goodUnits: Number(line?.goodUnits ?? ""), damagedUnits: Number(line?.damagedUnits ?? ""), expiredUnits: Number(line?.expiredUnits ?? "") };
+    return {
+      ...item,
+      goodUnits: Number(line?.goodUnits ?? ""),
+      damagedUnits: Number(line?.damagedUnits ?? ""),
+      expiredUnits: Number(line?.expiredUnits ?? ""),
+      damagedSalvage: Number(line?.damagedSalvage ?? ""),
+      expiredSalvage: Number(line?.expiredSalvage ?? ""),
+    };
   });
+  /** Loss preview per item and condition; throws the server's message when salvage is above cost. */
+  function salvagePreview(line: (typeof inspection)[number], condition: "damaged" | "expired") {
+    const units = line[`${condition}Units`];
+    const costPerUnit = costPerUnitById.get(line.id);
+    if (!units || costPerUnit === undefined) return null;
+    return salvageSplit({
+      label: `${line.label} (${condition})`,
+      units,
+      salvagePerUnit: line[`${condition}Salvage`],
+      cost: new Big(costPerUnit).times(units).toFixed(2),
+    });
+  }
   let inspectionError = "";
-  try { checkInspection(inspection); } catch (error) { inspectionError = (error as Error).message; }
+  try {
+    checkInspection(inspection);
+    for (const line of inspection) {
+      salvagePreview(line, "damaged");
+      salvagePreview(line, "expired");
+    }
+  } catch (error) { inspectionError = (error as Error).message; }
   const reasonValid = reason.trim().length >= 3 && reason.trim().length <= 500;
   const valid =
     !!action &&
@@ -168,16 +216,16 @@ export function ReturnLifecycleActions({
   function open(nextAction: ReturnAction) {
     if (submitting.current || !actions.includes(nextAction)) return;
     setError(""); setReason(""); setNotes("");
-    setLines((items ?? []).map(item => ({ returnItemId: item.id, goodUnits: "", damagedUnits: "", expiredUnits: "" })));
+    setLines((items ?? []).map(item => emptyLine(item.id)));
     setAction(nextAction);
   }
 
-  function updateLineValue(itemId: string, key: "goodUnits" | "damagedUnits" | "expiredUnits", value: string) {
+  function updateLineValue(itemId: string, key: Exclude<keyof LineInput, "returnItemId">, value: string) {
     setLines(current => {
       if (current.some(line => line.returnItemId === itemId)) {
         return current.map(line => (line.returnItemId === itemId ? { ...line, [key]: value } : line));
       }
-      return [...current, { returnItemId: itemId, goodUnits: "", damagedUnits: "", expiredUnits: "", [key]: value }];
+      return [...current, { ...emptyLine(itemId), [key]: value }];
     });
   }
 
@@ -231,6 +279,8 @@ export function ReturnLifecycleActions({
             goodUnits: line.goodUnits,
             damagedUnits: line.damagedUnits,
             expiredUnits: line.expiredUnits,
+            ...(line.damagedUnits > 0 ? { damagedSalvagePerUnit: line.damagedSalvage } : {}),
+            ...(line.expiredUnits > 0 ? { expiredSalvagePerUnit: line.expiredSalvage } : {}),
           })),
         });
         if (
@@ -325,7 +375,7 @@ export function ReturnLifecycleActions({
             <DialogHeader>
               <DialogTitle>{action ? labels[action] : "Return"}</DialogTitle>
               <DialogDescription>
-                {action === "receive" ? "Enter inspected packs, not cartons. Good packs enter sellable stock; damaged and expired packs stay segregated. Only received packs credit the invoice. This closes the request, including any shortfall."
+                {action === "receive" ? "Enter inspected packs, not cartons. Good packs enter sellable stock; damaged and expired packs stay segregated at their salvage value (0 unless you enter one); the rest of their cost is booked as a loss. Only received packs credit the invoice. This closes the request, including any shortfall."
                   : action === "void" ? "Reverse this receipt's stock and invoice credit. Receipt facts are retained. Stock shortage can block the entire void."
                   : "Give a reason. This releases the request without moving stock or invoice credit."}
               </DialogDescription>
@@ -356,6 +406,7 @@ export function ReturnLifecycleActions({
                     <>
                       {resolvedItems.map(item => {
                         const line = lines.find(line => line.returnItemId === item.id);
+                        const inspected = inspection.find(row => row.id === item.id)!;
                         return <FieldGroup key={item.id}>
                           <p>{item.label}: requested {item.approvedUnits} packs</p>
                           <div className="grid grid-cols-3 gap-3">
@@ -368,6 +419,22 @@ export function ReturnLifecycleActions({
                               </Field>;
                             })}
                           </div>
+                          {(["damaged", "expired"] as const).map(condition => {
+                            if (!(inspected[`${condition}Units`] > 0)) return null;
+                            const id = `${returnId}-${item.id}-${condition}-salvage`;
+                            let loss: string | null = null;
+                            // The message is already shown as the inspection error below.
+                            try { loss = salvagePreview(inspected, condition)?.writeOff ?? null; } catch { loss = null; }
+                            return <div key={condition} className="grid grid-cols-2 items-end gap-3">
+                              <Field>
+                                <Label htmlFor={id}>{item.label} {condition} salvage per pack</Label>
+                                <Input id={id} type="number" min={0} step="0.01" placeholder="0"
+                                  value={line?.[`${condition}Salvage`] ?? ""}
+                                  onChange={event => updateLineValue(item.id, `${condition}Salvage`, event.target.value)} />
+                              </Field>
+                              {loss !== null && <p className="pb-2 text-sm text-amber-700 dark:text-amber-300">Loss booked: {formatRupees(loss)}</p>}
+                            </div>;
+                          })}
                         </FieldGroup>;
                       })}
                       <p>Received: {inspection.reduce((sum, line) => sum + receivedUnits(line), 0)} packs. Shortfall: {inspection.reduce((sum, line) => sum + shortUnits(line), 0)} packs. The shortfall is released when this receipt closes the request.</p>

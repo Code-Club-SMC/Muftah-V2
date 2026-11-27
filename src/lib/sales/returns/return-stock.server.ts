@@ -1,6 +1,6 @@
 import Big from "big.js";
 import { createId } from "@paralleldrive/cuid2";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import type { db } from "@/db";
 import {
   finishedGoodsStock,
@@ -10,6 +10,7 @@ import {
 import type { invoiceItems } from "@/db/schemas/sales-schema";
 import { salesReturnStockTraces } from "@/db/schemas/sales-erp-schema";
 import { recordSalesReturnCartons } from "@/lib/cartons/sales-return.server";
+import { poolShare } from "@/lib/inventory/returned-stock";
 import { splitUnits, type ReturnCondition } from "./return-lifecycle";
 import { adjustmentLog, cartons } from "@/db/schemas/manufacturing-schema";
 import { outsidePackMovements } from "@/db/schemas/production-schema";
@@ -59,6 +60,10 @@ export async function restockReturnedUnits(
     unitsPerCarton: number;
     costPerUnit: number;
     inventoryValue: string;
+    /** Value that enters stock: the original cost for good packs, salvage for damaged/expired. */
+    stockValue: string;
+    /** inventoryValue minus stockValue. */
+    writeOffAmount: string;
     userId: string;
   },
 ) {
@@ -121,7 +126,7 @@ export async function restockReturnedUnits(
       existingTotalInventoryValue: existing?.totalInventoryValue ?? "0",
       unitsPerCarton: input.unitsPerCarton,
       inboundUnits: input.units,
-      inboundInventoryValue: input.inventoryValue,
+      inboundInventoryValue: input.stockValue,
       usesCartons,
     });
     const values = {
@@ -164,6 +169,7 @@ export async function restockReturnedUnits(
     totalUnitsMoved: input.units,
     costPerUnit: input.costPerUnit.toFixed(4),
     totalCost: input.inventoryValue,
+    writeOffAmount: input.writeOffAmount,
   });
 }
 
@@ -193,7 +199,7 @@ async function takeFromReturnedStock(
   const oldUnits = stock.quantityCartons * input.unitsPerCarton + stock.quantityContainers;
   const nextUnits = oldUnits - input.units;
   const oldValue = new Big(stock.totalInventoryValue ?? 0);
-  const removed = nextUnits === 0 ? oldValue : new Big(oldValue.times(input.units).div(oldUnits).toFixed(2));
+  const removed = new Big(poolShare({ units: oldUnits, value: oldValue.toFixed(2) }, input.units));
   const nextValue = oldValue.minus(removed);
   const wac = nextUnits > 0 ? nextValue.div(nextUnits) : new Big(0);
   await tx
@@ -298,7 +304,7 @@ export async function reverseReturnStock(
     }
     if (available < units) {
       throw new Error(
-        `Return #${input.returnNumber} can't be voided: ${units} packs of ${first.recipe.name} went to ${PLACE[first.destination] ?? first.destination} but only ${available} are left. Some were sold or used since.`,
+        `Return #${input.returnNumber} can't be voided: ${units} ${units === 1 ? "pack" : "packs"} of ${first.recipe.name} went to ${PLACE[first.destination] ?? first.destination} but only ${available} ${available === 1 ? "is" : "are"} left. Some were sold, scrapped or sold as seconds since.`,
       );
     }
   }
@@ -351,6 +357,9 @@ export async function reverseReturnStock(
     // Split the removed value across this group's traces; the last one keeps the residual cents.
     let valueLeft = removedValue;
     let unitsLeft = units;
+    const sellable = first.destination === "sellable";
+    // Big keeps the sign of zero, so write zero explicitly instead of "-0.00".
+    const negate = (value: Big) => (value.eq(0) ? "0.00" : value.times(-1).toFixed(2));
     for (const trace of traces) {
       const share =
         unitsLeft === trace.totalUnitsMoved
@@ -358,6 +367,9 @@ export async function reverseReturnStock(
           : removedValue.times(trace.totalUnitsMoved).div(units).round(2);
       valueLeft = valueLeft.minus(share);
       unitsLeft -= trace.totalUnitsMoved;
+      // Damaged/expired: COGS goes back at the original cost; the write-off is reversed by
+      // what actually left stock, so a later value change is not double counted.
+      const originalCost = new Big(trace.totalCost);
       voidTraces.push({
         id: createId(),
         salesReturnId: trace.salesReturnId,
@@ -372,9 +384,11 @@ export async function reverseReturnStock(
         cartonsMoved: -trace.cartonsMoved,
         quantityMoved: -trace.quantityMoved,
         totalUnitsMoved: -trace.totalUnitsMoved,
-        costPerUnit: trace.totalUnitsMoved > 0 ? share.div(trace.totalUnitsMoved).toFixed(4) : "0.0000",
-        // Big keeps the sign of zero, so write zero explicitly instead of "-0.00".
-        totalCost: share.eq(0) ? "0.00" : share.times(-1).toFixed(2),
+        costPerUnit: sellable
+          ? trace.totalUnitsMoved > 0 ? share.div(trace.totalUnitsMoved).toFixed(4) : "0.0000"
+          : trace.costPerUnit,
+        totalCost: sellable ? negate(share) : negate(originalCost),
+        writeOffAmount: sellable ? "0.00" : negate(originalCost.minus(share)),
       });
     }
   }
@@ -391,5 +405,10 @@ export async function reverseReturnStock(
     });
   }
 
-  if (voidTraces.length > 0) await tx.insert(salesReturnStockTraces).values(voidTraces);
+  if (voidTraces.length > 0) {
+    // Stamped while the stock lock is held: undoing a value change checks what left after it.
+    await tx
+      .insert(salesReturnStockTraces)
+      .values(voidTraces.map((trace) => ({ ...trace, createdAt: sql`clock_timestamp()` })));
+  }
 }

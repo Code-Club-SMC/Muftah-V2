@@ -5,6 +5,7 @@ import {
   payrolls,
   salaryAdvances,
   advanceInstallments,
+  salaryPayments,
   nightShiftRates,
   travelLogs,
   bradfordAuditLog,
@@ -15,6 +16,14 @@ import {
 import { orderBookerTrips, commissionRecords, orderBookers, drivers, driverTrips } from "@/db/schemas/sales-erp-schema";
 import { eq, and, inArray, gte, lt, desc, sql, isNull } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
+import {
+  collectPayslipCommission,
+  ensureRecoveryCommissionSwitchover,
+  markPayslipCommissionPaid,
+  releasePayslipCommission,
+} from "@/server-functions/sales/recovery-commission-service";
+import type { SalesTransaction } from "@/server-functions/sales/settlement-service";
+import type { PayslipCommissionBreakdown } from "@/lib/order-booker/recovery-commission";
 import {
   buildRestDayDateSet,
   calculatePayslip,
@@ -34,6 +43,7 @@ import {
 import { assertDeviceAttendanceResolved, lockAttendancePayrollWrites } from "@/lib/attendance/device-import/payroll.server";
 import { compCashOutAmount } from "@/lib/attendance/compensatory-bank";
 import { payrollAttendanceWith, toPayrollAttendanceRecord } from "./attendance-records";
+import { LOCKED_PAYROLL_MESSAGE, payrollAcceptsPayslipChanges } from "@/lib/hr/salary-payments";
 
 function getEffectiveSalaryDate(payrollPeriod: { startDate: string; endDate: string }): string {
   const todayStr = format(new Date(), "yyyy-MM-dd");
@@ -98,6 +108,7 @@ function shouldBlockMissingAttendance(
 export async function calculateEnrichedAdvanceDeductions(
   employeeId: string,
   executor: typeof db | DbTransaction = db,
+  options: { payrollId?: string } = {},
 ) {
   const pendingAdvances = await executor.query.salaryAdvances.findMany({
     where: and(
@@ -106,9 +117,24 @@ export async function calculateEnrichedAdvanceDeductions(
     ),
   });
 
+  // An overpaid amount recorded against this payroll is taken back from the NEXT salary,
+  // so a revision of the same month must not deduct it.
+  const sameMonthRecoveries = new Set(
+    options.payrollId
+      ? (await executor
+          .select({ advanceId: salaryPayments.advanceId })
+          .from(salaryPayments)
+          .where(and(
+            eq(salaryPayments.payrollId, options.payrollId),
+            eq(salaryPayments.employeeId, employeeId),
+            eq(salaryPayments.kind, "recovery"),
+          ))).map((row) => row.advanceId)
+      : [],
+  );
+
   // Only advances that still have installments remaining
   const activeAdvances = pendingAdvances.filter(
-    (a) => a.installmentsPaid < a.installmentMonths,
+    (a) => a.installmentsPaid < a.installmentMonths && !sameMonthRecoveries.has(a.id),
   );
 
   let totalDeduction = 0;
@@ -156,11 +182,12 @@ export async function calculateEnrichedAdvanceDeductions(
 async function recalculateAdvanceDeductionsAfterPayslipReversal(
   tx: DbTransaction,
   employeeId: string,
+  payrollId: string,
   previousAdvanceDeduction: number,
   payslipCalc: ReturnType<typeof calculatePayslip>,
 ) {
   const { totalDeduction, processedRecords } =
-    await calculateEnrichedAdvanceDeductions(employeeId, tx);
+    await calculateEnrichedAdvanceDeductions(employeeId, tx, { payrollId });
   const advanceDeductionDelta = totalDeduction - previousAdvanceDeduction;
 
   payslipCalc.advanceDeduction = totalDeduction;
@@ -290,6 +317,8 @@ export async function reversePayslipSideEffects(
       updatedAt: new Date(),
     })
     .where(eq(commissionRecords.paidInPayslipId, payslipId));
+
+  await releasePayslipCommission(tx, payslipId);
 
   await tx
     .update(travelLogs)
@@ -475,7 +504,7 @@ export async function generateEmployeePayslipCore(
   let advanceIdsToProcess: AdvanceProcessRecord[] = [];
 
   if (autoDeductAdvances && additionalAmounts.advanceDeduction === undefined) {
-    const { totalDeduction, processedRecords } = await calculateEnrichedAdvanceDeductions(employeeId);
+    const { totalDeduction, processedRecords } = await calculateEnrichedAdvanceDeductions(employeeId, db, { payrollId });
     advanceDeduction = totalDeduction;
     advanceIdsToProcess = processedRecords;
   } else {
@@ -525,14 +554,8 @@ export async function generateEmployeePayslipCore(
   let dynamicTA = 0;
   let orderBookerCommission = 0;
   let commissionIdsToPay: string[] = [];
-  let commissionBreakdownSnapshot: Array<{
-    orderId: string;
-    orderRef: string;
-    orderDate: string;
-    orderValue: number;
-    rate: number;
-    amount: number;
-  }> = [];
+  let recoveryEntryIds: string[] = [];
+  let commissionBreakdownSnapshot: PayslipCommissionBreakdown = [];
 
   // Find linked order booker for this employee
   const linkedOrderBooker = await db.query.orderBookers.findFirst({
@@ -586,6 +609,16 @@ export async function generateEmployeePayslipCore(
       rate: parseFloat(rec.appliedRate || "0"),
       amount: parseFloat(rec.commissionAmount || "0"),
     }));
+
+    // Recovery-based commission (phase 6): every unpaid ledger row up to the period end.
+    await ensureRecoveryCommissionSwitchover();
+    const recovery = await collectPayslipCommission(db as unknown as SalesTransaction, linkedOrderBooker.id, payrollEndExclusiveTs);
+    recoveryEntryIds = recovery.settlement.paysEntries ? recovery.entryIds : [];
+    orderBookerCommission += recovery.settlement.payable;
+    if (recovery.entryIds.length > 0) {
+      // Legacy lines (if any) are history from before phase 6; the recovery breakdown is what this payslip pays now.
+      commissionBreakdownSnapshot = recovery.breakdown;
+    }
   }
 
   // -- 5.6 Driver TA from driver trips ---------------------------------------
@@ -694,7 +727,8 @@ export async function generateEmployeePayslipCore(
   const savedPayslip = await db.transaction(async (tx) => {
     await lockAttendancePayrollWrites(tx);
     const currentPayroll = await tx.query.payrolls.findFirst({ where: eq(payrolls.id, payrollId) });
-    if (!currentPayroll || currentPayroll.status !== "draft") throw new Error("Only draft payrolls can save payslips.");
+    if (!currentPayroll) throw new Error("Payroll not found");
+    if (!payrollAcceptsPayslipChanges(currentPayroll.status)) throw new Error(LOCKED_PAYROLL_MESSAGE);
     await assertDeviceAttendanceResolved(tx, employeeId, payrollPeriod.startDate, earlyCutoffDate ?? payrollPeriod.endDate);
     const existingPayslip = await tx.query.payslips.findFirst({
       where: and(
@@ -714,6 +748,7 @@ export async function generateEmployeePayslipCore(
           await recalculateAdvanceDeductionsAfterPayslipReversal(
             tx,
             employeeId,
+            payrollId,
             advanceDeduction,
             payslipCalc,
           );
@@ -759,7 +794,9 @@ export async function generateEmployeePayslipCore(
         nightShiftAllowanceAmount: payslipCalc.nightShiftAllowanceAmount.toString(),
         incentiveAmount: payslipCalc.incentiveAmount.toString(),
         commissionAmount: payslipCalc.commissionAmount.toString(),
-        commissionBreakdown: commissionBreakdownSnapshot.length > 0 ? commissionBreakdownSnapshot : null,
+        commissionBreakdown: Array.isArray(commissionBreakdownSnapshot)
+          ? (commissionBreakdownSnapshot.length > 0 ? commissionBreakdownSnapshot : null)
+          : commissionBreakdownSnapshot,
         bonusAmount: payslipCalc.bonusAmount.toString(),
 
         absentDeduction: payslipCalc.absentDeduction.toString(),
@@ -887,6 +924,10 @@ export async function generateEmployeePayslipCore(
           "Commission records changed during payroll generation. Please recalculate the payslip.",
         );
       }
+    }
+
+    if (recoveryEntryIds.length > 0) {
+      await markPayslipCommissionPaid(tx, recoveryEntryIds, slip.id);
     }
 
     if (approvedTravelLogIds.length > 0) {
@@ -1021,7 +1062,7 @@ export async function simulateEmployeePayslipCore(
   let advanceIdsToProcess: AdvanceProcessRecord[] = [];
 
   if (autoDeductAdvances && additionalAmounts.advanceDeduction === undefined) {
-    const { totalDeduction, processedRecords } = await calculateEnrichedAdvanceDeductions(employeeId);
+    const { totalDeduction, processedRecords } = await calculateEnrichedAdvanceDeductions(employeeId, db, { payrollId: input.payrollId });
     advanceDeduction = totalDeduction;
     advanceIdsToProcess = processedRecords;
   } else {
@@ -1068,14 +1109,7 @@ export async function simulateEmployeePayslipCore(
   // -- 5.5 Order booker TA + commission --------------------------------------
   let dynamicTA = 0;
   let orderBookerCommission = 0;
-  let commissionBreakdownSnapshot: Array<{
-    orderId: string;
-    orderRef: string;
-    orderDate: string;
-    orderValue: number;
-    rate: number;
-    amount: number;
-  }> = [];
+  let commissionBreakdownSnapshot: PayslipCommissionBreakdown = [];
 
   const linkedOrderBooker = await db.query.orderBookers.findFirst({
     where: eq(orderBookers.employeeId, employeeId),
@@ -1124,6 +1158,14 @@ export async function simulateEmployeePayslipCore(
       rate: parseFloat(rec.appliedRate || "0"),
       amount: parseFloat(rec.commissionAmount || "0"),
     }));
+
+    // Recovery-based commission (phase 6). A preview marks nothing paid.
+    await ensureRecoveryCommissionSwitchover();
+    const recovery = await collectPayslipCommission(db as unknown as SalesTransaction, linkedOrderBooker.id, payrollEndExclusiveTs);
+    orderBookerCommission += recovery.settlement.payable;
+    if (recovery.entryIds.length > 0) {
+      commissionBreakdownSnapshot = recovery.breakdown;
+    }
   }
 
   // -- 5.6 Driver TA from driver trips ---------------------------------------

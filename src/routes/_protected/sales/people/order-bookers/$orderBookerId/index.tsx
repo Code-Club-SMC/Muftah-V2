@@ -13,7 +13,8 @@ import { useState } from "react";
 import { format, startOfMonth, endOfMonth } from "date-fns";
 import { useGetOrderBookerDetail } from "@/hooks/sales/use-sales-people";
 import { useGetOrderBookerTrips, useDeleteOrderBookerTrip } from "@/hooks/sales/use-order-booker-trips";
-import { useGetCommissionRecords, useGetCommissionSummary } from "@/hooks/sales/use-order-booker-commission";
+import { BookerCommissionTab } from "@/components/sales/commission/booker-commission-tab";
+import { currentMonth } from "@/components/sales/commission/month-picker";
 import { useGetOrders } from "@/hooks/sales/use-orders";
 import { toast } from "sonner";
 import type { DateRange } from "react-day-picker";
@@ -23,6 +24,9 @@ import { User } from "lucide-react";
 import { CreateTripDialog } from "@/components/sales/create-trip-dialog";
 
 export const Route = createFileRoute("/_protected/sales/people/order-bookers/$orderBookerId/")({
+  validateSearch: (search: Record<string, unknown>): { month?: string } => ({
+    month: typeof search.month === "string" && /^\d{4}-\d{2}$/.test(search.month) ? search.month : undefined,
+  }),
   component: OrderBookerProfilePage,
 });
 
@@ -35,10 +39,8 @@ function OrderBookerProfilePage() {
     from: startOfMonth(new Date()),
     to: endOfMonth(new Date()),
   });
-  const [commissionDateRange, setCommissionDateRange] = useState<DateRange | undefined>({
-    from: startOfMonth(new Date()),
-    to: endOfMonth(new Date()),
-  });
+  const search = Route.useSearch();
+  const [commissionMonth, setCommissionMonth] = useState(() => search.month ?? currentMonth());
 
   return (
     <div className="space-y-6">
@@ -88,7 +90,7 @@ function OrderBookerProfilePage() {
         <PortalAccountCard orderBookerId={orderBookerId} userId={orderBooker?.userId} />
       </div>
 
-      <Tabs defaultValue="trips" className="space-y-4">
+      <Tabs defaultValue={search.month ? "commission" : "trips"} className="space-y-4">
         <TabsList>
           <TabsTrigger value="trips">Trip Logs</TabsTrigger>
           <TabsTrigger value="orders">Orders</TabsTrigger>
@@ -109,7 +111,7 @@ function OrderBookerProfilePage() {
         </TabsContent>
 
         <TabsContent value="commission">
-          <CommissionTab orderBookerId={orderBookerId} dateRange={commissionDateRange} onDateRangeChange={setCommissionDateRange} />
+          <BookerCommissionTab orderBookerId={orderBookerId} month={commissionMonth} onMonthChange={setCommissionMonth} />
         </TabsContent>
       </Tabs>
     </div>
@@ -222,80 +224,6 @@ function OrdersTab({ orderBookerId }: { orderBookerId: string }) {
                     PKR {order.items?.reduce((sum: number, item: any) => sum + Number(item.amount), 0).toFixed(2)}
                   </TableCell>
                   <TableCell className="text-sm">{format(new Date(order.createdAt), "dd MMM yyyy")}</TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </div>
-    </div>
-  );
-}
-
-// ── Commission Tab ──
-function CommissionTab({ orderBookerId, dateRange, onDateRangeChange }: {
-  orderBookerId: string;
-  dateRange: DateRange | undefined;
-  onDateRangeChange: (range: DateRange | undefined) => void;
-}) {
-  const fromStr = dateRange?.from ? format(dateRange.from, "yyyy-MM-dd") : "";
-  const toStr = dateRange?.to ? format(dateRange.to, "yyyy-MM-dd") : "";
-  const { data: records } = useGetCommissionRecords(orderBookerId, fromStr, toStr);
-  const { data: summary } = useGetCommissionSummary(orderBookerId, fromStr, toStr);
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <DatePickerWithRange date={dateRange} onDateChange={onDateRangeChange} />
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Total Accrued</CardTitle></CardHeader>
-          <CardContent><p className="text-2xl font-bold">PKR {summary?.totalAccrued.toFixed(2) || "0.00"}</p></CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Total Paid</CardTitle></CardHeader>
-          <CardContent><p className="text-2xl font-bold">PKR {summary?.totalPaid.toFixed(2) || "0.00"}</p></CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Reversed</CardTitle></CardHeader>
-          <CardContent><p className="text-2xl font-bold">PKR {summary?.totalReversed.toFixed(2) || "0.00"}</p></CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Pending</CardTitle></CardHeader>
-          <CardContent><p className="text-2xl font-bold">PKR {summary?.totalPending.toFixed(2) || "0.00"}</p></CardContent>
-        </Card>
-      </div>
-
-      <div className="rounded-xl border border-border/60 bg-card overflow-hidden">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="text-[11px]">Order</TableHead>
-              <TableHead className="text-[11px] text-right">Fulfilled</TableHead>
-              <TableHead className="text-[11px] text-right">Rate</TableHead>
-              <TableHead className="text-[11px] text-right">Commission</TableHead>
-              <TableHead className="text-[11px]">Status</TableHead>
-              <TableHead className="text-[11px]">Date</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {!records?.length ? (
-              <TableRow>
-                <TableCell colSpan={6} className="text-center text-muted-foreground py-10 text-sm">No commission records found.</TableCell>
-              </TableRow>
-            ) : (
-              records.map((rec: any) => (
-                <TableRow key={rec.id}>
-                  <TableCell className="text-sm font-medium">#{rec.orderId.slice(-6)}</TableCell>
-                  <TableCell className="text-sm text-right tabular-nums">PKR {rec.fulfilledAmount}</TableCell>
-                  <TableCell className="text-sm text-right tabular-nums">{rec.appliedRate}%</TableCell>
-                  <TableCell className="text-sm text-right tabular-nums font-medium">PKR {rec.commissionAmount}</TableCell>
-                  <TableCell>
-                    <Badge variant={rec.status === "paid" ? "default" : "outline"} className="text-[10px] capitalize">{rec.status}</Badge>
-                  </TableCell>
-                  <TableCell className="text-sm">{format(new Date(rec.calculatedAt), "dd MMM yyyy")}</TableCell>
                 </TableRow>
               ))
             )}

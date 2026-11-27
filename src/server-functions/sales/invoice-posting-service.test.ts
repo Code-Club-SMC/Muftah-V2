@@ -15,7 +15,7 @@ describe("shared invoice posting contract", () => {
 		"utf8",
 	);
 	const invoiceFnSource = readSalesSource("invoices-fn.ts");
-	const commissionSource = readSalesSource("order-booker-commission-calc.ts");
+	const commissionSource = readSalesSource("recovery-commission-service.ts");
 	const schemaSource = readFileSync(
 		resolve(process.cwd(), "src/db/zod_schemas.ts"),
 		"utf8",
@@ -39,7 +39,8 @@ describe("shared invoice posting contract", () => {
 		expect(stockAdjustmentSource).toContain(".update(finishedGoodsStock)");
 		expect(postingSource).toContain("r.cogsTotal = Number(debitedValue)");
 		expect(postingSource).toContain(".update(orders)");
-		expect(postingSource).toContain("calculateCommissionForOrder(");
+		expect(postingSource).toContain("lockOrderCommissionTerms(tx, {");
+		expect(postingSource).not.toContain("calculateCommissionForOrder(");
 		expect(postingSource).toContain(".insert(slipRecords)");
 		expect(postingSource).toContain("createInitialPayments(tx, {");
 		expect(postingSource).toContain("recordInvoiceTimelineEvent(");

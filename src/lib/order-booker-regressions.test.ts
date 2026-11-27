@@ -55,13 +55,13 @@ describe("order booker regressions", () => {
     expect(result.breakdown).toEqual([]);
   });
 
-  it("accrues commission when invoice conversion delivers a linked order", () => {
+  it("locks commission terms when invoice conversion delivers a linked order", () => {
     const source = readFileSync(
       resolve(SALES_FN_DIR, "invoice-posting-service.ts"),
       "utf8",
     );
 
-    expect(source).toContain("await calculateCommissionForOrder(");
+    expect(source).toContain("await lockOrderCommissionTerms(tx, {");
     expect(source).toContain("if (linkedOrderStatus !== \"delivered\")");
   });
 

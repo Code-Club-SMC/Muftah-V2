@@ -30,6 +30,7 @@ import {
 } from "@/hooks/sales/use-driver-trips";
 import { CreateDriverTripDialog } from "@/components/sales/create-driver-trip-dialog";
 import { toast } from "sonner";
+import { CommissionSummary } from "@/components/sales/commission/commission-summary";
 
 const PKR = (v: number) =>
   `PKR ${v.toLocaleString("en-PK", { minimumFractionDigits: 2 })}`;
@@ -364,6 +365,8 @@ function OrderBookersTab() {
 
   return (
     <div className="space-y-4">
+      <CommissionSummary />
+
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-semibold">Order Bookers</h3>
         <p className="text-sm text-muted-foreground">

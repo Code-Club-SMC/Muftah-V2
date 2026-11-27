@@ -32,6 +32,7 @@ import { Route as ApiInternalBootstrapAdminRouteImport } from './routes/api/inte
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ProtectedSuppliersSupplierIdRouteImport } from './routes/_protected/suppliers/$supplierId'
 import { Route as ProtectedSalesOfflineRouteImport } from './routes/_protected/sales/offline'
+import { Route as ProtectedInventoryReturnedStockRouteImport } from './routes/_protected/inventory/returned-stock'
 import { Route as ProtectedFinancePaymentVerificationRouteImport } from './routes/_protected/finance/payment-verification'
 import { Route as ProtectedSalesReturnsIndexRouteImport } from './routes/_protected/sales/returns/index'
 import { Route as ProtectedSalesRecoveryIndexRouteImport } from './routes/_protected/sales/recovery/index'
@@ -225,6 +226,12 @@ const ProtectedSalesOfflineRoute = ProtectedSalesOfflineRouteImport.update({
   path: '/sales/offline',
   getParentRoute: () => ProtectedRouteRoute,
 } as any)
+const ProtectedInventoryReturnedStockRoute =
+  ProtectedInventoryReturnedStockRouteImport.update({
+    id: '/inventory/returned-stock',
+    path: '/inventory/returned-stock',
+    getParentRoute: () => ProtectedRouteRoute,
+  } as any)
 const ProtectedFinancePaymentVerificationRoute =
   ProtectedFinancePaymentVerificationRouteImport.update({
     id: '/finance/payment-verification',
@@ -670,6 +677,7 @@ export interface FileRoutesByFullPath {
   '/api/health': typeof ApiHealthRoute
   '/attendance/scan': typeof AttendanceScanRoute
   '/finance/payment-verification': typeof ProtectedFinancePaymentVerificationRoute
+  '/inventory/returned-stock': typeof ProtectedInventoryReturnedStockRoute
   '/sales/offline': typeof ProtectedSalesOfflineRoute
   '/suppliers/$supplierId': typeof ProtectedSuppliersSupplierIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -765,6 +773,7 @@ export interface FileRoutesByTo {
   '/api/health': typeof ApiHealthRoute
   '/attendance/scan': typeof AttendanceScanRoute
   '/finance/payment-verification': typeof ProtectedFinancePaymentVerificationRoute
+  '/inventory/returned-stock': typeof ProtectedInventoryReturnedStockRoute
   '/sales/offline': typeof ProtectedSalesOfflineRoute
   '/suppliers/$supplierId': typeof ProtectedSuppliersSupplierIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -864,6 +873,7 @@ export interface FileRoutesById {
   '/api/health': typeof ApiHealthRoute
   '/attendance/scan': typeof AttendanceScanRoute
   '/_protected/finance/payment-verification': typeof ProtectedFinancePaymentVerificationRoute
+  '/_protected/inventory/returned-stock': typeof ProtectedInventoryReturnedStockRoute
   '/_protected/sales/offline': typeof ProtectedSalesOfflineRoute
   '/_protected/suppliers/$supplierId': typeof ProtectedSuppliersSupplierIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -962,6 +972,7 @@ export interface FileRouteTypes {
     | '/api/health'
     | '/attendance/scan'
     | '/finance/payment-verification'
+    | '/inventory/returned-stock'
     | '/sales/offline'
     | '/suppliers/$supplierId'
     | '/api/auth/$'
@@ -1057,6 +1068,7 @@ export interface FileRouteTypes {
     | '/api/health'
     | '/attendance/scan'
     | '/finance/payment-verification'
+    | '/inventory/returned-stock'
     | '/sales/offline'
     | '/suppliers/$supplierId'
     | '/api/auth/$'
@@ -1155,6 +1167,7 @@ export interface FileRouteTypes {
     | '/api/health'
     | '/attendance/scan'
     | '/_protected/finance/payment-verification'
+    | '/_protected/inventory/returned-stock'
     | '/_protected/sales/offline'
     | '/_protected/suppliers/$supplierId'
     | '/api/auth/$'
@@ -1417,6 +1430,13 @@ declare module '@tanstack/react-router' {
       path: '/sales/offline'
       fullPath: '/sales/offline'
       preLoaderRoute: typeof ProtectedSalesOfflineRouteImport
+      parentRoute: typeof ProtectedRouteRoute
+    }
+    '/_protected/inventory/returned-stock': {
+      id: '/_protected/inventory/returned-stock'
+      path: '/inventory/returned-stock'
+      fullPath: '/inventory/returned-stock'
+      preLoaderRoute: typeof ProtectedInventoryReturnedStockRouteImport
       parentRoute: typeof ProtectedRouteRoute
     }
     '/_protected/finance/payment-verification': {
@@ -1994,6 +2014,7 @@ const ProtectedReportsRouteRouteWithChildren =
 interface ProtectedRouteRouteChildren {
   ProtectedReportsRouteRoute: typeof ProtectedReportsRouteRouteWithChildren
   ProtectedFinancePaymentVerificationRoute: typeof ProtectedFinancePaymentVerificationRoute
+  ProtectedInventoryReturnedStockRoute: typeof ProtectedInventoryReturnedStockRoute
   ProtectedSalesOfflineRoute: typeof ProtectedSalesOfflineRoute
   ProtectedSuppliersSupplierIdRoute: typeof ProtectedSuppliersSupplierIdRoute
   ProtectedDashboardIndexRoute: typeof ProtectedDashboardIndexRoute
@@ -2069,6 +2090,7 @@ const ProtectedRouteRouteChildren: ProtectedRouteRouteChildren = {
   ProtectedReportsRouteRoute: ProtectedReportsRouteRouteWithChildren,
   ProtectedFinancePaymentVerificationRoute:
     ProtectedFinancePaymentVerificationRoute,
+  ProtectedInventoryReturnedStockRoute: ProtectedInventoryReturnedStockRoute,
   ProtectedSalesOfflineRoute: ProtectedSalesOfflineRoute,
   ProtectedSuppliersSupplierIdRoute: ProtectedSuppliersSupplierIdRoute,
   ProtectedDashboardIndexRoute: ProtectedDashboardIndexRoute,

@@ -72,7 +72,7 @@ describe("return lifecycle cache and contracts", () => {
     expectTypeOf<CreateSalesReturnInput>().not.toBeAny();
     expectTypeOf<CreateSalesReturnInput["reasonId"]>().toEqualTypeOf<string>();
     expectTypeOf<Parameters<ReturnType<typeof useDecideSalesReturn>["mutateAsync"]>[0]>().toEqualTypeOf<{ returnId: string; action: "approve" | "reject"; reason?: string }>();
-    expectTypeOf<Parameters<ReturnType<typeof useCompleteSalesReturn>["mutateAsync"]>[0]["lines"][number]>().toEqualTypeOf<{ returnItemId: string; goodUnits: number; damagedUnits: number; expiredUnits: number }>();
+    expectTypeOf<Parameters<ReturnType<typeof useCompleteSalesReturn>["mutateAsync"]>[0]["lines"][number]>().toEqualTypeOf<{ returnItemId: string; goodUnits: number; damagedUnits: number; expiredUnits: number; damagedSalvagePerUnit?: number; expiredSalvagePerUnit?: number }>();
     expectTypeOf<Parameters<ReturnType<typeof useCancelSalesReturn>["mutateAsync"]>[0]>().toEqualTypeOf<{ returnId: string; reason: string }>();
     expectTypeOf<Parameters<ReturnType<typeof useVoidSalesReturn>["mutateAsync"]>[0]>().toEqualTypeOf<{ returnId: string; reason: string }>();
   });

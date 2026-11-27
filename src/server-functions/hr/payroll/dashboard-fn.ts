@@ -23,6 +23,8 @@ import {
   getCycleForPayoutMonth,
   getPayrollPeriodForMonthKey,
 } from "@/lib/payroll-cycle";
+import { loadRegisterPayments, type RegisterSlipPayment } from "./salary-payments.server";
+import { LOCKED_PAYROLL_MESSAGE, payrollAcceptsPayslipChanges } from "@/lib/hr/salary-payments";
 import { findUnresolvedDeviceAttendanceDates } from "@/lib/attendance/device-import/payroll.server";
 
 // ── Helper ─────────────────────────────────────────────────────────────────
@@ -139,6 +141,15 @@ export const getMonthlyPayrollTableFn = createServerFn()
       });
     }
 
+    // ── Salary payments for this payroll (all pages) ───────────────────
+    const registerPayments = payroll
+      ? await loadRegisterPayments(db, payroll.id)
+      : {
+          byEmployee: new Map<string, RegisterSlipPayment>(),
+          summary: { slipCount: 0, paidCount: 0, paidTotal: "0.00", remainingTotal: "0.00" },
+          payable: [],
+        };
+
     // ── Last-month missed payslip check ────────────────────────────────
     const lastMonthStr = format(subMonths(monthDate, 1), "yyyy-MM");
     const lastMonthPayroll = await db.query.payrolls.findFirst({
@@ -253,6 +264,7 @@ export const getMonthlyPayrollTableFn = createServerFn()
         payslipId: payslip?.id,
         netSalary: payslip?.netSalary,
         status: payroll?.status || "pending",
+        payment: payslip ? registerPayments.byEmployee.get(emp.id) ?? null : null,
 
         isEligible,
         missedLastMonth,
@@ -275,6 +287,8 @@ export const getMonthlyPayrollTableFn = createServerFn()
       totalNetProcessed: generatedStats[0]?.totalGenerated || "0",
       totalPendingGross: pendingGrossStats[0]?.totalPending || "0",
       payslipsGeneratedCount: generatedStats[0]?.count || 0,
+      paymentSummary: registerPayments.summary,
+      payableSlips: registerPayments.payable,
     };
   });
 
@@ -491,8 +505,8 @@ export const saveEmployeePayslipFn = createServerFn()
       where: eq(payrolls.month, payrollPeriod.month),
     });
 
-    if (payroll && payroll.status !== "draft") {
-      throw new Error("Only draft payrolls can be updated from the salary calculator.");
+    if (payroll && !payrollAcceptsPayslipChanges(payroll.status)) {
+      throw new Error(LOCKED_PAYROLL_MESSAGE);
     }
 
     if (!payroll) {

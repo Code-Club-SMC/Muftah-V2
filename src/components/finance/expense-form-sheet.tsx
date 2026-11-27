@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { parseISO } from "date-fns";
 import {
   AlertTriangleIcon,
   BanknoteIcon,
@@ -30,6 +31,7 @@ import {
   useExpenseEntryDefaults,
   useUpdateExpense,
 } from "@/hooks/finance/use-finance";
+import { useExpenseTemplates } from "@/hooks/finance/use-expense-templates";
 import {
   buildExpenseFieldValueInputs,
   toExpenseFieldDrafts,
@@ -47,10 +49,17 @@ import {
   MAX_EXPENSE_AMOUNT,
   parseAmountInput,
 } from "@/lib/finance/expense-entry";
+import {
+  templateFormDate,
+  templateToDraftPatch,
+  toDayKey,
+  type TemplateReminder,
+} from "@/lib/finance/expense-templates";
 import type {
   ExpenseCategoryDefinition,
   ExpenseCategoryFieldDefinition,
   ExpenseListItem,
+  ExpenseTemplate,
   FinanceWalletSummary,
 } from "@/lib/types/finance-types";
 import { cn } from "@/lib/utils";
@@ -59,6 +68,7 @@ import { ExpenseAmountField } from "./expense-amount-field";
 import { ExpenseCategoryPicker } from "./expense-category-picker";
 import { ExpenseDynamicFieldInput } from "./expense-dynamic-field-input";
 import { ExpensePayeeField } from "./expense-payee-field";
+import { ExpenseTemplateChips } from "./expense-template-chips";
 import { OverdrawConfirmDialog } from "./overdraw-confirm-dialog";
 
 type ExpenseFormSheetProps = {
@@ -67,6 +77,9 @@ type ExpenseFormSheetProps = {
   wallets: FinanceWalletSummary[];
   preselectedWalletId?: string | null;
   expense?: ExpenseListItem | null;
+  /** Opens the form filled from this template (e.g. from a "Due this week" reminder). */
+  template?: ExpenseTemplate | null;
+  reminder?: TemplateReminder | null;
 };
 
 type SaveMode = "close" | "another";
@@ -173,6 +186,8 @@ export function ExpenseFormSheet({
   wallets,
   preselectedWalletId = null,
   expense = null,
+  template = null,
+  reminder = null,
 }: ExpenseFormSheetProps) {
   const isEdit = expense !== null;
   const {
@@ -189,20 +204,33 @@ export function ExpenseFormSheet({
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [pendingMode, setPendingMode] = useState<SaveMode | null>(null);
   const [depositOpen, setDepositOpen] = useState(false);
+  const [templateId, setTemplateId] = useState<string | null>(null);
+  const { data: templates = [] } = useExpenseTemplates(open && !isEdit);
+
+  const draftFromTemplate = (picked: ExpenseTemplate, expenseDate: Date | undefined): ExpenseDraft => ({
+    ...emptyDraft(),
+    ...templateToDraftPatch(picked, wallets.map((item) => item.id)),
+    expenseDate,
+  });
 
   // Fresh form each time the sheet opens.
   useEffect(() => {
     if (!open) return;
     const preselected = wallets.some((item) => item.id === preselectedWalletId) ? preselectedWalletId : null;
-    const next = expense ? draftFromExpense(expense) : { ...emptyDraft(), walletId: preselected ?? "" };
+    const next = expense
+      ? draftFromExpense(expense)
+      : template
+        ? draftFromTemplate(template, parseISO(templateFormDate(reminder, toDayKey(new Date()))))
+        : { ...emptyDraft(), walletId: preselected ?? "" };
     setDraft(next);
+    setTemplateId(expense ? null : (template?.id ?? null));
     setInitialKey(draftKey(next));
     setDetailsOpen(false);
     setPendingMode(null);
     setDepositOpen(false);
     // Wallet balances change often; the form only needs them once per open to pick a valid default.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, expense, preselectedWalletId]);
+  }, [open, expense, preselectedWalletId, template, reminder]);
 
   // "Paid from" defaults to the account on this user's most recent expense, unless one is already picked.
   const lastWalletId = defaults?.lastWalletId ?? null;
@@ -257,6 +285,12 @@ export function ExpenseFormSheet({
     update({ categoryId, fieldValues });
   };
 
+  // Picking keeps the date the user already chose.
+  const pickTemplate = (picked: ExpenseTemplate) => {
+    setDraft(draftFromTemplate(picked, draft.expenseDate));
+    setTemplateId(picked.id);
+  };
+
   const save = (mode: SaveMode, allowOverdraw = false) => {
     if (isPending) return;
     if (amount <= 0) return void toast.error("Enter the amount");
@@ -282,6 +316,7 @@ export function ExpenseFormSheet({
       slipNumber: draft.slipNumber.trim() || undefined,
       allowOverdraw,
       fieldValues: built.values ?? [],
+      templateId: templateId ?? undefined,
     };
     // The balance can change between typing and saving; the server then asks for the same confirmation.
     const onError = (error: Error) => {
@@ -304,6 +339,7 @@ export function ExpenseFormSheet({
           const next = { ...emptyDraft(), walletId: draft.walletId, expenseDate: draft.expenseDate };
           setDraft(next);
           setInitialKey(draftKey(next));
+          setTemplateId(null);
           setDetailsOpen(false);
           amountRef.current?.focus();
         },
@@ -345,6 +381,10 @@ export function ExpenseFormSheet({
             save("close");
           }}
         >
+          {!isEdit ? (
+            <ExpenseTemplateChips templates={templates} selectedId={templateId} onPick={pickTemplate} />
+          ) : null}
+
           <div className="space-y-2">
             <Label htmlFor="expense-amount" className={labelClass}>Amount</Label>
             <ExpenseAmountField

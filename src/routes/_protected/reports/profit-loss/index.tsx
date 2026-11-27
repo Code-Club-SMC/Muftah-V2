@@ -294,6 +294,8 @@ interface CompanyPnlData {
     commissions: number;
     tada: number;
     generalExpenses: number;
+    returnWriteOffs: number;
+    returnedStockWriteDowns: number;
     totalOperatingExpenses: number;
     netProfit: number;
     netMargin: number;
@@ -563,6 +565,18 @@ function CompanyProfitabilityContent({
               value: data.summary.generalExpenses,
               icon: User,
               accent: "violet",
+            },
+            {
+              label: "Return Write-offs",
+              value: data.summary.returnWriteOffs,
+              icon: Receipt,
+              accent: "orange",
+            },
+            {
+              label: "Stock Write-downs",
+              value: data.summary.returnedStockWriteDowns,
+              icon: Receipt,
+              accent: "cyan",
             },
           ]}
           total={data.summary.totalOperatingExpenses}

@@ -569,6 +569,36 @@ describe("SalesReturnDetailPage and timeline", () => {
     ]);
   });
 
+  it("shows salvage per pack and the loss booked on a received return", async () => {
+    const item = (extra: Record<string, unknown>) => ({
+      id: "line-1", invoiceItemId: "inv-item-1", cartonsReturned: 0, quantityReturned: 3, cartonsRequested: 0, quantityRequested: 3,
+      goodUnits: 1, damagedUnits: 2, expiredUnits: 0, refundPerUnit: "100", totalRefund: "300",
+      invoiceItem: { id: "inv-item-1", pack: "Bottle 500ml", packsPerCarton: 10, actualPackSize: 1 },
+      recipe: { id: "rec-1", name: "Mango Drink" }, ...extra,
+    });
+    mocks.detail.mockResolvedValue(makeDetail({ status: "completed", completedAt: new Date("2026-11-02T14:00:00.000Z"),
+      items: [item({ damagedSalvagePerUnit: "3.00", expiredSalvagePerUnit: "0.00", writeOffAmount: "94.00" })] }));
+    mount(<DetailPage />);
+    expect(await screen.findByText("Salvage: damaged Rs 3 a pack")).toBeTruthy();
+    expect(screen.getByText("Loss booked on damaged and expired packs")).toBeTruthy();
+    expect(screen.getByText("Rs 94")).toBeTruthy();
+  });
+
+  it("shows no salvage or loss line on a return that booked no loss", async () => {
+    const item = (extra: Record<string, unknown>) => ({
+      id: "line-1", invoiceItemId: "inv-item-1", cartonsReturned: 0, quantityReturned: 3, cartonsRequested: 0, quantityRequested: 3,
+      goodUnits: 3, damagedUnits: 0, expiredUnits: 0, refundPerUnit: "100", totalRefund: "300",
+      invoiceItem: { id: "inv-item-1", pack: "Bottle 500ml", packsPerCarton: 10, actualPackSize: 1 },
+      recipe: { id: "rec-1", name: "Mango Drink" }, ...extra,
+    });
+    mocks.detail.mockResolvedValue(makeDetail({ status: "completed", completedAt: new Date("2026-11-02T14:00:00.000Z"),
+      items: [item({ damagedSalvagePerUnit: "0.00", expiredSalvagePerUnit: "0.00", writeOffAmount: "0.00" })] }));
+    mount(<DetailPage />);
+    await screen.findByText("Credited");
+    expect(screen.queryByText(/Salvage:/)).toBeNull();
+    expect(screen.queryByText(/Loss booked/)).toBeNull();
+  });
+
   it("renders credit note badge, split summary, and print credit note button on completed return with credit note", async () => {
     mocks.detail.mockResolvedValue(
       makeDetail({

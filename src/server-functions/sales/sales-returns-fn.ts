@@ -24,6 +24,7 @@ import {
 import { z } from "zod";
 import { and, count, desc, eq, ilike, inArray, or } from "drizzle-orm";
 import { recalculateInvoiceSettlement } from "./settlement-service";
+import { capCommissionAfterReturn, restoreCommissionAfterReturnVoid } from "./recovery-commission-service";
 import { lockFinishedGoods } from "@/lib/production/finished-goods-lock.server";
 import { lockCartonReturnOrder } from "@/lib/cartons/sales-return.server";
 import { lockCartonStock } from "@/lib/cartons/stock-adjustment.server";
@@ -51,6 +52,7 @@ import {
   unitsOf,
   type ReturnStatus,
 } from "@/lib/sales/returns/return-lifecycle";
+import { salvageSplit } from "@/lib/inventory/returned-stock";
 import { moneyString, roundMoney } from "@/lib/sales/settlement/money";
 import {
   allocateNextCreditNoteNumber,
@@ -560,6 +562,13 @@ export const listSalesReturnsFn = createServerFn()
 
 // ── RECEIVE AND INSPECT (the only step that moves stock and money) ────────
 
+const salvagePerUnitSchema = z
+  .number()
+  .min(0, "Salvage value can't be below zero.")
+  .max(1_000_000)
+  .refine((value) => new Big(value).round(2).eq(value), "Salvage value can have at most 2 decimals (paisa).")
+  .optional();
+
 export const completeSalesReturnFn = createServerFn()
   .middleware([requireReturnsReceiveMiddleware])
   .inputValidator((input: any) =>
@@ -574,6 +583,8 @@ export const completeSalesReturnFn = createServerFn()
               goodUnits: z.number().int().min(0).default(0),
               damagedUnits: z.number().int().min(0).default(0),
               expiredUnits: z.number().int().min(0).default(0),
+              damagedSalvagePerUnit: salvagePerUnitSchema,
+              expiredSalvagePerUnit: salvagePerUnitSchema,
             }),
           )
           .min(1),
@@ -619,6 +630,8 @@ export const completeSalesReturnFn = createServerFn()
           goodUnits: line?.goodUnits ?? 0,
           damagedUnits: line?.damagedUnits ?? 0,
           expiredUnits: line?.expiredUnits ?? 0,
+          damagedSalvagePerUnit: line?.damagedSalvagePerUnit ?? 0,
+          expiredSalvagePerUnit: line?.expiredSalvagePerUnit ?? 0,
         };
       });
       checkInspection(inspection);
@@ -653,6 +666,7 @@ export const completeSalesReturnFn = createServerFn()
       });
       const lineRefunds: string[] = [];
 
+      let totalWriteOff = new Big(0);
       for (const line of inspection) {
         const { returnItem, invoiceItem, unitsPerCarton } = line;
         const received = receivedUnits(line);
@@ -664,9 +678,20 @@ export const completeSalesReturnFn = createServerFn()
 
         const basis = returnCostBasis(invoiceItem, unitsPerCarton);
         let unitsBefore = alreadyReceived;
+        let lineWriteOff = new Big(0);
         for (const condition of ["good", "damaged", "expired"] as const) {
           const units = line[`${condition}Units`];
           if (units <= 0) continue;
+          const cost = allocateReturnCost(basis, unitsBefore, units);
+          const { stockValue, writeOff } =
+            condition === "good"
+              ? { stockValue: cost, writeOff: "0.00" }
+              : salvageSplit({
+                  label: `${line.label} (${condition})`,
+                  units,
+                  salvagePerUnit: line[`${condition}SalvagePerUnit`],
+                  cost,
+                });
           await restockReturnedUnits(tx, {
             salesReturnId: salesReturn.id,
             returnItemId: returnItem.id,
@@ -677,11 +702,15 @@ export const completeSalesReturnFn = createServerFn()
             units,
             unitsPerCarton,
             costPerUnit: basis.costPerUnit,
-            inventoryValue: allocateReturnCost(basis, unitsBefore, units),
+            inventoryValue: cost,
+            stockValue,
+            writeOffAmount: writeOff,
             userId,
           });
+          lineWriteOff = lineWriteOff.plus(writeOff);
           unitsBefore += units;
         }
+        totalWriteOff = totalWriteOff.plus(lineWriteOff);
         receivedByItem.set(invoiceItem.id, unitsBefore);
 
         // Keep the requester's carton/loose split when everything arrived.
@@ -697,6 +726,9 @@ export const completeSalesReturnFn = createServerFn()
             goodUnits: line.goodUnits,
             damagedUnits: line.damagedUnits,
             expiredUnits: line.expiredUnits,
+            damagedSalvagePerUnit: new Big(line.damagedUnits > 0 ? line.damagedSalvagePerUnit : 0).toFixed(2),
+            expiredSalvagePerUnit: new Big(line.expiredUnits > 0 ? line.expiredSalvagePerUnit : 0).toFixed(2),
+            writeOffAmount: lineWriteOff.toFixed(2),
             cartonsReturned: split.cartons,
             quantityReturned: split.loose,
             totalRefund,
@@ -772,6 +804,7 @@ export const completeSalesReturnFn = createServerFn()
         actorId: userId,
         reason: `Completed return #${salesReturn.returnNumber} (${creditNoteNumber})`,
       });
+      await capCommissionAfterReturn(tx, { invoiceId: salesReturn.invoiceId, salesReturnId: salesReturn.id, actorId: userId, date: now });
 
       const customerInfo = await tx.query.customers.findFirst({
         where: eq(customers.id, salesReturn.customerId),
@@ -785,7 +818,7 @@ export const completeSalesReturnFn = createServerFn()
           invoiceId: salesReturn.invoiceId,
           eventType: "status_change",
           title: `Credit Note ${creditNoteNumber} issued (Return #${salesReturn.returnNumber})`,
-          description: `Return #${salesReturn.returnNumber} received: ${received} of ${requested} packs arrived${requested > received ? ` (${requested - received} short, closed)` : ""}. PKR ${moneyString(split.appliedToInvoiceAmount)} cleared invoice balance${split.customerCreditAmount > 0 ? `; PKR ${moneyString(split.customerCreditAmount)} transferred to store credit` : ""}.`,
+          description: `Return #${salesReturn.returnNumber} received: ${received} of ${requested} packs arrived${requested > received ? ` (${requested - received} short, closed)` : ""}. PKR ${moneyString(split.appliedToInvoiceAmount)} cleared invoice balance${split.customerCreditAmount > 0 ? `; PKR ${moneyString(split.customerCreditAmount)} transferred to store credit` : ""}.${totalWriteOff.gt(0) ? ` Loss booked on damaged/expired packs: PKR ${totalWriteOff.toFixed(2)}.` : ""}`,
           metadata: {
             salesReturnId: salesReturn.id,
             returnNumber: salesReturn.returnNumber,
@@ -796,6 +829,7 @@ export const completeSalesReturnFn = createServerFn()
             customerCreditAmount: split.customerCreditAmount,
             receivedUnits: received,
             requestedUnits: requested,
+            writeOffAmount: totalWriteOff.toFixed(2),
           },
           actorId: userId,
         },
@@ -883,6 +917,7 @@ export const voidSalesReturnFn = createServerFn()
         reason: `Return #${salesReturn.returnNumber} voided: ${data.reason}`,
         allowUnapplyOverageOnReturnVoid: true,
       });
+      await restoreCommissionAfterReturnVoid(tx, { salesReturnId: salesReturn.id, actorId: userId, date: now });
 
       await recordInvoiceTimelineEvent(
         {

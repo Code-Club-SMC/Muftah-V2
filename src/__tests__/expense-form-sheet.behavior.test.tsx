@@ -40,6 +40,13 @@ vi.mock("@/hooks/finance/use-finance", () => {
   };
 });
 
+const templateList = vi.hoisted(() => ({
+  data: [] as Array<import("@/lib/types/finance-types").ExpenseTemplate>,
+}));
+vi.mock("@/hooks/finance/use-expense-templates", () => ({
+  useExpenseTemplates: () => ({ data: templateList.data }),
+}));
+
 import { ExpenseFormSheet } from "@/components/finance/expense-form-sheet";
 
 const wallets = [{ id: "w1", name: "Cash Box", type: "cash", balance: "2000.00" }];
@@ -234,5 +241,68 @@ describe("ExpenseFormSheet", () => {
     fireEvent.click(screen.getByRole("button", { name: "Rent" }));
     fireEvent.click(screen.getByRole("button", { name: "More details" }));
     expect(screen.getByLabelText("Month")).toHaveProperty("value", "Sept");
+  });
+});
+
+const rentTemplate = {
+  id: "t-rent",
+  name: "Shop rent",
+  categoryId: "rent",
+  categoryName: "Rent",
+  amount: "85000.00",
+  payee: "Landlord",
+  walletId: "w1",
+  note: "Monthly rent",
+  reminderDay: 1,
+  skippedMonth: null,
+  expenseDates: [],
+};
+
+// Enough balance that Rs 85,000 rent does not trigger the overdraft confirmation.
+const richWallets = [{ ...wallets[0], balance: "200000.00" }];
+
+describe("template chips", () => {
+  beforeEach(() => {
+    templateList.data = [rentTemplate];
+    mocks.create.mockReset();
+  });
+  afterEach(() => {
+    templateList.data = [];
+    cleanup();
+  });
+
+  it("fills the form from a chip and saves the template link", () => {
+    render(<ExpenseFormSheet open onOpenChange={() => {}} wallets={richWallets} />);
+    fireEvent.click(screen.getByRole("button", { name: "Shop rent — Rs 85,000" }));
+    expect((screen.getByLabelText("Amount") as HTMLInputElement).value).toBe("85,000");
+    expect((screen.getByLabelText("Paid to") as HTMLInputElement).value).toBe("Landlord");
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(mocks.create).toHaveBeenCalledTimes(1);
+    expect(mocks.create.mock.calls[0][0].data).toMatchObject({
+      templateId: "t-rent",
+      categoryId: "rent",
+      amount: 85000,
+      payee: "Landlord",
+      walletId: "w1",
+      description: "Monthly rent",
+    });
+  });
+
+  it("does not show chips when editing", () => {
+    render(<ExpenseFormSheet open onOpenChange={() => {}} wallets={richWallets} expense={savedExpense} />);
+    expect(screen.queryByRole("button", { name: "Shop rent — Rs 85,000" })).toBeNull();
+  });
+
+  it("starts filled when opened from a reminder, with no template link left after Save & add another", () => {
+    mocks.create.mockImplementation((_input, options) => options.onSuccess());
+    render(<ExpenseFormSheet open onOpenChange={() => {}} wallets={richWallets} template={rentTemplate} />);
+    expect((screen.getByLabelText("Amount") as HTMLInputElement).value).toBe("85,000");
+    fireEvent.click(screen.getByRole("button", { name: "Save & add another" }));
+    expect(mocks.create.mock.calls[0][0].data.templateId).toBe("t-rent");
+    expect((screen.getByLabelText("Amount") as HTMLInputElement).value).toBe("");
+    fireEvent.change(screen.getByLabelText("Amount"), { target: { value: "500" } });
+    fireEvent.click(screen.getByRole("button", { name: "Fuel" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(mocks.create.mock.calls[1][0].data.templateId).toBeUndefined();
   });
 });

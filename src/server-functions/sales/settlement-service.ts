@@ -26,6 +26,10 @@ import {
 	restoreCustomerCreditForReversedPayment,
 } from "./customer-credit-service";
 import { recordInvoiceTimelineEvent } from "./invoice-timeline-log";
+import {
+	earnCommissionForPayment,
+	reverseCommissionForPayment,
+} from "./recovery-commission-service";
 
 export type SalesTransaction = Parameters<
 	Parameters<typeof rootDb.transaction>[0]
@@ -87,6 +91,8 @@ export type ReversePaymentInput = {
 	effectiveDate: Date;
 	reason: string;
 	paymentDueDate?: Date;
+	/** Who carries the booker's commission on this payment. Defaults to the booker. */
+	commissionBearer?: "booker" | "company";
 };
 
 type PreparedPayment = {
@@ -641,6 +647,7 @@ export async function createInitialPayments(
 		);
 		if (payment.status === "confirmed") {
 			await creditWalletForPayment(tx, payment, input.actorId);
+			await earnCommissionForPayment(tx, payment, input.actorId);
 		}
 		created.push(payment);
 
@@ -709,6 +716,7 @@ export async function addPaymentsToInvoice(
 		);
 		if (payment.status === "confirmed") {
 			await creditWalletForPayment(tx, payment, input.actorId);
+			await earnCommissionForPayment(tx, payment, input.actorId);
 		}
 		created.push(payment);
 
@@ -761,6 +769,7 @@ export async function recordRecoveryPayment(
 	);
 	if (payment.status === "confirmed") {
 		await creditWalletForPayment(tx, payment, input.actorId);
+		await earnCommissionForPayment(tx, payment, input.actorId);
 	}
 
 	await recalculateInvoiceSettlement(tx, invoice.id, {
@@ -823,6 +832,7 @@ export async function confirmPendingPayment(
 	if (!changed) throw new Error("Payment is no longer pending");
 
 	await creditWalletForPayment(tx, changed, input.actorId);
+	await earnCommissionForPayment(tx, changed, input.actorId);
 	await recalculateInvoiceSettlement(tx, changed.invoiceId, {
 		actorId: input.actorId,
 		sourcePaymentId: changed.id,
@@ -942,6 +952,13 @@ export async function reverseConfirmedPayment(
 		)
 		.returning();
 	if (!changed) throw new Error("Payment is no longer confirmed");
+	await reverseCommissionForPayment(tx, {
+		paymentId: changed.id,
+		bearer: input.commissionBearer ?? "booker",
+		actorId: input.actorId,
+		date: input.effectiveDate,
+		reason,
+	});
 
 	if (changed.method === "customer_credit") {
 		await restoreCustomerCreditForReversedPayment(tx, {

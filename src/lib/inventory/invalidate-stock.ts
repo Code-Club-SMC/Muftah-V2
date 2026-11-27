@@ -4,7 +4,7 @@ export function invalidateStockQueries(queryClient: QueryClient): Promise<void> 
   const prefixes = [
     "inventory", "factory-floor", "item-detail", "materials",
     "packaging-materials", "material-lots", "purchase-edit-state", "low-stock-alerts",
-    "chemical-report-purchases",
+    "chemical-report-purchases", "returned-stock",
     // Cost estimates are worked out from material prices.
     "formulas", "formula", "recipes", "recipe", "products",
   ];

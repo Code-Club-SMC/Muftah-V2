@@ -3,6 +3,23 @@ import { format, parseISO } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Printer, Edit2 } from "lucide-react";
 import { OverrideBradfordDialog } from "./override-bradford-dialog";
+import { isRecoveryBreakdown, type LegacyCommissionLine, type PayslipCommissionBreakdown, type RecoveryCommissionBreakdown } from "@/lib/order-booker/recovery-commission";
+
+/** Old payslips store per-order lines; recovery-based payslips (phase 6) are shown separately. */
+function legacyCommissionLines(payslip: { commissionBreakdown?: PayslipCommissionBreakdown | null }): LegacyCommissionLine[] {
+  return Array.isArray(payslip.commissionBreakdown) ? payslip.commissionBreakdown : [];
+}
+
+const rupees = (value: number) => value.toLocaleString("en-PK", { maximumFractionDigits: 2 });
+
+/** The plain-English commission lines on a recovery-based payslip (phase 6). */
+function recoveryCommissionNotes(breakdown: RecoveryCommissionBreakdown): string[] {
+  const notes = [`Commission on recoveries: Rs ${rupees(breakdown.earned)} (${breakdown.paymentsCount} payments)`];
+  if (breakdown.deductions > 0) notes.push(`Deductions (reversed payments and returns): −Rs ${rupees(breakdown.deductions)}`);
+  if ((breakdown.addedBack ?? 0) > 0) notes.push(`Added back (voided returns): Rs ${rupees(breakdown.addedBack ?? 0)}`);
+  if (breakdown.carriedForward > 0) notes.push(`Rs ${rupees(breakdown.carriedForward)} carried forward to next month`);
+  return notes;
+}
 
 export type PayslipData = {
     id: string;
@@ -51,14 +68,7 @@ export type PayslipData = {
     totalDeductions: string;
     netSalary: string;
     carriedForwardDeficit?: string | null;
-    commissionBreakdown?: Array<{
-      orderId: string;
-      orderRef: string;
-      orderDate: string;
-      orderValue: number;
-      rate: number;
-      amount: number;
-    }> | null;
+    commissionBreakdown?: PayslipCommissionBreakdown | null;
     remarks: string | null;
     paymentSource?: string | null;
     createdAt: Date;
@@ -67,6 +77,8 @@ export type PayslipData = {
 type PayslipViewProps = {
     payslip: PayslipData;
     showActions?: boolean;
+    /** Account(s) the salary was paid from, or "Not paid yet". Row hidden when undefined. */
+    paidFrom?: string;
 };
 
 // ── Labels matching official payslip exactly ────────────────────────────────
@@ -140,6 +152,7 @@ const netNum: React.CSSProperties = { ...base, fontWeight: 800, fontSize: 13, ba
 export const PayslipView = ({
     payslip,
     showActions = true,
+    paidFrom,
 }: PayslipViewProps) => {
     const { employee, payroll } = payslip;
     const [overrideOpen, setOverrideOpen] = useState(false);
@@ -210,9 +223,11 @@ export const PayslipView = ({
         ...(toN(payslip.incentiveAmount) > 0
             ? [{ label: "Incentive", value: toN(payslip.incentiveAmount) }]
             : []),
-        ...(toN(payslip.commissionAmount) > 0
-            ? [{ label: "Commission", value: toN(payslip.commissionAmount) }]
-            : []),
+        ...(isRecoveryBreakdown(payslip.commissionBreakdown)
+            ? [{ label: "Commission (after deductions)", value: toN(payslip.commissionAmount) }]
+            : toN(payslip.commissionAmount) > 0
+                ? [{ label: "Commission", value: toN(payslip.commissionAmount) }]
+                : []),
         ...(toN(payslip.bonusAmount) > 0
             ? [{ label: "Eid Allowance", value: toN(payslip.bonusAmount) }]
             : []),
@@ -435,16 +450,17 @@ body { font-family: Arial, sans-serif; font-size:11px; color:#111; background:#f
           <td class="net-n">${fmt(netPay)}</td>
           <td class="net-l">PKR</td>
         </tr>
+        ${paidFrom !== undefined ? `<tr><td class="tot-l" colspan="4">Paid from</td><td class="tot-n" colspan="2">${paidFrom.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`)}</td></tr>` : ""}
       </tbody>
     </table>
 
   </div><!-- /main-box -->
 
-  ${payslip.commissionBreakdown && payslip.commissionBreakdown.length > 0 ? `
+  ${legacyCommissionLines(payslip) && legacyCommissionLines(payslip).length > 0 ? `
   <!-- Commission Breakdown -->
   <div style="border:${OUTER_BORDER};border-top:none;font-size:11px;">
     <div style="padding:6px 10px;background:#f8f9fa;font-weight:600;">
-      Commission Breakdown (${payslip.commissionBreakdown.length} orders)
+      Commission Breakdown (${legacyCommissionLines(payslip).length} orders)
     </div>
     <table style="width:100%;border-collapse:collapse;">
       <thead>
@@ -457,7 +473,7 @@ body { font-family: Arial, sans-serif; font-size:11px; color:#111; background:#f
         </tr>
       </thead>
       <tbody>
-        ${payslip.commissionBreakdown.map((item) => `
+        ${legacyCommissionLines(payslip).map((item) => `
         <tr>
           <td style="${base};border-bottom:${ROW_BORDER}">${item.orderRef}</td>
           <td style="${base};border-bottom:${ROW_BORDER}">${item.orderDate}</td>
@@ -468,6 +484,13 @@ body { font-family: Arial, sans-serif; font-size:11px; color:#111; background:#f
         `).join("")}
       </tbody>
     </table>
+  </div>
+  ` : ""}
+
+  ${isRecoveryBreakdown(payslip.commissionBreakdown) ? `
+  <!-- Recovery commission -->
+  <div style="border:${OUTER_BORDER};border-top:none;font-size:11px;padding:6px 10px;">
+    ${recoveryCommissionNotes(payslip.commissionBreakdown).map((note) => `<div>${note}</div>`).join("")}
   </div>
   ` : ""}
 
@@ -649,6 +672,12 @@ body { font-family: Arial, sans-serif; font-size:11px; color:#111; background:#f
                                 <td style={netNum}>{fmt(netPay)}</td>
                                 <td style={netLbl}>PKR</td>
                             </tr>
+                            {paidFrom !== undefined && (
+                                <tr>
+                                    <td colSpan={4} style={totLbl}>Paid from</td>
+                                    <td colSpan={2} style={totNum}>{paidFrom}</td>
+                                </tr>
+                            )}
 
                         </tbody>
                     </table>
@@ -656,7 +685,7 @@ body { font-family: Arial, sans-serif; font-size:11px; color:#111; background:#f
                 </div>{/* /main-box */}
 
                 {/* Commission Breakdown (Expandable) */}
-                {payslip.commissionBreakdown && payslip.commissionBreakdown.length > 0 && (
+                {legacyCommissionLines(payslip) && legacyCommissionLines(payslip).length > 0 && (
                     <div style={{
                         border: OUTER_BORDER,
                         borderTop: "none",
@@ -674,7 +703,7 @@ body { font-family: Arial, sans-serif; font-size:11px; color:#111; background:#f
                             }}
                             onClick={() => setCommissionExpanded(!commissionExpanded)}
                         >
-                            <span>Commission Breakdown ({payslip.commissionBreakdown.length} orders)</span>
+                            <span>Commission Breakdown ({legacyCommissionLines(payslip).length} orders)</span>
                             <span style={{ fontSize: 9 }}>{commissionExpanded ? "▲ Collapse" : "▼ Expand"}</span>
                         </div>
                         {commissionExpanded && (
@@ -689,7 +718,7 @@ body { font-family: Arial, sans-serif; font-size:11px; color:#111; background:#f
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {payslip.commissionBreakdown.map((item) => (
+                                    {legacyCommissionLines(payslip).map((item) => (
                                         <tr key={item.orderId}>
                                             <td style={{ ...base, borderBottom: ROW_BORDER }}>{item.orderRef}</td>
                                             <td style={{ ...base, borderBottom: ROW_BORDER }}>{item.orderDate}</td>
@@ -701,6 +730,15 @@ body { font-family: Arial, sans-serif; font-size:11px; color:#111; background:#f
                                 </tbody>
                             </table>
                         )}
+                    </div>
+                )}
+
+                {/* Recovery commission (phase 6 payslips) */}
+                {isRecoveryBreakdown(payslip.commissionBreakdown) && (
+                    <div style={{ border: OUTER_BORDER, borderTop: "none", fontSize: 11, padding: "6px 10px" }}>
+                        {recoveryCommissionNotes(payslip.commissionBreakdown).map((note) => (
+                            <p key={note} style={{ margin: 0 }}>{note}</p>
+                        ))}
                     </div>
                 )}
 

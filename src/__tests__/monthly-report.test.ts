@@ -215,8 +215,9 @@ describe("monthly report data rules", () => {
     }
   });
 
-  it("counts salaries only from approved or paid payrolls", () => {
-    expect(queries()).toContain('inArray(payrolls.status, ["approved", "paid"])');
+  it("counts every generated slip by payroll month (there is no Approve step)", () => {
+    expect(queries()).not.toContain("payrolls.status");
+    expect(queries()).toContain("gte(payrolls.month, from), lte(payrolls.month, to)");
   });
 
   it("buckets by Pakistan calendar month", () => {

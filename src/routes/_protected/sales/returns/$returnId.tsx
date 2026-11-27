@@ -120,6 +120,7 @@ function SalesReturnDetailPage() {
       : inspected
         ? "Credited"
         : "If everything arrives";
+  const lossBooked = data.items.reduce((sum, item) => sum + Number(item.writeOffAmount ?? 0), 0);
 
   return (
     <div className="space-y-6">
@@ -205,7 +206,12 @@ function SalesReturnDetailPage() {
                   const cell = (value: number) => (inspected ? value : "—");
                   return (
                     <TableRow key={item.id}>
-                      <TableCell className="text-sm font-medium">{item.invoiceItem.pack}</TableCell>
+                      <TableCell className="text-sm font-medium">
+                        {item.invoiceItem.pack}
+                        {inspected && salvageNote(item) && (
+                          <span className="block text-xs font-normal text-muted-foreground">{salvageNote(item)}</span>
+                        )}
+                      </TableCell>
                       <TableCell className="text-right text-sm tabular-nums">
                         {formatUnits(requested, upc)}
                       </TableCell>
@@ -230,6 +236,14 @@ function SalesReturnDetailPage() {
               <span className="text-sm text-muted-foreground">{amountLabel}</span>
               <span className="text-lg font-semibold tabular-nums">{formatRupees(data.totalAmount)}</span>
             </div>
+            {inspected && lossBooked > 0 && (
+              <div className="flex items-center justify-between border-t px-4 py-3">
+                <span className="text-sm text-muted-foreground">
+                  Loss booked on damaged and expired packs{data.status === "voided" ? " (reversed by the void)" : ""}
+                </span>
+                <span className="font-semibold tabular-nums text-destructive">{formatRupees(lossBooked)}</span>
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -334,4 +348,13 @@ function SalesReturnDetailPage() {
       />
     </div>
   );
+}
+
+/** Salvage kept per pack for damaged and expired packs, e.g. "Salvage: damaged Rs 3 a pack". */
+function salvageNote(item: SalesReturnDetail["items"][number]): string | null {
+  const parts = [
+    item.damagedUnits > 0 && Number(item.damagedSalvagePerUnit) > 0 ? `damaged ${formatRupees(item.damagedSalvagePerUnit)} a pack` : null,
+    item.expiredUnits > 0 && Number(item.expiredSalvagePerUnit) > 0 ? `expired ${formatRupees(item.expiredSalvagePerUnit)} a pack` : null,
+  ].filter(Boolean);
+  return parts.length ? `Salvage: ${parts.join(", ")}` : null;
 }

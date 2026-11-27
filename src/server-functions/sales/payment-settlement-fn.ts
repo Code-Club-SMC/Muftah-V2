@@ -27,6 +27,7 @@ const resolveSchema = z.object({
 
 const reverseSchema = resolveSchema.extend({
 	effectiveDate: z.coerce.date(),
+	commissionBearer: z.enum(["booker", "company"]).default("booker"),
 });
 
 async function requirePaymentMethod(
@@ -218,8 +219,24 @@ export const reversePaymentFn = createServerFn()
 			entityId: data.paymentId,
 			actorId: context.authContext.session.user.id,
 			actorName: context.authContext.session.user.name,
-			description: `Reversed payment`,
+			description: `Reversed payment${data.commissionBearer === "company" ? " (company bears the booker's commission)" : ""}`,
 		});
 
 		return result;
+	});
+
+export const getPaymentCommissionFn = createServerFn()
+	.middleware([requirePaymentReversalMiddleware])
+	.inputValidator((input: unknown) =>
+		z.object({ paymentId: z.string().min(1) }).parse(input),
+	)
+	.handler(async ({ data }) => {
+		const { db } = await import("@/db");
+		const { getPaymentCommission } = await import(
+			"./recovery-commission-service"
+		);
+		return getPaymentCommission(
+			db as unknown as SalesTransaction,
+			data.paymentId,
+		);
 	});

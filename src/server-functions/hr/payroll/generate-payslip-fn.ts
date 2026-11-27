@@ -8,6 +8,7 @@ import {
 import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { generateEmployeePayslipCore, syncPayrollTotal } from "./core";
+import { LOCKED_PAYROLL_MESSAGE, payrollAcceptsPayslipChanges } from "@/lib/hr/salary-payments";
 
 /**
  * Generate payslip for a single employee
@@ -81,8 +82,8 @@ export const generateEmployeePayslipFn = createServerFn()
     if (!payroll) {
       throw new Error("Payroll not found");
     }
-    if (payroll.status !== "draft") {
-      throw new Error("Only draft payrolls can generate or regenerate payslips.");
+    if (!payrollAcceptsPayslipChanges(payroll.status)) {
+      throw new Error(LOCKED_PAYROLL_MESSAGE);
     }
 
     const result = await generateEmployeePayslipCore(data, context.session.user.id);

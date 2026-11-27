@@ -14,14 +14,18 @@ import {
   employees,
   payrolls,
   payslips,
+  salaryPayments,
   travelLogs,
 } from "@/db/schemas/hr-schema";
+import { effectiveDateFromKey } from "@/lib/hr/salary-payments";
 import {
   orderBookerTrips,
   payments,
+  returnedStockMovements,
   salesReturns,
 } from "@/db/schemas/sales-erp-schema";
 import { customers, invoiceItems, invoices } from "@/db/schemas/sales-schema";
+import { returnedStockMoneyEvents } from "@/lib/inventory/returned-stock";
 import type { ReportSource } from "@/lib/report-source";
 import { returnMoneyEvents } from "@/lib/sales/returns/return-lifecycle";
 import {
@@ -93,8 +97,16 @@ interface ReturnItemRecord {
   effectiveDate: Date;
   totalRefund: number;
   totalCost: number;
+  totalWriteOff: number;
   cartonsReturned: number;
   quantityReturned: number;
+}
+
+interface ReturnedStockMovementRecord {
+  kind: string;
+  lossAmount: number;
+  movementDate: Date;
+  voidedAt: Date | null;
 }
 
 interface ExpenseRecord {
@@ -202,6 +214,8 @@ export interface CompanySummary {
   commissions: number;
   tada: number;
   generalExpenses: number;
+  returnWriteOffs: number;
+  returnedStockWriteDowns: number;
   totalOperatingExpenses: number;
   netProfit: number;
   netMargin: number;
@@ -321,6 +335,8 @@ export interface CompanyReportData {
     commissions: number;
     tada: number;
     generalExpenses: number;
+    returnWriteOffs: number;
+    returnedStockWriteDowns: number;
     totalOperatingExpenses: number;
   };
   deductionBreakdown: DeductionBreakdownRow[];
@@ -336,6 +352,7 @@ export interface LoadedContext {
   returns: ReturnItemRecord[];
   expenses: ExpenseRecord[];
   failedProductionLosses: FailedProductionLossRecord[];
+  returnedStockMovements: ReturnedStockMovementRecord[];
   paidPayslips: PaidPayslipRecord[];
   travelLogs: TravelLogRecord[];
   orderBookers: OrderBookerRecord[];
@@ -642,43 +659,52 @@ export async function loadContext(
           settledAt: row.settledAt,
         })),
       ),
-    db
-      .select({
-        payrollId: payrolls.id,
-        payrollMonth: payrolls.month,
-        payrollStartDate: payrolls.startDate,
-        payrollEndDate: payrolls.endDate,
-        paidAt: payrolls.paidAt,
-        payslipId: payslips.id,
-        employeeId: employees.id,
-        grossSalary: payslips.grossSalary,
-        commissionAmount: payslips.commissionAmount,
-      })
-      .from(payslips)
-      .innerJoin(payrolls, eq(payslips.payrollId, payrolls.id))
-      .innerJoin(employees, eq(payslips.employeeId, employees.id))
-      .where(
-        and(
-          eq(payrolls.status, "paid"),
-          gte(payrolls.paidAt, fromDate),
-          lte(payrolls.paidAt, toDate),
-        ),
-      )
-      .then((rows) =>
-        rows
-          .filter((row) => row.paidAt)
-          .map((row) => ({
+    (() => {
+      // A slip's salary cost falls on the day it was first paid (no Approve step any more).
+      const firstPayment = db
+        .select({
+          payrollId: salaryPayments.payrollId,
+          employeeId: salaryPayments.employeeId,
+          paidOn: sql<string>`min(${salaryPayments.paymentDate})`.as("paid_on"),
+        })
+        .from(salaryPayments)
+        .where(and(eq(salaryPayments.kind, "payment"), eq(salaryPayments.status, "active")))
+        .groupBy(salaryPayments.payrollId, salaryPayments.employeeId)
+        .as("first_payment");
+      return db
+        .select({
+          payrollId: payrolls.id,
+          payrollMonth: payrolls.month,
+          payrollStartDate: payrolls.startDate,
+          payrollEndDate: payrolls.endDate,
+          paidOn: firstPayment.paidOn,
+          payslipId: payslips.id,
+          employeeId: employees.id,
+          grossSalary: payslips.grossSalary,
+          commissionAmount: payslips.commissionAmount,
+        })
+        .from(payslips)
+        .innerJoin(payrolls, eq(payslips.payrollId, payrolls.id))
+        .innerJoin(employees, eq(payslips.employeeId, employees.id))
+        .innerJoin(firstPayment, and(eq(firstPayment.payrollId, payslips.payrollId), eq(firstPayment.employeeId, payslips.employeeId)))
+        .where(and(
+          sql`${firstPayment.paidOn} >= ${reportDateKey(fromDate)}`,
+          sql`${firstPayment.paidOn} <= ${reportDateKey(toDate)}`,
+        ))
+        .then((rows) =>
+          rows.map((row) => ({
             payrollId: row.payrollId,
             payrollMonth: row.payrollMonth,
             payrollStartDate: row.payrollStartDate,
             payrollEndDate: row.payrollEndDate,
-            paidAt: row.paidAt!,
+            paidAt: effectiveDateFromKey(String(row.paidOn).slice(0, 10)),
             payslipId: row.payslipId,
             employeeId: row.employeeId,
             grossSalary: toNumber(row.grossSalary),
             commissionAmount: toNumber(row.commissionAmount),
           })),
-      ),
+        );
+    })(),
     db.query.orderBookers.findMany({
       columns: {
         id: true,
@@ -826,6 +852,7 @@ export async function loadContext(
                     effectiveDate: event.date,
                     totalRefund: direction * event.amount,
                     totalCost: direction * event.cost,
+                    totalWriteOff: direction * event.writeOff,
                     cartonsReturned: direction * (item.cartonsReturned ?? 0),
                     quantityReturned: direction * (item.quantityReturned ?? 0),
                   });
@@ -906,6 +933,27 @@ export async function loadContext(
     ).values(),
   );
 
+  // Disposals and value changes are not tied to an invoice, so only the all-sources report shows them.
+  const returnedStockMovementRows: ReturnedStockMovementRecord[] =
+    source === "all"
+      ? (
+          await db
+            .select({
+              kind: returnedStockMovements.kind,
+              lossAmount: returnedStockMovements.lossAmount,
+              movementDate: returnedStockMovements.movementDate,
+              voidedAt: returnedStockMovements.voidedAt,
+            })
+            .from(returnedStockMovements)
+            .where(
+              or(
+                and(gte(returnedStockMovements.movementDate, fromDate), lte(returnedStockMovements.movementDate, toDate)),
+                and(gte(returnedStockMovements.voidedAt, fromDate), lte(returnedStockMovements.voidedAt, toDate)),
+              ),
+            )
+        ).map((row) => ({ ...row, lossAmount: toNumber(row.lossAmount) }))
+      : [];
+
   return {
     lines: lines.map((row) => ({
       invoiceId: row.invoiceId,
@@ -935,6 +983,7 @@ export async function loadContext(
     // only; the all-sources report remains the full company P&L.
     expenses: source === "all" ? expenseRows : [],
     failedProductionLosses: source === "all" ? failedProductionLossRows : [],
+    returnedStockMovements: returnedStockMovementRows,
     paidPayslips: source === "all" ? payrollRows : [],
     travelLogs: source === "all" ? travelLogRows : [],
     orderBookers: source === "all" ? orderBookerRows : [],
@@ -1240,13 +1289,25 @@ export function buildSnapshot(
     .filter((loss) => isWithinRange(loss.settledAt, range))
     .reduce((sum, loss) => sum + loss.lossAmount, 0);
   const generalExpense = financeGeneralExpense + failedProductionLossExpense;
+  const returnedStockEvents = context.returnedStockMovements
+    .flatMap((movement) => returnedStockMoneyEvents(movement))
+    .filter((event) => isWithinRange(event.date, range));
+  const sumEvents = (line: "write_off" | "write_down") =>
+    returnedStockEvents.filter((event) => event.line === line).reduce((sum, event) => sum + event.amount, 0);
+  const returnWriteOffs =
+    context.returns
+      .filter((item) => isWithinRange(item.effectiveDate, range))
+      .reduce((sum, item) => sum + item.totalWriteOff, 0) + sumEvents("write_off");
+  const returnedStockWriteDowns = sumEvents("write_down");
 
   const totalOperatingExpenses =
     invoiceExpenses +
     payrollExpense +
     commissionExpense +
     tadaExpense +
-    generalExpense;
+    generalExpense +
+    returnWriteOffs +
+    returnedStockWriteDowns;
   const grossProfit = totalRevenue - totalCogs;
   const netProfit = grossProfit - totalOperatingExpenses;
 
@@ -1260,6 +1321,8 @@ export function buildSnapshot(
     commissions: roundCurrency(commissionExpense),
     tada: roundCurrency(tadaExpense),
     generalExpenses: roundCurrency(generalExpense),
+    returnWriteOffs: roundCurrency(returnWriteOffs),
+    returnedStockWriteDowns: roundCurrency(returnedStockWriteDowns),
     totalOperatingExpenses: roundCurrency(totalOperatingExpenses),
     netProfit: roundCurrency(netProfit),
     netMargin: totalRevenue > 0 ? (netProfit / totalRevenue) * 100 : 0,
@@ -1307,6 +1370,21 @@ export function buildSnapshot(
         "Approved finance expenses plus failed-batch chemical write-offs, excluding capitalized inventory purchases.",
       amount: summary.generalExpenses,
       impact: -summary.generalExpenses,
+    },
+    {
+      type: "return_write_offs",
+      label: "Return Write-offs",
+      description:
+        "Damaged and expired returned packs booked below their original cost, plus scrap and seconds sales. No cash moved except the seconds sale money.",
+      amount: summary.returnWriteOffs,
+      impact: -summary.returnWriteOffs,
+    },
+    {
+      type: "returned_stock_write_downs",
+      label: "Returned Stock Write-downs",
+      description: "Value lowered on damaged and expired returned packs still in stock.",
+      amount: summary.returnedStockWriteDowns,
+      impact: -summary.returnedStockWriteDowns,
     },
   ];
 
@@ -1564,6 +1642,14 @@ async function buildFinanceReconciliation(
         "Failed-batch chemical write-offs reduce profit when settled but do not move wallet cash.",
     },
     {
+      type: "returned_stock_losses",
+      label: "Add Back Non-cash Returned Stock Losses",
+      amount: Math.abs(roundCurrency(summary.returnWriteOffs + summary.returnedStockWriteDowns)),
+      direction: summary.returnWriteOffs + summary.returnedStockWriteDowns >= 0 ? "positive" : "negative",
+      description:
+        "Return write-offs, scrap and value write-downs reduce profit but move no cash. Seconds sale money is counted with other wallet movements.",
+    },
+    {
       type: "payroll_cash_gap",
       label: "Payroll Cash vs Expense Timing",
       amount: payrollCashGap,
@@ -1743,6 +1829,8 @@ export async function getCompanyReportData(input?: {
       commissions: current.summary.commissions,
       tada: current.summary.tada,
       generalExpenses: current.summary.generalExpenses,
+      returnWriteOffs: current.summary.returnWriteOffs,
+      returnedStockWriteDowns: current.summary.returnedStockWriteDowns,
       totalOperatingExpenses: current.summary.totalOperatingExpenses,
     },
     deductionBreakdown: current.deductionBreakdown,

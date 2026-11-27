@@ -135,6 +135,41 @@ export const wallets = pgTable("wallets", {
   ...timestamps,
 });
 
+// --- EXPENSE TEMPLATES (one-tap repeats on the Record expense form; never auto-posted) ---
+export const expenseTemplates = pgTable(
+  "expense_templates",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => createId()),
+    name: text("name").notNull(),
+    categoryId: text("category_id")
+      .notNull()
+      .references(() => expenseCategories.id),
+    // Null = the amount changes every time (e.g. electricity).
+    amount: decimal("amount", { precision: 12, scale: 2 }),
+    payee: text("payee"),
+    walletId: text("wallet_id").references(() => wallets.id),
+    note: text("note"),
+    // 1-31; null = no reminder. Months shorter than this day remind on their last day.
+    reminderDay: integer("reminder_day"),
+    // "YYYY-MM": the reminder is hidden for that one month.
+    skippedMonth: text("skipped_month"),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    createdById: text("created_by_id")
+      .notNull()
+      .references(() => user.id),
+    ...timestamps,
+  },
+  (table) => ({
+    activeIdx: index("expense_templates_active_idx").on(table.archivedAt, table.name),
+    reminderDayCheck: check(
+      "expense_templates_reminder_day_check",
+      sql`${table.reminderDay} is null or ${table.reminderDay} between 1 and 31`,
+    ),
+  }),
+);
+
 // --- EXPENSES ---
 export const expenses = pgTable("expenses", {
   id: text("id").primaryKey(),
@@ -148,6 +183,8 @@ export const expenses = pgTable("expenses", {
   slipNumber: text("slip_number"),
   remarks: text("remarks"),
   payee: text("payee"),
+  // Set when recorded from a template; how a monthly reminder knows it is paid.
+  templateId: text("template_id").references(() => expenseTemplates.id),
   // "manual" = Record expense form (can be edited/voided); "system" = made by another screen.
   origin: text("origin").notNull().default("system"),
   voidedAt: timestamp("voided_at", { withTimezone: true }),
@@ -176,6 +213,7 @@ export const expenses = pgTable("expenses", {
       table.walletId,
       table.expenseDate,
     ),
+    templateDateIdx: index("expenses_template_date_idx").on(table.templateId, table.expenseDate),
   }),
 );
 
@@ -384,8 +422,22 @@ export const expensesRelations = relations(expenses, ({ one, many }) => ({
     references: [user.id],
     relationName: "expenseVoidedBy",
   }),
+  template: one(expenseTemplates, {
+    fields: [expenses.templateId],
+    references: [expenseTemplates.id],
+  }),
   fieldValues: many(expenseFieldValues),
   edits: many(expenseEdits),
+}));
+
+export const expenseTemplatesRelations = relations(expenseTemplates, ({ one, many }) => ({
+  category: one(expenseCategories, {
+    fields: [expenseTemplates.categoryId],
+    references: [expenseCategories.id],
+  }),
+  wallet: one(wallets, { fields: [expenseTemplates.walletId], references: [wallets.id] }),
+  createdBy: one(user, { fields: [expenseTemplates.createdById], references: [user.id] }),
+  expenses: many(expenses),
 }));
 
 export const expenseEditsRelations = relations(expenseEdits, ({ one }) => ({

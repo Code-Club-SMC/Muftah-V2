@@ -62,6 +62,7 @@ export const PERMISSION_KEYS = [
   "inventory.manage",
   "inventory.stock-reconciliation.manage",
   "inventory.returns.receive",
+  "inventory.returns.dispose",
   "suppliers.view",
   "suppliers.manage",
   "sales.view",
@@ -416,6 +417,13 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
     kind: "action",
   },
   {
+    key: "inventory.returns.dispose",
+    moduleKey: "inventory",
+    label: "Dispose returned stock",
+    description: "Scrap damaged or expired returned packs, sell them as seconds, lower their value and void these entries.",
+    kind: "action",
+  },
+  {
     key: "sales.offline.view",
     moduleKey: "sales",
     label: "View offline sales",
@@ -753,6 +761,7 @@ export const PERMISSION_BACKFILLS: Partial<
   "sales.returns.approve": "sales.manage",
   "inventory.returns.receive": "inventory.manage",
   "finance.refunds.issue": ["finance.manage", "inventory.returns.receive"],
+  "inventory.returns.dispose": "inventory.returns.receive",
 };
 
 export type AppRoleSeed = {
@@ -799,6 +808,7 @@ export const SYSTEM_ROLE_SEEDS: AppRoleSeed[] = [
       "inventory.manage",
       "inventory.stock-reconciliation.manage",
       "inventory.returns.receive",
+      "inventory.returns.dispose",
       "suppliers.view",
       "suppliers.manage",
       "sales.view",

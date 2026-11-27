@@ -7,6 +7,7 @@ import {
   bradfordAuditLog,
   payslips,
   salaryAdvances,
+  salaryPayments,
   travelLogs,
 } from "@/db/schemas/hr-schema";
 import { and, count, eq, inArray, isNotNull, or } from "drizzle-orm";
@@ -36,6 +37,13 @@ export const approveEmployeeDeletionFn = createServerFn()
   .inputValidator((data: unknown) => deleteEmployeeSchema.parse(data))
   .handler(async ({ data }) => {
     await db.transaction(async (tx) => {
+      const [paid] = await tx
+        .select({ id: salaryPayments.id })
+        .from(salaryPayments)
+        .where(eq(salaryPayments.employeeId, data.id))
+        .limit(1);
+      if (paid) throw new Error("Cannot delete an employee with salary payments. Archive the employee instead.");
+
       const employeePayslips = await tx.query.payslips.findMany({
         where: eq(payslips.employeeId, data.id),
         columns: {

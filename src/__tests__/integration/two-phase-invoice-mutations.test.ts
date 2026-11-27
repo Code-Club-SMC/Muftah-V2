@@ -9,7 +9,7 @@ import { createInvoiceSchema } from "@/db/zod_schemas";
 import { cancelSalesReturnFn, completeSalesReturnFn, createSalesReturnFn, decideSalesReturnFn, voidSalesReturnFn } from "@/server-functions/sales/sales-returns-fn";
 import { processReturn } from "@/lib/cartons/carton-extended.service";
 import { closeBatch, topUpCarton } from "@/lib/cartons/carton.service";
-import { discountRules, salesmen, salesReturnReasons, salesReturnItems, salesReturns, salesReturnStockTraces } from "@/db/schemas/sales-erp-schema";
+import { discountRules, returnedStockMovements, salesmen, salesReturnReasons, salesReturnItems, salesReturns, salesReturnStockTraces } from "@/db/schemas/sales-erp-schema";
 import { transferStockFn } from "@/server-functions/inventory/stock/transfer-stock-fn";
 import { getCartonAvailabilityFn } from "@/server-functions/inventory/get-carton-availability-fn";
 import { completePackagingAllocationCore } from "@/server-functions/manufacturing/packaging/complete-packaging-allocation-core.server";
@@ -20,6 +20,7 @@ import { createReportDateRange } from "@/server-functions/reports/profit-loss/re
 import { fetchScopedSummary } from "@/server-functions/reports/profit-loss/reporting-core";
 import { exportPnlCsvFn } from "@/server-functions/reports/profit-loss/export-csv-fn";
 import { formatReportMoney } from "@/lib/report-format";
+import { getReturnedStockAccountsFn, getReturnedStockFn, scrapReturnedStockFn, sellReturnedStockFn, setReturnedStockValueFn, voidReturnedStockMovementFn } from "@/server-functions/inventory/returned-stock-fn";
 
 // Only HTTP/session transport is bypassed. Real validation, callbacks, SQL,
 // nested transactions, receipt and invoice/return accounting are exercised.
@@ -33,7 +34,7 @@ vi.mock("@tanstack/react-start", () => ({ createServerFn: () => {
   };
   return builder;
 } }));
-vi.mock("@/lib/middlewares", () => ({ requireSalesViewMiddleware: {}, requireSalesManageMiddleware: {}, requireInventoryManageMiddleware: {}, requireInventoryViewMiddleware: {}, requireSalesReturnsCreateMiddleware: {}, requireSalesReturnsApproveMiddleware: {}, requireReturnsReceiveMiddleware: {}, requireReportsViewMiddleware: {} }));
+vi.mock("@/lib/middlewares", () => ({ requireSalesViewMiddleware: {}, requireSalesManageMiddleware: {}, requireInventoryManageMiddleware: {}, requireInventoryViewMiddleware: {}, requireSalesReturnsCreateMiddleware: {}, requireSalesReturnsApproveMiddleware: {}, requireReturnsReceiveMiddleware: {}, requireReturnsDisposeMiddleware: {}, requireReportsViewMiddleware: {} }));
 vi.mock("@/lib/activity-logger.server", () => ({ logActivityQuiet: vi.fn() }));
 vi.mock("@tanstack/react-start/server", () => ({ getRequestHeaders: () => ({}) }));
 
@@ -808,7 +809,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("reachable two-phase invoice mut
         const [damaged] = await tx.select().from(returnedFinishedGoodsStock).where(and(
           eq(returnedFinishedGoodsStock.recipeId, f.recipe.id), eq(returnedFinishedGoodsStock.condition, "damaged")));
         expect(damaged.quantityCartons * 4 + damaged.quantityContainers).toBe(1);
-        expect(damaged.totalInventoryValue).toBe("10.00");
+        expect(damaged.totalInventoryValue).toBe("0.00"); // no salvage value entered
         const saved = await tx.query.salesReturns.findFirst({ where: eq(salesReturns.id, salesReturn.id) });
         expect([saved!.status, saved!.totalAmount, saved!.receivedById]).toEqual(["completed", "20.00", f.actor.id]);
         const [savedItem] = await tx.select().from(salesReturnItems).where(eq(salesReturnItems.salesReturnId, salesReturn.id));
@@ -945,6 +946,216 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("reachable two-phase invoice mut
         await invoke(decideSalesReturnFn, { returnId: second.id, action: "approve" }, f.actor.id);
         await receiveReturn(f, second, damagedOnly);
         await assertStock(tx, f, 2);
+      });
+    });
+
+    it("puts damaged packs in at salvage value, books the write-off and reverses it on void", async () => {
+      await withFixture(async (tx, f) => {
+        await receive(tx, f, 4); // 4 packs at Rs 10
+        const invoice = await invoke(createInvoiceFn, request(f, [line(f, 3)]), f.actor.id);
+        const [item] = await tx.select().from(invoiceItems).where(eq(invoiceItems.invoiceId, invoice.id));
+        const salesReturn = await requestReturn(f, invoice.id, item.id, [3]);
+        await invoke(decideSalesReturnFn, { returnId: salesReturn.id, action: "approve" }, f.actor.id);
+        const lines = (damagedSalvagePerUnit: number) => [
+          { returnItemId: salesReturn.items[0].id, goodUnits: 1, damagedUnits: 2, damagedSalvagePerUnit },
+        ];
+
+        await expect(invoke(completeSalesReturnFn, { returnId: salesReturn.id, lines: lines(11) }, f.actor.id))
+          .rejects.toThrow("salvage value Rs 22.00 is more than what these 2 packs cost (Rs 20.00)");
+        await invoke(completeSalesReturnFn, { returnId: salesReturn.id, lines: lines(3) }, f.actor.id);
+
+        const damagedStock = async () => (await tx.select().from(returnedFinishedGoodsStock).where(and(
+          eq(returnedFinishedGoodsStock.recipeId, f.recipe.id), eq(returnedFinishedGoodsStock.condition, "damaged"))))[0];
+        const afterReceipt = await damagedStock();
+        expect([afterReceipt.quantityCartons * 4 + afterReceipt.quantityContainers, afterReceipt.totalInventoryValue]).toEqual([2, "6.00"]);
+        const [returnLine] = await tx.select().from(salesReturnItems).where(eq(salesReturnItems.salesReturnId, salesReturn.id));
+        expect([returnLine.damagedSalvagePerUnit, returnLine.expiredSalvagePerUnit, returnLine.writeOffAmount]).toEqual(["3.00", "0.00", "14.00"]);
+        const traces = () => tx.select().from(salesReturnStockTraces).where(eq(salesReturnStockTraces.salesReturnId, salesReturn.id));
+        expect((await traces()).map(t => [t.kind, t.destination, t.totalCost, t.writeOffAmount]).sort()).toEqual([
+          ["receive", "damaged", "20.00", "14.00"],
+          ["receive", "sellable", "10.00", "0.00"],
+        ]);
+        await assertStock(tx, f, 2);
+
+        await invoke(voidSalesReturnFn, { returnId: salesReturn.id, reason: "Entered against the wrong invoice" }, f.actor.id);
+        const afterVoid = await damagedStock();
+        expect([afterVoid.quantityCartons * 4 + afterVoid.quantityContainers, afterVoid.totalInventoryValue]).toEqual([0, "0.00"]);
+        expect((await traces()).filter(t => t.kind === "void").map(t => [t.destination, t.totalCost, t.writeOffAmount]).sort()).toEqual([
+          ["damaged", "-20.00", "-14.00"],
+          ["sellable", "-10.00", "0.00"],
+        ]);
+      });
+    });
+  });
+
+  describe("returned stock", () => {
+    // 4 damaged packs worth Rs 5 each (salvage), from an invoice of 4 packs costing Rs 10.
+    async function damagedReturn(tx: Tx, f: Fixture) {
+      await receive(tx, f, 4);
+      const invoice = await invoke(createInvoiceFn, request(f, [line(f, 4)]), f.actor.id);
+      const [item] = await tx.select().from(invoiceItems).where(eq(invoiceItems.invoiceId, invoice.id));
+      const salesReturn = await requestReturn(f, invoice.id, item.id, [4]);
+      await invoke(decideSalesReturnFn, { returnId: salesReturn.id, action: "approve" }, f.actor.id);
+      await invoke(completeSalesReturnFn, {
+        returnId: salesReturn.id,
+        lines: [{ returnItemId: salesReturn.items[0].id, damagedUnits: 4, damagedSalvagePerUnit: 5 }],
+      }, f.actor.id);
+      return salesReturn;
+    }
+    const key = (f: Fixture) => ({ warehouseId: f.warehouse.id, recipeId: f.recipe.id, condition: "damaged" as const });
+    async function damagedRow(tx: Tx, f: Fixture) {
+      const [row] = await tx.select().from(returnedFinishedGoodsStock).where(and(
+        eq(returnedFinishedGoodsStock.recipeId, f.recipe.id), eq(returnedFinishedGoodsStock.condition, "damaged")));
+      return [row.quantityCartons * 4 + row.quantityContainers, row.totalInventoryValue];
+    }
+
+    it("lowers value, scraps, sells as seconds and voids, keeping stock, money and the log in step", async () => {
+      await withFixture(async (tx, f) => {
+        const salesReturn = await damagedReturn(tx, f);
+        expect(await damagedRow(tx, f)).toEqual([4, "20.00"]);
+        const listed = await readAccounting(tx, () => invoke(getReturnedStockFn, {}, f.actor.id));
+        expect(listed.rows.find((row: { recipeId: string }) => row.recipeId === f.recipe.id))
+          .toMatchObject({ condition: "damaged", units: 4, value: "20.00", unitsPerCarton: 4 });
+
+        await expect(invoke(setReturnedStockValueFn, { ...key(f), valuePerPack: 6, note: "Checked again" }, f.actor.id))
+          .rejects.toThrow("Value can only be lowered");
+        const revalue = await invoke(setReturnedStockValueFn, { ...key(f), valuePerPack: 2, note: "Boxes torn" }, f.actor.id);
+        expect([revalue.kind, revalue.units, revalue.valueRemoved, revalue.lossAmount]).toEqual(["revalue", 0, "12.00", "12.00"]);
+        expect(await damagedRow(tx, f)).toEqual([4, "8.00"]);
+
+        const scrap = await invoke(scrapReturnedStockFn, { ...key(f), units: 1, note: "Leaking" }, f.actor.id);
+        expect([scrap.kind, scrap.units, scrap.valueRemoved, scrap.lossAmount]).toEqual(["scrap", 1, "2.00", "2.00"]);
+        expect(await damagedRow(tx, f)).toEqual([3, "6.00"]);
+
+        const [wallet] = await tx.insert(wallets).values({ id: randomUUID(), name: randomUUID(), type: "cash" }).returning();
+        await expect(invoke(sellReturnedStockFn, { ...key(f), units: 5, unitPrice: 7, walletId: wallet.id }, f.actor.id))
+          .rejects.toThrow("Only 3 packs are in this stock.");
+        const sale = await invoke(sellReturnedStockFn, { ...key(f), units: 2, unitPrice: 7, walletId: wallet.id }, f.actor.id);
+        expect([sale.kind, sale.units, sale.valueRemoved, sale.saleAmount, sale.lossAmount]).toEqual(["seconds_sale", 2, "4.00", "14.00", "-10.00"]);
+        expect(await damagedRow(tx, f)).toEqual([1, "2.00"]);
+        expect((await tx.query.wallets.findFirst({ where: eq(wallets.id, wallet.id) }))!.balance).toBe("14.00");
+        // Names only: the seller may not be allowed to see balances.
+        const accounts = await readAccounting(tx, () => invoke(getReturnedStockAccountsFn, {}, f.actor.id));
+        expect(accounts.find((account: { id: string }) => account.id === wallet.id)).toEqual({ id: wallet.id, name: wallet.name });
+        const [credit] = await tx.select().from(transactions).where(eq(transactions.id, sale.transactionId));
+        expect([credit.type, credit.amount, credit.source]).toEqual(["credit", "14.00", "Returned Stock Sale"]);
+
+        await tx.update(wallets).set({ balance: "13.00" }).where(eq(wallets.id, wallet.id));
+        const refused = await invoke(voidReturnedStockMovementFn, { movementId: sale.id, reason: "Buyer returned them" }, f.actor.id)
+          .catch((error: Error) => error.message);
+        expect(refused).toBe(`${wallet.name} doesn't have enough money to take this sale back out.`);
+        await tx.update(wallets).set({ balance: "14.00" }).where(eq(wallets.id, wallet.id));
+
+        await invoke(voidReturnedStockMovementFn, { movementId: sale.id, reason: "Buyer returned them" }, f.actor.id);
+        expect(await damagedRow(tx, f)).toEqual([3, "6.00"]);
+        expect((await tx.query.wallets.findFirst({ where: eq(wallets.id, wallet.id) }))!.balance).toBe("0.00");
+        await expect(invoke(voidReturnedStockMovementFn, { movementId: sale.id, reason: "Again please" }, f.actor.id))
+          .rejects.toThrow("This entry is already voided.");
+        const [voidedSale] = await tx.select().from(returnedStockMovements).where(eq(returnedStockMovements.id, sale.id));
+        expect(voidedSale.voidedAt).not.toBeNull();
+        expect(voidedSale.voidReason).toBe("Buyer returned them");
+
+        // The return can't be voided while one scrapped pack is gone.
+        await expect(invoke(voidSalesReturnFn, { returnId: salesReturn.id, reason: "Wrong invoice" }, f.actor.id))
+          .rejects.toThrow("but only 3 are left");
+      });
+    });
+
+    it("refuses a seconds sale with a bad price and refuses without a note on value change", async () => {
+      await withFixture(async (tx, f) => {
+        await damagedReturn(tx, f);
+        const [wallet] = await tx.insert(wallets).values({ id: randomUUID(), name: randomUUID(), type: "cash" }).returning();
+        await expect(invoke(sellReturnedStockFn, { ...key(f), units: 1, unitPrice: 0, walletId: wallet.id }, f.actor.id))
+          .rejects.toThrow("Price must be above zero");
+        await expect(invoke(sellReturnedStockFn, { ...key(f), units: 1, unitPrice: 1.005, walletId: wallet.id }, f.actor.id))
+          .rejects.toThrow("at most 2 decimals");
+        await expect(invoke(setReturnedStockValueFn, { ...key(f), valuePerPack: 1, note: "" }, f.actor.id))
+          .rejects.toThrow("Say why the value changed");
+        expect(await damagedRow(tx, f)).toEqual([4, "20.00"]);
+      });
+    });
+
+    it("refuses to undo a value change once packs have left, until those entries are voided", async () => {
+      await withFixture(async (tx, f) => {
+        await damagedReturn(tx, f); // 4 packs, Rs 20
+        const early = await invoke(scrapReturnedStockFn, { ...key(f), units: 1 }, f.actor.id); // 3 packs, Rs 15
+        const revalue = await invoke(setReturnedStockValueFn, { ...key(f), valuePerPack: 2, note: "Boxes torn" }, f.actor.id); // Rs 6
+        const scrap = await invoke(scrapReturnedStockFn, { ...key(f), units: 2 }, f.actor.id); // 1 pack, Rs 2
+        const undo = () => invoke(voidReturnedStockMovementFn, { movementId: revalue.id, reason: "Entered by mistake" }, f.actor.id);
+
+        await expect(undo()).rejects.toThrow("Some of these packs were scrapped or sold since. Void those entries first.");
+        expect(await damagedRow(tx, f)).toEqual([1, "2.00"]);
+        expect((await tx.select().from(returnedStockMovements).where(eq(returnedStockMovements.id, revalue.id)))[0].voidedAt).toBeNull();
+
+        // A scrap from before the value change never blocks it.
+        await invoke(voidReturnedStockMovementFn, { movementId: scrap.id, reason: "Packs were found" }, f.actor.id);
+        expect(await damagedRow(tx, f)).toEqual([3, "6.00"]);
+        await undo();
+        expect(await damagedRow(tx, f)).toEqual([3, "15.00"]);
+        await invoke(voidReturnedStockMovementFn, { movementId: early.id, reason: "Pack was fine" }, f.actor.id);
+        expect(await damagedRow(tx, f)).toEqual([4, "20.00"]);
+      });
+    });
+
+    it("still blocks undoing a value change when fresh packs hide the ones that left", async () => {
+      await withFixture(async (tx, f) => {
+        await damagedReturn(tx, f); // 4 packs, Rs 20
+        const revalue = await invoke(setReturnedStockValueFn, { ...key(f), valuePerPack: 2, note: "Boxes torn" }, f.actor.id);
+        const [wallet] = await tx.insert(wallets).values({ id: randomUUID(), name: randomUUID(), type: "cash" }).returning();
+        await invoke(sellReturnedStockFn, { ...key(f), units: 3, unitPrice: 7, walletId: wallet.id }, f.actor.id);
+        await damagedReturn(tx, f); // 5 packs now, more than the 4 that were lowered
+        await expect(invoke(voidReturnedStockMovementFn, { movementId: revalue.id, reason: "Entered by mistake" }, f.actor.id))
+          .rejects.toThrow("Some of these packs were scrapped or sold since");
+      });
+    });
+
+    it("blocks undoing a value change after a voided return took packs out", async () => {
+      await withFixture(async (tx, f) => {
+        const first = await damagedReturn(tx, f);
+        await damagedReturn(tx, f); // 8 packs, Rs 40
+        const revalue = await invoke(setReturnedStockValueFn, { ...key(f), valuePerPack: 2, note: "Boxes torn" }, f.actor.id);
+        await invoke(voidSalesReturnFn, { returnId: first.id, reason: "Wrong invoice" }, f.actor.id);
+        expect(await damagedRow(tx, f)).toEqual([4, "8.00"]);
+        await expect(invoke(voidReturnedStockMovementFn, { movementId: revalue.id, reason: "Entered by mistake" }, f.actor.id))
+          .rejects.toThrow("Some of these packs left stock when a return was voided, so the old value can't be put back.");
+        expect(await damagedRow(tx, f)).toEqual([4, "8.00"]);
+      });
+    });
+
+    it("shows return write-offs and write-downs as their own P&L lines", async () => {
+      await withFixture(async (tx, f) => {
+        await receive(tx, f, 4);
+        const invoice = await invoke(createInvoiceFn, request(f, [line(f, 2)]), f.actor.id);
+        const [item] = await tx.select().from(invoiceItems).where(eq(invoiceItems.invoiceId, invoice.id));
+        const salesReturn = await requestReturn(f, invoice.id, item.id, [2]);
+        await invoke(decideSalesReturnFn, { returnId: salesReturn.id, action: "approve" }, f.actor.id);
+        await invoke(completeSalesReturnFn, {
+          returnId: salesReturn.id,
+          lines: [{ returnItemId: salesReturn.items[0].id, damagedUnits: 2, damagedSalvagePerUnit: 3 }],
+        }, f.actor.id); // cost 20, stock 6, write-off 14
+        await tx.update(salesReturns).set({ completedAt: new Date("2026-05-05T12:00:00Z") }).where(eq(salesReturns.id, salesReturn.id));
+        const revalue = await invoke(setReturnedStockValueFn, { ...key(f), valuePerPack: 1, note: "Labels faded" }, f.actor.id); // 6 -> 2, write-down 4
+        const scrap = await invoke(scrapReturnedStockFn, { ...key(f), units: 1 }, f.actor.id); // loss 1
+        await tx.update(returnedStockMovements).set({ movementDate: new Date("2026-05-10T12:00:00Z") })
+          .where(inArray(returnedStockMovements.id, [revalue.id, scrap.id]));
+
+        const may = createReportDateRange({ dateFrom: "2026-05-01", dateTo: "2026-05-31" });
+        const snapshot = (source: "all" | "online") =>
+          readAccounting(tx, async () => buildSnapshot(await loadContext(may.fromDate, may.toDate, source), may));
+        const all = await snapshot("all");
+        expect([all.summary.returnWriteOffs, all.summary.returnedStockWriteDowns]).toEqual([15, 4]);
+        expect(all.deductionBreakdown.filter(row => row.type.startsWith("return")).map(row => [row.type, row.amount])).toEqual([
+          ["return_write_offs", 15],
+          ["returned_stock_write_downs", 4],
+        ]);
+        const online = await snapshot("online");
+        expect([online.summary.returnWriteOffs, online.summary.returnedStockWriteDowns]).toEqual([14, 0]);
+
+        await invoke(voidReturnedStockMovementFn, { movementId: scrap.id, reason: "Pack was fine" }, f.actor.id);
+        await tx.update(returnedStockMovements).set({ voidedAt: new Date("2026-06-02T12:00:00Z") }).where(eq(returnedStockMovements.id, scrap.id));
+        const june = createReportDateRange({ dateFrom: "2026-06-01", dateTo: "2026-06-30" });
+        const juneSnapshot = await readAccounting(tx, async () => buildSnapshot(await loadContext(june.fromDate, june.toDate, "all"), june));
+        expect(juneSnapshot.summary.returnWriteOffs).toBe(-1);
       });
     });
   });
