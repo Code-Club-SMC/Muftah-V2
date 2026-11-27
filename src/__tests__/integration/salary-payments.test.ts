@@ -2,9 +2,11 @@ import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { db } from "@/db";
 import { wallets } from "@/db/schemas/finance-schema";
+import { salaryAdvances } from "@/db/schemas/hr-schema";
+import { calculateEnrichedAdvanceDeductions } from "@/server-functions/hr/payroll/core";
 import { reportDateKey } from "@/lib/report-dates";
 import { slipPaymentState } from "@/lib/hr/salary-payments";
-import { changeSalaryAccount, paySalaries, undoSalaryPayment } from "@/server-functions/hr/payroll/salary-payments.server";
+import { changeSalaryAccount, paySalaries, recordSalaryRefund, recoverOverpaidSalary, undoSalaryPayment } from "@/server-functions/hr/payroll/salary-payments.server";
 import { salaryFixture } from "./salary-fixture";
 
 type Fixture = Awaited<ReturnType<typeof salaryFixture>>;
@@ -113,5 +115,60 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("changing the account and undoin
     expect(rows[0]).toMatchObject({ status: "reversed", reversalReason: "Paid twice by mistake" });
     expect(slipPaymentState("26200.00", rows).status).toBe("unpaid");
     await expect(undoFor(f, a.employee.id, "Again")).rejects.toThrow(`${a.name} has no payment to undo.`);
+  });
+});
+
+describe.skipIf(!process.env.TEST_DATABASE_URL)("overpaid slips", () => {
+  const overpaid = async () => {
+    const f = await salaryFixture();
+    const rafi = f.staff[0];
+    await payFor(f, [rafi.employee.id], f.cash.id, f.todayKey);
+    await f.setNet(rafi.employee.id, "23200.00");
+    return { f, rafi };
+  };
+
+  it("records money handed back into an account", async () => {
+    const { f, rafi } = await overpaid();
+    expect(await db.transaction((tx) => recordSalaryRefund(tx, { ...f.base, employeeId: rafi.employee.id, walletId: f.cash.id, paymentDate: `${f.year}-12-02` })))
+      .toEqual({ amount: "3000.00" });
+    expect(await f.balanceOf(f.cash.id)).toBe("176800.00");
+    const rows = await f.rows(rafi.employee.id);
+    expect(rows[1]).toMatchObject({ kind: "refund", amount: "3000.00", walletId: f.cash.id, paymentDate: `${f.year}-12-02` });
+    expect((await f.line(rows[1].transactionId!)).description).toBe(`Salary refund — ${rafi.name} — Nov ${f.year}`);
+    expect(slipPaymentState("23200.00", rows).status).toBe("paid");
+  });
+
+  it("takes the overpaid amount from the next salary, not from this month's revisions", async () => {
+    const { f, rafi } = await overpaid();
+    expect(await db.transaction((tx) => recoverOverpaidSalary(tx, { ...f.base, employeeId: rafi.employee.id }))).toEqual({ amount: "3000.00" });
+
+    const rows = await f.rows(rafi.employee.id);
+    expect(rows[1]).toMatchObject({ kind: "recovery", amount: "3000.00", walletId: null, transactionId: null });
+    const [advance] = await db.select().from(salaryAdvances).where(eq(salaryAdvances.id, rows[1].advanceId!));
+    expect(advance).toMatchObject({ status: "approved", amount: "3000.00", installmentMonths: 1, reason: `Salary overpaid for Nov ${f.year} — taken back from the next salary` });
+    expect(slipPaymentState("23200.00", rows).status).toBe("paid");
+    expect(await f.balanceOf(f.cash.id)).toBe("173800.00");
+
+    expect((await calculateEnrichedAdvanceDeductions(rafi.employee.id, db, { payrollId: f.payroll.id })).totalDeduction).toBe(0);
+    expect((await calculateEnrichedAdvanceDeductions(rafi.employee.id, db, { payrollId: "next-month" })).totalDeduction).toBe(3000);
+  });
+
+  it("undo cancels a recovery not yet taken, and refuses one already taken", async () => {
+    const { f, rafi } = await overpaid();
+    await db.transaction((tx) => recoverOverpaidSalary(tx, { ...f.base, employeeId: rafi.employee.id }));
+    const advanceId = (await f.rows(rafi.employee.id))[1].advanceId!;
+    await db.update(salaryAdvances).set({ installmentsPaid: 1, status: "settled" }).where(eq(salaryAdvances.id, advanceId));
+    await expect(undoFor(f, rafi.employee.id, "Wrong slip")).rejects.toThrow("already taken from a later salary");
+
+    await db.update(salaryAdvances).set({ installmentsPaid: 0, status: "approved" }).where(eq(salaryAdvances.id, advanceId));
+    await undoFor(f, rafi.employee.id, "Wrong slip");
+    expect((await db.select().from(salaryAdvances).where(eq(salaryAdvances.id, advanceId)))[0].status).toBe("cancelled");
+    expect(await f.balanceOf(f.cash.id)).toBe("200000.00");
+  });
+
+  it("refuses a slip that isn't overpaid", async () => {
+    const f = await salaryFixture();
+    const a = f.staff[0];
+    await expect(db.transaction((tx) => recoverOverpaidSalary(tx, { ...f.base, employeeId: a.employee.id }))).rejects.toThrow(`${a.name} isn't overpaid.`);
   });
 });

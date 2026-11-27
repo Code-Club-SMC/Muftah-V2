@@ -5,6 +5,7 @@ import {
   payrolls,
   salaryAdvances,
   advanceInstallments,
+  salaryPayments,
   nightShiftRates,
   travelLogs,
   bradfordAuditLog,
@@ -106,6 +107,7 @@ function shouldBlockMissingAttendance(
 export async function calculateEnrichedAdvanceDeductions(
   employeeId: string,
   executor: typeof db | DbTransaction = db,
+  options: { payrollId?: string } = {},
 ) {
   const pendingAdvances = await executor.query.salaryAdvances.findMany({
     where: and(
@@ -114,9 +116,24 @@ export async function calculateEnrichedAdvanceDeductions(
     ),
   });
 
+  // An overpaid amount recorded against this payroll is taken back from the NEXT salary,
+  // so a revision of the same month must not deduct it.
+  const sameMonthRecoveries = new Set(
+    options.payrollId
+      ? (await executor
+          .select({ advanceId: salaryPayments.advanceId })
+          .from(salaryPayments)
+          .where(and(
+            eq(salaryPayments.payrollId, options.payrollId),
+            eq(salaryPayments.employeeId, employeeId),
+            eq(salaryPayments.kind, "recovery"),
+          ))).map((row) => row.advanceId)
+      : [],
+  );
+
   // Only advances that still have installments remaining
   const activeAdvances = pendingAdvances.filter(
-    (a) => a.installmentsPaid < a.installmentMonths,
+    (a) => a.installmentsPaid < a.installmentMonths && !sameMonthRecoveries.has(a.id),
   );
 
   let totalDeduction = 0;
@@ -164,11 +181,12 @@ export async function calculateEnrichedAdvanceDeductions(
 async function recalculateAdvanceDeductionsAfterPayslipReversal(
   tx: DbTransaction,
   employeeId: string,
+  payrollId: string,
   previousAdvanceDeduction: number,
   payslipCalc: ReturnType<typeof calculatePayslip>,
 ) {
   const { totalDeduction, processedRecords } =
-    await calculateEnrichedAdvanceDeductions(employeeId, tx);
+    await calculateEnrichedAdvanceDeductions(employeeId, tx, { payrollId });
   const advanceDeductionDelta = totalDeduction - previousAdvanceDeduction;
 
   payslipCalc.advanceDeduction = totalDeduction;
@@ -485,7 +503,7 @@ export async function generateEmployeePayslipCore(
   let advanceIdsToProcess: AdvanceProcessRecord[] = [];
 
   if (autoDeductAdvances && additionalAmounts.advanceDeduction === undefined) {
-    const { totalDeduction, processedRecords } = await calculateEnrichedAdvanceDeductions(employeeId);
+    const { totalDeduction, processedRecords } = await calculateEnrichedAdvanceDeductions(employeeId, db, { payrollId });
     advanceDeduction = totalDeduction;
     advanceIdsToProcess = processedRecords;
   } else {
@@ -728,6 +746,7 @@ export async function generateEmployeePayslipCore(
           await recalculateAdvanceDeductionsAfterPayslipReversal(
             tx,
             employeeId,
+            payrollId,
             advanceDeduction,
             payslipCalc,
           );
@@ -1041,7 +1060,7 @@ export async function simulateEmployeePayslipCore(
   let advanceIdsToProcess: AdvanceProcessRecord[] = [];
 
   if (autoDeductAdvances && additionalAmounts.advanceDeduction === undefined) {
-    const { totalDeduction, processedRecords } = await calculateEnrichedAdvanceDeductions(employeeId);
+    const { totalDeduction, processedRecords } = await calculateEnrichedAdvanceDeductions(employeeId, db, { payrollId: input.payrollId });
     advanceDeduction = totalDeduction;
     advanceIdsToProcess = processedRecords;
   } else {

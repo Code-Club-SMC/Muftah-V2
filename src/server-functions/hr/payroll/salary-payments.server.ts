@@ -6,6 +6,7 @@ import { transactions, wallets } from "@/db/schemas/finance-schema";
 import { employees, payrolls, payslips, salaryAdvances, salaryPayments } from "@/db/schemas/hr-schema";
 import {
   effectiveDateFromKey,
+  overpaidRecoveryReason,
   paymentDateError,
   payrollLedgerSource,
   salaryLedgerDescription,
@@ -291,4 +292,63 @@ export async function undoSalaryPayment(
     await reverseRow(tx, row, { reason, actorId: input.actorId, todayKey: input.todayKey, name: slip.name, payrollMonth: payroll.month });
   }
   return { reversedCount: rows.length };
+}
+
+async function lockOverpaidSlip(tx: Tx, payrollId: string, employeeId: string) {
+  const payroll = await loadPayroll(tx, payrollId);
+  const [slip] = await lockSlips(tx, payroll.id, [employeeId]);
+  const rows = (await activeRows(tx, payroll.id, [slip.employeeId])).get(slip.employeeId) ?? [];
+  const state = slipPaymentState(slip.netSalary, rows);
+  if (!new Big(state.overpaid).gt(0)) throw new Error(`${slip.name} isn't overpaid.`);
+  return { payroll, slip, overpaid: state.overpaid };
+}
+
+export async function recordSalaryRefund(
+  tx: Tx,
+  input: { payrollId: string; employeeId: string; walletId: string; paymentDate: string; todayKey: string; actorId: string },
+) {
+  const { payroll, slip, overpaid } = await lockOverpaidSlip(tx, input.payrollId, input.employeeId);
+  assertPaymentDate(input.paymentDate, payroll.month, input.todayKey);
+  const id = createId();
+  const transactionId = await moveMoney(tx, {
+    walletId: input.walletId,
+    type: "credit",
+    amount: overpaid,
+    source: payrollLedgerSource(payroll.month),
+    description: salaryLedgerDescription("refund", slip.name, payroll.month),
+    effectiveDate: effectiveDateFromKey(input.paymentDate),
+    actorId: input.actorId,
+    referenceId: id,
+  });
+  await tx.insert(salaryPayments).values({
+    id, payrollId: payroll.id, employeeId: slip.employeeId, kind: "refund", amount: overpaid,
+    walletId: input.walletId, transactionId, paymentDate: input.paymentDate, recordedById: input.actorId,
+  });
+  return { amount: overpaid };
+}
+
+/** Creates a one-installment advance that the next generated payslip deducts. No money moves now. */
+export async function recoverOverpaidSalary(
+  tx: Tx,
+  input: { payrollId: string; employeeId: string; todayKey: string; actorId: string },
+) {
+  const { payroll, slip, overpaid } = await lockOverpaidSlip(tx, input.payrollId, input.employeeId);
+  const [advance] = await tx
+    .insert(salaryAdvances)
+    .values({
+      employeeId: slip.employeeId,
+      amount: overpaid,
+      date: input.todayKey,
+      reason: overpaidRecoveryReason(payroll.month),
+      status: "approved",
+      approvedBy: input.actorId,
+      installmentMonths: 1,
+      installmentAmount: overpaid,
+    })
+    .returning({ id: salaryAdvances.id });
+  await tx.insert(salaryPayments).values({
+    payrollId: payroll.id, employeeId: slip.employeeId, kind: "recovery", amount: overpaid,
+    advanceId: advance.id, paymentDate: input.todayKey, recordedById: input.actorId,
+  });
+  return { amount: overpaid };
 }
