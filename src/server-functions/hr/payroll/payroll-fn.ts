@@ -6,6 +6,7 @@ import {
   employees,
   payslips,
   attendance,
+  salaryPayments,
 } from "@/db/schemas/hr-schema";
 import { wallets, transactions } from "@/db/schemas/finance-schema";
 import {
@@ -729,6 +730,13 @@ export const deletePayrollFn = createServerFn()
     validateStatusTransition(current.status as PayrollStatus, "delete");
 
     return await db.transaction(async (tx) => {
+      const [paid] = await tx
+        .select({ id: salaryPayments.id })
+        .from(salaryPayments)
+        .where(eq(salaryPayments.payrollId, data.payrollId))
+        .limit(1);
+      if (paid) throw new Error("This payroll has salary payments. Undo them before deleting the payroll.");
+
       const payslipList = await tx.query.payslips.findMany({
         where: eq(payslips.payrollId, data.payrollId),
         columns: { id: true },
