@@ -5,7 +5,7 @@ import { chemicals, materialStock, purchaseRecords, suppliers, user, warehouses 
 import { supplierReturns } from "@/db/schemas/supplier-schema";
 import { addStockFn } from "@/server-functions/inventory/stock/add-stock-fn";
 import type { Tx } from "@/lib/inventory/material-lots.server";
-import { cancelSupplierReturn, requestSupplierReturn, returnableForPurchase } from "@/lib/suppliers/supplier-returns.server";
+import { cancelSupplierReturn, dispatchSupplierReturn, requestSupplierReturn, returnableForPurchase } from "@/lib/suppliers/supplier-returns.server";
 import { withRollback } from "./with-rollback";
 
 vi.mock("@tanstack/react-start", () => ({ createServerFn: () => {
@@ -75,5 +75,43 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("supplier returns: request", () 
     const [row] = await tx.select().from(supplierReturns).where(eq(supplierReturns.id, created.id));
     expect(row.status).toBe("cancelled");
     expect((await returnableForPurchase(tx, purchase.id)).max).toBe("100.000");
+  }));
+});
+
+describe.skipIf(!process.env.TEST_DATABASE_URL)("supplier returns: dispatch", () => {
+  it("takes the stock out of the purchase's lot when dispatched", () => withRollback(async (tx) => {
+    const { actor, buy, stock } = await supplierReturnFixture(tx);
+    const purchase = await buy("100", "50000");
+    const created = await requestSupplierReturn(tx, { purchaseId: purchase.id, quantity: "10", reason: "Wet" }, actor.id);
+    await dispatchSupplierReturn(tx, { returnId: created.id }, actor.id);
+    expect(await stock()).toBe("90.000");
+    const [row] = await tx.select().from(supplierReturns).where(eq(supplierReturns.id, created.id));
+    expect(row.status).toBe("dispatched");
+    expect(row.dispatchedById).toBe(actor.id);
+    // The purchase table's "stock left" for this purchase drops too.
+    expect((await returnableForPurchase(tx, purchase.id)).stockLeft).toBe("90.000");
+  }));
+
+  it("puts the stock back when a dispatched return is cancelled", () => withRollback(async (tx) => {
+    const { actor, buy, stock } = await supplierReturnFixture(tx);
+    const purchase = await buy("100", "50000");
+    const created = await requestSupplierReturn(tx, { purchaseId: purchase.id, quantity: "10", reason: "Wet" }, actor.id);
+    await dispatchSupplierReturn(tx, { returnId: created.id }, actor.id);
+    const result = await cancelSupplierReturn(tx, { returnId: created.id, reason: "Truck turned back" }, actor.id);
+    expect(result.stockRestored).toBe(true);
+    expect(await stock()).toBe("100.000");
+  }));
+
+  it("refuses to dispatch twice or when the stock was used meanwhile", () => withRollback(async (tx) => {
+    const { actor, buy, floor, soda } = await supplierReturnFixture(tx);
+    const purchase = await buy("100", "50000");
+    const created = await requestSupplierReturn(tx, { purchaseId: purchase.id, quantity: "10", reason: "Wet" }, actor.id);
+    // Simulate production using 95 kg of the lot after the request.
+    const { moveLotStock } = await import("@/lib/inventory/material-lots.server");
+    await moveLotStock(tx, { ref: { materialType: "chemical", materialId: soda.id }, lotId: purchase.lotId!, warehouseId: floor.id, delta: "-95", sourceType: "mixing" });
+    await expect(dispatchSupplierReturn(tx, { returnId: created.id }, actor.id)).rejects.toThrow("Only 5 kg of this purchase is left to send back");
+    await tx.update(supplierReturns).set({ quantity: "5.000", totalAmount: "2500.00" }).where(eq(supplierReturns.id, created.id));
+    await dispatchSupplierReturn(tx, { returnId: created.id }, actor.id);
+    await expect(dispatchSupplierReturn(tx, { returnId: created.id }, actor.id)).rejects.toThrow("already dispatched");
   }));
 });

@@ -1,9 +1,10 @@
 import Big from "big.js";
 import { and, eq, sql } from "drizzle-orm";
-import { chemicals, materialLotStock, packagingMaterials, purchaseRecords, suppliers, warehouses } from "@/db";
+import { chemicals, inventoryAuditLog, materialLotStock, packagingMaterials, purchaseRecords, suppliers, warehouses } from "@/db";
 import { creditNoteCounters } from "@/db/schemas/sales-erp-schema";
 import { supplierReturns } from "@/db/schemas/supplier-schema";
-import type { Tx } from "@/lib/inventory/material-lots.server";
+import type { MaterialRef } from "@/lib/inventory/material-lots";
+import { lockMaterialStock, moveLotStock, type Tx } from "@/lib/inventory/material-lots.server";
 import { packagingUnit } from "@/lib/inventory/material-units";
 import { purchaseStockLeft } from "@/lib/suppliers/purchase-rows.server";
 import {
@@ -144,6 +145,61 @@ export async function requestSupplierReturn(
   return { id: created.id, returnNumber, totalAmount };
 }
 
+function refOf(row: typeof supplierReturns.$inferSelect): MaterialRef {
+  return row.materialType === "chemical"
+    ? { materialType: "chemical", materialId: row.chemicalId! }
+    : { materialType: "packaging", materialId: row.packagingMaterialId! };
+}
+
+/** Out at dispatch; back on cancel-after-dispatch or void. Lot movements carry the purchase id. */
+async function moveReturnStock(
+  tx: Tx,
+  row: typeof supplierReturns.$inferSelect,
+  direction: "out" | "back",
+  actorId: string,
+  why: string,
+) {
+  const ref = refOf(row);
+  await lockMaterialStock(tx, [row.warehouseId], [ref]);
+  const quantity = new Big(row.quantity).toFixed(3);
+  await moveLotStock(tx, {
+    ref,
+    lotId: row.lotId,
+    warehouseId: row.warehouseId,
+    delta: direction === "out" ? `-${quantity}` : quantity,
+    sourceType: direction === "out" ? "supplier_return" : "supplier_return_undo",
+    sourceId: row.purchaseId,
+  });
+  await tx.insert(inventoryAuditLog).values({
+    warehouseId: row.warehouseId,
+    materialType: row.materialType,
+    materialId: ref.materialId,
+    type: direction === "out" ? "debit" : "credit",
+    amount: quantity,
+    reason: why,
+    performedById: actorId,
+    referenceId: row.id,
+    lotId: row.lotId,
+  });
+}
+
+export async function dispatchSupplierReturn(tx: Tx, input: { returnId: string }, actorId: string) {
+  const { row, purchase } = await lockReturn(tx, input.returnId);
+  if (row.status !== "requested") throw new Error(`This return is already ${row.status}.`);
+  const returnable = await returnableFor(tx, purchase, row.id);
+  if (returnable.blockedReason && new Big(returnable.max).eq(0)) {
+    throw new Error(`Only 0 ${returnable.unit} of this purchase is left to send back`);
+  }
+  if (new Big(row.quantity).gt(returnable.max)) {
+    throw new Error(`Only ${trimQty(returnable.max)} ${returnable.unit} of this purchase is left to send back. Cancel this return and request a smaller one.`);
+  }
+  await moveReturnStock(tx, row, "out", actorId, `Return ${row.returnNumber} dispatched to ${returnable.supplierName}`);
+  await tx.update(supplierReturns)
+    .set({ status: "dispatched", dispatchedById: actorId, dispatchedAt: new Date(), updatedAt: new Date() })
+    .where(eq(supplierReturns.id, row.id));
+  return { returnNumber: row.returnNumber, quantity: new Big(row.quantity).toFixed(3) };
+}
+
 /** Locks the purchase first, then the return (the purchase-writer lock order). */
 export async function lockReturn(tx: Tx, returnId: string) {
   const [peek] = await tx.select({ purchaseId: supplierReturns.purchaseId }).from(supplierReturns).where(eq(supplierReturns.id, returnId));
@@ -161,7 +217,7 @@ export async function cancelSupplierReturn(tx: Tx, input: { returnId: string; re
     throw new Error(row.status === "completed" ? "This return is completed. Void the debit note instead." : `This return is already ${row.status}.`);
   }
   const stockRestored = row.status === "dispatched";
-  // Task 4 puts dispatched stock back here.
+  if (stockRestored) await moveReturnStock(tx, row, "back", actorId, `Return ${row.returnNumber} cancelled: ${reason}`);
   await tx.update(supplierReturns)
     .set({ status: "cancelled", cancelledById: actorId, cancelledAt: new Date(), cancelReason: reason, updatedAt: new Date() })
     .where(eq(supplierReturns.id, row.id));
