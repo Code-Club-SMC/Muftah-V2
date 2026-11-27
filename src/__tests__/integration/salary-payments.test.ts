@@ -2,11 +2,11 @@ import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { db } from "@/db";
 import { wallets } from "@/db/schemas/finance-schema";
-import { salaryAdvances } from "@/db/schemas/hr-schema";
+import { advanceInstallments, salaryAdvances } from "@/db/schemas/hr-schema";
 import { calculateEnrichedAdvanceDeductions } from "@/server-functions/hr/payroll/core";
 import { reportDateKey } from "@/lib/report-dates";
 import { slipPaymentState } from "@/lib/hr/salary-payments";
-import { changeSalaryAccount, paySalaries, recordSalaryRefund, recoverOverpaidSalary, undoSalaryPayment } from "@/server-functions/hr/payroll/salary-payments.server";
+import { changeSalaryAccount, getSlipPaymentHistory, loadRegisterPayments, paySalaries, recordSalaryRefund, recoverOverpaidSalary, undoSalaryPayment } from "@/server-functions/hr/payroll/salary-payments.server";
 import { salaryFixture } from "./salary-fixture";
 
 type Fixture = Awaited<ReturnType<typeof salaryFixture>>;
@@ -170,5 +170,38 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("overpaid slips", () => {
     const f = await salaryFixture();
     const a = f.staff[0];
     await expect(db.transaction((tx) => recoverOverpaidSalary(tx, { ...f.base, employeeId: a.employee.id }))).rejects.toThrow(`${a.name} isn't overpaid.`);
+  });
+});
+
+describe.skipIf(!process.env.TEST_DATABASE_URL)("reading payments", () => {
+  it("summarises the register and lists what is still payable", async () => {
+    const f = await salaryFixture();
+    const [a, b] = f.staff;
+    await payFor(f, [a.employee.id], f.cash.id, f.todayKey);
+
+    const register = await loadRegisterPayments(db, f.payroll.id);
+    expect(register.summary).toEqual({ slipCount: 2, paidCount: 1, paidTotal: "26200.00", remainingTotal: "100000.00" });
+    expect(register.payable).toEqual([{ employeeId: b.employee.id, name: b.name, due: "100000.00" }]);
+    expect(register.byEmployee.get(a.employee.id)).toMatchObject({ status: "paid", paidFrom: f.cash.name });
+    expect(register.byEmployee.get(b.employee.id)).toMatchObject({ status: "unpaid", paidFrom: null });
+  });
+
+  it("gives a slip's history, Paid from, and what a distributor already paid", async () => {
+    const f = await salaryFixture();
+    const a = f.staff[0];
+    await payFor(f, [a.employee.id], f.cash.id, f.todayKey);
+    await db.transaction((tx) => changeSalaryAccount(tx, { ...f.base, employeeIds: [a.employee.id], walletId: f.bank.id, paymentDate: f.todayKey }));
+    const [advance] = await db.insert(salaryAdvances).values({
+      employeeId: a.employee.id, amount: "5000.00", date: f.todayKey, status: "settled", installmentsPaid: 1,
+      reason: "Salary paid directly by distributor. Reference: Invoice INV-1",
+    }).returning();
+    await db.insert(advanceInstallments).values({ advanceId: advance.id, payslipId: a.slip.id, amount: "5000.00", installmentNo: 1 });
+
+    const history = await getSlipPaymentHistory(db, a.slip.id);
+    expect(history.state.status).toBe("paid");
+    expect(history.paidFrom).toBe(f.bank.name);
+    expect(history.distributorPaid).toBe("5000.00");
+    expect(history.payments.map((p) => [p.walletName, p.status])).toEqual([[f.cash.name, "reversed"], [f.bank.name, "active"]]);
+    expect(history.payments[0]).toMatchObject({ recordedBy: "Accountant", reversedBy: "Accountant", reversalReason: `Account changed to ${f.bank.name}` });
   });
 });

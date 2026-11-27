@@ -3,7 +3,7 @@ import { and, asc, eq, gte, inArray, sql } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
 import type { db } from "@/db";
 import { transactions, wallets } from "@/db/schemas/finance-schema";
-import { employees, payrolls, payslips, salaryAdvances, salaryPayments } from "@/db/schemas/hr-schema";
+import { advanceInstallments, employees, payrolls, payslips, salaryAdvances, salaryPayments } from "@/db/schemas/hr-schema";
 import {
   effectiveDateFromKey,
   overpaidRecoveryReason,
@@ -13,6 +13,12 @@ import {
   salaryReversalDescription,
   shortfallMessage,
   slipPaymentState,
+  DISTRIBUTOR_SALARY_REASON_PREFIX,
+  registerPaymentSummary,
+  type RegisterPaymentSummary,
+  type SalaryPaymentKind,
+  type SalaryPaymentStatus,
+  type SlipPaymentState,
 } from "@/lib/hr/salary-payments";
 
 export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -352,3 +358,95 @@ export async function recoverOverpaidSalary(
   });
   return { amount: overpaid };
 }
+
+export const slipKey = (payrollId: string, employeeId: string) => `${payrollId}:${employeeId}`;
+export type SlipPaymentRow = ActiveRow & { walletName: string | null };
+export type RegisterSlipPayment = SlipPaymentState & { paidFrom: string | null };
+export type PayableSlip = { employeeId: string; name: string; due: string };
+
+export async function loadActivePaymentsForPayrolls(executor: Executor, payrollIds: string[]) {
+  const map = new Map<string, SlipPaymentRow[]>();
+  if (payrollIds.length === 0) return map;
+  const rows = await executor
+    .select({ payment: salaryPayments, walletName: wallets.name })
+    .from(salaryPayments)
+    .leftJoin(wallets, eq(wallets.id, salaryPayments.walletId))
+    .where(and(inArray(salaryPayments.payrollId, payrollIds), eq(salaryPayments.status, "active")))
+    .orderBy(asc(salaryPayments.createdAt));
+  for (const { payment, walletName } of rows) {
+    const key = slipKey(payment.payrollId, payment.employeeId);
+    map.set(key, [...(map.get(key) ?? []), { ...payment, walletName }]);
+  }
+  return map;
+}
+
+/** Account names of the active payments, e.g. "Cash in Hand" or "Cash in Hand, Bank Alfalah". */
+export function paidFromText(rows: SlipPaymentRow[]): string | null {
+  const names = [...new Set(rows.filter((row) => row.kind === "payment" && row.walletName).map((row) => row.walletName!))];
+  return names.length ? names.join(", ") : null;
+}
+
+export async function loadRegisterPayments(executor: Executor, payrollId: string) {
+  const slips = await executor
+    .select({ employeeId: payslips.employeeId, netSalary: payslips.netSalary, firstName: employees.firstName, lastName: employees.lastName })
+    .from(payslips)
+    .innerJoin(employees, eq(employees.id, payslips.employeeId))
+    .where(eq(payslips.payrollId, payrollId))
+    .orderBy(asc(employees.employeeCode));
+  const payments = await loadActivePaymentsForPayrolls(executor, [payrollId]);
+  const byEmployee = new Map<string, RegisterSlipPayment>();
+  const payable: PayableSlip[] = [];
+  for (const slip of slips) {
+    const rows = payments.get(slipKey(payrollId, slip.employeeId)) ?? [];
+    const state = slipPaymentState(slip.netSalary, rows);
+    byEmployee.set(slip.employeeId, { ...state, paidFrom: paidFromText(rows) });
+    if (new Big(state.due).gt(0)) payable.push({ employeeId: slip.employeeId, name: `${slip.firstName} ${slip.lastName}`, due: state.due });
+  }
+  const summary: RegisterPaymentSummary = registerPaymentSummary([...byEmployee.values()]);
+  return { byEmployee, summary, payable };
+}
+
+export async function getSlipPaymentHistory(executor: Executor, payslipId: string) {
+  const slip = await executor.query.payslips.findFirst({
+    where: eq(payslips.id, payslipId),
+    columns: { id: true, payrollId: true, employeeId: true, netSalary: true },
+  });
+  if (!slip) throw new Error("Payslip not found");
+  const rows = await executor.query.salaryPayments.findMany({
+    where: and(eq(salaryPayments.payrollId, slip.payrollId), eq(salaryPayments.employeeId, slip.employeeId)),
+    with: {
+      wallet: { columns: { name: true } },
+      recordedBy: { columns: { name: true } },
+      reversedBy: { columns: { name: true } },
+    },
+    orderBy: [asc(salaryPayments.createdAt)],
+  });
+  const active = rows.filter((row) => row.status === "active").map((row) => ({ ...row, walletName: row.wallet?.name ?? null }));
+  const [distributor] = await executor
+    .select({ total: sql<string>`coalesce(sum(${advanceInstallments.amount}), 0)` })
+    .from(advanceInstallments)
+    .innerJoin(salaryAdvances, eq(salaryAdvances.id, advanceInstallments.advanceId))
+    .where(and(
+      eq(advanceInstallments.payslipId, slip.id),
+      sql`${salaryAdvances.reason} like ${`${DISTRIBUTOR_SALARY_REASON_PREFIX}%`}`,
+    ));
+  return {
+    state: slipPaymentState(slip.netSalary, active),
+    paidFrom: paidFromText(active),
+    distributorPaid: new Big(distributor?.total ?? 0).toFixed(2),
+    payments: rows.map((row) => ({
+      id: row.id,
+      kind: row.kind as SalaryPaymentKind,
+      amount: row.amount,
+      walletName: row.wallet?.name ?? null,
+      paymentDate: row.paymentDate,
+      enteredAt: row.createdAt,
+      recordedBy: row.recordedBy?.name ?? null,
+      status: row.status as SalaryPaymentStatus,
+      reversalReason: row.reversalReason,
+      reversedAt: row.reversedAt,
+      reversedBy: row.reversedBy?.name ?? null,
+    })),
+  };
+}
+export type SlipPaymentHistory = Awaited<ReturnType<typeof getSlipPaymentHistory>>;

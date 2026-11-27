@@ -4,7 +4,7 @@ import { db } from "@/db";
 import { requireHrManageMiddleware, requireHrViewMiddleware } from "@/lib/middlewares";
 import { requirePermission } from "@/lib/authz.server";
 import { reportDateKey } from "@/lib/report-dates";
-import { changeSalaryAccount, paySalaries, recordSalaryRefund, recoverOverpaidSalary, undoSalaryPayment } from "./salary-payments.server";
+import { changeSalaryAccount, getSlipPaymentHistory, paySalaries, recordSalaryRefund, recoverOverpaidSalary, undoSalaryPayment } from "./salary-payments.server";
 
 const dateKey = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Choose a payment date");
 
@@ -76,3 +76,8 @@ export const recoverOverpaidSalaryFn = createServerFn()
       recoverOverpaidSalary(tx, { ...data, todayKey: reportDateKey(new Date()), actorId: context.session.user.id }),
     );
   });
+
+export const getSalaryPaymentHistoryFn = createServerFn()
+  .middleware([requireHrViewMiddleware])
+  .inputValidator(z.object({ payslipId: z.string().min(1) }))
+  .handler(async ({ data }) => getSlipPaymentHistory(db, data.payslipId));
