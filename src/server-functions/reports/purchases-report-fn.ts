@@ -43,6 +43,7 @@ export const getPurchasesReportFn = createServerFn()
         unitCost: purchaseRecords.unitCost,
         cost: purchaseRecords.cost,
         paidAmount: purchaseRecords.paidAmount,
+        returnedAmount: purchaseRecords.returnedAmount,
         paymentMethod: purchaseRecords.paymentMethod,
         notes: purchaseRecords.notes,
         chemicalUnit: chemicals.unit,
@@ -58,7 +59,8 @@ export const getPurchasesReportFn = createServerFn()
 
     const totalCost = rows.reduce((s, r) => s + Number(r.cost), 0);
     const totalPaid = rows.reduce((s, r) => s + Number(r.paidAmount), 0);
-    const totalOutstanding = totalCost - totalPaid;
+    const totalReturned = rows.reduce((s, r) => s + Number(r.returnedAmount), 0);
+    const totalOutstanding = totalCost - totalPaid - totalReturned;
 
     return {
       purchases: rows.map((r) => ({
@@ -67,9 +69,10 @@ export const getPurchasesReportFn = createServerFn()
         unitCost: Number(r.unitCost),
         cost: Number(r.cost),
         paidAmount: Number(r.paidAmount),
+        returnedAmount: Number(r.returnedAmount),
         materialName: r.chemicalName || r.packagingName || "Unknown",
         unit: r.chemicalUnit || r.packagingUnit || "units",
       })),
-      summary: { totalCost, totalPaid, totalOutstanding, count: rows.length },
+      summary: { totalCost, totalPaid, totalReturned, totalOutstanding, count: rows.length },
     };
   });

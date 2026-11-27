@@ -24,11 +24,11 @@ export const getSupplierPaginatedOutstandingFn = createServerFn()
     const { supplierId, page, limit, dateFrom, dateTo } = data;
     const { fromDate, toDate } = purchaseDateBounds(dateFrom, dateTo);
 
-    // Outstanding means cost > paidAmount
+    // Outstanding means the cost is not yet covered by payments and debit notes
     const conditions = [
       eq(purchaseRecords.supplierId, supplierId),
       isNull(purchaseRecords.voidedAt),
-      sql`${purchaseRecords.cost} > ${purchaseRecords.paidAmount}`,
+      sql`${purchaseRecords.cost} > ${purchaseRecords.paidAmount} + ${purchaseRecords.returnedAmount}`,
     ];
     if (fromDate) conditions.push(gte(purchaseRecords.purchaseDate, fromDate));
     if (toDate) conditions.push(lte(purchaseRecords.purchaseDate, toDate));

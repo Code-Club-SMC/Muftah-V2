@@ -6,6 +6,7 @@ import { Separator } from "@/components/ui/separator";
 import { Info } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { getWalletsListFn } from "@/server-functions/finance-fn";
+import { SUPPLIER_CREDIT_METHOD } from "@/lib/suppliers/supplier-returns";
 import { PurchaseVoidAudit, type PurchaseVoidMetadata } from "./purchase-void-audit";
 
 type Props = {
@@ -44,6 +45,7 @@ export const PaymentDetailsDialog = ({
     bank_transfer: "Bank Transfer",
     cheque: "Cheque",
     pay_later: "Pay Later",
+    [SUPPLIER_CREDIT_METHOD]: "Supplier credit",
   };
   const id = payment.walletId || payment.method;
   const methodLabel = id

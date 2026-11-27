@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { purchaseOwed } from "@/lib/suppliers/supplier-returns";
 import { useSuspenseQuery, useQuery, keepPreviousData } from "@tanstack/react-query";
 import { getSupplierPaginatedPurchasesFn } from "@/server-functions/suppliers/get-supplier-paginated-purchases-fn";
 import { getSupplierPaginatedPaymentsFn } from "@/server-functions/suppliers/get-supplier-paginated-payments-fn";
@@ -232,9 +233,8 @@ function DetailsPage() {
   const [paymentDefaults, setPaymentDefaults] = useState<any>({});
 
   const handleRecordPayment = (item: any) => {
-    const total = parseFloat(item.cost);
-    const paid = parseFloat(item.paidAmount || "0");
-    const remaining = total - paid;
+    // What is still owed: cost less payments less debit notes.
+    const remaining = purchaseOwed(item).toNumber();
     setPaymentDefaults({
       amount: remaining.toString(),
       purchaseId: item.id,

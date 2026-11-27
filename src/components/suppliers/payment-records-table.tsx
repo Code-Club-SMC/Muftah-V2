@@ -8,11 +8,13 @@ import { useState } from "react";
 import { PaymentDetailsDialog } from "./payment-details-dialog";
 import { useQuery } from "@tanstack/react-query";
 import { getWalletsListFn } from "@/server-functions/finance-fn";
+import { SUPPLIER_CREDIT_METHOD } from "@/lib/suppliers/supplier-returns";
 import type { PurchaseVoidMetadata } from "./purchase-void-audit";
 
 // Resolve a walletId or legacy method value to a human-readable label
 function resolveMethodLabel(walletId: string | null | undefined, method: string | null | undefined, wallets: { id: string; name: string }[]): string {
   // Prefer walletId (new schema)
+  if (method === SUPPLIER_CREDIT_METHOD) return "Supplier credit";
   const id = walletId || method;
   if (!id) return "N/A";
   const known: Record<string, string> = {
