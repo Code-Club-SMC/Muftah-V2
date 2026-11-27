@@ -1,11 +1,10 @@
-import { randomUUID } from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { describe, expect, it, vi } from "vitest";
-import { chemicals, materialStock, purchaseRecords, supplierPayments, suppliers, user, wallets, warehouses } from "@/db";
+import { purchaseRecords, supplierPayments, wallets } from "@/db";
 import { supplierCreditMovements, supplierReturns } from "@/db/schemas/supplier-schema";
-import { addStockFn } from "@/server-functions/inventory/stock/add-stock-fn";
 import type { Tx } from "@/lib/inventory/material-lots.server";
 import { applySupplierCredit, assertPurchaseHasNoActiveReturn, cancelSupplierReturn, completeSupplierReturn, dispatchSupplierReturn, listSupplierReturns, previewDebitNote, requestSupplierReturn, restoreCreditUsedOnPurchase, returnableForPurchase, supplierCreditBalance, voidSupplierReturn } from "@/lib/suppliers/supplier-returns.server";
+import { supplierReturnFixture } from "./supplier-return-fixture";
 import { withRollback } from "./with-rollback";
 
 vi.mock("@tanstack/react-start", () => ({ createServerFn: () => {
@@ -20,32 +19,6 @@ vi.mock("@tanstack/react-start", () => ({ createServerFn: () => {
 } }));
 vi.mock("@/lib/middlewares", () => ({ requireInventoryManageMiddleware: {} }));
 vi.mock("@/lib/activity-logger.server", () => ({ logActivityQuiet: vi.fn() }));
-
-const warehouseValues = { address: "Test", city: "Test", state: "Test", latitude: "0", longitude: "0", type: "factory_floor" };
-
-export async function supplierReturnFixture(tx: Tx) {
-  const id = randomUUID();
-  const [actor] = await tx.insert(user).values({ id, name: "Buyer", email: `${id}@test.invalid` }).returning();
-  const [floor] = await tx.insert(warehouses).values({ ...warehouseValues, name: id }).returning();
-  const [supplier] = await tx.insert(suppliers).values({ supplierName: `${id}-Ali Traders` }).returning();
-  const [soda] = await tx.insert(chemicals).values({ name: `${id} Soda Ash`, unit: "kg", costPerUnit: "500" }).returning();
-  const context = { session: { user: actor }, authContext: { session: { user: actor } } };
-  // Rows made in one transaction share created_at, so pick the purchase this call added.
-  const bought = new Set<string>();
-  const buy = async (quantity: string, cost: string) => {
-    await addStockFn({ data: { warehouseId: floor.id, materialType: "chemical", materialId: soda.id, quantity, supplierId: supplier.id, cost, notes: "", paymentMethod: "pay_later", walletId: "", paymentStatus: "unpaid", amountPaid: "", transactionId: "", bankName: "" }, context } as never);
-    const rows = await tx.select().from(purchaseRecords).where(eq(purchaseRecords.chemicalId, soda.id));
-    const added = rows.find((row) => !bought.has(row.id));
-    if (!added) throw new Error("Purchase was not recorded");
-    bought.add(added.id);
-    return added;
-  };
-  const stock = async () => {
-    const [row] = await tx.select().from(materialStock).where(and(eq(materialStock.warehouseId, floor.id), eq(materialStock.chemicalId, soda.id)));
-    return row?.quantity ?? "0";
-  };
-  return { actor, floor, supplier, soda, context, buy, stock };
-}
 
 describe.skipIf(!process.env.TEST_DATABASE_URL)("supplier returns: request", () => {
   it("offers what is left of the purchase in its store and values the request at the purchase price", () => withRollback(async (tx) => {

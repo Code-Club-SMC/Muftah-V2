@@ -18,7 +18,8 @@ import {
 } from "@/db/schemas/production-schema";
 import { salesReturns } from "@/db/schemas/sales-erp-schema";
 import { customers, invoiceItems, invoices } from "@/db/schemas/sales-schema";
-import { purchaseRecords } from "@/db/schemas/supplier-schema";
+import { purchaseRecords, supplierReturns } from "@/db/schemas/supplier-schema";
+import { packagingUnit } from "@/lib/inventory/material-units";
 import { reportDateBounds, reportDateKey, reportMonth } from "@/lib/report-dates";
 import {
   addToMonth,
@@ -108,6 +109,7 @@ export async function loadMonthlyReport(startYear: number, todayKey: string): Pr
     expenseRows,
     categoryRows,
     purchaseRows,
+    debitNoteRows,
   ] = await Promise.all([
     db
       .select({
@@ -215,6 +217,16 @@ export async function loadMonthlyReport(startYear: number, todayKey: string): Pr
           lte(purchaseRecords.purchaseDate, toDate),
         ),
       ),
+    db
+      .select({ type: supplierReturns.materialType, date: supplierReturns.completedAt, amount: supplierReturns.totalAmount })
+      .from(supplierReturns)
+      .where(
+        and(
+          eq(supplierReturns.status, "completed"),
+          gte(supplierReturns.completedAt, fromDate),
+          lte(supplierReturns.completedAt, toDate),
+        ),
+      ),
   ]);
 
   const cash = new Map<MonthKey, Big>();
@@ -262,6 +274,12 @@ export async function loadMonthlyReport(startYear: number, todayKey: string): Pr
   for (const row of purchaseRows) {
     if (row.type === "chemical") addDated(purchaseRawMaterial, row.date, row.cost);
     else if (row.type === "packaging") addDated(purchasePacking, row.date, row.cost);
+  }
+  // Debit notes lower what was bought, in the month the supplier accepted the goods back.
+  for (const row of debitNoteRows) {
+    const negative = new Big(row.amount).times(-1).toFixed(2);
+    if (row.type === "chemical") addDated(purchaseRawMaterial, row.date, negative);
+    else if (row.type === "packaging") addDated(purchasePacking, row.date, negative);
   }
 
   return buildMonthlyReport({
@@ -550,15 +568,52 @@ export async function loadMonthlyReportDetail(line: string, month: MonthKey): Pr
           lte(purchaseRecords.purchaseDate, toDate),
         ),
       );
+    const notes = await db
+      .select({
+        date: supplierReturns.completedAt,
+        number: supplierReturns.debitNoteNumber,
+        quantity: supplierReturns.quantity,
+        chemical: chemicals.name,
+        chemicalUnit: chemicals.unit,
+        packaging: packagingMaterials.name,
+        packagingMeasuredInKg: packagingMaterials.measuredInKg,
+        supplier: suppliers.supplierName,
+        amount: supplierReturns.totalAmount,
+      })
+      .from(supplierReturns)
+      .leftJoin(chemicals, eq(supplierReturns.chemicalId, chemicals.id))
+      .leftJoin(packagingMaterials, eq(supplierReturns.packagingMaterialId, packagingMaterials.id))
+      .innerJoin(suppliers, eq(supplierReturns.supplierId, suppliers.id))
+      .where(
+        and(
+          eq(supplierReturns.materialType, line === "purchaseRawMaterial" ? "chemical" : "packaging"),
+          eq(supplierReturns.status, "completed"),
+          gte(supplierReturns.completedAt, fromDate),
+          lte(supplierReturns.completedAt, toDate),
+        ),
+      );
     return detail(
       line === "purchaseRawMaterial" ? "Raw material bought" : "Packing bought",
       "rupees",
-      rows.map((row) => ({
-        date: reportDateKey(row.date),
-        reference: row.invoiceNumber ?? "",
-        description: `${row.chemical ?? row.packaging ?? "Material"} from ${row.supplier}`,
-        amount: money(row.cost),
-      })),
+      [
+        ...rows.map((row) => ({
+          date: reportDateKey(row.date),
+          reference: row.invoiceNumber ?? "",
+          description: `${row.chemical ?? row.packaging ?? "Material"} from ${row.supplier}`,
+          amount: money(row.cost),
+        })),
+        // Each completed debit note shows as a negative row in the month it was completed.
+        ...notes.flatMap((row) => {
+          if (!row.date) return [];
+          const unit = row.chemical ? (row.chemicalUnit ?? "kg") : packagingUnit({ measuredInKg: row.packagingMeasuredInKg });
+          return [{
+            date: reportDateKey(row.date),
+            reference: row.number ?? "",
+            description: `Returned ${new Big(row.quantity).toString()} ${unit} ${row.chemical ?? row.packaging ?? "material"} to ${row.supplier}`,
+            amount: money(new Big(row.amount).times(-1)),
+          }];
+        }),
+      ],
     );
   }
 
