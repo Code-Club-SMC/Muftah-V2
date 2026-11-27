@@ -14,6 +14,7 @@ import {
   QUEUE_STATUSES,
   SUPPLIER_CREDIT_METHOD,
   type SupplierReturnQueue,
+  type SupplierReturnRow,
   type SupplierReturnStatus,
   formatDebitNoteNumber,
   formatSupplierReturnNumber,
@@ -445,32 +446,8 @@ export async function restoreCreditUsedOnPurchase(tx: Tx, purchaseId: string, ac
 // Reads
 // ---------------------------------------------------------------------------
 
-export type SupplierReturnRow = {
-  id: string;
-  returnNumber: string;
-  status: SupplierReturnStatus;
-  requestedAt: Date;
-  dispatchedAt: Date | null;
-  completedAt: Date | null;
-  materialName: string;
-  unit: string;
-  warehouseName: string;
-  quantity: string;
-  unitCost: string;
-  totalAmount: string;
-  reason: string;
-  notes: string | null;
-  debitNoteNumber: string | null;
-  appliedToPurchaseAmount: string;
-  refundAmount: string;
-  refundWalletName: string | null;
-  supplierCreditAmount: string;
-  purchaseInvoiceNumber: string | null;
-  purchaseDate: Date;
-  cancelReason: string | null;
-  voidReason: string | null;
-  requestedByName: string | null;
-};
+export type { SupplierReturnRow };
+
 
 const rowSelect = {
   id: supplierReturns.id,

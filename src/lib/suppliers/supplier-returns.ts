@@ -22,6 +22,34 @@ export const QUEUE_STATUSES: Record<SupplierReturnQueue, SupplierReturnStatus[]>
   done: ["completed", "cancelled", "voided"],
 };
 
+/** One return as the screens show it. Money to 2 decimals, quantity to 3. */
+export type SupplierReturnRow = {
+  id: string;
+  returnNumber: string;
+  status: SupplierReturnStatus;
+  requestedAt: Date;
+  dispatchedAt: Date | null;
+  completedAt: Date | null;
+  materialName: string;
+  unit: string;
+  warehouseName: string;
+  quantity: string;
+  unitCost: string;
+  totalAmount: string;
+  reason: string;
+  notes: string | null;
+  debitNoteNumber: string | null;
+  appliedToPurchaseAmount: string;
+  refundAmount: string;
+  refundWalletName: string | null;
+  supplierCreditAmount: string;
+  purchaseInvoiceNumber: string | null;
+  purchaseDate: Date;
+  cancelReason: string | null;
+  voidReason: string | null;
+  requestedByName: string | null;
+};
+
 /** Supplier payment method for a payment made from supplier credit. It has no wallet. */
 export const SUPPLIER_CREDIT_METHOD = "supplier_credit";
 

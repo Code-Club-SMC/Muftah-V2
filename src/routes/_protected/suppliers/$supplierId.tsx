@@ -26,7 +26,10 @@ import {
   AlertCircle,
   CheckCircle2,
   ArrowLeft,
+  Undo2,
 } from "lucide-react";
+import { SupplierReturnsPanel } from "@/components/suppliers/supplier-returns-panel";
+import { formatRupees } from "@/lib/finance/expense-entry";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useState } from "react";
@@ -484,7 +487,13 @@ function SupplierDetailsPage() {
             <StatCard
               title="Outstanding Balance"
               value={`PKR ${Math.abs(Number(supplier.balance)).toLocaleString(undefined, { minimumFractionDigits: 2 })}`}
-              sub={isOverdue ? "View unpaid purchases" : "Fully paid — no dues"}
+              sub={
+                Number(supplier.supplierCredit) > 0
+                  ? `Supplier credit ${formatRupees(supplier.supplierCredit)}`
+                  : isOverdue
+                    ? "View unpaid purchases"
+                    : "Fully paid — no dues"
+              }
               icon={<CreditCard className="size-3.5" />}
               variant={isOverdue ? "danger" : "success"}
               linkProps={{ to: "/suppliers/$supplierId/details", params: { supplierId }, search: { view: "outstanding", page: 1 } }}
@@ -504,6 +513,10 @@ function SupplierDetailsPage() {
                     <TabsTrigger value="payments" className="text-[12.5px] h-6 px-3">
                       <Banknote className="size-3 mr-1.5" />
                       Recent Payments
+                    </TabsTrigger>
+                    <TabsTrigger value="returns" className="text-[12.5px] h-6 px-3">
+                      <Undo2 className="size-3 mr-1.5" />
+                      Returns
                     </TabsTrigger>
                   </TabsList>
 
@@ -551,6 +564,9 @@ function SupplierDetailsPage() {
                       setPaymentsPage,
                     )}
                   />
+                </TabsContent>
+                <TabsContent value="returns" className="mt-0">
+                  <SupplierReturnsPanel supplierId={supplierId} canManage={canManageSuppliers} />
                 </TabsContent>
               </Tabs>
             </div>
