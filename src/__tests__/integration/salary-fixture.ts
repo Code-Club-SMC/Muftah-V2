@@ -11,7 +11,12 @@ import { employees, payrolls, payslips, salaryPayments } from "@/db/schemas/hr-s
  */
 export async function salaryFixture(options: { cash?: string; nets?: string[] } = {}) {
   const id = randomUUID();
-  const year = 2200 + Math.floor(Math.random() * 7000);
+  // Fixtures stay committed in the test DB, so pick a year no earlier run has used.
+  const usedYears = new Set(
+    (await db.select({ month: payrolls.month }).from(payrolls)).map((p) => Number(String(p.month).slice(0, 4))),
+  );
+  let year = 2200 + Math.floor(Math.random() * 7000);
+  while (usedYears.has(year)) year = 2200 + Math.floor(Math.random() * 7000);
   const month = `${year}-11-01`;
   const todayKey = `${year}-12-03`;
   const [actor] = await db.insert(user).values({ id, name: "Accountant", email: `${id}@test.invalid` }).returning();
