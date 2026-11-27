@@ -1,10 +1,11 @@
 import { createServerFn } from "@tanstack/react-start";
 import { db } from "@/db";
-import { packagingAllocations } from "@/db/schemas/production-schema";
+import { mixingRuns, packagingAllocations } from "@/db/schemas/production-schema";
 import { requireAuthMiddleware } from "@/lib/middlewares";
 import { hasPermission } from "@/lib/rbac";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
+import { logActivityQuiet } from "@/lib/activity-logger.server";
 
 const schema = z.object({
   allocationId: z.string().min(1),
@@ -19,7 +20,7 @@ export const cancelPackagingAllocationFn = createServerFn()
       throw new Error("You do not have permission to manage production work.");
     }
 
-    return await db.transaction(async (tx) => {
+    const result = await db.transaction(async (tx) => {
       const [allocation] = await tx
         .select()
         .from(packagingAllocations)
@@ -48,4 +49,24 @@ export const cancelPackagingAllocationFn = createServerFn()
         mixingRunId: updated.mixingRunId,
       };
     });
+
+    const run = await db.query.mixingRuns.findFirst({
+      where: eq(mixingRuns.id, result.mixingRunId),
+      columns: { batchId: true },
+    });
+
+    await logActivityQuiet({
+      module: "manufacturing",
+      action: "cancelled",
+      entityType: "packing_job",
+      entityId: result.allocation.id,
+      entityLabel: run?.batchId ?? result.allocation.id,
+      actorId: context.session.user.id,
+      actorName: context.session.user.name,
+      description: `Cancelled packing job for mixing batch ${run?.batchId ?? "unknown"}${data.reason ? `. Reason: ${data.reason}` : ""}`,
+      metadata: { reason: data.reason ?? null, mixingRunId: result.mixingRunId },
+      severity: "warning",
+    });
+
+    return result;
   });

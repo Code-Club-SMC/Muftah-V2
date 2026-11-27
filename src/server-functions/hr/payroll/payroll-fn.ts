@@ -248,6 +248,8 @@ export const createPayrollFn = createServerFn()
       module: "hr",
       action: "created",
       entityType: "payroll_cycle",
+      entityId: payroll.id,
+      entityLabel: `Payroll ${format(monthDate, "MMM yyyy")}`,
       actorId: context.session.user.id,
       actorName: context.session.user.name,
       description: `Created payroll for ${format(monthDate, "MMMM yyyy")}`,
@@ -462,7 +464,7 @@ export const approvePayrollFn = createServerFn()
   .middleware([requireHrManageMiddleware])
   .inputValidator(z.object({ payrollId: z.string() }))
   .handler(async ({ data, context }) => {
-    return await db.transaction(async (tx) => {
+    const approved = await db.transaction(async (tx) => {
       await lockAttendancePayrollWrites(tx);
       const current = await tx.query.payrolls.findFirst({
         where: eq(payrolls.id, data.payrollId),
@@ -559,17 +561,23 @@ export const approvePayrollFn = createServerFn()
 
       await snapshotBradfordForPayroll(data.payrollId, tx);
 
-      logActivityQuiet({
-        module: "hr",
-        action: "approved",
-        entityType: "payroll_cycle",
-        actorId: context.session.user.id,
-        actorName: context.session.user.name,
-        description: `Approved payroll for cycle ${updated.month}`,
-      });
-
       return updated;
     });
+
+    const label = format(parseISO(approved.month), "MMM yyyy");
+    await logActivityQuiet({
+      module: "hr",
+      action: "approved",
+      entityType: "payroll_cycle",
+      entityId: approved.id,
+      entityLabel: `Payroll ${label}`,
+      actorId: context.session.user.id,
+      actorName: context.session.user.name,
+      description: `Approved payroll for ${label} — total PKR ${Number(approved.totalAmount ?? 0).toLocaleString()}`,
+      metadata: { totalAmount: approved.totalAmount },
+    });
+
+    return approved;
   });
 
 export const rejectPayrollFn = createServerFn()
@@ -599,7 +607,7 @@ export const markPayrollAsPaidFn = createServerFn()
     }),
   )
   .handler(async ({ data, context }) => {
-    return await db.transaction(async (tx) => {
+    const { claimedPayroll, walletName, payableAmount } = await db.transaction(async (tx) => {
       const payroll = await tx.query.payrolls.findFirst({
         where: eq(payrolls.id, data.payrollId),
       });
@@ -701,17 +709,37 @@ export const markPayrollAsPaidFn = createServerFn()
         })
         .where(eq(payslips.payrollId, data.payrollId));
 
+      return { claimedPayroll, walletName, payableAmount };
+    });
+
+    const label = format(parseISO(claimedPayroll.month), "MMM yyyy");
+    const amount = `PKR ${payableAmount.toLocaleString()}`;
+    const actor = { actorId: context.session.user.id, actorName: context.session.user.name };
+    const metadata = { payrollId: claimedPayroll.id, walletId: data.walletId, account: walletName, amount: payableAmount };
+    await Promise.all([
       logActivityQuiet({
         module: "hr",
         action: "paid",
         entityType: "payroll_cycle",
-        actorId: context.session.user.id,
-        actorName: context.session.user.name,
-        description: `Marked payroll as paid for cycle ${claimedPayroll.month}`,
-      });
+        entityId: claimedPayroll.id,
+        entityLabel: `Payroll ${label}`,
+        ...actor,
+        description: `Marked payroll for ${label} as paid — ${amount} from ${walletName}`,
+        metadata,
+      }),
+      logActivityQuiet({
+        module: "finance",
+        action: "debited",
+        entityType: "payroll_cycle",
+        entityId: data.walletId,
+        entityLabel: walletName,
+        ...actor,
+        description: `${walletName} debited ${amount} for ${label} payroll`,
+        metadata,
+      }),
+    ]);
 
-      return claimedPayroll;
-    });
+    return claimedPayroll;
   });
 
 /**
@@ -722,7 +750,7 @@ export const markPayrollAsPaidFn = createServerFn()
 export const deletePayrollFn = createServerFn()
   .middleware([requireHrManageMiddleware])
   .inputValidator(z.object({ payrollId: z.string() }))
-  .handler(async ({ data }) => {
+  .handler(async ({ data, context }) => {
     const current = await db.query.payrolls.findFirst({
       where: eq(payrolls.id, data.payrollId),
     });
@@ -730,7 +758,7 @@ export const deletePayrollFn = createServerFn()
 
     validateStatusTransition(current.status as PayrollStatus, "delete");
 
-    return await db.transaction(async (tx) => {
+    const deleted = await db.transaction(async (tx) => {
       const [paid] = await tx
         .select({ id: salaryPayments.id })
         .from(salaryPayments)
@@ -754,8 +782,24 @@ export const deletePayrollFn = createServerFn()
         .where(eq(payrolls.id, data.payrollId))
         .returning();
 
-      return deleted;
+      return { deleted, payslipCount: payslipList.length };
     });
+
+    const label = format(parseISO(current.month), "MMM yyyy");
+    await logActivityQuiet({
+      module: "hr",
+      action: "deleted",
+      entityType: "payroll_cycle",
+      entityId: current.id,
+      entityLabel: `Payroll ${label}`,
+      actorId: context.session.user.id,
+      actorName: context.session.user.name,
+      description: `Deleted payroll for ${label} with ${deleted.payslipCount} payslip(s)`,
+      metadata: { status: current.status, totalAmount: current.totalAmount, payslipCount: deleted.payslipCount },
+      severity: "warning",
+    });
+
+    return deleted.deleted;
   });
 
 /**
