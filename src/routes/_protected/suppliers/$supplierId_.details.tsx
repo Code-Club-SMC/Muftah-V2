@@ -23,6 +23,7 @@ import { getInventoryFn } from "@/server-functions/inventory/get-inventory-fn";
 import { AddRawMaterialDialog } from "@/components/inventory/add-raw-material-sheet";
 import { AddPackagingMaterialSheet } from "@/components/inventory/add-packaging-material-sheet";
 import { datePickerKey } from "@/lib/report-dates";
+import { RequestSupplierReturnSheet } from "@/components/suppliers/request-supplier-return-sheet";
 import { useViewerAccess } from "@/hooks/use-viewer-access";
 import { hasPermission } from "@/lib/rbac";
 import type { ChemicalPurchaseRef } from "@/lib/inventory/chemical-report-contract";
@@ -107,6 +108,8 @@ export const Route = createFileRoute(
 function DetailsPage() {
   const { data: viewer } = useViewerAccess();
   const canCreateReport = hasPermission(viewer?.permissions ?? [], "inventory.view") && hasPermission(viewer?.permissions ?? [], "inventory.manage");
+  const canManageSuppliers = hasPermission(viewer?.permissions ?? [], "suppliers.manage");
+  const [returnPurchaseId, setReturnPurchaseId] = useState<string | null>(null);
   const [reportPurchase, setReportPurchase] = useState<ChemicalPurchaseRef | null>(null);
   const { supplierId } = Route.useParams();
   const searchParams = Route.useSearch();
@@ -338,7 +341,8 @@ function DetailsPage() {
                 setEditDialogOpen={setEditDialogOpen}
                 setDeleteDialogOpen={setDeleteDialogOpen}
                 onRecordPayment={handleRecordPayment}
-                onCreateReport={canCreateReport ? record => { if (record.chemical) setReportPurchase({ purchaseId: record.id, chemicalId: record.chemical.id, chemicalName: record.chemical.name }); } : undefined}
+                onReturnToSupplier={canManageSuppliers ? (record) => setReturnPurchaseId(record.id) : undefined}
+                    onCreateReport={canCreateReport ? record => { if (record.chemical) setReportPurchase({ purchaseId: record.id, chemicalId: record.chemical.id, chemicalName: record.chemical.name }); } : undefined}
                 onRestock={(record) => {
                   setSelectedItem(record);
                   setRestockOpen(true);
@@ -354,6 +358,13 @@ function DetailsPage() {
         </div>
       </Card>
 
+      <RequestSupplierReturnSheet
+        open={!!returnPurchaseId}
+        onOpenChange={(open) => {
+          if (!open) setReturnPurchaseId(null);
+        }}
+        purchaseId={returnPurchaseId}
+      />
       <RecordPaymentDialog
         open={isRecordPaymentOpen}
         onOpenChange={(open) => {

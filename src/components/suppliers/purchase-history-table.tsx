@@ -15,6 +15,7 @@ import {
   ChevronsUpDown,
   X,
   Package,
+  Undo2,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -237,6 +238,8 @@ type Props = {
   onRecordPayment: (item: PurchaseRecord) => void;
   onRestock?: (item: PurchaseRecord) => void;
   onCreateReport?: (item: PurchaseRecord) => void;
+  /** Shown only to people who can manage suppliers. */
+  onReturnToSupplier?: (item: PurchaseRecord) => void;
   isLoading?: boolean;
   manualPagination?: boolean;
   pageCount?: number;
@@ -256,6 +259,7 @@ export const PurchaseHistoryTable = ({
   onRecordPayment,
   onRestock,
   onCreateReport,
+  onReturnToSupplier,
   isLoading = false,
   manualPagination = false,
   pageCount,
@@ -722,6 +726,13 @@ export const PurchaseHistoryTable = ({
                                       >
                                         <BanknoteIcon className="mr-2 size-3.5 text-emerald-600" />
                                         Record Payment
+                                      </DropdownMenuItem>
+                                    )}
+
+                                    {onReturnToSupplier && !record.voidedAt && (record.stockLeft ?? 0) > 0 && (
+                                      <DropdownMenuItem onClick={() => onReturnToSupplier(record)}>
+                                        <Undo2 className="mr-2 size-3.5" />
+                                        Return to supplier
                                       </DropdownMenuItem>
                                     )}
 

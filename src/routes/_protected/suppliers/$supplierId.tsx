@@ -44,6 +44,7 @@ import { AddPackagingMaterialSheet } from "@/components/inventory/add-packaging-
 import { cn } from "@/lib/utils";
 import { AddStockDialog } from "@/components/inventory/add-stock-dialog";
 import { GenericLoader } from "@/components/custom/generic-loader";
+import { RequestSupplierReturnSheet } from "@/components/suppliers/request-supplier-return-sheet";
 import { useViewerAccess } from "@/hooks/use-viewer-access";
 import { hasPermission } from "@/lib/rbac";
 import type { ChemicalPurchaseRef } from "@/lib/inventory/chemical-report-contract";
@@ -224,6 +225,8 @@ function ContactRow({
 function SupplierDetailsPage() {
   const { data: viewer } = useViewerAccess();
   const canCreateReport = hasPermission(viewer?.permissions ?? [], "inventory.view") && hasPermission(viewer?.permissions ?? [], "inventory.manage");
+  const canManageSuppliers = hasPermission(viewer?.permissions ?? [], "suppliers.manage");
+  const [returnPurchaseId, setReturnPurchaseId] = useState<string | null>(null);
   const [reportPurchase, setReportPurchase] = useState<ChemicalPurchaseRef | null>(null);
   const { supplierId } = Route.useParams();
   const [isAddChemicalOpen, setAddChemicalOpen] = useState(false);
@@ -528,6 +531,7 @@ function SupplierDetailsPage() {
                     setDeleteDialogOpen={setDeleteDialogOpen}
                     onRecordPayment={handleRecordPayment}
                     onRestock={handleRestock}
+                    onReturnToSupplier={canManageSuppliers ? (record) => setReturnPurchaseId(record.id) : undefined}
                     onCreateReport={canCreateReport ? record => { if (record.chemical) setReportPurchase({ purchaseId: record.id, chemicalId: record.chemical.id, chemicalName: record.chemical.name }); } : undefined}
                     {...overviewPagination(
                       purchasesQuery.data,
@@ -570,6 +574,13 @@ function SupplierDetailsPage() {
         warehouses={warehouses}
         preselectedWarehouse={factoryFloor?.id}
         preselectedSupplierId={supplier.id}
+      />
+      <RequestSupplierReturnSheet
+        open={!!returnPurchaseId}
+        onOpenChange={(open) => {
+          if (!open) setReturnPurchaseId(null);
+        }}
+        purchaseId={returnPurchaseId}
       />
       <RecordPaymentDialog
         open={isRecordPaymentOpen}
