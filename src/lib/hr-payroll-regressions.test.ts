@@ -40,7 +40,7 @@ describe("hr payroll regressions", () => {
     expect(dashboardSource).toContain("const payrollTotalAmount = await syncPayrollTotal");
     expect(dashboardSource).not.toContain("walletId: z.string().optional()");
     expect(hookSource).not.toContain("walletId: string");
-    expect(componentSource).toContain("No wallet is debited here.");
+    expect(componentSource).toContain("No money moves here.");
     expect(componentSource).not.toContain("Please select a payment account before finalizing.");
   });
 
