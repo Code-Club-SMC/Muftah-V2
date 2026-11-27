@@ -182,8 +182,8 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("reading payments", () => {
     const register = await loadRegisterPayments(db, f.payroll.id);
     expect(register.summary).toEqual({ slipCount: 2, paidCount: 1, paidTotal: "26200.00", remainingTotal: "100000.00" });
     expect(register.payable).toEqual([{ employeeId: b.employee.id, name: b.name, due: "100000.00" }]);
-    expect(register.byEmployee.get(a.employee.id)).toMatchObject({ status: "paid", paidFrom: f.cash.name });
-    expect(register.byEmployee.get(b.employee.id)).toMatchObject({ status: "unpaid", paidFrom: null });
+    expect(register.byEmployee.get(a.employee.id)).toMatchObject({ status: "paid", paidFrom: f.cash.name, lastPaymentDate: f.todayKey });
+    expect(register.byEmployee.get(b.employee.id)).toMatchObject({ status: "unpaid", paidFrom: null, lastPaymentDate: null });
   });
 
   it("gives a slip's history, Paid from, and what a distributor already paid", async () => {

@@ -22,15 +22,26 @@ export type SalaryAccountDialogProps = {
   payrollMonth: string;
   todayKey: string;
   pending: boolean;
+  /** Date the dialog starts on; today when not given. */
+  defaultDate?: string;
   onConfirm: (choice: { walletId: string; paymentDate: string }) => void;
 };
 
+/** Start on the first account that can cover the total, so a short account isn't picked by default. */
+function defaultWalletId(wallets: SalaryAccountDialogProps["wallets"], total: string, direction: "out" | "in"): string {
+  if (direction === "out") {
+    const covering = wallets.find((w) => new Big(w.balance).gte(total));
+    if (covering) return covering.id;
+  }
+  return wallets[0]?.id ?? "";
+}
+
 export function SalaryAccountDialog(props: SalaryAccountDialogProps) {
-  const { open, onOpenChange, title, description, confirmLabel, lines, wallets, direction, payrollMonth, todayKey, pending, onConfirm } = props;
-  const [walletId, setWalletId] = useState(wallets[0]?.id ?? "");
-  const [paymentDate, setPaymentDate] = useState(todayKey);
-  const wallet = wallets.find((w) => w.id === walletId);
+  const { open, onOpenChange, title, description, confirmLabel, lines, wallets, direction, payrollMonth, todayKey, pending, defaultDate, onConfirm } = props;
   const total = lines.reduce((sum, line) => sum.plus(line.amount), new Big(0)).toFixed(2);
+  const [walletId, setWalletId] = useState(() => defaultWalletId(wallets, total, direction));
+  const [paymentDate, setPaymentDate] = useState(defaultDate ?? todayKey);
+  const wallet = wallets.find((w) => w.id === walletId);
   const after = wallet ? new Big(wallet.balance)[direction === "out" ? "minus" : "plus"](total).toFixed(2) : null;
   const shortfall = direction === "out" && wallet && new Big(wallet.balance).lt(total)
     ? shortfallMessage(wallet.name, wallet.balance, total)

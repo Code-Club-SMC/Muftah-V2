@@ -361,7 +361,8 @@ export async function recoverOverpaidSalary(
 
 export const slipKey = (payrollId: string, employeeId: string) => `${payrollId}:${employeeId}`;
 export type SlipPaymentRow = ActiveRow & { walletName: string | null };
-export type RegisterSlipPayment = SlipPaymentState & { paidFrom: string | null };
+/** lastPaymentDate: the latest active payment's date, suggested when changing the account. */
+export type RegisterSlipPayment = SlipPaymentState & { paidFrom: string | null; lastPaymentDate: string | null };
 export type PayableSlip = { employeeId: string; name: string; due: string };
 
 export async function loadActivePaymentsForPayrolls(executor: Executor, payrollIds: string[]) {
@@ -399,7 +400,8 @@ export async function loadRegisterPayments(executor: Executor, payrollId: string
   for (const slip of slips) {
     const rows = payments.get(slipKey(payrollId, slip.employeeId)) ?? [];
     const state = slipPaymentState(slip.netSalary, rows);
-    byEmployee.set(slip.employeeId, { ...state, paidFrom: paidFromText(rows) });
+    const paymentDates = rows.filter((row) => row.kind === "payment").map((row) => String(row.paymentDate).slice(0, 10)).sort();
+    byEmployee.set(slip.employeeId, { ...state, paidFrom: paidFromText(rows), lastPaymentDate: paymentDates.at(-1) ?? null });
     if (new Big(state.due).gt(0)) payable.push({ employeeId: slip.employeeId, name: `${slip.firstName} ${slip.lastName}`, due: state.due });
   }
   const summary: RegisterPaymentSummary = registerPaymentSummary([...byEmployee.values()]);

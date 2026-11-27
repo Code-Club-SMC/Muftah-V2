@@ -37,6 +37,21 @@ describe("SalaryAccountDialog", () => {
     expect((screen.getByRole("button", { name: "Pay Rs 1,28,424" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
+  it("starts on the first account that can cover the total, and on the given date", () => {
+    const onConfirm = vi.fn();
+    render(
+      <SalaryAccountDialog
+        {...props}
+        wallets={[{ id: "bank", name: "HBL", balance: "0.00" }, { id: "cash", name: "Cash in Hand", balance: "500000.00" }]}
+        defaultDate="2026-11-30"
+        onConfirm={onConfirm}
+      />,
+    );
+    expect(screen.queryByText(/Short by/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Pay Rs 1,28,424" }));
+    expect(onConfirm).toHaveBeenCalledWith({ walletId: "cash", paymentDate: "2026-11-30" });
+  });
+
   it("never blocks money coming in", () => {
     render(<SalaryAccountDialog {...props} direction="in" wallets={[{ id: "cash", name: "Cash in Hand", balance: "0.00" }]} onConfirm={vi.fn()} />);
     expect(screen.queryByText(/Short by/)).toBeNull();

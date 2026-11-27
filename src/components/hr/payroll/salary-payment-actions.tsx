@@ -64,6 +64,7 @@ export function SalaryPaymentActions({ payrollId, payrollMonth, employeeId, name
           lines={[{ employeeId, name, amount: payment.paid }]}
           wallets={wallets.filter((w) => !payment.paidFrom?.split(", ").includes(w.name))}
           direction="out" payrollMonth={payrollMonth} todayKey={todayKey} pending={change.isPending}
+          defaultDate={payment.lastPaymentDate ?? undefined}
           onConfirm={({ walletId, paymentDate }) =>
             change.mutate({ payrollId, employeeIds: [employeeId], walletId, paymentDate }, { onSuccess: close })
           }
