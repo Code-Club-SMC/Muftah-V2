@@ -208,7 +208,7 @@ export const materialLotMovements = pgTable(
       .references(() => warehouses.id),
     delta: decimal("delta", { precision: 12, scale: 3 }).notNull(),
     // "opening" | "purchase" | "purchase_edit" | "purchase_delete" | "transfer_out" | "transfer_in"
-    // | "mixing" | "packing" | "recovery" | "adjustment" | "warehouse_close"
+    // | "mixing" | "packing" | "recovery" | "adjustment" | "warehouse_close" | "supplier_return" | "supplier_return_undo"
     sourceType: text("source_type").notNull(),
     sourceId: text("source_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),

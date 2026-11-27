@@ -15,8 +15,11 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Loader2, CircleDollarSign } from "lucide-react";
 import { z } from "zod";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { PaymentMethodSelect } from "@/components/suppliers/payment-method-select";
+import Big from "big.js";
+import { useSupplierReturnMutations } from "@/hooks/suppliers/use-supplier-returns";
+import { formatRupees } from "@/lib/finance/expense-entry";
 
 const addPaymentSchema = z.object({
   supplierId: z.string(),
@@ -36,6 +39,8 @@ type Props = {
   purchaseId?: string;
   defaultAmount?: string;
   defaultNotes?: string;
+  /** The supplier's unused credit from debit notes, e.g. "3000.00". */
+  supplierCredit?: string;
 };
 
 export const RecordPaymentDialog = ({
@@ -47,8 +52,19 @@ export const RecordPaymentDialog = ({
   purchaseId,
   defaultAmount,
   defaultNotes,
+  supplierCredit,
 }: Props) => {
   const queryClient = useQueryClient();
+  const { useCredit } = useSupplierReturnMutations();
+  const creditAvailable = new Big(supplierCredit || "0");
+  // Never more than the purchase still owes.
+  const creditToUse = creditAvailable.lt(outstandingBalance) ? creditAvailable : new Big(Math.max(outstandingBalance, 0));
+  const owedAfterCredit = new Big(Math.max(outstandingBalance, 0)).minus(creditToUse);
+  // Using credit can't be typed back in, so ask once before it is applied.
+  const [confirmingCredit, setConfirmingCredit] = useState(false);
+  useEffect(() => {
+    if (!open) setConfirmingCredit(false);
+  }, [open]);
 
   const mutate = useMutation({
     mutationFn: addPaymentFn,
@@ -125,6 +141,46 @@ export const RecordPaymentDialog = ({
         className="pt-2"
       >
         <FieldGroup>
+          {purchaseId && creditToUse.gt(0) && (
+            <div className="space-y-3 rounded-lg border border-border/60 bg-muted/40 p-3">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-sm">{`Supplier credit ${formatRupees(creditAvailable.toFixed(2))}`}</span>
+                {!confirmingCredit && (
+                  <Button type="button" size="sm" variant="outline" onClick={() => setConfirmingCredit(true)}>
+                    Use supplier credit
+                  </Button>
+                )}
+              </div>
+              {confirmingCredit && (
+                <div className="space-y-2">
+                  <p className="text-sm">
+                    {`Use ${formatRupees(creditToUse.toFixed(2))} of supplier credit on this purchase? `}
+                    {owedAfterCredit.gt(0)
+                      ? `${formatRupees(owedAfterCredit.toFixed(2))} will still be owed.`
+                      : "Nothing will be owed on it after this."}
+                    {" No account is charged."}
+                  </p>
+                  <div className="flex justify-end gap-2">
+                    <Button type="button" size="sm" variant="ghost" disabled={useCredit.isPending} onClick={() => setConfirmingCredit(false)}>
+                      Back
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={useCredit.isPending}
+                      onClick={async () => {
+                        await useCredit.mutateAsync({ data: { purchaseId, amount: creditToUse.toFixed(2) } });
+                        onOpenChange(false);
+                      }}
+                    >
+                      {useCredit.isPending && <Loader2 className="mr-2 size-4 animate-spin" />}
+                      {`Use ${formatRupees(creditToUse.toFixed(2))} credit`}
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
           <form.Field
             name="amount"
             validators={{

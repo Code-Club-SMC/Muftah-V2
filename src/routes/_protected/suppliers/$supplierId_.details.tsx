@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { purchaseOwed } from "@/lib/suppliers/supplier-returns";
 import { useSuspenseQuery, useQuery, keepPreviousData } from "@tanstack/react-query";
 import { getSupplierPaginatedPurchasesFn } from "@/server-functions/suppliers/get-supplier-paginated-purchases-fn";
 import { getSupplierPaginatedPaymentsFn } from "@/server-functions/suppliers/get-supplier-paginated-payments-fn";
@@ -22,6 +23,7 @@ import { getInventoryFn } from "@/server-functions/inventory/get-inventory-fn";
 import { AddRawMaterialDialog } from "@/components/inventory/add-raw-material-sheet";
 import { AddPackagingMaterialSheet } from "@/components/inventory/add-packaging-material-sheet";
 import { datePickerKey } from "@/lib/report-dates";
+import { RequestSupplierReturnSheet } from "@/components/suppliers/request-supplier-return-sheet";
 import { useViewerAccess } from "@/hooks/use-viewer-access";
 import { hasPermission } from "@/lib/rbac";
 import type { ChemicalPurchaseRef } from "@/lib/inventory/chemical-report-contract";
@@ -106,6 +108,8 @@ export const Route = createFileRoute(
 function DetailsPage() {
   const { data: viewer } = useViewerAccess();
   const canCreateReport = hasPermission(viewer?.permissions ?? [], "inventory.view") && hasPermission(viewer?.permissions ?? [], "inventory.manage");
+  const canManageSuppliers = hasPermission(viewer?.permissions ?? [], "suppliers.manage");
+  const [returnPurchaseId, setReturnPurchaseId] = useState<string | null>(null);
   const [reportPurchase, setReportPurchase] = useState<ChemicalPurchaseRef | null>(null);
   const { supplierId } = Route.useParams();
   const searchParams = Route.useSearch();
@@ -116,9 +120,11 @@ function DetailsPage() {
     queryFn: () => getSupplierDetailsFn({ data: { id: supplierId } }),
   });
 
-  const { data: warehouses } = useSuspenseQuery({
+  const canViewInventory = hasPermission(viewer?.permissions ?? [], "inventory.view");
+  const { data: warehouses = [] } = useQuery({
     queryKey: ["inventory"],
     queryFn: getInventoryFn,
+    enabled: canViewInventory,
   });
 
   // Table Data based on View
@@ -232,9 +238,8 @@ function DetailsPage() {
   const [paymentDefaults, setPaymentDefaults] = useState<any>({});
 
   const handleRecordPayment = (item: any) => {
-    const total = parseFloat(item.cost);
-    const paid = parseFloat(item.paidAmount || "0");
-    const remaining = total - paid;
+    // What is still owed: cost less payments less debit notes.
+    const remaining = purchaseOwed(item).toNumber();
     setPaymentDefaults({
       amount: remaining.toString(),
       purchaseId: item.id,
@@ -338,7 +343,8 @@ function DetailsPage() {
                 setEditDialogOpen={setEditDialogOpen}
                 setDeleteDialogOpen={setDeleteDialogOpen}
                 onRecordPayment={handleRecordPayment}
-                onCreateReport={canCreateReport ? record => { if (record.chemical) setReportPurchase({ purchaseId: record.id, chemicalId: record.chemical.id, chemicalName: record.chemical.name }); } : undefined}
+                onReturnToSupplier={canManageSuppliers ? (record) => setReturnPurchaseId(record.id) : undefined}
+                    onCreateReport={canCreateReport ? record => { if (record.chemical) setReportPurchase({ purchaseId: record.id, chemicalId: record.chemical.id, chemicalName: record.chemical.name }); } : undefined}
                 onRestock={(record) => {
                   setSelectedItem(record);
                   setRestockOpen(true);
@@ -354,7 +360,15 @@ function DetailsPage() {
         </div>
       </Card>
 
+      <RequestSupplierReturnSheet
+        open={!!returnPurchaseId}
+        onOpenChange={(open) => {
+          if (!open) setReturnPurchaseId(null);
+        }}
+        purchaseId={returnPurchaseId}
+      />
       <RecordPaymentDialog
+        supplierCredit={supplier.supplierCredit}
         open={isRecordPaymentOpen}
         onOpenChange={(open) => {
           setRecordPaymentOpen(open);

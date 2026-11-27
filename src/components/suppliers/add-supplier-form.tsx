@@ -70,6 +70,7 @@ export const AddSupplierForm = ({ onSuccess }: Props) => {
 				payments: [],
 				totalPurchases: 0,
 				totalPayments: 0,
+				totalReturned: 0,
 				balance: 0,
 			} as SupplierListItem;
 

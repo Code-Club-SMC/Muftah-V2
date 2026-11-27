@@ -5,6 +5,7 @@ import { z } from "zod";
 import { notFound } from "@tanstack/react-router";
 import { sql, eq, and, isNull } from "drizzle-orm";
 import { purchaseRecords } from "@/db/schemas/supplier-schema";
+import { supplierCreditBalance } from "@/lib/suppliers/supplier-returns.server";
 
 export const getSupplierDetailsFn = createServerFn()
   .middleware([requireSuppliersViewMiddleware])
@@ -18,26 +19,27 @@ export const getSupplierDetailsFn = createServerFn()
       throw notFound();
     }
 
-    // 1. Calculate Total Purchases using Database SUM
-    const purchasesResult = await db
-      .select({ totalPurchases: sql<number>`COALESCE(SUM(cost), 0)` })
+    const [totals] = await db
+      .select({
+        totalPurchases: sql<string>`COALESCE(SUM(${purchaseRecords.cost}), 0)`,
+        totalPaid: sql<string>`COALESCE(SUM(${purchaseRecords.paidAmount}), 0)`,
+        totalReturned: sql<string>`COALESCE(SUM(${purchaseRecords.returnedAmount}), 0)`,
+      })
       .from(purchaseRecords)
       .where(and(eq(purchaseRecords.supplierId, data.id), isNull(purchaseRecords.voidedAt)));
 
-    // 2. Calculate Total Paid using paidAmount from purchaseRecords
-    const paidResult = await db
-      .select({ totalPaid: sql<number>`COALESCE(SUM(paid_amount), 0)` })
-      .from(purchaseRecords)
-      .where(and(eq(purchaseRecords.supplierId, data.id), isNull(purchaseRecords.voidedAt)));
-
-    const totalPurchasesNum = parseFloat(String(purchasesResult[0].totalPurchases));
-    const totalPaidNum = parseFloat(String(paidResult[0].totalPaid));
-    const balance = totalPurchasesNum - totalPaidNum;
+    const supplierCredit = await db.transaction((tx) => supplierCreditBalance(tx, data.id));
+    const totalPurchasesNum = parseFloat(String(totals.totalPurchases));
+    const totalPaidNum = parseFloat(String(totals.totalPaid));
+    const totalReturnedNum = parseFloat(String(totals.totalReturned));
 
     return {
       ...supplier,
-      balance,
+      // What we still owe: purchases less payments less debit notes applied to them.
+      balance: totalPurchasesNum - totalPaidNum - totalReturnedNum,
       totalPurchases: totalPurchasesNum,
       totalPayments: totalPaidNum,
+      totalReturned: totalReturnedNum,
+      supplierCredit,
     };
   });

@@ -7,6 +7,7 @@ import { createId } from "@paralleldrive/cuid2";
 import { expenseCategories } from "@/db/schemas/finance-schema";
 import { logActivityQuiet } from "@/lib/activity-logger.server";
 import Big from "big.js";
+import { purchaseOwed } from "@/lib/suppliers/supplier-returns";
 
 type FinanceWriter = Pick<typeof db, "query" | "select" | "insert" | "update">;
 
@@ -75,15 +76,10 @@ export const addPaymentFn = createServerFn({ method: "POST" })
         if (purchase.supplierId !== data.supplierId) throw new Error("Purchase does not belong to this supplier");
         if (purchase.voidedAt) throw new Error("Purchase is already voided");
 
-        const totalCost = new Big(purchase.cost);
-        const alreadyPaid = new Big(purchase.paidAmount);
+        const remaining = purchaseOwed(purchase);
         const incomingAmount = new Big(data.amount);
-        const remaining = totalCost.minus(alreadyPaid);
-
         if (incomingAmount.gt(remaining)) {
-          throw new Error(
-            `Payment of PKR ${incomingAmount.toFixed(2)} exceeds the outstanding balance of PKR ${remaining.toFixed(2)} (Total: PKR ${totalCost.toFixed(2)}, Already paid: PKR ${alreadyPaid.toFixed(2)})`,
-          );
+          throw new Error(`Payment of PKR ${incomingAmount.toFixed(2)} exceeds the outstanding balance of PKR ${remaining.toFixed(2)}`);
         }
 
         await tx

@@ -6,7 +6,9 @@ import { Separator } from "@/components/ui/separator";
 import { Info } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { getWalletsListFn } from "@/server-functions/finance-fn";
+import { formatRupees } from "@/lib/finance/expense-entry";
 import { packagingUnit } from "@/lib/inventory/material-units";
+import { purchaseOwed } from "@/lib/suppliers/supplier-returns";
 import { PurchaseVoidAudit, type PurchaseVoidMetadata } from "./purchase-void-audit";
 
 function resolveMethodLabel(method: string | null | undefined, wallets: { id: string; name: string }[]): string {
@@ -32,6 +34,7 @@ type Props = {
     quantity: string;
     unitCost: string;
     paidAmount: string;
+    returnedAmount?: string | null;
     paidBy?: string | null;
     materialType: string;
     chemical?: {
@@ -109,7 +112,8 @@ export const PurchaseDetailsDialog = ({
 
   const paid = parseFloat(purchase.paidAmount || "0");
   const total = parseFloat(purchase.cost);
-  const balance = total - paid;
+  const returned = parseFloat(purchase.returnedAmount || "0");
+  const balance = purchaseOwed(purchase).toNumber();
 
   return (
     <ResponsiveDialog
@@ -170,6 +174,13 @@ export const PurchaseDetailsDialog = ({
               PKR {paid.toLocaleString()}
             </span>
           </div>
+
+          {returned > 0 && (
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-muted-foreground">Returned (debit notes)</span>
+              <span className="font-bold text-amber-600">{formatRupees(returned)}</span>
+            </div>
+          )}
 
           {!purchase.voidedAt && balance > 0 && (
             <div className="flex justify-between items-center bg-red-50 p-2 rounded">

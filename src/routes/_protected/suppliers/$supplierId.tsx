@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { purchaseOwed } from "@/lib/suppliers/supplier-returns";
 import { useSuspenseQuery, useQuery, keepPreviousData } from "@tanstack/react-query";
 import { getSupplierDetailsFn } from "@/server-functions/suppliers/get-supplier-details-fn";
 import { getSupplierPaginatedPurchasesFn } from "@/server-functions/suppliers/get-supplier-paginated-purchases-fn";
@@ -25,7 +26,10 @@ import {
   AlertCircle,
   CheckCircle2,
   ArrowLeft,
+  Undo2,
 } from "lucide-react";
+import { SupplierReturnsPanel } from "@/components/suppliers/supplier-returns-panel";
+import { formatRupees } from "@/lib/finance/expense-entry";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useState } from "react";
@@ -43,6 +47,7 @@ import { AddPackagingMaterialSheet } from "@/components/inventory/add-packaging-
 import { cn } from "@/lib/utils";
 import { AddStockDialog } from "@/components/inventory/add-stock-dialog";
 import { GenericLoader } from "@/components/custom/generic-loader";
+import { RequestSupplierReturnSheet } from "@/components/suppliers/request-supplier-return-sheet";
 import { useViewerAccess } from "@/hooks/use-viewer-access";
 import { hasPermission } from "@/lib/rbac";
 import type { ChemicalPurchaseRef } from "@/lib/inventory/chemical-report-contract";
@@ -98,10 +103,10 @@ export const Route = createFileRoute("/_protected/suppliers/$supplierId")({
         queryFn: () =>
           getSupplierDetailsFn({ data: { id: params.supplierId } }),
       }),
-      context.queryClient.ensureQueryData({
-        queryKey: ["inventory"],
-        queryFn: getInventoryFn,
-      }),
+      // Stores come from inventory, which needs its own permission. Skip it for supplier-only users.
+      hasPermission(context.viewerAccess.permissions, "inventory.view")
+        ? context.queryClient.ensureQueryData({ queryKey: ["inventory"], queryFn: getInventoryFn })
+        : Promise.resolve(),
       context.queryClient.ensureQueryData(overviewPurchasesQuery(params.supplierId, 1)),
       context.queryClient.ensureQueryData(overviewPaymentsQuery(params.supplierId, 1)),
     ]);
@@ -223,6 +228,8 @@ function ContactRow({
 function SupplierDetailsPage() {
   const { data: viewer } = useViewerAccess();
   const canCreateReport = hasPermission(viewer?.permissions ?? [], "inventory.view") && hasPermission(viewer?.permissions ?? [], "inventory.manage");
+  const canManageSuppliers = hasPermission(viewer?.permissions ?? [], "suppliers.manage");
+  const [returnPurchaseId, setReturnPurchaseId] = useState<string | null>(null);
   const [reportPurchase, setReportPurchase] = useState<ChemicalPurchaseRef | null>(null);
   const { supplierId } = Route.useParams();
   const [isAddChemicalOpen, setAddChemicalOpen] = useState(false);
@@ -246,9 +253,11 @@ function SupplierDetailsPage() {
     queryFn: () => getSupplierDetailsFn({ data: { id: supplierId } }),
   });
 
-  const { data: warehouses } = useSuspenseQuery({
+  const canViewInventory = hasPermission(viewer?.permissions ?? [], "inventory.view");
+  const { data: warehouses = [] } = useQuery({
     queryKey: ["inventory"],
     queryFn: getInventoryFn,
+    enabled: canViewInventory,
   });
 
   const [purchasesPage, setPurchasesPage] = useState(1);
@@ -267,9 +276,8 @@ function SupplierDetailsPage() {
   const isOverdue = balance > 0;
 
   const handleRecordPayment = (item: any) => {
-    const total = parseFloat(item.cost);
-    const paid = parseFloat(item.paidAmount || "0");
-    const remaining = total - paid;
+    // What is still owed: cost less payments less debit notes.
+    const remaining = purchaseOwed(item).toNumber();
     setPaymentDefaults({
       amount: remaining.toString(),
       purchaseId: item.id,
@@ -481,7 +489,13 @@ function SupplierDetailsPage() {
             <StatCard
               title="Outstanding Balance"
               value={`PKR ${Math.abs(Number(supplier.balance)).toLocaleString(undefined, { minimumFractionDigits: 2 })}`}
-              sub={isOverdue ? "View unpaid purchases" : "Fully paid — no dues"}
+              sub={
+                Number(supplier.supplierCredit) > 0
+                  ? `Supplier credit ${formatRupees(supplier.supplierCredit)}`
+                  : isOverdue
+                    ? "View unpaid purchases"
+                    : "Fully paid — no dues"
+              }
               icon={<CreditCard className="size-3.5" />}
               variant={isOverdue ? "danger" : "success"}
               linkProps={{ to: "/suppliers/$supplierId/details", params: { supplierId }, search: { view: "outstanding", page: 1 } }}
@@ -501,6 +515,10 @@ function SupplierDetailsPage() {
                     <TabsTrigger value="payments" className="text-[12.5px] h-6 px-3">
                       <Banknote className="size-3 mr-1.5" />
                       Recent Payments
+                    </TabsTrigger>
+                    <TabsTrigger value="returns" className="text-[12.5px] h-6 px-3">
+                      <Undo2 className="size-3 mr-1.5" />
+                      Returns
                     </TabsTrigger>
                   </TabsList>
 
@@ -528,6 +546,7 @@ function SupplierDetailsPage() {
                     setDeleteDialogOpen={setDeleteDialogOpen}
                     onRecordPayment={handleRecordPayment}
                     onRestock={handleRestock}
+                    onReturnToSupplier={canManageSuppliers ? (record) => setReturnPurchaseId(record.id) : undefined}
                     onCreateReport={canCreateReport ? record => { if (record.chemical) setReportPurchase({ purchaseId: record.id, chemicalId: record.chemical.id, chemicalName: record.chemical.name }); } : undefined}
                     {...overviewPagination(
                       purchasesQuery.data,
@@ -547,6 +566,9 @@ function SupplierDetailsPage() {
                       setPaymentsPage,
                     )}
                   />
+                </TabsContent>
+                <TabsContent value="returns" className="mt-0">
+                  <SupplierReturnsPanel supplierId={supplierId} canManage={canManageSuppliers} />
                 </TabsContent>
               </Tabs>
             </div>
@@ -571,7 +593,15 @@ function SupplierDetailsPage() {
         preselectedWarehouse={factoryFloor?.id}
         preselectedSupplierId={supplier.id}
       />
+      <RequestSupplierReturnSheet
+        open={!!returnPurchaseId}
+        onOpenChange={(open) => {
+          if (!open) setReturnPurchaseId(null);
+        }}
+        purchaseId={returnPurchaseId}
+      />
       <RecordPaymentDialog
+        supplierCredit={supplier.supplierCredit}
         open={isRecordPaymentOpen}
         onOpenChange={(open) => {
           setRecordPaymentOpen(open);

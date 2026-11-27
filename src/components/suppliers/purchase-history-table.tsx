@@ -15,6 +15,7 @@ import {
   ChevronsUpDown,
   X,
   Package,
+  Undo2,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -36,6 +37,7 @@ import {
 } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { purchaseOwed } from "@/lib/suppliers/supplier-returns";
 import type { PurchaseVoidMetadata } from "./purchase-void-audit";
 
 export type PurchaseRecord = PurchaseVoidMetadata & {
@@ -44,6 +46,8 @@ export type PurchaseRecord = PurchaseVoidMetadata & {
   purchaseDate?: string | Date;
   cost: string;
   paidAmount: string;
+  /** Debit notes taken off this purchase. Absent on old rows. */
+  returnedAmount?: string | null;
   quantity: string;
   unitCost: string;
   materialType: string;
@@ -89,6 +93,7 @@ export type MaterialGroup = {
   totalQty: number;
   totalCost: number;
   totalPaid: number;
+  totalReturned: number;
   totalStockLeft: number | null;
   latestDate: Date;
   purchaseCount: number;
@@ -129,6 +134,7 @@ export function groupByMaterial(records: PurchaseRecord[]): MaterialGroup[] {
         totalQty: 0,
         totalCost: 0,
         totalPaid: 0,
+        totalReturned: 0,
         totalStockLeft: null,
         latestDate: new Date(0),
         purchaseCount: 0,
@@ -140,12 +146,14 @@ export function groupByMaterial(records: PurchaseRecord[]): MaterialGroup[] {
     const qty = parseFloat(r.quantity || "0") || 0;
     const cost = parseFloat(r.cost || "0") || 0;
     const paid = parseFloat(r.paidAmount || "0") || 0;
+    const returned = parseFloat(r.returnedAmount || "0") || 0;
     const date = new Date(r.purchaseDate ?? r.createdAt);
 
     if (!r.voidedAt) {
       group.totalQty += qty;
       group.totalCost += cost;
       group.totalPaid += paid;
+      group.totalReturned += returned;
     }
 
     if (r.stockLeft !== null && r.stockLeft !== undefined) {
@@ -177,8 +185,18 @@ export function groupByMaterial(records: PurchaseRecord[]): MaterialGroup[] {
 
 // ── Payment status badge ────────────────────────────────────────────────────
 
-function PaymentBadge({ cost, paidAmount }: { cost: number; paidAmount: number }) {
-  const remaining = cost - paidAmount;
+/** Debit notes settle a purchase the same way payments do. */
+export function PaymentBadge({
+  cost,
+  paidAmount,
+  returnedAmount = 0,
+}: {
+  cost: number;
+  paidAmount: number;
+  returnedAmount?: number;
+}) {
+  const settled = paidAmount + returnedAmount;
+  const remaining = cost - settled;
   if (remaining <= 0.1) {
     return (
       <Badge
@@ -189,7 +207,7 @@ function PaymentBadge({ cost, paidAmount }: { cost: number; paidAmount: number }
       </Badge>
     );
   }
-  if (paidAmount > 0) {
+  if (settled > 0) {
     return (
       <Badge
         variant="secondary"
@@ -220,6 +238,8 @@ type Props = {
   onRecordPayment: (item: PurchaseRecord) => void;
   onRestock?: (item: PurchaseRecord) => void;
   onCreateReport?: (item: PurchaseRecord) => void;
+  /** Shown only to people who can manage suppliers. */
+  onReturnToSupplier?: (item: PurchaseRecord) => void;
   isLoading?: boolean;
   manualPagination?: boolean;
   pageCount?: number;
@@ -239,6 +259,7 @@ export const PurchaseHistoryTable = ({
   onRecordPayment,
   onRestock,
   onCreateReport,
+  onReturnToSupplier,
   isLoading = false,
   manualPagination = false,
   pageCount,
@@ -395,7 +416,7 @@ export const PurchaseHistoryTable = ({
             ) : (
               filteredGroups.map((group) => {
                 const isExpanded = expandedKeys.has(group.key);
-                const totalDue = group.totalCost - group.totalPaid;
+                const totalDue = group.totalCost - group.totalPaid - group.totalReturned;
 
                 return (
                   <Fragment key={group.key}>
@@ -492,6 +513,7 @@ export const PurchaseHistoryTable = ({
                         {group.records.every(r => r.voidedAt) ? <Badge variant="secondary">Voided</Badge> : <PaymentBadge
                           cost={group.totalCost}
                           paidAmount={group.totalPaid}
+                          returnedAmount={group.totalReturned}
                         />}
                       </TableCell>
 
@@ -554,7 +576,8 @@ export const PurchaseHistoryTable = ({
                       group.records.map((record) => {
                         const recCost = parseFloat(record.cost || "0");
                         const recPaid = parseFloat(record.paidAmount || "0");
-                        const recDue = record.voidedAt ? 0 : recCost - recPaid;
+                        const recReturned = parseFloat(record.returnedAmount || "0") || 0;
+                        const recDue = record.voidedAt ? 0 : purchaseOwed(record).toNumber();
                         const recUnit =
                           record.chemical?.unit ||
                           (record.materialType === "packaging" || record.packagingMaterial
@@ -625,7 +648,7 @@ export const PurchaseHistoryTable = ({
 
                             {/* Status */}
                             <TableCell className="py-2.5">
-                              {record.voidedAt ? <Badge variant="secondary">Voided</Badge> : <PaymentBadge cost={recCost} paidAmount={recPaid} />}
+                              {record.voidedAt ? <Badge variant="secondary">Voided</Badge> : <PaymentBadge cost={recCost} paidAmount={recPaid} returnedAmount={recReturned} />}
                             </TableCell>
 
                             {/* Paid amount */}
@@ -703,6 +726,13 @@ export const PurchaseHistoryTable = ({
                                       >
                                         <BanknoteIcon className="mr-2 size-3.5 text-emerald-600" />
                                         Record Payment
+                                      </DropdownMenuItem>
+                                    )}
+
+                                    {onReturnToSupplier && !record.voidedAt && (record.stockLeft ?? 0) > 0 && (
+                                      <DropdownMenuItem onClick={() => onReturnToSupplier(record)}>
+                                        <Undo2 className="mr-2 size-3.5" />
+                                        Return to supplier
                                       </DropdownMenuItem>
                                     )}
 

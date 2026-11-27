@@ -23,12 +23,18 @@ export const getSuppliersFn = createServerFn()
         (acc, p) => acc + parseFloat(p.paidAmount || "0"),
         0,
       );
-      const balance = totalPurchases - totalPayments;
+      const totalReturned = active.reduce(
+        (acc, p) => acc + parseFloat(p.returnedAmount || "0"),
+        0,
+      );
+      // What we owe: purchases less payments less debit notes.
+      const balance = totalPurchases - totalPayments - totalReturned;
 
       return {
         ...supplier,
         totalPurchases,
         totalPayments,
+        totalReturned,
         balance,
       };
     });

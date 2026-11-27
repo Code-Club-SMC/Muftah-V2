@@ -96,6 +96,18 @@ describe("purchaseUntouched", () => {
       { delta: "100", sourceType: "purchase" }, { delta: "-60", sourceType: "mixing" }, { delta: "60", sourceType: "transfer_in" },
     ] })).toBe(false);
   });
+  it("stays untouched when only a supplier return took stock out and put it back", () => {
+    expect(purchaseUntouched({ balanceNow: "100", movements: [
+      { delta: "100", sourceType: "purchase" },
+      { delta: "-10", sourceType: "supplier_return" },
+      { delta: "10", sourceType: "supplier_return_undo" },
+    ] })).toBe(true);
+    expect(purchaseUntouched({ balanceNow: "80", movements: [
+      { delta: "100", sourceType: "purchase" },
+      { delta: "-10", sourceType: "supplier_return" },
+      { delta: "-10", sourceType: "mixing" },
+    ] })).toBe(false);
+  });
 });
 
 describe("similar names", () => {

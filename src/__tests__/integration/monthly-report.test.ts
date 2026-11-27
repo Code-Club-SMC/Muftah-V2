@@ -8,7 +8,25 @@ import { issueCustomerCreditFromReturn, issueCustomerRefund } from "@/server-fun
 import { confirmPendingPayment, createInitialPayments, recalculateInvoiceSettlement, reverseConfirmedPayment } from "@/server-functions/sales/settlement-service";
 import { loadMonthlyReport, loadMonthlyReportDetail } from "@/server-functions/reports/monthly-report-queries.server";
 import type { MonthlyReportLine } from "@/lib/reports/monthly-report";
+import { purchaseRecords } from "@/db";
+import { supplierReturns } from "@/db/schemas/supplier-schema";
+import { completeSupplierReturn, dispatchSupplierReturn, requestSupplierReturn } from "@/lib/suppliers/supplier-returns.server";
+import { supplierReturnFixture } from "./supplier-return-fixture";
 import { withRollback } from "./with-rollback";
+
+// The supplier-return fixture records purchases through the add-stock server function.
+vi.mock("@tanstack/react-start", () => ({ createServerFn: () => {
+  let validator: { parse: (data: unknown) => unknown };
+  const builder = {
+    middleware: () => builder,
+    inputValidator: (schema: typeof validator) => { validator = schema; return builder; },
+    handler: (handler: (input: unknown) => unknown) => (input: { data: unknown; context: unknown }) =>
+      handler({ ...input, data: validator.parse(input.data) }),
+  };
+  return builder;
+} }));
+vi.mock("@/lib/middlewares", () => ({ requireInventoryManageMiddleware: {} }));
+vi.mock("@/lib/activity-logger.server", () => ({ logActivityQuiet: vi.fn() }));
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -142,5 +160,43 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)("monthly report against PostgreS
     const r = await report(tx);
     expect(r.value("weightTon")).toBe(0.055);
     expect(r.weight).toBe(55);
+  }));
+
+  it("takes completed debit notes off the month's raw material bought", () => withRollback(async (tx) => {
+    const { actor, buy } = await supplierReturnFixture(tx);
+    const purchase = await buy("100", "50000");
+    const created = await requestSupplierReturn(tx, { purchaseId: purchase.id, quantity: "10", reason: "Wet bags" }, actor.id);
+    await dispatchSupplierReturn(tx, { returnId: created.id }, actor.id);
+    const { debitNoteNumber } = await completeSupplierReturn(tx, { returnId: created.id }, actor.id);
+    // Move both into this suite's year: bought 5 Oct, supplier accepted the goods back on 12 Oct.
+    await tx.update(purchaseRecords).set({ purchaseDate: at("2090-10-05") }).where(eq(purchaseRecords.id, purchase.id));
+    await tx.update(supplierReturns).set({ completedAt: at("2090-10-12") }).where(eq(supplierReturns.id, created.id));
+
+    const r = await report(tx);
+    expect(r.value("purchaseRawMaterial")).toBe(45_000);
+
+    const spy = vi.spyOn(db, "select").mockImplementation(((...args: []) => tx.select(...args)) as typeof db.select);
+    try {
+      const detail = await loadMonthlyReportDetail("purchaseRawMaterial", "2090-10");
+      expect(detail.total).toBe(45_000);
+      const note = detail.rows.find((row) => row.reference === debitNoteNumber);
+      expect(note).toMatchObject({ amount: -5000, date: "2090-10-12" });
+      expect(note?.description).toMatch(/^Returned 10 kg .*Soda Ash to .*Ali Traders$/);
+    } finally {
+      spy.mockRestore();
+    }
+  }));
+
+  it("leaves voided debit notes out", () => withRollback(async (tx) => {
+    const { actor, buy } = await supplierReturnFixture(tx);
+    const purchase = await buy("100", "50000");
+    const created = await requestSupplierReturn(tx, { purchaseId: purchase.id, quantity: "10", reason: "Wet bags" }, actor.id);
+    await dispatchSupplierReturn(tx, { returnId: created.id }, actor.id);
+    await completeSupplierReturn(tx, { returnId: created.id }, actor.id);
+    await tx.update(purchaseRecords).set({ purchaseDate: at("2090-10-05") }).where(eq(purchaseRecords.id, purchase.id));
+    await tx.update(supplierReturns).set({ status: "voided", voidedAt: at("2090-10-13"), completedAt: at("2090-10-12") }).where(eq(supplierReturns.id, created.id));
+
+    const r = await report(tx);
+    expect(r.value("purchaseRawMaterial")).toBe(50_000);
   }));
 });

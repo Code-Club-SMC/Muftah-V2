@@ -92,7 +92,7 @@ function PurchasesReportPage() {
         <div className="space-y-8">
           <section>
             <SectionTitle accentColor={ACCENT}>Period Summary</SectionTitle>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 print:grid-cols-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 print:grid-cols-5">
               <SummaryCard
                 label="Purchases"
                 value={formatNumber(data.summary.count)}
@@ -108,6 +108,13 @@ function PurchasesReportPage() {
                 value={formatReportMoney(data.summary.totalPaid)}
                 accentColor={ACCENT}
               />
+              {data.summary.totalReturned > 0 && (
+                <SummaryCard
+                  label="Returned"
+                  value={formatReportMoney(data.summary.totalReturned)}
+                  accentColor={ACCENT}
+                />
+              )}
               <SummaryCard
                 label="Outstanding"
                 value={formatReportMoney(data.summary.totalOutstanding)}
@@ -127,13 +134,16 @@ function PurchasesReportPage() {
                 "Unit Cost",
                 "Total",
                 "Paid",
+                "Returned",
                 "Payment",
               ]}
-              alignRight={[3, 4, 5, 6]}
+              alignRight={[3, 4, 5, 6, 7]}
             >
               {data.purchases.map((p) => {
-                const isFullyPaid = p.paidAmount >= p.cost;
-                const isPartial = p.paidAmount > 0 && p.paidAmount < p.cost;
+                // Debit notes settle a purchase the same way payments do.
+                const settled = p.paidAmount + p.returnedAmount;
+                const isFullyPaid = settled >= p.cost;
+                const isPartial = settled > 0 && settled < p.cost;
                 return (
                   <ReportTableRow key={p.purchaseId} accentColor={ACCENT}>
                     <ReportCell>
@@ -167,6 +177,9 @@ function PurchasesReportPage() {
                     </ReportCell>
                     <ReportCell align="right" mono>
                       {formatReportMoney(p.paidAmount)}
+                    </ReportCell>
+                    <ReportCell align="right" mono>
+                      {formatReportMoney(p.returnedAmount)}
                     </ReportCell>
                     <ReportCell>
                       <div className="mb-1">
@@ -209,6 +222,9 @@ function PurchasesReportPage() {
                 </ReportCell>
                 <ReportCell align="right" mono bold>
                   {formatReportMoney(data.summary.totalPaid)}
+                </ReportCell>
+                <ReportCell align="right" mono bold>
+                  {formatReportMoney(data.summary.totalReturned)}
                 </ReportCell>
                 <ReportCell />
               </ReportTableRow>

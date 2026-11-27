@@ -68,6 +68,7 @@ export const EditPurchaseDialog = ({ open, onOpenChange, purchase }: Props) => {
     enabled: open && !!purchase,
   });
   const stockLocked = editState.data?.stockLocked ?? false;
+  const activeReturn = editState.data?.activeReturn ?? null;
 
   const mutate = useMutation({
     mutationFn: updatePurchaseRecordFn,
@@ -170,7 +171,11 @@ export const EditPurchaseDialog = ({ open, onOpenChange, purchase }: Props) => {
         }}
         className="space-y-4"
       >
-        {stockLocked ? (
+        {activeReturn ? (
+          <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+            {activeReturn.message}
+          </p>
+        ) : stockLocked ? (
           <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
             {PURCHASE_LOCKED_MESSAGE} You can still correct the bill total: stock not used yet takes the new price, and batches already made keep their cost.
           </p>
@@ -447,7 +452,7 @@ export const EditPurchaseDialog = ({ open, onOpenChange, purchase }: Props) => {
           <Button variant="outline" type="button" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button type="submit" disabled={mutate.isPending}>
+          <Button type="submit" disabled={mutate.isPending || Boolean(activeReturn)}>
             {mutate.isPending && <Loader2 className="mr-2 size-4 animate-spin" />}
             Save Changes
           </Button>

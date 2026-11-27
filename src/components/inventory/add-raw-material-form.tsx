@@ -21,7 +21,8 @@ import {
 import { PaymentMethodSelect } from "@/components/suppliers/payment-method-select";
 import { getInventoryFn } from "@/server-functions/inventory/get-inventory-fn";
 import { useAddChemical } from "@/hooks/inventory/use-add-raw-material";
-import { useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
+import { getPurchaseEditStateFn } from "@/server-functions/suppliers/get-purchase-edit-state-fn";
 import { getSuppliersFn } from "@/server-functions/suppliers/get-suppliers-fn";
 import { useMemo, useRef, useState } from "react";
 import { Textarea } from "../ui/textarea";
@@ -168,6 +169,13 @@ export const AddRawMaterialForm = ({
     preselectedWarehouse && !availableWarehouses.find((w) => w.id === preselectedWarehouse);
 
   const isPending = isEditMode ? editMutate.isPending : addMutate.status === "pending";
+  // An open supplier return blocks editing; the note above the button says why.
+  const { data: editState } = useQuery({
+    queryKey: ["purchase-edit-state", initialValues?.purchaseId],
+    queryFn: () => getPurchaseEditStateFn({ data: { id: initialValues!.purchaseId! } }),
+    enabled: isEditMode,
+  });
+  const blockedByReturn = isEditMode && Boolean(editState?.activeReturn);
   const originalPaid = parseFloat(initialValues?.paidAmount || "0");
 
   // Auto-derive paymentStatus from new total vs original paid amount
@@ -607,7 +615,7 @@ export const AddRawMaterialForm = ({
           }}
         />
 
-        <Button disabled={isPending} type="submit" className="w-full">
+        <Button disabled={isPending || blockedByReturn} type="submit" className="w-full">
           {isPending ? (
             <Loader2 className="mr-2 size-4 animate-spin" />
           ) : isEditMode ? (

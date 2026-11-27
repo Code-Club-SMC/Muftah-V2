@@ -14,6 +14,7 @@ import { getPurchaseEditStateFn } from "@/server-functions/suppliers/get-purchas
 import { PURCHASE_LOCKED_MESSAGE } from "@/lib/inventory/material-lots";
 import { invalidateStockQueries } from "@/lib/inventory/invalidate-stock";
 import { invalidateFinanceQueries } from "@/lib/finance/invalidate-finance";
+import { formatRupees } from "@/lib/finance/expense-entry";
 
 type Props = {
   open: boolean;
@@ -40,6 +41,9 @@ export const DeletePurchaseDialog = ({
   const stockLocked = editState.data?.stockLocked ?? false;
   const hasLabReports = editState.data?.hasLabReports ?? false;
   const alreadyVoided = editState.data?.alreadyVoided ?? false;
+  // An open supplier return blocks the delete; say so before the click.
+  const activeReturn = editState.data?.activeReturn ?? null;
+  const creditGivenBack = editState.data?.creditGivenBack ?? "0.00";
 
   // Money paid from a wallet can go back. Start with everything, to the wallet that paid.
   const paid = editState.data?.refund.paid ?? "0.00";
@@ -60,7 +64,10 @@ export const DeletePurchaseDialog = ({
 
   const mutate = useMutation({
     mutationFn: deletePurchaseRecordFn,
-    onSuccess: async () => {
+    onSuccess: async (_result, variables) => {
+      // Close first and forget this purchase's state, so the dialog doesn't refetch a deleted record.
+      close(false);
+      queryClient.removeQueries({ queryKey: ["purchase-edit-state", variables.data.id] });
       await invalidateStockQueries(queryClient);
       await invalidateFinanceQueries(queryClient);
       toast.success("Purchase deleted successfully");
@@ -69,7 +76,6 @@ export const DeletePurchaseDialog = ({
       queryClient.invalidateQueries({ queryKey: ["lab-reports"] });
       queryClient.invalidateQueries({ queryKey: ["chemical-report-purchases"] });
       queryClient.invalidateQueries({ queryKey: ["activity-timeline"] });
-      close(false);
     },
     onError: (err) =>
       toast.error(err.message || "Failed to delete purchase"),
@@ -95,7 +101,7 @@ export const DeletePurchaseDialog = ({
       icon={Trash2}
     >
       <div className="flex flex-col gap-4">
-        <div className="flex items-center gap-3 p-4 bg-destructive/10 text-red-700 rounded-lg border">
+        {!activeReturn && <div className="flex items-center gap-3 p-4 bg-destructive/10 text-red-700 rounded-lg border">
           <AlertTriangle className="size-5 shrink-0" />
           <p className="text-sm">
             {alreadyVoided ? (
@@ -110,7 +116,7 @@ export const DeletePurchaseDialog = ({
               </>
             )}
           </p>
-        </div>
+        </div>}
 
         <Field>
           <FieldLabel htmlFor="delete-reason">Reason</FieldLabel>
@@ -118,7 +124,7 @@ export const DeletePurchaseDialog = ({
             onChange={event => setReason(event.target.value)} />
         </Field>
 
-        {editState.isError ? <p role="alert">Unable to load purchase state. Reopen the dialog to try again.</p> : null}
+        {editState.isError && !mutate.isPending && !mutate.isSuccess ? <p role="alert">Unable to load purchase state. Reopen the dialog to try again.</p> : null}
 
         {alreadyVoided ? (
           <p className="rounded-md border bg-muted/40 p-3 text-xs text-muted-foreground">
@@ -126,7 +132,19 @@ export const DeletePurchaseDialog = ({
           </p>
         ) : null}
 
-        {stockLocked ? (
+        {activeReturn ? (
+          <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+            {activeReturn.message}
+          </p>
+        ) : null}
+
+        {!activeReturn && new Big(creditGivenBack).gt(0) ? (
+          <p className="rounded-md border bg-muted/40 p-3 text-xs text-muted-foreground">
+            {formatRupees(creditGivenBack)} of this purchase was paid with supplier credit. It goes back to the supplier as credit.
+          </p>
+        ) : null}
+
+        {!activeReturn && stockLocked ? (
           <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
             {PURCHASE_LOCKED_MESSAGE}
           </p>
@@ -138,7 +156,7 @@ export const DeletePurchaseDialog = ({
           </p>
         ) : null}
 
-        {!alreadyVoided && hasPaid && !stockLocked && !hasLabReports ? (
+        {!alreadyVoided && hasPaid && !activeReturn && !stockLocked && !hasLabReports ? (
           <div className="space-y-3 rounded-lg border p-4">
             <p className="text-sm">
               <strong>PKR {Number(paid).toLocaleString()}</strong> was paid for this purchase. Choose where it goes back.
@@ -193,6 +211,7 @@ export const DeletePurchaseDialog = ({
             }
             disabled={
               mutate.isPending ||
+              Boolean(activeReturn) ||
               stockLocked ||
               hasLabReports ||
               !editState.isSuccess ||
